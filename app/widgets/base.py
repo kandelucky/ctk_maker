@@ -11,8 +11,3 @@ class WidgetDescriptor:
     @classmethod
     def create_widget(cls, master, properties: dict):
         raise NotImplementedError
-
-    @classmethod
-    def update_widget(cls, widget, prop_name: str, value) -> None:
-        transformed = cls.transform_properties({prop_name: value})
-        widget.configure(**transformed)
