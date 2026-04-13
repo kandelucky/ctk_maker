@@ -52,6 +52,19 @@ def load_project(project: Project, path: str | Path) -> None:
         except KeyError as exc:
             raise ProjectLoadError(f"widgets[{i}] missing field: {exc}") from exc
 
+    doc = data.get("document")
+    if isinstance(doc, dict):
+        try:
+            dw = int(doc.get("width", project.document_width))
+            dh = int(doc.get("height", project.document_height))
+            project.resize_document(dw, dh)
+        except (TypeError, ValueError):
+            pass
+
+    name = data.get("name")
+    if isinstance(name, str) and name.strip():
+        project.name = name.strip()
+
     _replace_widgets(project, nodes)
 
 

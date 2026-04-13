@@ -1,18 +1,13 @@
-"""CTkButton widget descriptor.
+"""CTkLabel widget descriptor.
 
 Declares the full schema the Properties panel uses to render editors
-for a CTkButton, plus the bridge that converts the builder's
-property dict into the kwargs CTkButton actually accepts
-(`transform_properties`).
+for a CTkLabel, plus the bridge that converts the builder's property
+dict into the kwargs CTkLabel actually accepts.
 
 Groups shown in the Properties panel, in order:
 
     Geometry        — x/y, width/height
-    Rectangle       — corner radius, border (thickness + color)
-    State           — disabled flag
-    Main Colors     — background, hover
-    Text            — label, font style, alignment, text colors
-    Image & Alignment — image picker, image size, compound
+    Text            — label, font style, alignment, wraplength, text colors
 """
 import customtkinter as ctk
 
@@ -20,27 +15,18 @@ from app.core.logger import log_error
 from app.widgets.base import WidgetDescriptor
 
 
-class CTkButtonDescriptor(WidgetDescriptor):
-    type_name = "CTkButton"
-    display_name = "Button"
+class CTkLabelDescriptor(WidgetDescriptor):
+    type_name = "CTkLabel"
+    display_name = "Label"
 
     default_properties = {
         # Geometry
         "x": 120,
         "y": 120,
-        "width": 140,
-        "height": 32,
-        # State
-        "state_disabled": False,
-        # Rectangle
-        "corner_radius": 6,
-        "border_width": 0,
-        "border_color": "#565b5e",
-        # Main colors
-        "fg_color": "#1f6aa5",
-        "hover_color": "#144870",
+        "width": 100,
+        "height": 28,
         # Text content + style
-        "text": "CTkButton",
+        "text": "CTkLabel",
         "font_size": 13,
         "font_bold": False,
         "font_italic": False,
@@ -48,13 +34,16 @@ class CTkButtonDescriptor(WidgetDescriptor):
         "font_overstrike": False,
         "font_autofit": False,
         "anchor": "center",
+        "justify": "center",
+        "wraplength": 0,
         "text_color": "#ffffff",
         "text_color_disabled": "#a0a0a0",
-        # Image
-        "image": None,
-        "image_width": 20,
-        "image_height": 20,
-        "compound": "left",
+        # Implicit (not editable in schema). Both transparent so CTk
+        # delegates rendering to its master-color detection. True widget
+        # nesting arrives in Phase 6 — until then the label is always a
+        # direct canvas child, so it will read the canvas background.
+        "fg_color": "transparent",
+        "bg_color": "transparent",
     }
 
     property_schema = [
@@ -68,36 +57,7 @@ class CTkButtonDescriptor(WidgetDescriptor):
          "group": "Geometry", "pair": "size", "row_label": "Size",
          "min": 20, "max": 2000},
         {"name": "height", "type": "number", "label": "H",
-         "group": "Geometry", "pair": "size", "min": 20, "max": 2000},
-
-        # --- Rectangle ---------------------------------------------------
-        {"name": "corner_radius", "type": "number", "label": "",
-         "group": "Rectangle", "subgroup": "Corners",
-         "row_label": "Roundness", "min": 0,
-         "max": lambda p: max(
-             0,
-             min(int(p.get("width", 0)), int(p.get("height", 0))) // 2,
-         )},
-        {"name": "border_width", "type": "number", "label": "",
-         "group": "Rectangle", "subgroup": "Border",
-         "row_label": "Thickness", "min": 0,
-         "max": lambda p: max(
-             0,
-             min(int(p.get("width", 0)), int(p.get("height", 0))) // 2,
-         )},
-        {"name": "border_color", "type": "color", "label": "",
-         "group": "Rectangle", "subgroup": "Border",
-         "row_label": "Color"},
-
-        # --- State -------------------------------------------------------
-        {"name": "state_disabled", "type": "boolean", "label": "",
-         "group": "State", "row_label": "Disabled"},
-
-        # --- Main Colors -------------------------------------------------
-        {"name": "fg_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Background"},
-        {"name": "hover_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Hover"},
+         "group": "Geometry", "pair": "size", "min": 10, "max": 2000},
 
         # --- Text --------------------------------------------------------
         {"name": "text", "type": "multiline", "label": "Label",
@@ -123,39 +83,22 @@ class CTkButtonDescriptor(WidgetDescriptor):
          "group": "Text", "subgroup": "Style", "pair": "deco_row"},
 
         {"name": "anchor", "type": "anchor", "label": "",
-         "group": "Text", "subgroup": "Alignment", "row_label": "Align"},
+         "group": "Text", "subgroup": "Alignment", "row_label": "Anchor"},
+        {"name": "justify", "type": "justify", "label": "",
+         "group": "Text", "subgroup": "Alignment", "row_label": "Justify"},
+        {"name": "wraplength", "type": "number", "label": "",
+         "group": "Text", "subgroup": "Alignment",
+         "row_label": "Wrap Length", "min": 0, "max": 2000},
 
         {"name": "text_color", "type": "color", "label": "",
          "group": "Text", "subgroup": "Color", "row_label": "Normal"},
         {"name": "text_color_disabled", "type": "color", "label": "",
          "group": "Text", "subgroup": "Color", "row_label": "Disabled"},
-
-        # --- Image & Alignment -------------------------------------------
-        {"name": "image", "type": "image", "label": "",
-         "group": "Image & Alignment", "row_label": "Image"},
-        {"name": "image_width", "type": "number", "label": "W",
-         "group": "Image & Alignment", "pair": "img_size",
-         "row_label": "Size", "min": 4, "max": 512,
-         "disabled_when": lambda p: not p.get("image")},
-        {"name": "image_height", "type": "number", "label": "H",
-         "group": "Image & Alignment", "pair": "img_size",
-         "min": 4, "max": 512,
-         "disabled_when": lambda p: not p.get("image")},
-        {"name": "compound", "type": "compound", "label": "",
-         "group": "Image & Alignment", "row_label": "Position",
-         "disabled_when": lambda p: not p.get("image")},
     ]
 
-    # Properties whose change should re-run `compute_derived` to update
-    # derived props (font_size via autofit).
     derived_triggers = {"text", "width", "height", "font_bold", "font_autofit"}
 
-    # Schema props that are NOT passed as kwargs to CTkButton directly.
-    # They live only in the node (builder side), or are consumed to build
-    # derived CTk kwargs (font, state, image).
-    _NODE_ONLY_KEYS = {
-        "x", "y", "image_width", "image_height", "state_disabled",
-    }
+    _NODE_ONLY_KEYS = {"x", "y"}
     _FONT_KEYS = {
         "font_size", "font_bold", "font_italic",
         "font_underline", "font_overstrike", "font_autofit",
@@ -173,8 +116,8 @@ class CTkButtonDescriptor(WidgetDescriptor):
         if not text:
             return result
         try:
-            width = int(properties.get("width", 140))
-            height = int(properties.get("height", 32))
+            width = int(properties.get("width", 100))
+            height = int(properties.get("height", 28))
         except (ValueError, TypeError):
             return result
         bold = bool(properties.get("font_bold", False))
@@ -186,10 +129,9 @@ class CTkButtonDescriptor(WidgetDescriptor):
     @classmethod
     def _compute_autofit_size(cls, text: str, width: int, height: int,
                               bold: bool) -> int:
-        """Binary-search the largest font size whose rendered text fits."""
         import tkinter.font as tkfont
-        avail_w = max(10, width - 20)
-        avail_h = max(10, height - 8)
+        avail_w = max(10, width - 12)
+        avail_h = max(10, height - 4)
         weight = "bold" if bold else "normal"
         lo, hi = 6, 96
         best = 6
@@ -209,25 +151,14 @@ class CTkButtonDescriptor(WidgetDescriptor):
         return best
 
     # ==================================================================
-    # Builder → CTkButton kwargs
+    # Builder → CTkLabel kwargs
     # ==================================================================
     @classmethod
     def transform_properties(cls, properties: dict) -> dict:
-        """Translate the builder's property dict into CTkButton kwargs.
-
-        - Strips keys that are node-only (x/y, image_*, state_disabled).
-        - Builds a CTkFont from font_size/font_bold/font_italic.
-        - Converts `state_disabled` bool into CTk `state="disabled"/"normal"`.
-        - Loads `image` path into a CTkImage sized by image_width/image_height.
-        """
         result = {
             k: v for k, v in properties.items()
             if k not in cls._NODE_ONLY_KEYS and k not in cls._FONT_KEYS
         }
-
-        result["state"] = (
-            "disabled" if properties.get("state_disabled") else "normal"
-        )
 
         try:
             size = int(properties.get("font_size") or 13)
@@ -243,29 +174,10 @@ class CTkButtonDescriptor(WidgetDescriptor):
                 underline=underline, overstrike=overstrike,
             )
         except Exception:
-            log_error("CTkButtonDescriptor.transform_properties font")
-
-        if "image" in result:
-            result["image"] = cls._build_image(properties, result["image"])
+            log_error("CTkLabelDescriptor.transform_properties font")
 
         return result
 
     @classmethod
-    def _build_image(cls, properties: dict, image_path):
-        if not image_path:
-            return None
-        try:
-            from PIL import Image
-            img = Image.open(image_path)
-            iw = int(properties.get("image_width", 20) or 20)
-            ih = int(properties.get("image_height", 20) or 20)
-            return ctk.CTkImage(
-                light_image=img, dark_image=img, size=(iw, ih),
-            )
-        except Exception:
-            log_error("CTkButtonDescriptor.transform_properties image")
-            return None
-
-    @classmethod
     def create_widget(cls, master, properties: dict):
-        return ctk.CTkButton(master, **cls.transform_properties(properties))
+        return ctk.CTkLabel(master, **cls.transform_properties(properties))

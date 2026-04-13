@@ -2,6 +2,7 @@ import subprocess
 import sys
 import tempfile
 import tkinter as tk
+import tkinter.font as tkfont
 import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox
@@ -15,9 +16,11 @@ from app.core.settings import load_settings, save_setting
 from app.io.code_exporter import export_project
 from app.io.project_loader import ProjectLoadError, load_project
 from app.io.project_saver import save_project
+from app.ui.dialogs import NewProjectSizeDialog
 from app.ui.icons import load_tk_icon
 from app.ui.palette import Palette
 from app.ui.properties_panel import PropertiesPanel
+from app.ui.startup_dialog import StartupDialog
 from app.ui.toolbar import Toolbar
 from app.ui.workspace import Workspace
 
@@ -67,8 +70,31 @@ class MainWindow(ctk.CTk):
         self.minsize(900, 600)
         self._set_centered_geometry(1280, 800)
 
+        # Reconfigure every named Tk font to Segoe UI so Georgian (and
+        # other non-Latin scripts) renders instead of "?" placeholders.
+        # Empty-family tuples like `font=("", 11)` resolve through these
+        # named fonts, so this single change covers most call sites.
+        if sys.platform == "win32":
+            for _font_name in (
+                "TkDefaultFont", "TkTextFont", "TkFixedFont",
+                "TkMenuFont", "TkHeadingFont", "TkCaptionFont",
+                "TkSmallCaptionFont", "TkIconFont", "TkTooltipFont",
+            ):
+                try:
+                    tkfont.nametofont(_font_name).configure(family="Segoe UI")
+                except tk.TclError:
+                    pass
+        self.option_add("*Font", "{Segoe UI} 11")
+
+        # Non-Latin keyboard layouts (Georgian, Russian, ...) remap the
+        # V/C/X/A keysyms, so tk's default <Control-v> etc. never fire
+        # and clipboard shortcuts break. Fall back to the hardware
+        # keycode (Windows VK) and emit the corresponding virtual event.
+        self.bind_all("<Control-KeyPress>", self._on_control_keypress)
+
         self.project = Project()
         self._current_path: str | None = None
+        self._dirty: bool = False
 
         settings = load_settings()
         initial_mode = settings.get("appearance_mode", "Dark")
@@ -109,6 +135,133 @@ class MainWindow(ctk.CTk):
         self.paned.add(self.palette, minsize=150, width=200, stretch="never")
         self.paned.add(self.workspace, minsize=400, stretch="always")
         self.paned.add(self.properties, minsize=320, width=340, stretch="never")
+
+        bus = self.project.event_bus
+        for evt in ("widget_added", "widget_removed", "property_changed",
+                    "widget_z_changed", "document_resized"):
+            bus.subscribe(evt, self._on_project_modified)
+
+        self.protocol("WM_DELETE_WINDOW", self._on_window_close)
+
+        self.after(120, self._show_startup_dialog)
+
+    # ------------------------------------------------------------------
+    # Non-Latin keyboard layout fallback
+    # ------------------------------------------------------------------
+    def _on_control_keypress(self, event) -> str | None:
+        # If the keysym is already the Latin letter, tk's default
+        # binding handled (or will handle) the shortcut — don't double.
+        latin = event.keysym.lower()
+        if latin in ("v", "c", "x", "a", "s", "n", "o", "w", "q", "r"):
+            return None
+        kc = event.keycode
+        widget = event.widget
+        if kc == 86:  # V
+            widget.event_generate("<<Paste>>")
+            return "break"
+        if kc == 67:  # C
+            widget.event_generate("<<Copy>>")
+            return "break"
+        if kc == 88:  # X
+            widget.event_generate("<<Cut>>")
+            return "break"
+        if kc == 65:  # A
+            try:
+                widget.event_generate("<<SelectAll>>")
+            except tk.TclError:
+                pass
+            return "break"
+        if kc == 83:  # S
+            self._on_save()
+            return "break"
+        if kc == 78:  # N
+            self._on_new()
+            return "break"
+        if kc == 79:  # O
+            self._on_open()
+            return "break"
+        if kc == 87:  # W
+            self._on_close_project()
+            return "break"
+        if kc == 81:  # Q
+            self._on_quit()
+            return "break"
+        if kc == 82:  # R
+            self._on_preview()
+            return "break"
+        return None
+
+    # ------------------------------------------------------------------
+    # Dirty tracking
+    # ------------------------------------------------------------------
+    def _on_project_modified(self, *_args, **_kwargs) -> None:
+        if not self._dirty:
+            self._dirty = True
+            self._refresh_title()
+
+    def _clear_dirty(self) -> None:
+        if self._dirty:
+            self._dirty = False
+            self._refresh_title()
+
+    def _refresh_title(self) -> None:
+        base = "CTk Visual Builder"
+        if self._current_path:
+            base += f" — {Path(self._current_path).stem}"
+        elif self.project.name and self.project.name != "Untitled":
+            base += f" — {self.project.name}"
+        if self._dirty:
+            base += " •"
+        self.title(base)
+
+    def _confirm_discard_if_dirty(self) -> bool:
+        """Return True if caller may proceed (discard current work)."""
+        if not self._dirty:
+            return True
+        self.bell()
+        reply = messagebox.askyesnocancel(
+            "Unsaved changes",
+            "Save changes before continuing?",
+            icon="warning",
+            parent=self,
+        )
+        if reply is None:
+            return False
+        if reply is True:
+            self._on_save()
+            if self._dirty:
+                return False
+        return True
+
+    def _on_window_close(self) -> None:
+        if not self._confirm_discard_if_dirty():
+            return
+        self.destroy()
+
+    def _show_startup_dialog(self) -> None:
+        dialog = StartupDialog(self)
+        self.wait_window(dialog)
+        result = dialog.result
+        if result is None:
+            return
+        if result[0] == "open":
+            self._open_path(result[1])
+        elif result[0] == "new":
+            _, name, w, h, path = result
+            self.project.clear()
+            self.project.resize_document(w, h)
+            self.project.name = name
+            try:
+                save_project(self.project, path)
+            except OSError:
+                log_error("save_project (new project)")
+                messagebox.showerror(
+                    "Save failed",
+                    f"Could not create project file at:\n{path}",
+                    parent=self,
+                )
+                return
+            self._set_current_path(path)
 
     # ------------------------------------------------------------------
     # Menubar
@@ -220,12 +373,11 @@ class MainWindow(ctk.CTk):
     # ------------------------------------------------------------------
     def _set_current_path(self, path: str | None) -> None:
         self._current_path = path
+        self._clear_dirty()
         if path:
-            self.title(f"CTk Visual Builder — {Path(path).name}")
             add_recent(path)
             self._rebuild_recent_menu()
-        else:
-            self.title("CTk Visual Builder")
+        self._refresh_title()
 
     def _open_path(self, path: str) -> None:
         if not Path(path).exists():
@@ -249,18 +401,24 @@ class MainWindow(ctk.CTk):
         messagebox.showinfo("Toolbar stub", f"{name} — not implemented yet", parent=self)
 
     def _on_new(self) -> None:
-        if self.project.root_widgets:
-            confirm = messagebox.askyesno(
-                "New project",
-                "Discard the current project and start a new one?",
-                parent=self,
-            )
-            if not confirm:
-                return
+        if not self._confirm_discard_if_dirty():
+            return
+        dialog = NewProjectSizeDialog(
+            self,
+            default_w=self.project.document_width,
+            default_h=self.project.document_height,
+        )
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        w, h = dialog.result
         self.project.clear()
+        self.project.resize_document(w, h)
         self._set_current_path(None)
 
     def _on_open(self) -> None:
+        if not self._confirm_discard_if_dirty():
+            return
         path = filedialog.askopenfilename(
             parent=self,
             title="Open project",
@@ -303,7 +461,7 @@ class MainWindow(ctk.CTk):
         self._on_new()
 
     def _on_quit(self) -> None:
-        self.destroy()
+        self._on_window_close()
 
     def _on_preview(self) -> None:
         if not self.project.root_widgets:

@@ -26,7 +26,7 @@ groups, in this top-to-bottom order:
 | **State** | — | Disabled |
 | **Main Colors** | — | Background, Hover |
 | **Text** | — | Label (multiline) |
-| **Text** | Style | Size + Best Fit, Style (Bold + Italic) |
+| **Text** | Style | Size + Best Fit, Style (Bold + Italic), Decoration (Underline + Strike) |
 | **Text** | Alignment | Align |
 | **Text** | Color | Normal, Disabled |
 | **Image & Alignment** | — | Image, Size (W + H), Position |
@@ -127,10 +127,13 @@ button (combine with an Image below).
 | Best Fit | `font_autofit` | bool | False | Binary-searches the largest size that fits `width × height`. |
 | Style › Bold | `font_bold` | bool | False | |
 | Style › Italic | `font_italic` | bool | False | |
+| Decoration › Underline | `font_underline` | bool | False | |
+| Decoration › Strike | `font_overstrike` | bool | False | Maps to CTkFont `overstrike`. |
 
-Descriptor builds a single `CTkFont(size=..., weight=..., slant=...)` and
-passes it to `CTkButton(font=...)`. Best Fit runs automatically on any
-change to `text`, `width`, `height`, `font_bold`, or `font_autofit`.
+Descriptor builds a single
+`CTkFont(size=..., weight=..., slant=..., underline=..., overstrike=...)`
+and passes it to `CTkButton(font=...)`. Best Fit runs automatically on
+any change to `text`, `width`, `height`, `font_bold`, or `font_autofit`.
 
 ### Alignment
 
@@ -186,7 +189,8 @@ button = ctk.CTkButton(
     fg_color="#1f6aa5",
     hover_color="#144870",
     text="CTkButton",
-    font=ctk.CTkFont(size=13, weight="normal", slant="roman"),
+    font=ctk.CTkFont(size=13, weight="normal", slant="roman",
+                     underline=False, overstrike=False),
     anchor="center",
     text_color="#ffffff",
     text_color_disabled="#a0a0a0",
@@ -211,7 +215,7 @@ away before reaching CTkButton's constructor:
 | `x`, `y` | Canvas `create_window` position |
 | `image_width`, `image_height` | `CTkImage` `size=(w, h)` |
 | `state_disabled` | `state="disabled"` or `"normal"` |
-| `font_size`, `font_bold`, `font_italic`, `font_autofit` | `CTkFont(size, weight, slant)` |
+| `font_size`, `font_bold`, `font_italic`, `font_underline`, `font_overstrike`, `font_autofit` | `CTkFont(size, weight, slant, underline, overstrike)` |
 
 See [`CTkButtonDescriptor.transform_properties`](../../app/widgets/ctk_button.py)
 for the exact translation logic.
@@ -225,8 +229,6 @@ for the exact translation logic.
 - **Separate pressed color** — CTk reuses `hover_color` for press. No
   schema option.
 - **Custom pressed animation** — not exposed. CTk handles this internally.
-- **Text underline / overstrike** — CTkFont supports `underline=True` and
-  `overstrike=True`, but these aren't exposed in the schema yet.
 - **corner_radius ≥ min(width, height)/2** — CTk grows the widget beyond
   its requested size. Preview = reality: the exported code reproduces
   the same behavior.

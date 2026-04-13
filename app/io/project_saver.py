@@ -26,6 +26,11 @@ FILE_VERSION = 1
 def project_to_dict(project: Project) -> dict:
     return {
         "version": FILE_VERSION,
+        "name": project.name,
+        "document": {
+            "width": project.document_width,
+            "height": project.document_height,
+        },
         "widgets": [node.to_dict() for node in project.root_widgets],
     }
 

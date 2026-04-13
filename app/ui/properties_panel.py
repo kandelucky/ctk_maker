@@ -75,6 +75,7 @@ RESIZE_HIDE_DELAY_MS = 150
 
 # ---- Dropdown options -------------------------------------------------------
 COMPOUND_OPTIONS = ["top", "left", "right", "bottom"]
+JUSTIFY_OPTIONS = ["left", "center", "right"]
 
 ANCHOR_CODE_TO_LABEL = {
     "nw": "Top Left",    "n":  "Top Center",    "ne": "Top Right",
@@ -111,7 +112,7 @@ class PropertiesPanel(ctk.CTkFrame):
         self._body_hidden = False
         self._last_width = 0
 
-        title = ctk.CTkLabel(self, text="Properties", font=("", 13, "bold"))
+        title = ctk.CTkLabel(self, text="Properties", font=("Segoe UI", 13, "bold"))
         title.pack(pady=(5, 2), padx=10)
 
         self.body = ctk.CTkScrollableFrame(self)
@@ -307,7 +308,7 @@ class PropertiesPanel(ctk.CTkFrame):
 
         type_label = ctk.CTkLabel(
             header, text=descriptor.type_name,
-            font=("", 11, "bold"), text_color=TYPE_LABEL_FG, height=14,
+            font=("Segoe UI", 11, "bold"), text_color=TYPE_LABEL_FG, height=14,
         )
         type_label.pack(side="left")
 
@@ -415,14 +416,14 @@ class PropertiesPanel(ctk.CTkFrame):
         else:
             arrow = ctk.CTkLabel(
                 wrap, text="▶" if is_collapsed else "▼",
-                font=("", 9, "bold"), text_color=SUBGROUP_FG,
+                font=("Segoe UI", 9, "bold"), text_color=SUBGROUP_FG,
                 fg_color=HEADER_BG, width=12, height=16,
             )
         arrow.pack(side="left", padx=(6, 2))
 
         header = ctk.CTkLabel(
             wrap, text=name, fg_color=HEADER_BG,
-            font=("", 10, "bold"), text_color=HEADER_FG,
+            font=("Segoe UI", 10, "bold"), text_color=HEADER_FG,
             anchor="w", height=16,
         )
         header.pack(side="left", padx=(2, 6))
@@ -446,7 +447,7 @@ class PropertiesPanel(ctk.CTkFrame):
     def _build_subgroup_header(self, name: str) -> None:
         header = ctk.CTkLabel(
             self.body, text=name,
-            font=("", 9, "bold"), text_color=SUBGROUP_FG,
+            font=("Segoe UI", 9, "bold"), text_color=SUBGROUP_FG,
             anchor="w", height=12,
         )
         header.pack(fill="x", pady=(2, 1), padx=4)
@@ -468,7 +469,7 @@ class PropertiesPanel(ctk.CTkFrame):
         self, row: ctk.CTkFrame, text: str, *,
         draggable: bool = False, disabled: bool = False,
     ) -> ctk.CTkLabel:
-        kwargs = dict(text=text, anchor="w", font=("", 10))
+        kwargs = dict(text=text, anchor="w", font=("Segoe UI", 10))
         if not draggable:
             kwargs["text_color"] = DISABLED_FG if disabled else STATIC_FG
         label = ctk.CTkLabel(row, **kwargs)
@@ -513,7 +514,7 @@ class PropertiesPanel(ctk.CTkFrame):
             disabled = self._eval_disabled(prop)
             label = ctk.CTkLabel(
                 row, text=prop["label"], width=MINI_LABEL_WIDTH,
-                anchor="e", font=("", 10),
+                anchor="e", font=("Segoe UI", 10),
             )
             if disabled:
                 label.configure(text_color=DISABLED_FG)
@@ -561,7 +562,7 @@ class PropertiesPanel(ctk.CTkFrame):
             if use_sub_label:
                 row.grid_columnconfigure(col, minsize=SUB_LABEL_WIDTH)
                 sub_label = ctk.CTkLabel(
-                    row, text=sub_text, anchor="e", font=("", 10),
+                    row, text=sub_text, anchor="e", font=("Segoe UI", 10),
                 )
                 if disabled:
                     sub_label.configure(text_color=DISABLED_FG)
@@ -640,6 +641,10 @@ class PropertiesPanel(ctk.CTkFrame):
             row.grid_columnconfigure(2, minsize=DROPDOWN_WIDTH_COMPOUND)
             menu = self._create_compound_dropdown(row, prop, value)
             menu.grid(row=0, column=2, sticky="ew")
+        elif ptype == "justify":
+            row.grid_columnconfigure(2, minsize=DROPDOWN_WIDTH_COMPOUND)
+            menu = self._create_justify_dropdown(row, prop, value)
+            menu.grid(row=0, column=2, sticky="ew")
         elif ptype == "image":
             row.grid_columnconfigure(2, minsize=IMAGE_PICKER_WIDTH)
             picker = self._create_image_picker(row, prop, value)
@@ -664,7 +669,7 @@ class PropertiesPanel(ctk.CTkFrame):
         if label_text:
             label = ctk.CTkLabel(
                 parent, text=label_text, width=70, anchor="w",
-                font=("", 10), height=18,
+                font=("Segoe UI", 10), height=18,
             )
             label.pack(side="left", anchor="n", pady=(2, 0))
             if disabled:
@@ -674,7 +679,7 @@ class PropertiesPanel(ctk.CTkFrame):
             return
 
         tb = ctk.CTkTextbox(
-            parent, height=58, font=("", 10), wrap="word",
+            parent, height=58, font=("Segoe UI", 10), wrap="word",
             border_width=0, fg_color=VALUE_BG, corner_radius=VALUE_CORNER,
         )
         tb.pack(side="left", fill="x", expand=True)
@@ -702,7 +707,7 @@ class PropertiesPanel(ctk.CTkFrame):
 
         entry = ctk.CTkEntry(
             parent, textvariable=var, width=ENTRY_WIDTH,
-            height=ENTRY_HEIGHT, font=("", 10), state=state,
+            height=ENTRY_HEIGHT, font=("Segoe UI", 10), state=state,
             border_width=0, fg_color=VALUE_BG, corner_radius=VALUE_CORNER,
         )
 
@@ -729,10 +734,12 @@ class PropertiesPanel(ctk.CTkFrame):
         pname = prop["name"]
         disabled = self._eval_disabled(prop)
         state = "disabled" if disabled else "normal"
-        color_value = value if value else "#1f6aa5"
+        # CTkButton doesn't allow "transparent" as fg_color — fall back to
+        # a neutral swatch background while preserving the stored value.
+        swatch_color = VALUE_BG if (not value or value == "transparent") else value
         btn = ctk.CTkButton(
             parent, text="",
-            fg_color=color_value, hover_color=color_value,
+            fg_color=swatch_color, hover_color=swatch_color,
             width=ENTRY_WIDTH, height=BUTTON_HEIGHT,
             border_width=0, corner_radius=0, state=state,
             command=None if disabled else (
@@ -780,7 +787,7 @@ class PropertiesPanel(ctk.CTkFrame):
         menu = ctk.CTkOptionMenu(
             parent, values=ANCHOR_DROPDOWN_ORDER,
             width=DROPDOWN_WIDTH_ANCHOR, height=DROPDOWN_HEIGHT,
-            font=("", 10), dropdown_font=("", 10),
+            font=("Segoe UI", 10), dropdown_font=("Segoe UI", 10),
             fg_color=VALUE_BG, button_color=VALUE_BG,
             button_hover_color="#3a3a3a",
             corner_radius=VALUE_CORNER, state=state,
@@ -798,7 +805,7 @@ class PropertiesPanel(ctk.CTkFrame):
         menu = ctk.CTkOptionMenu(
             parent, values=COMPOUND_OPTIONS,
             width=DROPDOWN_WIDTH_COMPOUND, height=DROPDOWN_HEIGHT,
-            font=("", 10), dropdown_font=("", 10),
+            font=("Segoe UI", 10), dropdown_font=("Segoe UI", 10),
             fg_color=VALUE_BG, button_color=VALUE_BG,
             button_hover_color="#3a3a3a",
             corner_radius=VALUE_CORNER, state=state,
@@ -806,6 +813,23 @@ class PropertiesPanel(ctk.CTkFrame):
                 lambda v, p=pname: self._update(p, v)),
         )
         menu.set(value if value in COMPOUND_OPTIONS else "left")
+        return menu
+
+    def _create_justify_dropdown(self, parent, prop: dict, value) -> ctk.CTkOptionMenu:
+        pname = prop["name"]
+        disabled = self._eval_disabled(prop)
+        state = "disabled" if disabled else "normal"
+        menu = ctk.CTkOptionMenu(
+            parent, values=JUSTIFY_OPTIONS,
+            width=DROPDOWN_WIDTH_COMPOUND, height=DROPDOWN_HEIGHT,
+            font=("Segoe UI", 10), dropdown_font=("Segoe UI", 10),
+            fg_color=VALUE_BG, button_color=VALUE_BG,
+            button_hover_color="#3a3a3a",
+            corner_radius=VALUE_CORNER, state=state,
+            command=None if disabled else (
+                lambda v, p=pname: self._update(p, v)),
+        )
+        menu.set(value if value in JUSTIFY_OPTIONS else "center")
         return menu
 
     def _create_image_picker(self, parent, prop: dict, value) -> ctk.CTkFrame:
@@ -818,7 +842,7 @@ class PropertiesPanel(ctk.CTkFrame):
             sub, text=self._image_display_name(value),
             anchor="w",
             text_color=DISABLED_FG if disabled else "#cccccc",
-            font=("", 9),
+            font=("Segoe UI", 9),
         )
         name_label.pack(fill="x", padx=(0, 2))
         self._image_labels[pname] = name_label
@@ -828,7 +852,7 @@ class PropertiesPanel(ctk.CTkFrame):
 
         browse = ctk.CTkButton(
             btn_row, text="Browse...",
-            width=70, height=BUTTON_HEIGHT, font=("", 9),
+            width=70, height=BUTTON_HEIGHT, font=("Segoe UI", 9),
             fg_color=VALUE_BG, hover_color="#3a3a3a",
             border_width=0, corner_radius=VALUE_CORNER, state=state,
             command=None if disabled else (
@@ -838,7 +862,7 @@ class PropertiesPanel(ctk.CTkFrame):
 
         clear = ctk.CTkButton(
             btn_row, text="Clear",
-            width=44, height=BUTTON_HEIGHT, font=("", 9),
+            width=44, height=BUTTON_HEIGHT, font=("Segoe UI", 9),
             fg_color=VALUE_BG, hover_color="#3a3a3a",
             border_width=0, corner_radius=VALUE_CORNER, state=state,
             command=None if disabled else (

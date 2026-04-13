@@ -23,7 +23,6 @@ from app.core.widget_node import WidgetNode
 from app.widgets.registry import get_descriptor
 
 WINDOW_TITLE = "CTk App"
-WINDOW_GEOMETRY = "800x600"
 APPEARANCE_MODE = "dark"
 
 
@@ -35,6 +34,8 @@ def export_project(project: Project, path: str | Path) -> None:
 def generate_code(project: Project) -> str:
     needs_pil = any(node.properties.get("image") for node in project.root_widgets)
 
+    geometry = f"{project.document_width}x{project.document_height}"
+
     lines: list[str] = ["import customtkinter as ctk"]
     if needs_pil:
         lines.append("from PIL import Image")
@@ -44,7 +45,7 @@ def generate_code(project: Project) -> str:
         "",
         "app = ctk.CTk()",
         f'app.title("{WINDOW_TITLE}")',
-        f'app.geometry("{WINDOW_GEOMETRY}")',
+        f'app.geometry("{geometry}")',
         "",
     ]
 
@@ -109,7 +110,12 @@ def _font_source(props: dict) -> str:
     size = _safe_int(props.get("font_size"), 13)
     weight = '"bold"' if props.get("font_bold") else '"normal"'
     slant = '"italic"' if props.get("font_italic") else '"roman"'
-    return f"ctk.CTkFont(size={size}, weight={weight}, slant={slant})"
+    parts = [f"size={size}", f"weight={weight}", f"slant={slant}"]
+    if props.get("font_underline"):
+        parts.append("underline=True")
+    if props.get("font_overstrike"):
+        parts.append("overstrike=True")
+    return f"ctk.CTkFont({', '.join(parts)})"
 
 
 def _image_source(props: dict, image_path: str) -> str:

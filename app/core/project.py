@@ -2,11 +2,27 @@ from app.core.event_bus import EventBus
 from app.core.widget_node import WidgetNode
 
 
+DEFAULT_DOCUMENT_WIDTH = 800
+DEFAULT_DOCUMENT_HEIGHT = 600
+
+
 class Project:
     def __init__(self):
         self.event_bus = EventBus()
         self.root_widgets: list[WidgetNode] = []
         self.selected_id: str | None = None
+        self.document_width: int = DEFAULT_DOCUMENT_WIDTH
+        self.document_height: int = DEFAULT_DOCUMENT_HEIGHT
+        self.name: str = "Untitled"
+
+    def resize_document(self, width: int, height: int) -> None:
+        width = max(100, int(width))
+        height = max(100, int(height))
+        if width == self.document_width and height == self.document_height:
+            return
+        self.document_width = width
+        self.document_height = height
+        self.event_bus.publish("document_resized", width, height)
 
     def add_widget(self, node: WidgetNode) -> None:
         self.root_widgets.append(node)

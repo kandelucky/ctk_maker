@@ -108,7 +108,7 @@ class Palette(ctk.CTkFrame):
     def _build_header(self) -> None:
         title = ctk.CTkLabel(
             self, text="Widget Box",
-            font=("", 11, "bold"), text_color=TITLE_FG, anchor="w",
+            font=("Segoe UI", 11, "bold"), text_color=TITLE_FG, anchor="w",
         )
         title.pack(fill="x", padx=10, pady=(10, 6))
 
@@ -167,7 +167,7 @@ class Palette(ctk.CTkFrame):
 
         title_lbl = ctk.CTkLabel(
             header, text=group.title,
-            font=("", 10, "bold"), text_color=GROUP_HEADER_FG, anchor="w",
+            font=("Segoe UI", 10, "bold"), text_color=GROUP_HEADER_FG, anchor="w",
         )
         title_lbl.pack(side="left", fill="x", expand=True)
 
@@ -200,7 +200,7 @@ class Palette(ctk.CTkFrame):
         fg = ITEM_FG if implemented else ITEM_DISABLED_FG
         name_lbl = ctk.CTkLabel(
             row, text=entry.display_name,
-            font=("", 10), text_color=fg, anchor="w",
+            font=("Segoe UI", 10), text_color=fg, anchor="w",
         )
         name_lbl.pack(side="left", fill="x", expand=True)
 
@@ -289,7 +289,7 @@ class Palette(ctk.CTkFrame):
         tk.Label(
             frame, text=f"+ {descriptor.display_name}",
             bg="#1f6aa5", fg="white",
-            font=("", 10, "bold"), padx=10, pady=4,
+            font=("Segoe UI", 10, "bold"), padx=10, pady=4,
         ).pack()
         ghost.update_idletasks()
         self._ghost = ghost

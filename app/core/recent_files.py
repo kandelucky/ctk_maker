@@ -46,5 +46,12 @@ def add_recent(path: str) -> list[str]:
     return paths
 
 
+def remove_recent(path: str) -> list[str]:
+    normalized = str(Path(path).resolve())
+    paths = [p for p in load_recent() if p != normalized]
+    save_recent(paths)
+    return paths
+
+
 def clear_recent() -> None:
     save_recent([])

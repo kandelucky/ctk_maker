@@ -1,4 +1,5 @@
 import tkinter as tk
+from typing import Callable
 
 HANDLE_NAMES = ("nw", "n", "ne", "w", "e", "sw", "s", "se")
 HANDLE_SIZE = 8
@@ -26,10 +27,17 @@ HANDLE_OFFSETS = {
 
 
 class SelectionController:
-    def __init__(self, canvas: tk.Canvas, project, widget_views: dict):
+    def __init__(
+        self,
+        canvas: tk.Canvas,
+        project,
+        widget_views: dict,
+        zoom_provider: Callable[[], float] = lambda: 1.0,
+    ):
         self.canvas = canvas
         self.project = project
         self.widget_views = widget_views
+        self._zoom_provider = zoom_provider
         self._selection_rect: int | None = None
         self._handle_ids: dict[str, int] = {}
         self._resize: dict | None = None
@@ -96,8 +104,9 @@ class SelectionController:
         r = self._resize
         if r is None:
             return
-        dx = event.x_root - r["press_mx"]
-        dy = event.y_root - r["press_my"]
+        zoom = self._zoom_provider() or 1.0
+        dx = int((event.x_root - r["press_mx"]) / zoom)
+        dy = int((event.y_root - r["press_my"]) / zoom)
         new_x, new_y, new_w, new_h = self._compute_resize(
             r["handle"], r["start_x"], r["start_y"], r["start_w"], r["start_h"],
             dx, dy,
