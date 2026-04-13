@@ -19,7 +19,9 @@ Features:
 - Debounced body hide during sash drag to mask CTk flicker
 """
 import os
+import re
 import tkinter as tk
+import webbrowser
 from contextlib import contextmanager
 from tkinter import filedialog
 
@@ -42,6 +44,15 @@ DISABLED_FG = "#555555"
 HEADER_FG = "#cccccc"
 SUBGROUP_FG = "#aaaaaa"
 TYPE_LABEL_FG = "#3b8ed0"
+
+# ---- Widget docs --------------------------------------------------------
+GITHUB_DOCS_BASE = "https://github.com/kandelucky/ctk_visual_builder/blob/main/docs/widgets"
+
+
+def _type_to_doc_slug(type_name: str) -> str:
+    """CTkButton -> ctk_button (used for docs/widgets/{slug}.md)."""
+    s1 = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", type_name)
+    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
 
 # ---- Geometry ---------------------------------------------------------------
 VALUE_CORNER = 3
@@ -268,6 +279,13 @@ class PropertiesPanel(ctk.CTkFrame):
         except tk.TclError:
             pass
 
+    def _open_widget_docs(self, type_name: str) -> None:
+        url = f"{GITHUB_DOCS_BASE}/{_type_to_doc_slug(type_name)}.md"
+        try:
+            webbrowser.open(url)
+        except Exception:
+            log_error("widget docs open")
+
     def _populate_body(self) -> None:
         if self.current_id is None:
             self._show_empty()
@@ -283,11 +301,29 @@ class PropertiesPanel(ctk.CTkFrame):
 
         self._clear_body()
 
+        header = ctk.CTkFrame(self.body, fg_color="transparent", height=18)
+        header.pack(fill="x", pady=(0, 2), padx=4)
+        header.pack_propagate(False)
+
         type_label = ctk.CTkLabel(
-            self.body, text=descriptor.type_name,
+            header, text=descriptor.type_name,
             font=("", 11, "bold"), text_color=TYPE_LABEL_FG, height=14,
         )
-        type_label.pack(pady=(0, 2), padx=4, anchor="w")
+        type_label.pack(side="left")
+
+        help_icon = load_icon("circle-help", size=14)
+        help_btn = ctk.CTkButton(
+            header,
+            text="",
+            image=help_icon,
+            width=18,
+            height=18,
+            corner_radius=3,
+            fg_color="transparent",
+            hover_color="#3a3a3a",
+            command=lambda t=descriptor.type_name: self._open_widget_docs(t),
+        )
+        help_btn.pack(side="left", padx=(4, 0))
 
         self._render_schema(descriptor.property_schema, node.properties)
         self._editor_disabled = self._current_disabled_states()

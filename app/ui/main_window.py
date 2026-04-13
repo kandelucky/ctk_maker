@@ -1,11 +1,63 @@
+import subprocess
+import sys
+import tempfile
 import tkinter as tk
+import webbrowser
+from pathlib import Path
+from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
+from app.core.logger import log_error
 from app.core.project import Project
+from app.core.recent_files import add_recent, clear_recent, load_recent
+from app.core.settings import load_settings, save_setting
+from app.io.code_exporter import export_project
+from app.io.project_loader import ProjectLoadError, load_project
+from app.io.project_saver import save_project
+from app.ui.icons import load_tk_icon
 from app.ui.palette import Palette
 from app.ui.properties_panel import PropertiesPanel
+from app.ui.toolbar import Toolbar
 from app.ui.workspace import Workspace
+
+PROJECT_FILE_TYPES = [("CTk Builder project", "*.ctkproj"), ("All files", "*.*")]
+
+MENU_BG = "#2d2d30"
+MENU_FG = "#cccccc"
+MENU_ACTIVE_BG = "#094771"
+MENU_ACTIVE_FG = "#ffffff"
+MENU_DISABLED_FG = "#6a6a6a"
+MENU_FONT = ("Segoe UI", 11)
+MENU_ICON_SIZE = 18
+
+MENU_STYLE = dict(
+    bg=MENU_BG,
+    fg=MENU_FG,
+    activebackground=MENU_ACTIVE_BG,
+    activeforeground=MENU_ACTIVE_FG,
+    disabledforeground=MENU_DISABLED_FG,
+    bd=0,
+    borderwidth=0,
+    activeborderwidth=0,
+    relief="flat",
+    font=MENU_FONT,
+)
+
+APPEARANCE_MODES = ["Light", "Dark", "System"]
+
+ABOUT_TEXT = (
+    "CTk Visual Builder\n"
+    "Phase 2\n\n"
+    "Drag-and-drop designer for CustomTkinter that exports clean Python code.\n\n"
+    "Built with:\n"
+    "  • CustomTkinter (MIT)\n"
+    "  • Lucide Icons (MIT)\n"
+    "  • Pillow\n"
+    "  • ctk-tint-color-picker"
+)
+
+GITHUB_DOCS_URL = "https://github.com/kandelucky/ctk_visual_builder/blob/main/docs/widgets/README.md"
 
 
 class MainWindow(ctk.CTk):
@@ -16,6 +68,28 @@ class MainWindow(ctk.CTk):
         self._set_centered_geometry(1280, 800)
 
         self.project = Project()
+        self._current_path: str | None = None
+
+        settings = load_settings()
+        initial_mode = settings.get("appearance_mode", "Dark")
+        if initial_mode not in APPEARANCE_MODES:
+            initial_mode = "Dark"
+        ctk.set_appearance_mode(initial_mode.lower())
+        self._appearance_var = tk.StringVar(value=initial_mode)
+
+        self._build_menubar()
+        self._bind_shortcuts()
+
+        self.toolbar = Toolbar(
+            self,
+            on_new=self._on_new,
+            on_open=self._on_open,
+            on_save=self._on_save,
+            on_preview=self._on_preview,
+            on_export=self._on_export,
+            on_theme_toggle=self._on_theme_toggle,
+        )
+        self.toolbar.pack(side="top", fill="x")
 
         self.paned = tk.PanedWindow(
             self,
@@ -26,7 +100,7 @@ class MainWindow(ctk.CTk):
             borderwidth=0,
             showhandle=False,
         )
-        self.paned.pack(fill="both", expand=True, padx=8, pady=8)
+        self.paned.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
         self.palette = Palette(self.paned, self.project)
         self.workspace = Workspace(self.paned, self.project)
@@ -35,6 +109,260 @@ class MainWindow(ctk.CTk):
         self.paned.add(self.palette, minsize=150, width=200, stretch="never")
         self.paned.add(self.workspace, minsize=400, stretch="always")
         self.paned.add(self.properties, minsize=320, width=340, stretch="never")
+
+    # ------------------------------------------------------------------
+    # Menubar
+    # ------------------------------------------------------------------
+    def _menu_icon(self, name: str):
+        icon = load_tk_icon(name, size=MENU_ICON_SIZE)
+        if icon is not None:
+            self._menu_icons.append(icon)  # prevent GC
+        return icon
+
+    def _add_cmd(self, menu: tk.Menu, label: str, command, icon: str | None = None, accelerator: str | None = None) -> None:
+        kwargs = dict(label=label, command=command)
+        if accelerator:
+            kwargs["accelerator"] = accelerator
+        img = self._menu_icon(icon) if icon else None
+        if img is not None:
+            kwargs["image"] = img
+            kwargs["compound"] = "left"
+        menu.add_command(**kwargs)
+
+    def _add_cascade(self, parent: tk.Menu, label: str, submenu: tk.Menu, icon: str | None = None) -> None:
+        kwargs = dict(label=label, menu=submenu)
+        img = self._menu_icon(icon) if icon else None
+        if img is not None:
+            kwargs["image"] = img
+            kwargs["compound"] = "left"
+        parent.add_cascade(**kwargs)
+
+    def _build_menubar(self) -> None:
+        self._menu_icons: list = []
+        menubar = tk.Menu(self, **MENU_STYLE)
+
+        # ---- File ----
+        file_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
+        self._add_cmd(file_menu, "New...", self._on_new, icon="file-plus", accelerator="Ctrl+N")
+        self._add_cmd(file_menu, "Open...", self._on_open, icon="folder-open", accelerator="Ctrl+O")
+
+        self._recent_menu = tk.Menu(file_menu, tearoff=0, **MENU_STYLE)
+        self._add_cascade(file_menu, "Recent Forms", self._recent_menu, icon="history")
+        self._rebuild_recent_menu()
+
+        file_menu.add_separator()
+        self._add_cmd(file_menu, "Save", self._on_save, icon="save", accelerator="Ctrl+S")
+        self._add_cmd(file_menu, "Save As...", self._on_save_as, icon="save", accelerator="Ctrl+Shift+S")
+        file_menu.add_separator()
+        self._add_cmd(file_menu, "Export to Python...", self._on_export, icon="file-code")
+        file_menu.add_separator()
+        self._add_cmd(file_menu, "Close", self._on_close_project, icon="x", accelerator="Ctrl+W")
+        self._add_cmd(file_menu, "Quit", self._on_quit, icon="log-out", accelerator="Ctrl+Q")
+        menubar.add_cascade(label="File", menu=file_menu)
+
+        # ---- Form ----
+        form_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
+        self._add_cmd(form_menu, "Preview", self._on_preview, icon="play", accelerator="Ctrl+R")
+        menubar.add_cascade(label="Form", menu=form_menu)
+
+        # ---- Settings ----
+        settings_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
+        appearance_menu = tk.Menu(settings_menu, tearoff=0, **MENU_STYLE)
+        for mode in APPEARANCE_MODES:
+            appearance_menu.add_radiobutton(
+                label=mode,
+                variable=self._appearance_var,
+                value=mode,
+                command=self._on_appearance_change,
+            )
+        self._add_cascade(settings_menu, "Appearance Mode", appearance_menu, icon="palette")
+        menubar.add_cascade(label="Settings", menu=settings_menu)
+
+        # ---- Help ----
+        help_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
+        self._add_cmd(help_menu, "Widget Documentation", self._on_widget_docs, icon="book-open")
+        help_menu.add_separator()
+        self._add_cmd(help_menu, "About...", self._on_about, icon="info")
+        menubar.add_cascade(label="Help", menu=help_menu)
+
+        self.config(menu=menubar)
+
+    def _bind_shortcuts(self) -> None:
+        self.bind("<Control-n>", lambda e: self._on_new())
+        self.bind("<Control-o>", lambda e: self._on_open())
+        self.bind("<Control-s>", lambda e: self._on_save())
+        self.bind("<Control-Shift-S>", lambda e: self._on_save_as())
+        self.bind("<Control-r>", lambda e: self._on_preview())
+        self.bind("<Control-w>", lambda e: self._on_close_project())
+        self.bind("<Control-q>", lambda e: self._on_quit())
+
+    def _rebuild_recent_menu(self) -> None:
+        self._recent_menu.delete(0, "end")
+        paths = load_recent()
+        if not paths:
+            self._recent_menu.add_command(label="(empty)", state="disabled")
+        else:
+            for p in paths:
+                label = Path(p).name
+                self._recent_menu.add_command(
+                    label=label,
+                    command=lambda path=p: self._open_path(path),
+                )
+        self._recent_menu.add_separator()
+        self._recent_menu.add_command(label="Clear Menu", command=self._on_clear_recent)
+
+    def _on_clear_recent(self) -> None:
+        clear_recent()
+        self._rebuild_recent_menu()
+
+    # ------------------------------------------------------------------
+    # Current-path tracking
+    # ------------------------------------------------------------------
+    def _set_current_path(self, path: str | None) -> None:
+        self._current_path = path
+        if path:
+            self.title(f"CTk Visual Builder — {Path(path).name}")
+            add_recent(path)
+            self._rebuild_recent_menu()
+        else:
+            self.title("CTk Visual Builder")
+
+    def _open_path(self, path: str) -> None:
+        if not Path(path).exists():
+            messagebox.showerror("Open failed", f"File not found:\n{path}", parent=self)
+            return
+        try:
+            load_project(self.project, path)
+        except ProjectLoadError as exc:
+            messagebox.showerror("Open failed", str(exc), parent=self)
+            return
+        except Exception:
+            log_error("load_project")
+            messagebox.showerror("Open failed", "Unexpected error — see console.", parent=self)
+            return
+        self._set_current_path(path)
+
+    # ------------------------------------------------------------------
+    # File menu commands
+    # ------------------------------------------------------------------
+    def _stub(self, name: str) -> None:
+        messagebox.showinfo("Toolbar stub", f"{name} — not implemented yet", parent=self)
+
+    def _on_new(self) -> None:
+        if self.project.root_widgets:
+            confirm = messagebox.askyesno(
+                "New project",
+                "Discard the current project and start a new one?",
+                parent=self,
+            )
+            if not confirm:
+                return
+        self.project.clear()
+        self._set_current_path(None)
+
+    def _on_open(self) -> None:
+        path = filedialog.askopenfilename(
+            parent=self,
+            title="Open project",
+            filetypes=PROJECT_FILE_TYPES,
+        )
+        if not path:
+            return
+        self._open_path(path)
+
+    def _on_save(self) -> None:
+        if self._current_path:
+            try:
+                save_project(self.project, self._current_path)
+            except OSError:
+                log_error("save_project")
+                messagebox.showerror("Save failed", "Could not write the project file.", parent=self)
+                return
+            self._set_current_path(self._current_path)
+        else:
+            self._on_save_as()
+
+    def _on_save_as(self) -> None:
+        path = filedialog.asksaveasfilename(
+            parent=self,
+            title="Save project as",
+            defaultextension=".ctkproj",
+            filetypes=PROJECT_FILE_TYPES,
+        )
+        if not path:
+            return
+        try:
+            save_project(self.project, path)
+        except OSError:
+            log_error("save_project")
+            messagebox.showerror("Save failed", "Could not write the project file.", parent=self)
+            return
+        self._set_current_path(path)
+
+    def _on_close_project(self) -> None:
+        self._on_new()
+
+    def _on_quit(self) -> None:
+        self.destroy()
+
+    def _on_preview(self) -> None:
+        if not self.project.root_widgets:
+            messagebox.showinfo(
+                "Preview",
+                "Nothing to preview — workspace is empty.",
+                parent=self,
+            )
+            return
+        tmp_dir = Path(tempfile.mkdtemp(prefix="ctk_preview_"))
+        tmp_path = tmp_dir / "preview.py"
+        try:
+            export_project(self.project, tmp_path)
+        except OSError:
+            log_error("preview export")
+            messagebox.showerror("Preview failed", "Could not generate preview file.", parent=self)
+            return
+        try:
+            subprocess.Popen([sys.executable, str(tmp_path)], cwd=str(tmp_dir))
+        except OSError:
+            log_error("preview subprocess")
+            messagebox.showerror("Preview failed", "Could not launch Python.", parent=self)
+
+    def _on_appearance_change(self) -> None:
+        mode = self._appearance_var.get()
+        ctk.set_appearance_mode(mode.lower())
+        save_setting("appearance_mode", mode)
+
+    def _on_widget_docs(self) -> None:
+        try:
+            webbrowser.open(GITHUB_DOCS_URL)
+        except Exception:
+            log_error("widget docs open")
+
+    def _on_about(self) -> None:
+        messagebox.showinfo("About CTk Visual Builder", ABOUT_TEXT, parent=self)
+
+    def _on_export(self) -> None:
+        path = filedialog.asksaveasfilename(
+            parent=self,
+            title="Export to Python",
+            defaultextension=".py",
+            filetypes=[("Python", "*.py"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            export_project(self.project, path)
+        except OSError:
+            log_error("export_project")
+            messagebox.showerror("Export failed", "Could not write the file.", parent=self)
+            return
+        messagebox.showinfo("Export", f"Saved to:\n{path}", parent=self)
+
+    def _on_theme_toggle(self) -> None:
+        current = self._appearance_var.get()
+        nxt = "Light" if current == "Dark" else "Dark"
+        self._appearance_var.set(nxt)
+        self._on_appearance_change()
 
     def _set_centered_geometry(self, desired_w: int, desired_h: int) -> None:
         self.update_idletasks()

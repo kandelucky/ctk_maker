@@ -12,6 +12,10 @@ class Project:
         self.root_widgets.append(node)
         self.event_bus.publish("widget_added", node)
 
+    def clear(self) -> None:
+        for node in list(self.root_widgets):
+            self.remove_widget(node.id)
+
     def remove_widget(self, widget_id: str) -> None:
         node = self.get_widget(widget_id)
         if node is None:

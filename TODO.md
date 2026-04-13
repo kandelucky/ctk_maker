@@ -152,20 +152,40 @@
 
 ---
 
-## Phase 2 — Toolbar + Persistence
+## Phase 2 — Toolbar + Persistence + Menubar ✅
 
-- [ ] Toolbar component at the top (icons + labels)
-- [ ] New project (clear workspace)
-- [ ] Save project → JSON file (`io/project_saver.py`)
-- [ ] Open project ← JSON file (`io/project_loader.py`)
-- [ ] Export to Python — clean .py output (`io/code_exporter.py`)
-- [ ] Preview — open generated app in a separate window
-- [ ] Light / Dark theme toggle (for the builder itself)
-- [ ] **Help (?) icon in Properties panel header** — small circle-question icon next to the widget type label that opens the widget's documentation page (e.g. `docs/widgets/ctk_button.md`) in an inline viewer or external browser. Each widget descriptor carries its own doc reference.
+- [x] Toolbar component at the top (icons + labels) — `app/ui/toolbar.py`
+- [x] New project (clear workspace) with confirm dialog
+- [x] Save project → JSON file (`app/io/project_saver.py`), `.ctkproj` format with `version: 1`
+- [x] Open project ← JSON file (`app/io/project_loader.py`) with `ProjectLoadError` + user-facing error dialogs
+- [x] Export to Python — clean .py output (`app/io/code_exporter.py`) using descriptor conventions (`_NODE_ONLY_KEYS`, `_FONT_KEYS`, image handling)
+- [x] Preview — subprocess-based, writes to tempdir, launches `python preview.py` in separate process (true preview = reality)
+- [x] Light / Dark / System theme toggle — persistent at `~/.ctk_visual_builder/settings.json`, applied on startup
+- [x] **Help (?) icon in Properties panel header** — opens `https://github.com/kandelucky/ctk_visual_builder/blob/main/docs/widgets/{slug}.md` for the selected widget type (camelCase → snake_case conversion)
+- [x] **Menubar** (File / Form / Settings / Help) with dark theme styling, Lucide icons, 11pt font
+- [x] **Recent Forms** tracking at `~/.ctk_visual_builder/recent.json` (max 10, newest first, dedup via `Path.resolve()`)
+- [x] Keyboard shortcuts: Ctrl+N/O/S/Shift+S/R/W/Q
+- [x] Current-project-path tracking (`_current_path`) — Save overwrites when known, else falls back to Save As dialog
+- [x] Save As... separate command (`Ctrl+Shift+S`)
+- [x] Widget Documentation menu item → opens GitHub docs in default browser
+- [x] About dialog with dependency list
+- [x] `app/core/recent_files.py`, `app/core/settings.py`, `app/io/` package with `project_saver`, `project_loader`, `code_exporter`
 
 ---
 
-## Phase 3 — Remaining 15 Widget Descriptors
+## Phase 2.5 — Palette / Widget Box polish ✅
+
+- [x] Qt Designer-style **Widget Box** layout — `app/ui/palette.py` rewrite
+- [x] Realtime **Filter** entry (CTkEntry with `trace_add`)
+- [x] Collapsible groups with chevron: Buttons / Inputs / Containers / Display
+- [x] Rows: `[icon] label` with Lucide icons per widget type
+- [x] Unimplemented widgets rendered as **placeholder rows** (dimmed, no click/drag) so the full CTk roadmap is visible at a glance
+- [x] Filter auto-expands all groups while active, collapses back to saved state when cleared
+- [x] Hover highlight on real (implemented) items only
+
+---
+
+## Phase 3 — Remaining 14 Widget Descriptors
 
 - [ ] CTkLabel
 - [ ] CTkFrame
@@ -181,7 +201,8 @@
 - [ ] CTkTextbox
 - [ ] CTkScrollableFrame
 - [ ] CTkTabview
-- [ ] Group widgets in palette (Containers / Inputs / Display / Indicators)
+- [ ] Enable drag from the Widget Box **placeholder rows** as each descriptor ships (they already exist, just register in `app/widgets/registry.py`)
+- [ ] Per-widget docs page under `docs/widgets/ctk_*.md` (help icon already wired to `{slug}.md`, just needs the file)
 - [ ] **Perf check**: naive `disabled_when` re-evaluation in properties_panel `_on_property_changed` iterates all props on every change. For 15 widgets × ~5 disabled_when lambdas each, measure drag-time overhead. If noticeable, switch to dep-map approach (`TrackingDict` auto-detects which properties a lambda reads, builds `{trigger_prop: [dependent_props]}` map at rebuild time, so most changes hit O(1) dict lookup instead of O(N) re-evaluation).
 
 ---
