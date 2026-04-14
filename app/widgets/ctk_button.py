@@ -48,7 +48,6 @@ class CTkButtonDescriptor(WidgetDescriptor):
         "font_italic": False,
         "font_underline": False,
         "font_overstrike": False,
-        "font_wrap": True,
         "anchor": "center",
         "text_color": "#ffffff",
         "text_color_disabled": "#a0a0a0",
@@ -77,8 +76,8 @@ class CTkButtonDescriptor(WidgetDescriptor):
 
         # --- Rectangle ---------------------------------------------------
         {"name": "corner_radius", "type": "number", "label": "",
-         "group": "Rectangle", "subgroup": "Corners",
-         "row_label": "Roundness", "min": 0,
+         "group": "Rectangle",
+         "row_label": "Corner Radius", "min": 0,
          "max": lambda p: max(
              0,
              min(int(p.get("width", 0)), int(p.get("height", 0))) // 2,
@@ -127,8 +126,6 @@ class CTkButtonDescriptor(WidgetDescriptor):
          "group": "Text", "subgroup": "Style", "row_label": "Underline"},
         {"name": "font_overstrike", "type": "boolean", "label": "",
          "group": "Text", "subgroup": "Style", "row_label": "Strike"},
-        {"name": "font_wrap", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Wrap"},
 
         {"name": "anchor", "type": "anchor", "label": "",
          "group": "Text", "row_label": "Alignment"},
@@ -142,23 +139,23 @@ class CTkButtonDescriptor(WidgetDescriptor):
         {"name": "image", "type": "image", "label": "",
          "group": "Image & Alignment", "row_label": "Image"},
         {"name": "image_color", "type": "color", "label": "",
-         "group": "Image & Alignment", "row_label": "Normal Image Color",
+         "group": "Image & Alignment", "row_label": "Normal Color",
          "disabled_when": lambda p: not p.get("image")},
         {"name": "image_color_disabled", "type": "color", "label": "",
-         "group": "Image & Alignment", "row_label": "Disabled Image Color",
+         "group": "Image & Alignment", "row_label": "Disabled Color",
          "disabled_when": lambda p: not p.get("image")},
         {"name": "image_width", "type": "number", "label": "W",
-         "group": "Image & Alignment", "subgroup": "Alignment",
-         "pair": "img_size", "row_label": "Size",
+         "group": "Image & Alignment",
+         "pair": "img_size", "row_label": "Icon Size",
          "min": 4, "max": 512,
          "disabled_when": lambda p: not p.get("image")},
         {"name": "image_height", "type": "number", "label": "H",
-         "group": "Image & Alignment", "subgroup": "Alignment",
+         "group": "Image & Alignment",
          "pair": "img_size", "min": 4, "max": 512,
          "disabled_when": lambda p: (
              not p.get("image") or bool(p.get("preserve_aspect")))},
         {"name": "compound", "type": "compound", "label": "",
-         "group": "Image & Alignment", "row_label": "Position",
+         "group": "Image & Alignment", "row_label": "Icon Side",
          "disabled_when": lambda p: not p.get("image")},
         {"name": "preserve_aspect", "type": "boolean", "label": "",
          "group": "Image & Alignment", "row_label": "Preserve Aspect",
@@ -189,7 +186,6 @@ class CTkButtonDescriptor(WidgetDescriptor):
     _FONT_KEYS = {
         "font_size", "font_bold", "font_italic",
         "font_underline", "font_overstrike", "font_autofit",
-        "font_wrap",
     }
 
     # ==================================================================

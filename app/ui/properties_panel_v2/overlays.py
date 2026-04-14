@@ -57,7 +57,7 @@ def _place_value_cell_right(
     widget.lift()
 
 
-_IMAGE_BTN_RESERVE = 100
+_IMAGE_BTN_RESERVE = 50
 
 
 # =====================================================================

@@ -55,6 +55,10 @@ class Project:
         # ("Button", "Button (1)", "Button (2)", …). Persisted with the
         # project so numbers never get reused across reloads.
         self._name_counters: dict[str, int] = {}
+        # In-memory clipboard for Ctrl+C / Ctrl+V. Each entry is a
+        # full WidgetNode.to_dict() snapshot of a copied subtree.
+        # Not persisted — lost when the app quits.
+        self.clipboard: list[dict] = []
 
     # ------------------------------------------------------------------
     # Document
@@ -327,6 +331,103 @@ class Project:
     # ------------------------------------------------------------------
     # Sibling operations
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Clipboard (Ctrl+C / Ctrl+V)
+    # ------------------------------------------------------------------
+    def copy_to_clipboard(self, ids) -> int:
+        """Snapshot the given widget subtrees into `self.clipboard`.
+
+        Iterates the tree in DFS top-down order so the clipboard
+        preserves sibling z-order. Descendants whose ancestor is also
+        in `ids` are skipped — copying a container already covers its
+        children.
+
+        Returns the number of top-level snapshots stored.
+        """
+        if not ids:
+            return 0
+        ids_set = set(ids)
+        top_level: list[WidgetNode] = []
+        for node in self.iter_all_widgets():
+            if node.id not in ids_set:
+                continue
+            ancestor = node.parent
+            is_descendant = False
+            while ancestor is not None:
+                if ancestor.id in ids_set:
+                    is_descendant = True
+                    break
+                ancestor = ancestor.parent
+            if not is_descendant:
+                top_level.append(node)
+        self.clipboard = [node.to_dict() for node in top_level]
+        return len(self.clipboard)
+
+    def paste_from_clipboard(
+        self, parent_id: str | None = None,
+    ) -> list[str]:
+        """Recreate the clipboard snapshots under `parent_id` with
+        fresh UUIDs + auto-generated names. Each top-level paste is
+        offset by (+20, +20) so it doesn't land exactly on top of the
+        original. Pasted widgets become the new selection.
+
+        Returns the list of new top-level widget ids.
+        """
+        if not self.clipboard:
+            return []
+        new_top_ids: list[str] = []
+        for data in self.clipboard:
+            root = self._clone_with_fresh_ids(data)
+            try:
+                root.properties["x"] = int(root.properties.get("x", 0)) + 20
+                root.properties["y"] = int(root.properties.get("y", 0)) + 20
+            except (TypeError, ValueError):
+                pass
+            self._paste_recursive(root, parent_id)
+            new_top_ids.append(root.id)
+        if new_top_ids:
+            if len(new_top_ids) == 1:
+                self.select_widget(new_top_ids[0])
+            else:
+                self.set_multi_selection(
+                    set(new_top_ids), primary=new_top_ids[0],
+                )
+        return new_top_ids
+
+    def _clone_with_fresh_ids(self, data: dict) -> WidgetNode:
+        """Rebuild a WidgetNode from a `to_dict` snapshot, forcing a
+        fresh UUID for every node in the subtree and clearing names
+        so `add_widget` can auto-assign new ones."""
+        node = WidgetNode(
+            widget_type=data["widget_type"],
+            properties=dict(data.get("properties", {})),
+        )
+        # node.id is already a fresh UUID from WidgetNode.__init__.
+        node.name = ""  # let add_widget auto-name
+        node.visible = bool(data.get("visible", True))
+        node.locked = bool(data.get("locked", False))
+        for child_data in data.get("children", []):
+            child = self._clone_with_fresh_ids(child_data)
+            child.parent = node
+            node.children.append(child)
+        return node
+
+    def _paste_recursive(
+        self, node: WidgetNode, parent_id: str | None,
+    ) -> None:
+        """Add `node` to the project under `parent_id`, then walk
+        descendants. Mirrors `project_loader._add_recursive`: we
+        temporarily detach children so `add_widget` only fires the
+        event for `node`, then re-add each descendant explicitly so
+        every subscriber sees them one by one."""
+        children_copy = list(node.children)
+        node.children = []
+        node.parent = None
+        self.add_widget(node, parent_id=parent_id)
+        for child in children_copy:
+            child.parent = None
+            self._paste_recursive(child, parent_id=node.id)
+
     def duplicate_widget(self, widget_id: str) -> str | None:
         node = self.get_widget(widget_id)
         if node is None:

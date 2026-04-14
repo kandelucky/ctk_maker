@@ -26,6 +26,7 @@ from app.core.widget_node import WidgetNode
 from app.ui.dialogs import RenameDialog
 from app.ui.icons import load_icon
 from app.ui.selection_controller import SelectionController
+from app.ui.zoom_controller import ZoomController
 from app.widgets.registry import get_descriptor
 
 # ---- Drag + canvas ----------------------------------------------------------
@@ -39,20 +40,9 @@ GRID_DOT_COLOR = "#555555"
 GRID_TAG = "grid_dot"
 DOC_TAG = "document_bg"
 
-# ---- Zoom -------------------------------------------------------------------
-ZOOM_LEVELS = (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0)
-ZOOM_MIN = ZOOM_LEVELS[0]
-ZOOM_MAX = ZOOM_LEVELS[-1]
-
 # ---- Bottom status bar ------------------------------------------------------
 STATUS_BAR_BG = "#252526"
 STATUS_BAR_HEIGHT = 26
-ZOOM_WARNING_FG = "#d4a340"
-ZOOM_WARNING_TEXT = "      ⚠  Not actual size — set 100% for real preview"
-ZOOM_MENU_LABELS = [
-    "25%", "50%", "75%", "100%", "125%", "150%", "200%", "300%", "400%",
-    "Fit to window", "Actual size",
-]
 
 # ---- Top tool bar -----------------------------------------------------------
 TOOL_BAR_BG = "#252526"
@@ -89,8 +79,8 @@ class Workspace(ctk.CTkFrame):
 
         self._init_state()
         self._build_tool_bar()
-        self._build_status_bar()
         self._build_canvas()
+        self._build_status_bar()
         self._subscribe_events()
 
         self.after(0, self._redraw_document)
@@ -100,11 +90,7 @@ class Workspace(ctk.CTkFrame):
     # __init__ helpers
     # ------------------------------------------------------------------
     def _init_state(self) -> None:
-        self._zoom: float = 1.0
-        self._zoom_menu: ctk.CTkOptionMenu | None = None
-        self._zoom_menu_var: tk.StringVar | None = None
-        self._zoom_warning: ctk.CTkLabel | None = None
-
+        self.zoom: ZoomController | None = None  # set in _build_canvas
         self._tool: str = TOOL_SELECT
         self._tool_buttons: dict[str, ctk.CTkButton] = {}
 
@@ -145,9 +131,15 @@ class Workspace(ctk.CTkFrame):
         self.vscroll.grid(row=0, column=1, sticky="ns", padx=(2, 0))
         self.hscroll.grid(row=1, column=0, sticky="ew", pady=(2, 0))
 
+        self.zoom = ZoomController(
+            self.canvas, self.widget_views, self.project,
+            document_padding=DOCUMENT_PADDING,
+            on_zoom_changed=self._after_zoom_changed,
+        )
+
         self.selection = SelectionController(
             self.canvas, self.project, self.widget_views,
-            zoom_provider=lambda: self._zoom,
+            zoom_provider=lambda: self.zoom.value,
         )
 
         self.canvas.bind("<Button-1>", self._on_canvas_click)
@@ -157,7 +149,15 @@ class Workspace(ctk.CTkFrame):
         self.canvas.bind("<B2-Motion>", self._on_middle_motion)
         self.canvas.bind("<ButtonRelease-2>", self._on_middle_release)
         self.canvas.bind("<Configure>", self._on_canvas_configure)
-        self.canvas.bind("<Control-MouseWheel>", self._on_ctrl_wheel)
+        self.canvas.bind("<Control-MouseWheel>", self.zoom.handle_ctrl_wheel)
+
+    def _after_zoom_changed(self) -> None:
+        """Callback invoked by ZoomController after a zoom update +
+        apply_all. Redraws the document rect / grid and refreshes
+        selection chrome around the currently selected widget."""
+        self._redraw_document()
+        if hasattr(self, "selection"):
+            self.selection.update()
 
     def _subscribe_events(self) -> None:
         bus = self.project.event_bus
@@ -201,19 +201,6 @@ class Workspace(ctk.CTkFrame):
     # ==================================================================
     # Document rectangle + coordinate helpers
     # ==================================================================
-    def _logical_to_canvas(self, lx: int, ly: int) -> tuple[int, int]:
-        return (
-            DOCUMENT_PADDING + int(lx * self._zoom),
-            DOCUMENT_PADDING + int(ly * self._zoom),
-        )
-
-    def _canvas_to_logical(self, cx: float, cy: float) -> tuple[int, int]:
-        zoom = self._zoom or 1.0
-        return (
-            int((cx - DOCUMENT_PADDING) / zoom),
-            int((cy - DOCUMENT_PADDING) / zoom),
-        )
-
     def _screen_to_canvas(self, x_root: int, y_root: int) -> tuple[float, float]:
         vx = x_root - self.canvas.winfo_rootx()
         vy = y_root - self.canvas.winfo_rooty()
@@ -274,8 +261,9 @@ class Workspace(ctk.CTkFrame):
 
     def _redraw_document(self) -> None:
         self.canvas.delete(DOC_TAG)
-        dw = int(self.project.document_width * self._zoom)
-        dh = int(self.project.document_height * self._zoom)
+        zoom = self.zoom.value
+        dw = int(self.project.document_width * zoom)
+        dh = int(self.project.document_height * zoom)
         pad = DOCUMENT_PADDING
         x1, y1 = pad, pad
         x2, y2 = pad + dw, pad + dh
@@ -293,11 +281,12 @@ class Workspace(ctk.CTkFrame):
     def _draw_grid(self) -> None:
         self._grid_redraw_after = None
         self.canvas.delete(GRID_TAG)
-        dw = int(self.project.document_width * self._zoom)
-        dh = int(self.project.document_height * self._zoom)
+        zoom = self.zoom.value
+        dw = int(self.project.document_width * zoom)
+        dh = int(self.project.document_height * zoom)
         if dw <= 0 or dh <= 0:
             return
-        spacing = max(4, int(GRID_SPACING * self._zoom))
+        spacing = max(4, int(GRID_SPACING * zoom))
         pad = DOCUMENT_PADDING
         for x in range(pad, pad + dw + 1, spacing):
             for y in range(pad, pad + dh + 1, spacing):
@@ -317,129 +306,7 @@ class Workspace(ctk.CTkFrame):
 
     def _on_document_resized(self, *_args) -> None:
         self._redraw_document()
-        self._apply_zoom_all()
-
-    # ==================================================================
-    # Zoom
-    # ==================================================================
-    def _set_zoom(self, new_zoom: float) -> None:
-        new_zoom = max(ZOOM_MIN, min(ZOOM_MAX, new_zoom))
-        if abs(new_zoom - self._zoom) < 0.001:
-            return
-        self._zoom = new_zoom
-        self._apply_zoom_all()
-        self._refresh_zoom_readout()
-
-    def _zoom_step(self, delta: int) -> None:
-        try:
-            idx = ZOOM_LEVELS.index(self._zoom)
-        except ValueError:
-            idx = min(
-                range(len(ZOOM_LEVELS)),
-                key=lambda i: abs(ZOOM_LEVELS[i] - self._zoom),
-            )
-        new_idx = max(0, min(len(ZOOM_LEVELS) - 1, idx + delta))
-        self._set_zoom(ZOOM_LEVELS[new_idx])
-
-    def _set_zoom_fit_window(self) -> None:
-        self.canvas.update_idletasks()
-        viewport_w = self.canvas.winfo_width()
-        viewport_h = self.canvas.winfo_height()
-        if viewport_w <= 1 or viewport_h <= 1:
-            return
-        doc_w = self.project.document_width
-        doc_h = self.project.document_height
-        if doc_w <= 0 or doc_h <= 0:
-            return
-        pad2 = DOCUMENT_PADDING * 2
-        zoom_w = (viewport_w - pad2) / doc_w
-        zoom_h = (viewport_h - pad2) / doc_h
-        zoom = max(ZOOM_MIN, min(ZOOM_MAX, min(zoom_w, zoom_h)))
-        self._set_zoom(zoom)
-
-    def _apply_zoom_all(self) -> None:
-        for nid, (widget, window_id) in self.widget_views.items():
-            node = self.project.get_widget(nid)
-            if node is None:
-                continue
-            self._apply_zoom_to_widget(widget, window_id, node.properties)
-        self._redraw_document()
-        self.selection.update()
-
-    def _apply_zoom_to_widget(self, widget, window_id, properties: dict) -> None:
-        try:
-            lx = int(properties.get("x", 0))
-            ly = int(properties.get("y", 0))
-        except (TypeError, ValueError):
-            lx, ly = 0, 0
-        if window_id is not None:
-            # Canvas child — position via canvas.coords in doc coords
-            cx, cy = self._logical_to_canvas(lx, ly)
-            self.canvas.coords(window_id, cx, cy)
-        else:
-            # Nested child — position via place() in local-parent coords.
-            # Guard: only re-place if the widget is currently managed
-            # by `place`. A widget that was hidden via `place_forget`
-            # returns an empty manager string, and calling
-            # `place_configure` on it would un-hide it unexpectedly.
-            try:
-                if widget.winfo_manager() == "place":
-                    widget.place_configure(
-                        x=int(lx * self._zoom),
-                        y=int(ly * self._zoom),
-                    )
-            except tk.TclError:
-                pass
-        try:
-            lw = int(properties.get("width", 0))
-            lh = int(properties.get("height", 0))
-        except (TypeError, ValueError):
-            return
-        if lw > 0 and lh > 0:
-            try:
-                widget.configure(
-                    width=max(1, int(lw * self._zoom)),
-                    height=max(1, int(lh * self._zoom)),
-                )
-            except tk.TclError:
-                pass
-        scaled_font = self._build_scaled_font(properties)
-        if scaled_font is not None:
-            try:
-                widget.configure(font=scaled_font)
-            except tk.TclError:
-                pass
-
-    def _build_scaled_font(self, properties: dict):
-        """Return a CTkFont whose size is `font_size * zoom` (or None).
-
-        Only applies to widgets whose descriptor carries a logical
-        `font_size` property. Leaves widgets without text (e.g.
-        CTkFrame) untouched.
-        """
-        if "font_size" not in properties:
-            return None
-        try:
-            logical_size = int(properties.get("font_size") or 13)
-        except (TypeError, ValueError):
-            return None
-        scaled = max(6, int(round(logical_size * self._zoom)))
-        weight = "bold" if properties.get("font_bold") else "normal"
-        slant = "italic" if properties.get("font_italic") else "roman"
-        underline = bool(properties.get("font_underline"))
-        overstrike = bool(properties.get("font_overstrike"))
-        try:
-            return ctk.CTkFont(
-                size=scaled, weight=weight, slant=slant,
-                underline=underline, overstrike=overstrike,
-            )
-        except Exception:
-            log_error("workspace._build_scaled_font")
-            return None
-
-    def _on_ctrl_wheel(self, event) -> str:
-        self._zoom_step(1 if event.delta > 0 else -1)
-        return "break"
+        self.zoom.apply_all()
 
     # ==================================================================
     # Top tool bar (Select / Hand)
@@ -495,7 +362,7 @@ class Workspace(ctk.CTkFrame):
             pass
 
     # ==================================================================
-    # Bottom status bar (zoom controls)
+    # Bottom status bar (zoom controls mounted by ZoomController)
     # ==================================================================
     def _build_status_bar(self) -> None:
         bar = ctk.CTkFrame(
@@ -504,72 +371,7 @@ class Workspace(ctk.CTkFrame):
         )
         bar.pack(side="bottom", fill="x")
         bar.pack_propagate(False)
-
-        minus_icon = load_icon("minus", size=14)
-        plus_icon = load_icon("plus", size=14)
-
-        ctk.CTkButton(
-            bar, text="" if minus_icon else "−",
-            image=minus_icon, width=24, height=20,
-            corner_radius=3,
-            fg_color="transparent", hover_color="#3a3a3a",
-            command=lambda: self._zoom_step(-1),
-        ).pack(side="left", padx=(8, 2), pady=3)
-
-        ctk.CTkButton(
-            bar, text="" if plus_icon else "+",
-            image=plus_icon, width=24, height=20,
-            corner_radius=3,
-            fg_color="transparent", hover_color="#3a3a3a",
-            command=lambda: self._zoom_step(1),
-        ).pack(side="left", padx=2, pady=3)
-
-        self._zoom_menu_var = tk.StringVar(value="100%")
-        self._zoom_menu = ctk.CTkOptionMenu(
-            bar,
-            values=ZOOM_MENU_LABELS,
-            variable=self._zoom_menu_var,
-            width=120, height=20,
-            font=("Segoe UI", 10),
-            dropdown_font=("Segoe UI", 10),
-            fg_color="#2d2d2d", button_color="#2d2d2d",
-            button_hover_color="#3a3a3a", corner_radius=3,
-            command=self._on_zoom_menu_select,
-        )
-        self._zoom_menu.pack(side="left", padx=(4, 8), pady=3)
-
-        self._zoom_warning = ctk.CTkLabel(
-            bar, text="",
-            font=("Segoe UI", 10), text_color=ZOOM_WARNING_FG,
-            anchor="w",
-        )
-        self._zoom_warning.pack(side="left", padx=(4, 0), pady=3)
-
-    def _refresh_zoom_readout(self) -> None:
-        if self._zoom_menu_var is None:
-            return
-        pct = round(self._zoom * 100, 1)
-        label = f"{int(pct)}%" if pct == int(pct) else f"{pct}%"
-        self._zoom_menu_var.set(label)
-        if self._zoom_warning is not None:
-            if abs(self._zoom - 1.0) > 0.001:
-                self._zoom_warning.configure(text=ZOOM_WARNING_TEXT)
-            else:
-                self._zoom_warning.configure(text="")
-
-    def _on_zoom_menu_select(self, label: str) -> None:
-        if label == "Actual size":
-            self._set_zoom(1.0)
-            return
-        if label == "Fit to window":
-            self._set_zoom_fit_window()
-            return
-        if label.endswith("%"):
-            try:
-                pct = float(label[:-1])
-            except ValueError:
-                return
-            self._set_zoom(pct / 100.0)
+        self.zoom.mount_controls(bar)
 
     # ==================================================================
     # Hand-tool pan + middle-mouse pan
@@ -647,13 +449,13 @@ class Workspace(ctk.CTkFrame):
     def _zoom_keyboard(self, delta: int) -> str | None:
         if self._input_focused():
             return None
-        self._zoom_step(delta)
+        self.zoom.step(delta)
         return "break"
 
     def _zoom_reset(self) -> str | None:
         if self._input_focused():
             return None
-        self._set_zoom(1.0)
+        self.zoom.reset()
         return "break"
 
     def _on_arrow(self, dx: int, dy: int, fast: bool) -> str | None:
@@ -732,7 +534,7 @@ class Workspace(ctk.CTkFrame):
         lx = int(node.properties.get("x", 0))
         ly = int(node.properties.get("y", 0))
         if parent_node is None:
-            cx, cy = self._logical_to_canvas(lx, ly)
+            cx, cy = self.zoom.logical_to_canvas(lx, ly)
             window_id = self.canvas.create_window(
                 cx, cy, anchor="nw", window=widget,
             )
@@ -740,11 +542,11 @@ class Workspace(ctk.CTkFrame):
             # nested: place inside parent widget, local coords scaled
             # by zoom. No canvas window id.
             widget.place(
-                x=int(lx * self._zoom),
-                y=int(ly * self._zoom),
+                x=int(lx * self.zoom.value),
+                y=int(ly * self.zoom.value),
             )
             window_id = None
-        self._apply_zoom_to_widget(widget, window_id, node.properties)
+        self.zoom.apply_to_widget(widget, window_id, node.properties)
         self.widget_views[node.id] = (widget, window_id)
         self._bind_widget_events(widget, node.id)
         if not node.visible:
@@ -796,15 +598,15 @@ class Workspace(ctk.CTkFrame):
                 lx = int(node.properties.get("x", 0))
                 ly = int(node.properties.get("y", 0))
                 widget.place(
-                    x=int(lx * self._zoom),
-                    y=int(ly * self._zoom),
+                    x=int(lx * self.zoom.value),
+                    y=int(ly * self.zoom.value),
                 )
                 lw = int(node.properties.get("width", 0))
                 lh = int(node.properties.get("height", 0))
                 if lw > 0 and lh > 0:
                     widget.configure(
-                        width=max(1, int(lw * self._zoom)),
-                        height=max(1, int(lh * self._zoom)),
+                        width=max(1, int(lw * self.zoom.value)),
+                        height=max(1, int(lh * self.zoom.value)),
                     )
             except (TypeError, ValueError, tk.TclError):
                 pass
@@ -911,12 +713,12 @@ class Workspace(ctk.CTkFrame):
                 x = int(node.properties.get("x", 0))
                 y = int(node.properties.get("y", 0))
                 if window_id is not None:
-                    cx, cy = self._logical_to_canvas(x, y)
+                    cx, cy = self.zoom.logical_to_canvas(x, y)
                     self.canvas.coords(window_id, cx, cy)
                 elif widget.winfo_manager() == "place":
                     widget.place_configure(
-                        x=int(x * self._zoom),
-                        y=int(y * self._zoom),
+                        x=int(x * self.zoom.value),
+                        y=int(y * self.zoom.value),
                     )
             except Exception:
                 log_error("workspace._on_property_changed x/y coords")
@@ -945,7 +747,7 @@ class Workspace(ctk.CTkFrame):
                 transformed = descriptor.transform_properties(node.properties)
                 if transformed:
                     widget.configure(**transformed)
-                self._apply_zoom_to_widget(widget, window_id, node.properties)
+                self.zoom.apply_to_widget(widget, window_id, node.properties)
             else:
                 widget.configure(**{prop_name: value})
         except Exception:
@@ -980,14 +782,14 @@ class Workspace(ctk.CTkFrame):
         properties = dict(descriptor.default_properties)
         if container_node is None:
             # Top-level drop on the canvas document.
-            lx, ly = self._canvas_to_logical(cx, cy)
+            lx, ly = self.zoom.canvas_to_logical(cx, cy)
             properties["x"] = max(0, lx)
             properties["y"] = max(0, ly)
             parent_id = None
         else:
             # Nested drop — coords relative to the container widget.
             container_widget, _ = self.widget_views[container_node.id]
-            zoom = self._zoom or 1.0
+            zoom = self.zoom.value or 1.0
             rel_x = (x_root - container_widget.winfo_rootx()) / zoom
             rel_y = (y_root - container_widget.winfo_rooty()) / zoom
             properties["x"] = max(0, int(rel_x))
@@ -1023,6 +825,12 @@ class Workspace(ctk.CTkFrame):
         widget.bind("<Button-2>", self._on_middle_press, add="+")
         widget.bind("<B2-Motion>", self._on_middle_motion, add="+")
         widget.bind("<ButtonRelease-2>", self._on_middle_release, add="+")
+        # Ctrl+wheel forwards to ZoomController so zoom works even
+        # when the pointer happens to hover a widget instead of empty
+        # canvas area.
+        widget.bind(
+            "<Control-MouseWheel>", self.zoom.handle_ctrl_wheel, add="+",
+        )
         widget.bind(
             "<Button-3>",
             lambda e, n=nid: self._on_widget_right_click(e, n), add="+",
@@ -1086,7 +894,7 @@ class Workspace(ctk.CTkFrame):
             if abs(dx_root) < DRAG_THRESHOLD and abs(dy_root) < DRAG_THRESHOLD:
                 return
             self._drag["moved"] = True
-        zoom = self._zoom or 1.0
+        zoom = self.zoom.value or 1.0
         new_x = self._drag["start_x"] + int(dx_root / zoom)
         new_y = self._drag["start_y"] + int(dy_root / zoom)
         self.project.update_property(nid, "x", new_x)
@@ -1121,7 +929,7 @@ class Workspace(ctk.CTkFrame):
             return  # same parent — drag was in-place
         # Compute the widget's new logical x/y in the target's coord space.
         widget, _ = self.widget_views[nid]
-        zoom = self._zoom or 1.0
+        zoom = self.zoom.value or 1.0
         if target is None:
             # Back to top-level — use canvas doc coords.
             rx = widget.winfo_rootx() - self.canvas.winfo_rootx()

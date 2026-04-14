@@ -61,10 +61,11 @@ MENU_STYLE = dict(
 
 
 # Style bool rows that contribute to the "Style" subgroup preview.
+# The preview renders compact single-letter initials; the individual
+# row labels (Bold / Italic / ...) come from the widget schema.
 STYLE_BOOL_NAMES = {
-    "font_bold": "Bold",
-    "font_italic": "Italic",
-    "font_underline": "Underline",
-    "font_overstrike": "Strike",
-    "font_wrap": "Wrap",
+    "font_bold": "B",
+    "font_italic": "I",
+    "font_underline": "U",
+    "font_overstrike": "S",
 }

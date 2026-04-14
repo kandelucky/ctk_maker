@@ -32,8 +32,9 @@ class ImageEditor(Editor):
 
         btn_frame = tk.Frame(panel.tree, bg=TREE_BG)
         open_btn = tk.Label(
-            btn_frame, text="open", bg=VALUE_BG, fg="#cccccc",
-            font=("Segoe UI", 10), padx=8, cursor="hand2",
+            btn_frame, text="⋯", bg=TREE_BG, fg="#aaaaaa",
+            font=("Segoe UI", 14, "bold"),
+            padx=4, cursor="hand2",
         )
         open_btn.pack(side="left", padx=(0, 2))
         open_btn.bind(
@@ -41,8 +42,9 @@ class ImageEditor(Editor):
             lambda _e, p=pname: panel._pick_image(p),
         )
         clear_btn = tk.Label(
-            btn_frame, text="clear", bg=VALUE_BG, fg="#cccccc",
-            font=("Segoe UI", 10), padx=8, cursor="hand2",
+            btn_frame, text="✕", bg=TREE_BG, fg="#aaaaaa",
+            font=("Segoe UI", 11, "bold"),
+            padx=4, cursor="hand2",
         )
         clear_btn.pack(side="left")
         clear_btn.bind(

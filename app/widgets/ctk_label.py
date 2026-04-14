@@ -74,16 +74,18 @@ class CTkLabelDescriptor(WidgetDescriptor):
          "group": "Text", "subgroup": "Style", "row_label": "Underline"},
         {"name": "font_overstrike", "type": "boolean", "label": "",
          "group": "Text", "subgroup": "Style", "row_label": "Strike"},
-        {"name": "font_wrap", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Wrap"},
 
         {"name": "anchor", "type": "anchor", "label": "",
          "group": "Text", "row_label": "Anchor"},
         {"name": "justify", "type": "justify", "label": "",
-         "group": "Text", "row_label": "Justify"},
+         "group": "Text", "row_label": "Line Align"},
+
+        {"name": "font_wrap", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Wrap", "row_label": "Enabled"},
         {"name": "wraplength", "type": "number", "label": "",
-         "group": "Text", "row_label": "Wrap Length",
-         "min": 0, "max": 2000},
+         "group": "Text", "subgroup": "Wrap", "row_label": "Length",
+         "min": 0, "max": 2000,
+         "disabled_when": lambda p: not p.get("font_wrap")},
 
         {"name": "text_color", "type": "color", "label": "",
          "group": "Text", "row_label": "Normal Text Color"},

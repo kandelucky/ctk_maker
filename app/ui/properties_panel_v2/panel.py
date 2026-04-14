@@ -55,6 +55,7 @@ from .constants import (
     TYPE_LABEL_FG,
     VALUE_BG,
 )
+from .drag_scrub import DragScrubController
 from .editors import get_editor
 from .format_utils import (
     coerce_value,
@@ -288,6 +289,7 @@ class PropertiesPanelV2(ctk.CTkFrame):
         self.tree.bind("<FocusOut>", self._on_tree_focus_out, add="+")
 
         self.overlays = OverlayRegistry(self.tree)
+        self._drag_scrub = DragScrubController(self)
 
     def _build_style(self) -> None:
         style = ttk.Style(self)
@@ -340,6 +342,10 @@ class PropertiesPanelV2(ctk.CTkFrame):
         sel = self.tree.selection()
         if sel:
             self.tree.selection_remove(*sel)
+        try:
+            self.tree.focus("")
+        except tk.TclError:
+            pass
 
     # ==================================================================
     # Event bus handlers
@@ -347,6 +353,13 @@ class PropertiesPanelV2(ctk.CTkFrame):
     def _on_selection(self, widget_id: str | None) -> None:
         self.current_id = widget_id
         self._rebuild()
+        # Release keyboard focus so arrow keys nudge the newly selected
+        # widget in the canvas instead of moving the tree cursor.
+        try:
+            self.tree.focus("")
+        except tk.TclError:
+            pass
+        self.winfo_toplevel().focus_set()
 
     def _on_property_changed(
         self, widget_id: str, prop_name: str, value,
@@ -633,11 +646,17 @@ class PropertiesPanelV2(ctk.CTkFrame):
     ) -> None:
         pname = prop["name"]
         ptype = prop["type"]
-        label = (
-            prop.get("row_label")
-            or prop.get("label")
-            or pname
-        )
+        # For paired props (x/y, width/height), the `row_label` belongs
+        # to the virtual parent row — children show their individual
+        # `label` (X/Y, W/H) instead.
+        if prop.get("pair"):
+            label = prop.get("label") or pname
+        else:
+            label = (
+                prop.get("row_label")
+                or prop.get("label")
+                or pname
+            )
         value = properties.get(pname)
         iid = f"p:{pname}"
         self._prop_iids[pname] = iid
@@ -846,6 +865,11 @@ class PropertiesPanelV2(ctk.CTkFrame):
         region = self.tree.identify_region(event.x, event.y)
         if region == "nothing":
             self.tree.selection_remove(*self.tree.selection())
+            try:
+                self.tree.focus("")
+            except tk.TclError:
+                pass
+            self.winfo_toplevel().focus_set()
             return
         if region != "cell":
             return

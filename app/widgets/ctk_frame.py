@@ -49,8 +49,8 @@ class CTkFrameDescriptor(WidgetDescriptor):
 
         # --- Rectangle ---------------------------------------------------
         {"name": "corner_radius", "type": "number", "label": "",
-         "group": "Rectangle", "subgroup": "Corners",
-         "row_label": "Roundness", "min": 0,
+         "group": "Rectangle",
+         "row_label": "Corner Radius", "min": 0,
          "max": lambda p: max(
              0,
              min(int(p.get("width", 0)), int(p.get("height", 0))) // 2,

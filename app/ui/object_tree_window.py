@@ -145,6 +145,21 @@ class ObjectTreeWindow(ctk.CTkToplevel):
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.bind("<Escape>", lambda _e: self.project.select_widget(None))
+        # Copy / paste — works on the full multi-selection. Skipped
+        # when a text entry (rename dialog, search box) has focus so
+        # Ctrl+C / Ctrl+V keep their normal text-editing meaning.
+        # Latin keysym bindings (standard English keyboard layout):
+        self.bind("<Control-c>", self._on_copy_shortcut)
+        self.bind("<Control-C>", self._on_copy_shortcut)
+        self.bind("<Control-v>", self._on_paste_shortcut)
+        self.bind("<Control-V>", self._on_paste_shortcut)
+        # Non-Latin layout fallback (Georgian, Russian, ...): MainWindow's
+        # bind_all("<Control-KeyPress>") routes by hardware keycode and
+        # emits <<Copy>>/<<Paste>> virtual events on the focused widget.
+        # Catch them at the toplevel so our tree handlers run instead
+        # of the default text-editing no-op.
+        self.bind("<<Copy>>", self._on_copy_shortcut)
+        self.bind("<<Paste>>", self._on_paste_shortcut)
         self.refresh()
         self.after(100, self._center_on_parent)
         self.after(150, self._raise_above_parent)
@@ -935,6 +950,45 @@ class ObjectTreeWindow(ctk.CTkToplevel):
         dialog = RenameDialog(self, node.name)
         if dialog.result:
             self.project.rename_widget(widget_id, dialog.result)
+
+    # ------------------------------------------------------------------
+    # Copy / paste shortcuts
+    # ------------------------------------------------------------------
+    def _on_copy_shortcut(self, _event=None) -> str | None:
+        if isinstance(self.focus_get(), (tk.Entry, tk.Text)):
+            return None  # let the entry handle its own Ctrl+C
+        ids = self.project.selected_ids
+        if not ids:
+            return "break"
+        self.project.copy_to_clipboard(ids)
+        return "break"
+
+    def _on_paste_shortcut(self, _event=None) -> str | None:
+        if isinstance(self.focus_get(), (tk.Entry, tk.Text)):
+            return None
+        if not self.project.clipboard:
+            return "break"
+        parent_id = self._paste_target_parent_id()
+        self.project.paste_from_clipboard(parent_id=parent_id)
+        return "break"
+
+    def _paste_target_parent_id(self) -> str | None:
+        """Where should the pasted widgets land?
+
+        - If a container widget is currently selected → inside it
+        - If a leaf widget is selected → as a sibling (same parent)
+        - If nothing is selected → top level
+        """
+        primary = self.project.selected_id
+        if primary is None:
+            return None
+        primary_node = self.project.get_widget(primary)
+        if primary_node is None:
+            return None
+        descriptor = get_descriptor(primary_node.widget_type)
+        if descriptor is not None and getattr(descriptor, "is_container", False):
+            return primary
+        return primary_node.parent.id if primary_node.parent is not None else None
 
     def _delete_widget(self, widget_id: str) -> None:
         # If the clicked row is part of a multi-selection, delete all
