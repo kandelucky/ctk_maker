@@ -186,15 +186,14 @@ class PropertiesPanelV2(ctk.CTkFrame):
         self._name_var.trace_add("write", self._on_name_var_write)
 
     def _open_widget_docs(self) -> None:
-        # Best-effort: open the per-widget doc if we have a selection.
+        # Best-effort: open the widget's wiki page if we have a selection.
         import webbrowser
         descriptor = self._current_descriptor()
         if descriptor is None:
             return
-        slug = descriptor.type_name.lower().replace("ctk", "ctk_")
         url = (
             "https://github.com/kandelucky/ctk_visual_builder/"
-            f"blob/main/docs/widgets/{slug}.md"
+            f"wiki/{descriptor.type_name}"
         )
         try:
             webbrowser.open(url)

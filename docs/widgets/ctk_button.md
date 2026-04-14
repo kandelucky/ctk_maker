@@ -17,15 +17,19 @@ Wraps [`customtkinter.CTkButton`](https://customtkinter.tomschimansky.com/docume
 
 | Row | Property | Default | Notes |
 |---|---|---|---|
-| Corners › Roundness | `corner_radius` | 6 | Max = `min(w, h) // 2` |
-| Border › Thickness | `border_width` | 0 | |
-| Border › Color | `border_color` | `#565b5e` | Disabled when thickness is 0 |
+| Corner Radius | `corner_radius` | 6 | Max = `min(w, h) // 2` |
+| Border › Enabled | `border_enabled` | False | Master toggle for the border |
+| Border › Thickness | `border_width` | 1 | Disabled when Enabled is off |
+| Border › Color | `border_color` | `#565b5e` | Disabled when Enabled is off |
 
-## State
+The Border subgroup preview shows **active** / **not active** based on
+the Enabled toggle.
 
-| Row | Property | Default |
-|---|---|---|
-| Disabled | `state_disabled` | False |
+## Button Interaction
+
+| Row | Property | Default | Notes |
+|---|---|---|---|
+| Interactable | `button_enabled` | True | Off → CTk `state="disabled"` |
 
 ## Main Colors
 
@@ -38,41 +42,52 @@ CTk reuses `hover_color` for the pressed state.
 
 ## Text
 
-**Label** — `text` (multiline), default `"CTkButton"`. Leave empty for an
-icon-only button.
+**Label** — `text` (multiline), default `"CTkButton"`. Click the pencil
+icon to open the full multi-line editor. Leave empty for an icon-only
+button.
 
-### Style
+### Size
 
 | Row | Property | Default | Notes |
 |---|---|---|---|
-| Size | `font_size` | 13 | 6–96 |
+| Size | `font_size` | 13 | 6–96; disabled while Best Fit is on |
 | Best Fit | `font_autofit` | False | Auto-sizes to fit `w × h` |
-| Bold / Italic | `font_bold` / `font_italic` | False | |
-| Underline / Strike | `font_underline` / `font_overstrike` | False | |
+
+### Style
+
+| Row | Property | Default |
+|---|---|---|
+| Bold | `font_bold` | False |
+| Italic | `font_italic` | False |
+| Underline | `font_underline` | False |
+| Strike | `font_overstrike` | False |
+
+The Style subgroup header shows a compact preview: **B I U S** with
+active styles highlighted.
 
 ### Alignment
 
 | Row | Property | Default | Values |
 |---|---|---|---|
-| Align | `anchor` | `center` | `nw`, `n`, `ne`, `w`, `center`, `e`, `sw`, `s`, `se` |
+| Alignment | `anchor` | `center` | `nw`, `n`, `ne`, `w`, `center`, `e`, `sw`, `s`, `se` |
 
 ### Color
 
 | Row | Property | Default |
 |---|---|---|
-| Normal | `text_color` | `#ffffff` |
-| Disabled | `text_color_disabled` | `#a0a0a0` |
+| Normal Text Color | `text_color` | `#ffffff` |
+| Disabled Text Color | `text_color_disabled` | `#a0a0a0` |
 
 ## Image & Alignment
 
 | Row | Property | Default | Notes |
 |---|---|---|---|
-| Image | `image` | None | Any image PIL can open |
-| Color → Normal | `image_color` | None | Icon tint. None = original colors |
-| Color → Disabled | `image_color_disabled` | None | Tint when `state_disabled` is on; falls back to Normal |
-| Alignment → Size W / H | `image_width` / `image_height` | 20 / 20 | 4–512 |
-| Alignment → Position | `compound` | `left` | `top`, `left`, `right`, `bottom` |
-| Alignment → Preserve Aspect | `preserve_aspect` | False | When on, H is derived from W × native aspect |
+| Image | `image` | None | Click ⋯ to pick a file, ✕ to clear. Any format PIL can open |
+| Normal Color | `image_color` | None | Icon tint. None = original colors |
+| Disabled Color | `image_color_disabled` | None | Tint while `button_enabled` is off; falls back to Normal |
+| Icon Size W / H | `image_width` / `image_height` | 20 / 20 | 4–512; H disabled when Preserve Aspect is on |
+| Icon Side | `compound` | `left` | `top`, `left`, `right`, `bottom` |
+| Preserve Aspect | `preserve_aspect` | False | When on, H is derived from W × native aspect |
 
-The Color swatches replace the image's RGB via PIL while preserving
-alpha — best suited for monochrome icons (e.g. Lucide).
+The Normal / Disabled color swatches replace the image's RGB via PIL
+while preserving alpha — best suited for monochrome icons (e.g. Lucide).
