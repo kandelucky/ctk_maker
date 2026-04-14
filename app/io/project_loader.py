@@ -67,9 +67,37 @@ def load_project(project: Project, path: str | Path) -> None:
 
     _replace_widgets(project, nodes)
 
+    # Restore monotonic name counters AFTER widgets are added — otherwise
+    # _replace_widgets calling add_widget would auto-generate fresh names
+    # and double-count.
+    counters = data.get("name_counters")
+    if isinstance(counters, dict):
+        project._name_counters = {
+            str(k): int(v) for k, v in counters.items()
+            if isinstance(v, (int, float))
+        }
+
 
 def _replace_widgets(project: Project, new_nodes: list[WidgetNode]) -> None:
     for existing in list(project.root_widgets):
         project.remove_widget(existing.id)
     for node in new_nodes:
-        project.add_widget(node)
+        _add_recursive(project, node, parent_id=None)
+
+
+def _add_recursive(
+    project: Project, node: WidgetNode, parent_id: str | None,
+) -> None:
+    """Add `node` to `project` (via event-emitting `add_widget`), then
+    recursively add its descendants. Walks the subtree that
+    `WidgetNode.from_dict` already stitched together.
+    """
+    # Detach children so add_widget doesn't treat them as already linked;
+    # we re-add them one by one below so each fires its own event.
+    children_copy = list(node.children)
+    node.children = []
+    node.parent = None
+    project.add_widget(node, parent_id=parent_id)
+    for child in children_copy:
+        child.parent = None
+        _add_recursive(project, child, parent_id=node.id)

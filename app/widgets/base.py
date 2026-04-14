@@ -3,6 +3,7 @@ class WidgetDescriptor:
     display_name: str = ""
     default_properties: dict = {}
     property_schema: list[dict] = []
+    is_container: bool = False
 
     @classmethod
     def transform_properties(cls, properties: dict) -> dict:

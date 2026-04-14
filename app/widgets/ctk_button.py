@@ -52,9 +52,12 @@ class CTkButtonDescriptor(WidgetDescriptor):
         "text_color_disabled": "#a0a0a0",
         # Image
         "image": None,
+        "image_color": None,
+        "image_color_disabled": None,
         "image_width": 20,
         "image_height": 20,
         "compound": "left",
+        "preserve_aspect": False,
     }
 
     property_schema = [
@@ -133,29 +136,51 @@ class CTkButtonDescriptor(WidgetDescriptor):
         # --- Image & Alignment -------------------------------------------
         {"name": "image", "type": "image", "label": "",
          "group": "Image & Alignment", "row_label": "Image"},
-        {"name": "image_width", "type": "number", "label": "W",
-         "group": "Image & Alignment", "pair": "img_size",
-         "row_label": "Size", "min": 4, "max": 512,
+        {"name": "image_color", "type": "color", "label": "",
+         "group": "Image & Alignment", "subgroup": "Color",
+         "row_label": "Normal",
          "disabled_when": lambda p: not p.get("image")},
-        {"name": "image_height", "type": "number", "label": "H",
-         "group": "Image & Alignment", "pair": "img_size",
+        {"name": "image_color_disabled", "type": "color", "label": "",
+         "group": "Image & Alignment", "subgroup": "Color",
+         "row_label": "Disabled",
+         "disabled_when": lambda p: not p.get("image")},
+        {"name": "image_width", "type": "number", "label": "W",
+         "group": "Image & Alignment", "subgroup": "Alignment",
+         "pair": "img_size", "row_label": "Size",
          "min": 4, "max": 512,
          "disabled_when": lambda p: not p.get("image")},
+        {"name": "image_height", "type": "number", "label": "H",
+         "group": "Image & Alignment", "subgroup": "Alignment",
+         "pair": "img_size", "min": 4, "max": 512,
+         "disabled_when": lambda p: (
+             not p.get("image") or bool(p.get("preserve_aspect")))},
         {"name": "compound", "type": "compound", "label": "",
-         "group": "Image & Alignment", "row_label": "Position",
+         "group": "Image & Alignment", "subgroup": "Alignment",
+         "row_label": "Position",
+         "disabled_when": lambda p: not p.get("image")},
+        {"name": "preserve_aspect", "type": "boolean", "label": "",
+         "group": "Image & Alignment", "subgroup": "Alignment",
+         "row_label": "Preserve Aspect",
          "disabled_when": lambda p: not p.get("image")},
     ]
 
     # Properties whose change should re-run `compute_derived` to update
-    # derived props (font_size via autofit).
-    derived_triggers = {"text", "width", "height", "font_bold", "font_autofit"}
+    # derived props (font_size via autofit, image_height via preserve_aspect).
+    derived_triggers = {
+        "text", "width", "height", "font_bold", "font_autofit",
+        "image", "image_width", "preserve_aspect",
+    }
 
     # Schema props that are NOT passed as kwargs to CTkButton directly.
     # They live only in the node (builder side), or are consumed to build
     # derived CTk kwargs (font, state, image).
     _NODE_ONLY_KEYS = {
         "x", "y", "image_width", "image_height", "state_disabled",
+        "preserve_aspect", "image_color", "image_color_disabled",
     }
+
+    # Cache of image path -> native aspect ratio (width / height).
+    _aspect_cache: dict[str, float] = {}
     _FONT_KEYS = {
         "font_size", "font_bold", "font_italic",
         "font_underline", "font_overstrike", "font_autofit",
@@ -167,21 +192,53 @@ class CTkButtonDescriptor(WidgetDescriptor):
     @classmethod
     def compute_derived(cls, properties: dict) -> dict:
         result: dict = {}
-        if not properties.get("font_autofit"):
-            return result
-        text = properties.get("text") or ""
-        if not text:
-            return result
-        try:
-            width = int(properties.get("width", 140))
-            height = int(properties.get("height", 32))
-        except (ValueError, TypeError):
-            return result
-        bold = bool(properties.get("font_bold", False))
-        new_size = cls._compute_autofit_size(text, width, height, bold)
-        if new_size > 0:
-            result["font_size"] = new_size
+
+        # --- Autofit font size ----------------------------------------
+        if properties.get("font_autofit"):
+            text = properties.get("text") or ""
+            if text:
+                try:
+                    width = int(properties.get("width", 140))
+                    height = int(properties.get("height", 32))
+                    bold = bool(properties.get("font_bold", False))
+                    new_size = cls._compute_autofit_size(
+                        text, width, height, bold,
+                    )
+                    if new_size > 0:
+                        result["font_size"] = new_size
+                except (ValueError, TypeError):
+                    pass
+
+        # --- Preserve aspect: derive image_height from image_width ----
+        if properties.get("preserve_aspect") and properties.get("image"):
+            aspect = cls._native_aspect(properties["image"])
+            if aspect:
+                try:
+                    w = int(properties.get("image_width") or 20)
+                    result["image_height"] = max(1, round(w / aspect))
+                except (ValueError, TypeError):
+                    pass
+
         return result
+
+    @classmethod
+    def _native_aspect(cls, path: str) -> float | None:
+        """Return native width/height ratio of the image at `path`."""
+        if not path:
+            return None
+        if path in cls._aspect_cache:
+            return cls._aspect_cache[path]
+        try:
+            from PIL import Image
+            with Image.open(path) as img:
+                w, h = img.size
+            if h == 0:
+                return None
+            aspect = w / h
+            cls._aspect_cache[path] = aspect
+            return aspect
+        except Exception:
+            return None
 
     @classmethod
     def _compute_autofit_size(cls, text: str, width: int, height: int,
@@ -257,6 +314,15 @@ class CTkButtonDescriptor(WidgetDescriptor):
         try:
             from PIL import Image
             img = Image.open(image_path)
+            if properties.get("state_disabled"):
+                color = (
+                    properties.get("image_color_disabled")
+                    or properties.get("image_color")
+                )
+            else:
+                color = properties.get("image_color")
+            if color:
+                img = cls._tint_image(img, color)
             iw = int(properties.get("image_width", 20) or 20)
             ih = int(properties.get("image_height", 20) or 20)
             return ctk.CTkImage(
@@ -265,6 +331,22 @@ class CTkButtonDescriptor(WidgetDescriptor):
         except Exception:
             log_error("CTkButtonDescriptor.transform_properties image")
             return None
+
+    @classmethod
+    def _tint_image(cls, img, hex_color: str):
+        """Icon-style tint: replace RGB with hex_color, keep alpha."""
+        from PIL import Image
+        try:
+            r = int(hex_color[1:3], 16)
+            g = int(hex_color[3:5], 16)
+            b = int(hex_color[5:7], 16)
+        except (ValueError, IndexError, TypeError):
+            return img
+        rgba = img.convert("RGBA")
+        alpha = rgba.split()[-1]
+        tinted = Image.new("RGBA", rgba.size, (r, g, b, 0))
+        tinted.putalpha(alpha)
+        return tinted
 
     @classmethod
     def create_widget(cls, master, properties: dict):

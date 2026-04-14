@@ -185,10 +185,12 @@
 
 ---
 
-## Phase 3 — Remaining 14 Widget Descriptors
+## Phase 3 — Widget Descriptors (2 / 15 done)
 
-- [ ] CTkLabel
-- [ ] CTkFrame
+- [x] CTkButton (Phase 0)
+- [x] CTkLabel — Geometry + Text (Style/Alignment/Color), transparent bg, justify + wraplength editor
+- [x] CTkFrame — Geometry + Rectangle (Corners + Border) + Main Colors
+- [x] **Font Decoration** (Underline + Strike) added to CTkButton + CTkLabel via CTkFont(underline, overstrike)
 - [ ] CTkEntry
 - [ ] CTkSlider
 - [ ] CTkSwitch
@@ -201,9 +203,64 @@
 - [ ] CTkTextbox
 - [ ] CTkScrollableFrame
 - [ ] CTkTabview
-- [ ] Enable drag from the Widget Box **placeholder rows** as each descriptor ships (they already exist, just register in `app/widgets/registry.py`)
-- [ ] Per-widget docs page under `docs/widgets/ctk_*.md` (help icon already wired to `{slug}.md`, just needs the file)
+- [ ] Per-widget docs page under `docs/widgets/ctk_*.md` for each new descriptor (help icon already wired)
 - [ ] **Perf check**: naive `disabled_when` re-evaluation in properties_panel `_on_property_changed` iterates all props on every change. For 15 widgets × ~5 disabled_when lambdas each, measure drag-time overhead. If noticeable, switch to dep-map approach (`TrackingDict` auto-detects which properties a lambda reads, builds `{trigger_prop: [dependent_props]}` map at rebuild time, so most changes hit O(1) dict lookup instead of O(N) re-evaluation).
+
+---
+
+## Phase 2.7 — Workspace Canvas + Editor UX ✅
+
+- [x] **Fixed-size document rectangle** on canvas — framed, grid inside only, canvas background darker around document (CANVAS_OUTSIDE_BG / DOCUMENT_BG / DOCUMENT_PADDING)
+- [x] Horizontal + vertical **CTk-styled scrollbars** (thin 10px, `#1a1a1a` track / `#3a3a3a` thumb), dynamic scrollregion
+- [x] **Dot grid** (1px dots at 20px spacing, scales with zoom, drawn only inside document)
+- [x] **Zoom** 25% → 400%: Ctrl+= / Ctrl+- / Ctrl+0 / Ctrl+MouseWheel, snap levels, selection controller takes `zoom_provider` callable and scales mouse deltas during resize
+- [x] Coordinate helpers: `_logical_to_canvas`, `_canvas_to_logical`, `_screen_to_canvas` (scroll-aware via `canvas.canvasx/canvasy`)
+- [x] Node properties stay in **logical coordinates** (zoom-independent source of truth)
+- [x] **Top toolbar** — Select (V) / Hand (H) mode buttons, active highlight, Photoshop-style cursors
+- [x] **Hand tool pan** via `canvas.scan_mark/scan_dragto`, works on both empty canvas and on top of widgets
+- [x] **Middle-mouse pan** — works in any tool (Figma/Blender convention), Hand icon temporarily highlights during MMB press
+- [x] **Bottom status bar** — `[−] [+] [NN% ▼]` zoom controls, live-updating label, dropdown with presets + `Fit to window` + `Actual size`
+- [x] **Zoom warning** — yellow `⚠ Not actual size — set 100% for real preview` appears when zoom ≠ 100%
+- [x] **Font scaling with zoom** — `_build_scaled_font(properties)` helper recreates CTkFont with `font_size * zoom` so text keeps up with widget geometry (minimum 6pt, integer rounded). Logical `font_size` in `node.properties` stays unchanged so export is zoom-independent.
+- [x] `document_resized` event + matching handler; exporter reads doc size
+
+---
+
+## Phase 2.8 — Startup dialog + File → New rewrite ✅
+
+- [x] **Startup dialog** on app launch — split Recent / New Project layout
+- [x] **Recent Projects list** with relative timestamps (`Xm/h/d/w/mo/y ago`), click to select, double-click to open, right-click → Remove from Recent
+- [x] `recent_files.remove_recent(path)` helper
+- [x] **New Project form** (shared between startup and File → New): Name, Save to (+ folder picker), Device (Desktop/Mobile/Tablet/Custom), Screen Size (15+ modern presets including iPhone 15 Pro Max, iPad Pro 13, Galaxy S24 Ultra, Full HD / QHD / 4K UHD), Width, Height
+- [x] **Validation**: empty / forbidden filename chars (`\\ / : * ? " < > |`) / existing file → red border + `self.bell()` + `messagebox.showwarning` with the full character list
+- [x] **Immediate save** on Create — empty `.ctkproj` written to disk so Recent list tracks it
+- [x] `Project.name` attribute persisted to `.ctkproj` JSON
+- [x] File → New uses the same rich dialog (`dialogs.py` rewrite), with `default_save_dir` pointing at the current project's parent folder when one is loaded
+
+---
+
+## Phase 2.9 — Dirty tracking + quality of life ✅
+
+- [x] MainWindow subscribes to `widget_added / widget_removed / property_changed / widget_z_changed / document_resized` to flip a `_dirty` flag
+- [x] Title refresh shows `— name •` when unsaved; bullet disappears on save / load
+- [x] `_confirm_discard_if_dirty()` → Yes (save) / No (discard) / Cancel dialog with `self.bell()` + `icon="warning"`
+- [x] Wired to WM_DELETE_WINDOW (X button), File → New, File → Open, File → Close Project, File → Quit
+- [x] **Georgian font rendering** — `ctk.ThemeManager.theme["CTkFont"]["family"] = "Segoe UI"` on Windows, plus `tkfont.nametofont(...).configure(family="Segoe UI")` for every named Tk font, plus a bulk replacement of `font=("", N)` → `font=("Segoe UI", N)` across palette / dialogs / properties_panel / startup_dialog (CTkFont's None-fallback doesn't trigger for `family=""`, so explicit family was required)
+- [x] **Non-Latin keyboard layout shortcut fallback** — `bind_all("<Control-KeyPress>")` routes by hardware keycode so Ctrl+V/C/X/A and Ctrl+S/N/O/W/Q/R keep working under Georgian/Russian layouts where the Latin keysym is remapped
+- [ ] **Georgian keyboard input** — known tkinter/Windows IME bug (bpo-46052), typing Georgian into an Entry yields `?` — paste works, direct typing does not. Real fix requires a non-tkinter UI toolkit (PyQt6, Flet, wxPython). Not scheduled.
+
+---
+
+## Phase 2.10 — Refactor + icon system (2026-04-14) ✅
+
+- [x] **Extract `NewProjectForm`** (`app/ui/new_project_form.py`, 306 lines) — shared form component used by both StartupDialog and File → New. Constants (SCREEN_SIZES_BY_DEVICE, FORBIDDEN_NAME_CHARS, …), form builders, and `validate_and_get()` all live here.
+- [x] **Extract `RecentList`** (`app/ui/recent_list.py`, 209 lines) — reusable scrollable recent list with relative timestamps, click-to-select, double-click to open, right-click → Remove from Recent, and `on_select` / `on_activate` callbacks.
+- [x] `StartupDialog` shrunk **563 → 184 lines** (-67%), composes RecentList + NewProjectForm.
+- [x] `dialogs.py` shrunk **300 → 90 lines** (-70%), wraps NewProjectForm as File → New modal.
+- [x] **Workspace in-place refactor** — module + class docstrings, section headers, `__init__` split into `_init_state / _build_tool_bar / _build_status_bar / _build_canvas / _subscribe_events`, dead code removed (`_zoom_label`, `TOOL_BTN_FG`), magic string `"hand2"` → `TOOL_CURSORS[TOOL_HAND]`, `_set_zoom_fit_window` moved to Zoom section, `_on_canvas_click/motion/release` grouped at the bottom as "Canvas mouse events", outdated `Select / Hand / Zoom` comment fixed.
+- [x] **Toolbar Qt Designer-style rewrite** — icon-only, 26×26 square buttons, hover tooltips with delayed popup (vanilla tk.Toplevel, 500ms delay, dark theme), separator support. Currently slimmed to New / Open / Save only until more actions need quick access.
+- [x] **Icon tinting system** — `load_icon(name, size, color)` and `load_tk_icon(name, size, color)` now recolor every non-transparent pixel via PIL `Image.composite` on alpha mask. Cache keyed by `(name, size, color)`. Default color `#888888` preserves the old baked look; toolbar calls with `color="#cccccc"` for a brighter read on the dark bar.
+- [x] **Fresh Lucide icon set** — re-downloaded 1943 PNGs via `tools/download.mjs` (Node + sharp) at 24×24 white. All 40 icons currently used by the builder replaced from the new source.
 
 ---
 
@@ -233,15 +290,88 @@
 
 ---
 
-## Phase 6 — Layout Managers
+## Phase 6 — Widget Nesting + Layout Managers
 
-- [ ] Add `layout_type` field to each WidgetNode (pack / grid / place)
-- [ ] "Layout" section in properties panel
+### Phase 6.1 — Tree data model ✅
+
+- [x] `WidgetNode` parent/children graph (was half-present from `from_dict`)
+- [x] `Project.add_widget(node, parent_id=None)` — default `None` = top-level, preserves old API
+- [x] `Project.remove_widget` depth-first, removes subtree before emitting `widget_removed`
+- [x] `Project.reparent(widget_id, new_parent_id)` with cycle detection (`_is_descendant`)
+- [x] `Project.iter_all_widgets()` DFS generator
+- [x] `Project.get_widget` walks the full tree, not just roots
+- [x] `Project.duplicate_widget` clones into the same parent
+- [x] `bring_to_front / send_to_back` operate within the sibling list only
+- [x] New event-bus event: `widget_reparented(widget_id, old_parent_id, new_parent_id)`
+
+### Phase 6.2 — Hierarchical rendering ✅
+
+- [x] `SelectionController._selected_bbox` computes canvas-coord bbox from `winfo_rootx/rooty` — works for canvas children **and** nested children uniformly
+- [x] `_on_widget_added` branches on `node.parent`: top-level → `canvas.create_window`, nested → `widget.place(x=, y=)` inside the parent widget
+- [x] `_apply_zoom_to_widget` branches on `window_id is None`: canvas children use `canvas.coords`, nested use `widget.place_configure` in local coords
+- [x] `_on_property_changed` x/y handles both modes
+- [x] `_on_widget_removed` guards `canvas.delete(None)`
+- [x] Drag math rewritten to **delta-based** (`new_x = start_x + int(mouse_delta_root / zoom)`) — works for canvas children and nested children without coord-space conversion
+- [x] `project_loader._add_recursive` re-emits `widget_added` events for every descendant so the workspace actually renders nested trees loaded from disk
+- [x] **Z-order fix**: `widget.lower()` pushed nested children behind CTkFrame's internal drawing canvas forever; replaced with re-`lift()` of every sibling in project-tree order so stacking matches the model without ever touching CTk internals
+- [x] **Selection handles + rectangle as embedded tk.Frame widgets** via `canvas.create_window` + `.lift()` so they are never hidden behind overlapping widgets (old `canvas.create_rectangle` items sat in the canvas-items layer, below every embedded widget). 4 solid edge frames + 8 handle frames per selection; handle frames bind their own Button-1 / B1-Motion / ButtonRelease-1 so `_on_canvas_click`'s `handle_at` fallback is no longer needed.
+- [x] **Object Tree inspector** (`app/ui/object_tree_window.py`) — floating CTkToplevel with a ttk.Treeview showing Name + Type + Layer, two-way selection sync, subscribes to widget_added/removed/reparented/z_changed/selection_changed, unsubscribes cleanly on close.
+- [x] **View menu** with `☐ Object Tree` checkbutton + F8 shortcut + two-way state (BooleanVar var flips to False when user closes the window directly).
+
+### Phase 6.3 — Drop-to-reparent ✅
+
+- [x] Added `is_container: bool = False` to `WidgetDescriptor`; flipped to `True` for `CTkFrame`
+- [x] `_find_container_at(canvas_x, canvas_y, exclude_id=...)` — DFS walk, returns the **deepest** container whose canvas bbox contains the point; `exclude_id` skips the dragged node + its entire subtree so a widget can't drop into itself
+- [x] `_widget_canvas_bbox(widget)` — unified canvas-coord bbox helper via `winfo_rootx/rooty` + `canvas.canvasx/canvasy`
+- [x] **Palette drop into container** — `_on_palette_drop` hit-tests the drop point, if a container is found the node is created with `parent_id=container.id` and coords translated to the container's local space
+- [x] **Drag existing widget to reparent** — `_maybe_reparent_dragged(event)` on release: computes the widget's coords in the new parent's frame (`winfo_rootx` diff / zoom), writes them to `node.properties`, then calls `project.reparent`
+- [x] Dragging a child **outside** its parent's bounds auto-reparents to top-level (same code path — `_find_container_at` returns `None`)
+- [x] `_on_widget_reparented` handler destroys the old widget subtree and recreates it under the new master via `_create_widget_subtree` → `_on_widget_added`, since tkinter cannot change a widget's master after creation
+- [x] Selection survives reparent (cleared before destroy, redrawn on a short `after`)
+
+### Phase 6.4 — Sibling reorder via drag (tree panel) ✅
+
+- [x] `Project.reparent(widget_id, new_parent_id, index=None)` — added `index` param; clamps + compensates for shift when source/target share a sibling list
+- [x] Publishes `widget_z_changed(direction="reorder")` when only the order changed, not a full reparent; workspace already re-lifts siblings in project order on that event
+- [x] Object Tree drag detects **3 drop zones** per row via `y / row_height` (top 25% → before, middle 50% → into, bottom 25% → after for containers; 50/50 split for non-containers)
+- [x] Tree insertion line — `tk.Frame` overlay placed over the Treeview, shown at row top/bottom edges to signal before/after drops
+- [x] Right-click context menu on tree rows (**Rename** / Duplicate / Delete / Bring to Front / Send to Back) — matches the workspace menu exactly; Delete shows a confirmation dialog, Rename reuses `workspace._RenameDialog`
+- [x] Tree row label now prefers `node.name` (user-visible name) over descriptor display name, subscribes to `widget_renamed` for live refresh
+
+### Phase 6.5 — Nested code export ✅
+
+- [x] `code_exporter._emit_subtree` walks the tree depth-first, emitting a parent variable before any of its children
+- [x] `_emit_widget` takes a `master_var` parameter; top-level widgets pass `master="app"`, nested widgets pass their parent's generated variable name
+- [x] `needs_pil` scan switched to `project.iter_all_widgets()` so image detection covers nested trees
+- [x] Tested round-trip: `nested_test.ctkproj` → File → Export → the generated `.py` runs and reproduces the builder layout
+
+### Phase 6.6 — Object Tree polish
+
+- [x] **Type filter dropdown** — CTkOptionMenu listing `"All types"` + every widget type actually present in the project (sorted by display name). Rebuilds on every `refresh()` and self-heals to `"All types"` when the last widget of the selected type disappears.
+- [x] **Name search entry** next to the dropdown — case-insensitive substring match on `node.name`, combined with the type filter via AND. Ancestors of matches stay visible so the hierarchy is preserved.
+- [x] **Search icon button** after the entry (Lucide `search`, tinted `#cccccc`); click focuses the entry.
+- [x] **CTkEntry placeholder bug workaround** — CTk 5.2.2's `_activate_placeholder` compares a `StringVar` to `""` (always False), so passing `textvariable=` silently breaks the placeholder. Dropped the textvariable and wired the entry to `self._search_text` via a `<KeyRelease>` binding instead; placeholder now renders at `placeholder_text_color="#888888"` on `fg_color="#2d2d2d"`.
+- [x] **Auto-open on launch** — `_object_tree_var` defaults to `True`; `_auto_open_object_tree()` fires 250ms after the startup dialog so the window's `_center_on_parent` sees final geometry.
+- [x] **Always above main builder** — `self.transient(parent)` + a short `-topmost` toggle via `_raise_above_parent()` so Windows doesn't stack the main window in front on first launch.
+- [x] **Visibility toggle (👁 column)** — real Lucide `eye`/`eye-off` PNGs in the `#0` column, fixed-x via `style.configure(indent=0)` trick, click toggles `WidgetNode.visible`; workspace hides/shows via `canvas.itemconfigure(state="hidden")` for canvas children and fresh `place()`/`place_forget()` for nested children. Builder-only flag — save/load/export unaffected.
+- [x] **Lock toggle (🔒 column)** — per-row emoji toggle on `WidgetNode.locked`; workspace `_effective_locked(id)` walks ancestors, blocks drag/resize/arrow-nudge/delete. SelectionController suppresses the 8 resize handles on a locked widget (rectangle still draws so the user sees what's selected).
+- [x] **Multi-selection (Object Tree only, Delete only)** — `selectmode="extended"` on the Treeview + `Project.set_multi_selection(ids, primary)`; emits `selection_changed(None)` when `len > 1` so workspace handles + properties panel clear, while the tree keeps its multi-row highlight. Right-click menu on multi-selection shows **only** "Delete N widgets" — duplicate / bring to front / drag-reparent are deliberately disabled for multi (user decision: multi is purely for batch delete).
+- [x] **SelectionController rewrite — embedded tk.Frame widgets** for the 4 rectangle edges + 8 resize handles via `canvas.create_window` + `.lift()`. Canvas items sit below any `create_window`-embedded widget, so the old `create_rectangle` approach was hidden by overlapping widgets. Trade-off: lost dashed border pattern.
+- [ ] **Workspace: stale drag after slow properties panel load** — clicking a tree row kicks off a heavy properties panel rebuild; motion events queued during the block still carry `B1=held` state, so the workspace widget follows the mouse after release. Partial defense added (`event.state & 0x0100` check in `_on_widget_motion`, `_drag = None` reset on press, `winfo_manager()=="place"` guard in `_apply_zoom_to_widget`). Root cause is properties-panel latency — refactor in progress (see below).
+
+### Phase 6.x — Properties panel rewrite (in progress)
+
+- [ ] Properties panel is heavy enough that clicking a tree row blocks the Tk event loop long enough for queued `<B1-Motion>` events to fire after the physical button release, dragging the workspace widget unintentionally. User is refactoring the panel to cut per-selection rebuild cost. Prototype lives in `tools/ctk_button_treeview_mock.py`. Once the panel is fast, re-test the "widget follows mouse after tree click" bug — if it disappears, keep the defense guards as belt-and-suspenders; if not, dig deeper.
+
+### Phase 6.7 — Layout manager options (later)
+
+- [ ] `layout_type` property on container nodes (`place` default, `pack`, `grid`)
+- [ ] "Layout" section in properties panel that reflects the parent's layout type
+- [ ] place options (relx, rely, x, y, anchor)
 - [ ] pack options (side, anchor, fill, expand, padx, pady)
 - [ ] grid options (row, column, rowspan, columnspan, sticky)
-- [ ] place options (relx, rely, x, y, anchor)
 - [ ] Visual indicator on workspace (which manager is in use)
-- [ ] Code exporter respects layout choices
+- [ ] Code exporter respects `layout_type`
 
 ---
 

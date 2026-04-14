@@ -17,6 +17,7 @@ from app.widgets.base import WidgetDescriptor
 class CTkFrameDescriptor(WidgetDescriptor):
     type_name = "CTkFrame"
     display_name = "Frame"
+    is_container = True
 
     default_properties = {
         # Geometry

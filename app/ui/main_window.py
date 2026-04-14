@@ -18,6 +18,7 @@ from app.io.project_loader import ProjectLoadError, load_project
 from app.io.project_saver import save_project
 from app.ui.dialogs import NewProjectSizeDialog
 from app.ui.icons import load_tk_icon
+from app.ui.object_tree_window import ObjectTreeWindow
 from app.ui.palette import Palette
 from app.ui.properties_panel import PropertiesPanel
 from app.ui.startup_dialog import StartupDialog
@@ -95,6 +96,8 @@ class MainWindow(ctk.CTk):
         self.project = Project()
         self._current_path: str | None = None
         self._dirty: bool = False
+        self._object_tree_window: ObjectTreeWindow | None = None
+        self._object_tree_var = tk.BooleanVar(value=True)
 
         settings = load_settings()
         initial_mode = settings.get("appearance_mode", "Dark")
@@ -144,6 +147,7 @@ class MainWindow(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_window_close)
 
         self.after(120, self._show_startup_dialog)
+        self.after(250, self._auto_open_object_tree)
 
     # ------------------------------------------------------------------
     # Non-Latin keyboard layout fallback
@@ -318,6 +322,16 @@ class MainWindow(ctk.CTk):
         self._add_cmd(form_menu, "Preview", self._on_preview, icon="play", accelerator="Ctrl+R")
         menubar.add_cascade(label="Form", menu=form_menu)
 
+        # ---- View ----
+        view_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
+        view_menu.add_checkbutton(
+            label="Object Tree",
+            variable=self._object_tree_var,
+            command=self._on_toggle_object_tree,
+            accelerator="F8",
+        )
+        menubar.add_cascade(label="View", menu=view_menu)
+
         # ---- Settings ----
         settings_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
         appearance_menu = tk.Menu(settings_menu, tearoff=0, **MENU_STYLE)
@@ -347,6 +361,7 @@ class MainWindow(ctk.CTk):
         self.bind("<Control-Shift-S>", lambda e: self._on_save_as())
         self.bind("<Control-r>", lambda e: self._on_preview())
         self.bind("<Control-w>", lambda e: self._on_close_project())
+        self.bind("<F8>", lambda e: self._on_f8_object_tree())
         self.bind("<Control-q>", lambda e: self._on_quit())
 
     def _rebuild_recent_menu(self) -> None:
@@ -403,18 +418,34 @@ class MainWindow(ctk.CTk):
     def _on_new(self) -> None:
         if not self._confirm_discard_if_dirty():
             return
+        default_dir = (
+            str(Path(self._current_path).parent) if self._current_path
+            else None
+        )
         dialog = NewProjectSizeDialog(
             self,
             default_w=self.project.document_width,
             default_h=self.project.document_height,
+            default_save_dir=default_dir,
         )
         self.wait_window(dialog)
         if dialog.result is None:
             return
-        w, h = dialog.result
+        name, path, w, h = dialog.result
         self.project.clear()
         self.project.resize_document(w, h)
-        self._set_current_path(None)
+        self.project.name = name
+        try:
+            save_project(self.project, path)
+        except OSError:
+            log_error("save_project (file new)")
+            messagebox.showerror(
+                "Save failed",
+                f"Could not create project file at:\n{path}",
+                parent=self,
+            )
+            return
+        self._set_current_path(path)
 
     def _on_open(self) -> None:
         if not self._confirm_discard_if_dirty():
@@ -498,6 +529,47 @@ class MainWindow(ctk.CTk):
 
     def _on_about(self) -> None:
         messagebox.showinfo("About CTk Visual Builder", ABOUT_TEXT, parent=self)
+
+    def _on_toggle_object_tree(self) -> None:
+        """Open/close Object Tree window in sync with its View-menu check.
+
+        Driven by `self._object_tree_var`. When the var is toggled by
+        the menu item or F8 shortcut, we open or close the window to
+        match. When the user closes the window manually, the window's
+        on-close callback flips the var back to False.
+        """
+        want_open = bool(self._object_tree_var.get())
+        alive = (
+            self._object_tree_window is not None
+            and self._object_tree_window.winfo_exists()
+        )
+        if want_open and not alive:
+            self._object_tree_window = ObjectTreeWindow(
+                self, self.project,
+                on_close=self._on_object_tree_closed,
+            )
+        elif not want_open and alive:
+            try:
+                self._object_tree_window.destroy()
+            except tk.TclError:
+                pass
+            self._object_tree_window = None
+
+    def _on_object_tree_closed(self) -> None:
+        self._object_tree_window = None
+        self._object_tree_var.set(False)
+
+    def _on_f8_object_tree(self) -> None:
+        self._object_tree_var.set(not self._object_tree_var.get())
+        self._on_toggle_object_tree()
+
+    def _auto_open_object_tree(self) -> None:
+        """Open Object Tree on launch if the checkbox says it should be
+        visible. Runs after the startup dialog so the main window has
+        its final position (the tree window auto-places relative to
+        the main window's top-right)."""
+        if self._object_tree_var.get():
+            self._on_toggle_object_tree()
 
     def _on_export(self) -> None:
         path = filedialog.asksaveasfilename(

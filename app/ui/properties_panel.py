@@ -119,11 +119,22 @@ class PropertiesPanel(ctk.CTkFrame):
         self.body.pack(fill="both", expand=True, padx=6, pady=(0, 4))
         self._install_autohide_scrollbar()
 
+        self._name_var: tk.StringVar | None = None
+
         self.project.event_bus.subscribe("selection_changed", self._on_selection)
         self.project.event_bus.subscribe("property_changed", self._on_property_changed)
+        self.project.event_bus.subscribe("widget_renamed", self._on_widget_renamed)
         self.bind("<Configure>", self._on_panel_configure)
 
         self._show_empty()
+
+    def _on_widget_renamed(self, widget_id: str, new_name: str) -> None:
+        if widget_id != self.current_id or self._name_var is None:
+            return
+        if self._name_var.get() == new_name:
+            return
+        with self._suspend_traces():
+            self._name_var.set(new_name)
 
     # ======================================================================
     # Scrollbar auto-hide (CTkScrollableFrame internals)
@@ -302,29 +313,62 @@ class PropertiesPanel(ctk.CTkFrame):
 
         self._clear_body()
 
-        header = ctk.CTkFrame(self.body, fg_color="transparent", height=18)
-        header.pack(fill="x", pady=(0, 2), padx=4)
+        # --- Type header (dark bar like group headers) -------------------
+        header = ctk.CTkFrame(
+            self.body, fg_color=HEADER_BG, height=22, corner_radius=0,
+        )
+        header.pack(fill="x", pady=(0, 2))
         header.pack_propagate(False)
 
         type_label = ctk.CTkLabel(
-            header, text=descriptor.type_name,
-            font=("Segoe UI", 11, "bold"), text_color=TYPE_LABEL_FG, height=14,
+            header, text=descriptor.type_name, fg_color=HEADER_BG,
+            font=("Segoe UI", 11, "bold"), text_color=TYPE_LABEL_FG, height=16,
         )
-        type_label.pack(side="left")
+        type_label.pack(side="left", padx=(8, 0))
 
         help_icon = load_icon("circle-help", size=14)
         help_btn = ctk.CTkButton(
-            header,
-            text="",
-            image=help_icon,
-            width=18,
-            height=18,
-            corner_radius=3,
-            fg_color="transparent",
-            hover_color="#3a3a3a",
+            header, text="", image=help_icon,
+            width=18, height=18, corner_radius=3,
+            fg_color=HEADER_BG, hover_color="#3a3a3a",
             command=lambda t=descriptor.type_name: self._open_widget_docs(t),
         )
-        help_btn.pack(side="left", padx=(4, 0))
+        help_btn.pack(side="right", padx=(4, 6))
+
+        id_label = ctk.CTkLabel(
+            header, text=f"ID: {node.id[:8]}", fg_color=HEADER_BG,
+            font=("Segoe UI", 8), text_color=DISABLED_FG, height=16,
+        )
+        id_label.pack(side="right", padx=(0, 4))
+
+        # --- Name row ----------------------------------------------------
+        name_row = ctk.CTkFrame(self.body, fg_color="transparent")
+        name_row.pack(fill="x", pady=(2, 2), padx=4)
+
+        ctk.CTkLabel(
+            name_row, text="Name", anchor="w",
+            font=("Segoe UI", 10), text_color=STATIC_FG,
+            width=ROW_LABEL_WIDTH, height=21,
+        ).pack(side="left", padx=(4, 0))
+
+        self._name_var = tk.StringVar(value=node.name)
+        name_entry = ctk.CTkEntry(
+            name_row, textvariable=self._name_var,
+            height=ENTRY_HEIGHT, corner_radius=VALUE_CORNER,
+            font=("Segoe UI", 10), fg_color=VALUE_BG, border_width=0,
+        )
+        name_entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
+
+        widget_id_snapshot = self.current_id
+
+        def on_name_change(*_a):
+            if self._suspend_trace or widget_id_snapshot != self.current_id:
+                return
+            self.project.rename_widget(
+                widget_id_snapshot, self._name_var.get(),
+            )
+
+        self._name_var.trace_add("write", on_name_change)
 
         self._render_schema(descriptor.property_schema, node.properties)
         self._editor_disabled = self._current_disabled_states()
@@ -394,6 +438,7 @@ class PropertiesPanel(ctk.CTkFrame):
         self._color_buttons = {}
         self._image_labels = {}
         self._editor_disabled = {}
+        self._name_var = None
 
     # ======================================================================
     # Group / subgroup headers
@@ -404,7 +449,7 @@ class PropertiesPanel(ctk.CTkFrame):
         wrap = ctk.CTkFrame(
             self.body, fg_color=HEADER_BG, height=22, corner_radius=0,
         )
-        wrap.pack(fill="x", pady=(4, 2))
+        wrap.pack(fill="x", pady=(2, 2))
         wrap.pack_propagate(False)
 
         arrow_icon = load_icon("chevron-right" if is_collapsed else "chevron-down")
@@ -469,7 +514,7 @@ class PropertiesPanel(ctk.CTkFrame):
         self, row: ctk.CTkFrame, text: str, *,
         draggable: bool = False, disabled: bool = False,
     ) -> ctk.CTkLabel:
-        kwargs = dict(text=text, anchor="w", font=("Segoe UI", 10))
+        kwargs = dict(text=text, anchor="w", font=("Segoe UI", 10), height=21)
         if not draggable:
             kwargs["text_color"] = DISABLED_FG if disabled else STATIC_FG
         label = ctk.CTkLabel(row, **kwargs)
@@ -514,7 +559,7 @@ class PropertiesPanel(ctk.CTkFrame):
             disabled = self._eval_disabled(prop)
             label = ctk.CTkLabel(
                 row, text=prop["label"], width=MINI_LABEL_WIDTH,
-                anchor="e", font=("Segoe UI", 10),
+                anchor="e", font=("Segoe UI", 10), height=21,
             )
             if disabled:
                 label.configure(text_color=DISABLED_FG)
@@ -563,6 +608,7 @@ class PropertiesPanel(ctk.CTkFrame):
                 row.grid_columnconfigure(col, minsize=SUB_LABEL_WIDTH)
                 sub_label = ctk.CTkLabel(
                     row, text=sub_text, anchor="e", font=("Segoe UI", 10),
+                    height=21,
                 )
                 if disabled:
                     sub_label.configure(text_color=DISABLED_FG)
@@ -649,6 +695,7 @@ class PropertiesPanel(ctk.CTkFrame):
             row.grid_columnconfigure(2, minsize=IMAGE_PICKER_WIDTH)
             picker = self._create_image_picker(row, prop, value)
             picker.grid(row=0, column=2, sticky="ew")
+            self._build_image_button_row(prop)
 
     def _build_full_width_editor(
         self, prop: dict, value, parent: ctk.CTkFrame | None = None,
@@ -833,43 +880,59 @@ class PropertiesPanel(ctk.CTkFrame):
         return menu
 
     def _create_image_picker(self, parent, prop: dict, value) -> ctk.CTkFrame:
+        """Filename display box. Browse / Clear buttons live on a
+        separate full-width row built by `_build_image_button_row`.
+        """
+        pname = prop["name"]
+        disabled = self._eval_disabled(prop)
+
+        name_box = ctk.CTkFrame(
+            parent, fg_color=VALUE_BG, corner_radius=VALUE_CORNER,
+            height=BUTTON_HEIGHT, width=1,
+        )
+        name_box.pack_propagate(False)
+
+        name_label = ctk.CTkLabel(
+            name_box, text=self._image_display_name(value),
+            anchor="w", height=BUTTON_HEIGHT,
+            text_color=DISABLED_FG if disabled else "#cccccc",
+            font=("Segoe UI", 9), fg_color=VALUE_BG,
+        )
+        name_label.pack(side="left", fill="x", expand=True, padx=(6, 4))
+        self._image_labels[pname] = name_label
+        return name_box
+
+    def _build_image_button_row(self, prop: dict) -> None:
+        """Full-width row holding [open] [clear] buttons directly under
+        the filename row.
+        """
         pname = prop["name"]
         disabled = self._eval_disabled(prop)
         state = "disabled" if disabled else "normal"
 
-        sub = ctk.CTkFrame(parent, fg_color="transparent")
-        name_label = ctk.CTkLabel(
-            sub, text=self._image_display_name(value),
-            anchor="w",
-            text_color=DISABLED_FG if disabled else "#cccccc",
-            font=("Segoe UI", 9),
-        )
-        name_label.pack(fill="x", padx=(0, 2))
-        self._image_labels[pname] = name_label
+        row = self._new_row_frame()
+        row.grid_columnconfigure(0, weight=1, uniform="btn")
+        row.grid_columnconfigure(1, weight=1, uniform="btn")
 
-        btn_row = ctk.CTkFrame(sub, fg_color="transparent")
-        btn_row.pack(fill="x", pady=(1, 0))
-
-        browse = ctk.CTkButton(
-            btn_row, text="Browse...",
-            width=70, height=BUTTON_HEIGHT, font=("Segoe UI", 9),
+        open_btn = ctk.CTkButton(
+            row, text="open",
+            height=BUTTON_HEIGHT, font=("Segoe UI", 10),
             fg_color=VALUE_BG, hover_color="#3a3a3a",
             border_width=0, corner_radius=VALUE_CORNER, state=state,
             command=None if disabled else (
                 lambda p=pname: self._pick_image(p)),
         )
-        browse.pack(side="left", padx=(0, 4))
+        open_btn.grid(row=0, column=0, sticky="ew", padx=(0, 2))
 
-        clear = ctk.CTkButton(
-            btn_row, text="Clear",
-            width=44, height=BUTTON_HEIGHT, font=("Segoe UI", 9),
+        clear_btn = ctk.CTkButton(
+            row, text="clear",
+            height=BUTTON_HEIGHT, font=("Segoe UI", 10),
             fg_color=VALUE_BG, hover_color="#3a3a3a",
             border_width=0, corner_radius=VALUE_CORNER, state=state,
             command=None if disabled else (
                 lambda p=pname: self._clear_image(p)),
         )
-        clear.pack(side="left")
-        return sub
+        clear_btn.grid(row=0, column=1, sticky="ew")
 
     # ======================================================================
     # Pickers (image, color)

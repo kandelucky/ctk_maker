@@ -1,7 +1,9 @@
 """Generate a runnable Python source file from a Project.
 
-Walks `project.root_widgets` and produces a self-contained `.py` file that,
-when run, recreates the designed UI using real CustomTkinter widgets.
+Walks the project widget tree depth-first and produces a self-contained
+`.py` file that, when run, recreates the designed UI using real
+CustomTkinter widgets. Nested widgets are emitted under their parent's
+variable name so the generated code preserves the builder's hierarchy.
 
 Per-widget convention (matches WidgetDescriptor.transform_properties):
 - Keys in `descriptor._NODE_ONLY_KEYS` are stripped from kwargs (still used
@@ -32,7 +34,9 @@ def export_project(project: Project, path: str | Path) -> None:
 
 
 def generate_code(project: Project) -> str:
-    needs_pil = any(node.properties.get("image") for node in project.root_widgets)
+    needs_pil = any(
+        node.properties.get("image") for node in project.iter_all_widgets()
+    )
 
     geometry = f"{project.document_width}x{project.document_height}"
 
@@ -51,12 +55,28 @@ def generate_code(project: Project) -> str:
 
     name_counts: dict[str, int] = {}
     for node in project.root_widgets:
-        var_name = _make_var_name(node, name_counts)
-        lines += _emit_widget(node, var_name)
-        lines.append("")
+        _emit_subtree(node, master_var="app", lines=lines, counts=name_counts)
 
     lines += ["app.mainloop()", ""]
     return "\n".join(lines)
+
+
+def _emit_subtree(
+    node: WidgetNode,
+    master_var: str,
+    lines: list[str],
+    counts: dict[str, int],
+) -> None:
+    """Emit this node then recursively emit its children.
+
+    Parent variables are declared before their children so the generated
+    file can reference them as `master` for each child widget.
+    """
+    var_name = _make_var_name(node, counts)
+    lines += _emit_widget(node, var_name, master_var)
+    lines.append("")
+    for child in node.children:
+        _emit_subtree(child, master_var=var_name, lines=lines, counts=counts)
 
 
 def _make_var_name(node: WidgetNode, counts: dict[str, int]) -> str:
@@ -65,7 +85,9 @@ def _make_var_name(node: WidgetNode, counts: dict[str, int]) -> str:
     return f"{base}_{counts[base]}"
 
 
-def _emit_widget(node: WidgetNode, var_name: str) -> list[str]:
+def _emit_widget(
+    node: WidgetNode, var_name: str, master_var: str,
+) -> list[str]:
     descriptor = get_descriptor(node.widget_type)
     if descriptor is None:
         return [f"# unknown widget type: {node.widget_type}"]
@@ -95,7 +117,7 @@ def _emit_widget(node: WidgetNode, var_name: str) -> list[str]:
             kwargs.append(("compound", '"left"'))
 
     lines = [f"{var_name} = ctk.{node.widget_type}("]
-    lines.append("    app,")
+    lines.append(f"    {master_var},")
     for key, src in kwargs:
         lines.append(f"    {key}={src},")
     lines.append(")")

@@ -31,6 +31,7 @@ def project_to_dict(project: Project) -> dict:
             "width": project.document_width,
             "height": project.document_height,
         },
+        "name_counters": dict(project._name_counters),
         "widgets": [node.to_dict() for node in project.root_widgets],
     }
 
