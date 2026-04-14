@@ -20,7 +20,7 @@ from app.ui.dialogs import NewProjectSizeDialog
 from app.ui.icons import load_tk_icon
 from app.ui.object_tree_window import ObjectTreeWindow
 from app.ui.palette import Palette
-from app.ui.properties_panel import PropertiesPanel
+from app.ui.properties_panel_v2 import PropertiesPanelV2 as PropertiesPanel
 from app.ui.startup_dialog import StartupDialog
 from app.ui.toolbar import Toolbar
 from app.ui.workspace import Workspace

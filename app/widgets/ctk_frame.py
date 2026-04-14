@@ -27,7 +27,8 @@ class CTkFrameDescriptor(WidgetDescriptor):
         "height": 150,
         # Rectangle
         "corner_radius": 6,
-        "border_width": 0,
+        "border_enabled": False,
+        "border_width": 1,
         "border_color": "#565b5e",
         # Main colors
         "fg_color": "#2b2b2b",
@@ -54,30 +55,39 @@ class CTkFrameDescriptor(WidgetDescriptor):
              0,
              min(int(p.get("width", 0)), int(p.get("height", 0))) // 2,
          )},
+        {"name": "border_enabled", "type": "boolean", "label": "",
+         "group": "Rectangle", "subgroup": "Border",
+         "row_label": "Enabled"},
         {"name": "border_width", "type": "number", "label": "",
          "group": "Rectangle", "subgroup": "Border",
-         "row_label": "Thickness", "min": 0,
+         "row_label": "Thickness", "min": 1,
          "max": lambda p: max(
-             0,
+             1,
              min(int(p.get("width", 0)), int(p.get("height", 0))) // 2,
-         )},
+         ),
+         "disabled_when": lambda p: not p.get("border_enabled")},
         {"name": "border_color", "type": "color", "label": "",
          "group": "Rectangle", "subgroup": "Border",
-         "row_label": "Color"},
+         "row_label": "Color",
+         "disabled_when": lambda p: not p.get("border_enabled")},
 
         # --- Main Colors -------------------------------------------------
         {"name": "fg_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Background"},
     ]
 
-    _NODE_ONLY_KEYS = {"x", "y"}
+    _NODE_ONLY_KEYS = {"x", "y", "border_enabled"}
 
     @classmethod
     def transform_properties(cls, properties: dict) -> dict:
-        return {
+        result = {
             k: v for k, v in properties.items()
             if k not in cls._NODE_ONLY_KEYS
         }
+        # Border off → zero out the width.
+        if not properties.get("border_enabled"):
+            result["border_width"] = 0
+        return result
 
     @classmethod
     def create_widget(cls, master, properties: dict):

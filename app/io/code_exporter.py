@@ -103,9 +103,24 @@ def _emit_widget(
             continue
         kwargs.append((key, _py_literal(val)))
 
-    if "state_disabled" in props:
-        state_src = '"disabled"' if props.get("state_disabled") else '"normal"'
+    if "button_enabled" in props:
+        state_src = (
+            '"normal"' if props.get("button_enabled", True)
+            else '"disabled"'
+        )
         kwargs.append(("state", state_src))
+    elif "state_disabled" in props:
+        # Legacy save format
+        state_src = (
+            '"disabled"' if props.get("state_disabled") else '"normal"'
+        )
+        kwargs.append(("state", state_src))
+
+    if "border_enabled" in props and not props.get("border_enabled"):
+        # Override any leftover border_width to zero.
+        kwargs = [
+            (k, '0' if k == "border_width" else v) for k, v in kwargs
+        ]
 
     if font_keys and any(k in props for k in font_keys):
         kwargs.append(("font", _font_source(props)))

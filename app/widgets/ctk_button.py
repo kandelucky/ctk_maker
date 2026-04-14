@@ -30,23 +30,25 @@ class CTkButtonDescriptor(WidgetDescriptor):
         "y": 120,
         "width": 140,
         "height": 32,
-        # State
-        "state_disabled": False,
         # Rectangle
         "corner_radius": 6,
-        "border_width": 0,
+        "border_enabled": False,
+        "border_width": 1,
         "border_color": "#565b5e",
+        # Button Interaction
+        "button_enabled": True,
         # Main colors
         "fg_color": "#1f6aa5",
         "hover_color": "#144870",
         # Text content + style
         "text": "CTkButton",
         "font_size": 13,
+        "font_autofit": False,
         "font_bold": False,
         "font_italic": False,
         "font_underline": False,
         "font_overstrike": False,
-        "font_autofit": False,
+        "font_wrap": True,
         "anchor": "center",
         "text_color": "#ffffff",
         "text_color_disabled": "#a0a0a0",
@@ -81,20 +83,25 @@ class CTkButtonDescriptor(WidgetDescriptor):
              0,
              min(int(p.get("width", 0)), int(p.get("height", 0))) // 2,
          )},
+        {"name": "border_enabled", "type": "boolean", "label": "",
+         "group": "Rectangle", "subgroup": "Border",
+         "row_label": "Enabled"},
         {"name": "border_width", "type": "number", "label": "",
          "group": "Rectangle", "subgroup": "Border",
-         "row_label": "Thickness", "min": 0,
+         "row_label": "Thickness", "min": 1,
          "max": lambda p: max(
-             0,
+             1,
              min(int(p.get("width", 0)), int(p.get("height", 0))) // 2,
-         )},
+         ),
+         "disabled_when": lambda p: not p.get("border_enabled")},
         {"name": "border_color", "type": "color", "label": "",
          "group": "Rectangle", "subgroup": "Border",
-         "row_label": "Color"},
+         "row_label": "Color",
+         "disabled_when": lambda p: not p.get("border_enabled")},
 
-        # --- State -------------------------------------------------------
-        {"name": "state_disabled", "type": "boolean", "label": "",
-         "group": "State", "row_label": "Disabled"},
+        # --- Button Interaction ------------------------------------------
+        {"name": "button_enabled", "type": "boolean", "label": "",
+         "group": "Button Interaction", "row_label": "Interactable"},
 
         # --- Main Colors -------------------------------------------------
         {"name": "fg_color", "type": "color", "label": "",
@@ -103,46 +110,42 @@ class CTkButtonDescriptor(WidgetDescriptor):
          "group": "Main Colors", "row_label": "Hover"},
 
         # --- Text --------------------------------------------------------
-        {"name": "text", "type": "multiline", "label": "Label",
-         "group": "Text"},
+        {"name": "text", "type": "multiline", "label": "",
+         "group": "Text", "row_label": "Label"},
 
         {"name": "font_size", "type": "number", "label": "",
-         "group": "Text", "subgroup": "Style", "pair": "size_row",
-         "row_label": "Size", "min": 6, "max": 96,
+         "group": "Text", "row_label": "Size", "min": 6, "max": 96,
          "disabled_when": lambda p: bool(p.get("font_autofit", False))},
-        {"name": "font_autofit", "type": "boolean", "label": "Best Fit",
-         "group": "Text", "subgroup": "Style", "pair": "size_row"},
+        {"name": "font_autofit", "type": "boolean", "label": "",
+         "group": "Text", "row_label": "Best Fit"},
 
-        {"name": "font_bold", "type": "boolean", "label": "Bold",
-         "group": "Text", "subgroup": "Style", "pair": "style_row",
-         "row_label": "Style"},
-        {"name": "font_italic", "type": "boolean", "label": "Italic",
-         "group": "Text", "subgroup": "Style", "pair": "style_row"},
-
-        {"name": "font_underline", "type": "boolean", "label": "Underline",
-         "group": "Text", "subgroup": "Style", "pair": "deco_row",
-         "row_label": "Decoration"},
-        {"name": "font_overstrike", "type": "boolean", "label": "Strike",
-         "group": "Text", "subgroup": "Style", "pair": "deco_row"},
+        {"name": "font_bold", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Bold"},
+        {"name": "font_italic", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Italic"},
+        {"name": "font_underline", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Underline"},
+        {"name": "font_overstrike", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Strike"},
+        {"name": "font_wrap", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Wrap"},
 
         {"name": "anchor", "type": "anchor", "label": "",
-         "group": "Text", "subgroup": "Alignment", "row_label": "Align"},
+         "group": "Text", "row_label": "Alignment"},
 
         {"name": "text_color", "type": "color", "label": "",
-         "group": "Text", "subgroup": "Color", "row_label": "Normal"},
+         "group": "Text", "row_label": "Normal Text Color"},
         {"name": "text_color_disabled", "type": "color", "label": "",
-         "group": "Text", "subgroup": "Color", "row_label": "Disabled"},
+         "group": "Text", "row_label": "Disabled Text Color"},
 
         # --- Image & Alignment -------------------------------------------
         {"name": "image", "type": "image", "label": "",
          "group": "Image & Alignment", "row_label": "Image"},
         {"name": "image_color", "type": "color", "label": "",
-         "group": "Image & Alignment", "subgroup": "Color",
-         "row_label": "Normal",
+         "group": "Image & Alignment", "row_label": "Normal Image Color",
          "disabled_when": lambda p: not p.get("image")},
         {"name": "image_color_disabled", "type": "color", "label": "",
-         "group": "Image & Alignment", "subgroup": "Color",
-         "row_label": "Disabled",
+         "group": "Image & Alignment", "row_label": "Disabled Image Color",
          "disabled_when": lambda p: not p.get("image")},
         {"name": "image_width", "type": "number", "label": "W",
          "group": "Image & Alignment", "subgroup": "Alignment",
@@ -155,12 +158,10 @@ class CTkButtonDescriptor(WidgetDescriptor):
          "disabled_when": lambda p: (
              not p.get("image") or bool(p.get("preserve_aspect")))},
         {"name": "compound", "type": "compound", "label": "",
-         "group": "Image & Alignment", "subgroup": "Alignment",
-         "row_label": "Position",
+         "group": "Image & Alignment", "row_label": "Position",
          "disabled_when": lambda p: not p.get("image")},
         {"name": "preserve_aspect", "type": "boolean", "label": "",
-         "group": "Image & Alignment", "subgroup": "Alignment",
-         "row_label": "Preserve Aspect",
+         "group": "Image & Alignment", "row_label": "Preserve Aspect",
          "disabled_when": lambda p: not p.get("image")},
     ]
 
@@ -175,8 +176,12 @@ class CTkButtonDescriptor(WidgetDescriptor):
     # They live only in the node (builder side), or are consumed to build
     # derived CTk kwargs (font, state, image).
     _NODE_ONLY_KEYS = {
-        "x", "y", "image_width", "image_height", "state_disabled",
+        "x", "y", "image_width", "image_height",
+        "button_enabled", "border_enabled",
         "preserve_aspect", "image_color", "image_color_disabled",
+        # Legacy: migrated to button_enabled but may still appear in
+        # old project files; never passed to CTkButton.
+        "state_disabled",
     }
 
     # Cache of image path -> native aspect ratio (width / height).
@@ -184,6 +189,7 @@ class CTkButtonDescriptor(WidgetDescriptor):
     _FONT_KEYS = {
         "font_size", "font_bold", "font_italic",
         "font_underline", "font_overstrike", "font_autofit",
+        "font_wrap",
     }
 
     # ==================================================================
@@ -272,10 +278,12 @@ class CTkButtonDescriptor(WidgetDescriptor):
     def transform_properties(cls, properties: dict) -> dict:
         """Translate the builder's property dict into CTkButton kwargs.
 
-        - Strips keys that are node-only (x/y, image_*, state_disabled).
-        - Builds a CTkFont from font_size/font_bold/font_italic.
-        - Converts `state_disabled` bool into CTk `state="disabled"/"normal"`.
-        - Loads `image` path into a CTkImage sized by image_width/image_height.
+        - Strips builder-only keys (x/y, image_*, button_enabled, …).
+        - `button_enabled` bool → CTk `state="normal"/"disabled"`.
+        - `border_enabled` False → forces `border_width=0`.
+        - Builds a CTkFont from the font_* family.
+        - Loads `image` path into a CTkImage sized by image_width/height
+          with an optional tint from `image_color` (or disabled tint).
         """
         result = {
             k: v for k, v in properties.items()
@@ -283,8 +291,13 @@ class CTkButtonDescriptor(WidgetDescriptor):
         }
 
         result["state"] = (
-            "disabled" if properties.get("state_disabled") else "normal"
+            "normal" if properties.get("button_enabled", True)
+            else "disabled"
         )
+
+        # Border off → zero the width so CTk draws no outline.
+        if not properties.get("border_enabled"):
+            result["border_width"] = 0
 
         try:
             size = int(properties.get("font_size") or 13)
@@ -314,7 +327,7 @@ class CTkButtonDescriptor(WidgetDescriptor):
         try:
             from PIL import Image
             img = Image.open(image_path)
-            if properties.get("state_disabled"):
+            if not properties.get("button_enabled", True):
                 color = (
                     properties.get("image_color_disabled")
                     or properties.get("image_color")

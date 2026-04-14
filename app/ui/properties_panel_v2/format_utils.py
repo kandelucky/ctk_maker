@@ -1,0 +1,92 @@
+"""Pure formatting and coercion helpers for the Properties panel v2.
+
+These functions depend only on the schema dict and current property
+values — no references to `self`, the Treeview, or any Tk state.
+Kept in a separate module so the panel module stays focused on
+Tkinter glue and per-row overlay management.
+"""
+
+from __future__ import annotations
+
+from .constants import (
+    ANCHOR_CODE_TO_LABEL,
+    ANCHOR_DROPDOWN_ORDER,
+    COMPOUND_OPTIONS,
+    JUSTIFY_OPTIONS,
+)
+
+
+def format_value(ptype: str, value, prop: dict) -> str:
+    """Render a schema value as the string shown in the tree cell."""
+    if ptype == "color":
+        # Leading spaces reserve room for the swatch overlay.
+        return f"              {value}" if value else ""
+    if ptype == "boolean":
+        return "☑" if value else "☐"
+    if ptype == "anchor":
+        return ANCHOR_CODE_TO_LABEL.get(str(value), str(value or ""))
+    if ptype in ("compound", "justify"):
+        return str(value) if value is not None else ""
+    if ptype in ("multiline", "image"):
+        # Shown via overlay label, not the tree cell.
+        return ""
+    if value is None:
+        return ""
+    return str(value)
+
+
+def format_numeric_pair_preview(items: list[dict], properties: dict) -> str:
+    parts = []
+    for item in items:
+        label = item.get("label") or item["name"].upper()[:1]
+        val = properties.get(item["name"])
+        parts.append(f"{label} {val}")
+    return "  ".join(parts)
+
+
+def compute_subgroup_preview(
+    descriptor, group: str, subgroup: str, properties: dict,
+) -> str:
+    """Preview string shown next to a subgroup header row.
+
+    - Rectangle › Corners → the `corner_radius` value.
+    - Rectangle › Border → "active" / "not active" based on
+      `border_enabled`.
+    - Everything else → empty.
+    """
+    name = subgroup.lower()
+    if name == "corners":
+        for p in descriptor.property_schema:
+            if p.get("group") == group and \
+                    p.get("subgroup") == subgroup and \
+                    p["name"] == "corner_radius":
+                return str(properties.get("corner_radius", ""))
+    if name == "border":
+        return (
+            "active"
+            if properties.get("border_enabled")
+            else "not active"
+        )
+    return ""
+
+
+def enum_options_for(ptype: str):
+    if ptype == "anchor":
+        return ANCHOR_DROPDOWN_ORDER
+    if ptype == "compound":
+        return COMPOUND_OPTIONS
+    if ptype == "justify":
+        return JUSTIFY_OPTIONS
+    return []
+
+
+def coerce_value(ptype: str | None, raw: str):
+    if ptype == "number":
+        try:
+            return int(raw)
+        except ValueError:
+            try:
+                return float(raw)
+            except ValueError:
+                return None
+    return raw

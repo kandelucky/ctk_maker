@@ -28,20 +28,17 @@ class CTkLabelDescriptor(WidgetDescriptor):
         # Text content + style
         "text": "CTkLabel",
         "font_size": 13,
+        "font_autofit": False,
         "font_bold": False,
         "font_italic": False,
         "font_underline": False,
         "font_overstrike": False,
-        "font_autofit": False,
+        "font_wrap": True,
         "anchor": "center",
         "justify": "center",
         "wraplength": 0,
         "text_color": "#ffffff",
         "text_color_disabled": "#a0a0a0",
-        # Implicit (not editable in schema). Both transparent so CTk
-        # delegates rendering to its master-color detection. True widget
-        # nesting arrives in Phase 6 — until then the label is always a
-        # direct canvas child, so it will read the canvas background.
         "fg_color": "transparent",
         "bg_color": "transparent",
     }
@@ -60,40 +57,38 @@ class CTkLabelDescriptor(WidgetDescriptor):
          "group": "Geometry", "pair": "size", "min": 10, "max": 2000},
 
         # --- Text --------------------------------------------------------
-        {"name": "text", "type": "multiline", "label": "Label",
-         "group": "Text"},
+        {"name": "text", "type": "multiline", "label": "",
+         "group": "Text", "row_label": "Label"},
 
         {"name": "font_size", "type": "number", "label": "",
-         "group": "Text", "subgroup": "Style", "pair": "size_row",
-         "row_label": "Size", "min": 6, "max": 96,
+         "group": "Text", "row_label": "Size", "min": 6, "max": 96,
          "disabled_when": lambda p: bool(p.get("font_autofit", False))},
-        {"name": "font_autofit", "type": "boolean", "label": "Best Fit",
-         "group": "Text", "subgroup": "Style", "pair": "size_row"},
+        {"name": "font_autofit", "type": "boolean", "label": "",
+         "group": "Text", "row_label": "Best Fit"},
 
-        {"name": "font_bold", "type": "boolean", "label": "Bold",
-         "group": "Text", "subgroup": "Style", "pair": "style_row",
-         "row_label": "Style"},
-        {"name": "font_italic", "type": "boolean", "label": "Italic",
-         "group": "Text", "subgroup": "Style", "pair": "style_row"},
-
-        {"name": "font_underline", "type": "boolean", "label": "Underline",
-         "group": "Text", "subgroup": "Style", "pair": "deco_row",
-         "row_label": "Decoration"},
-        {"name": "font_overstrike", "type": "boolean", "label": "Strike",
-         "group": "Text", "subgroup": "Style", "pair": "deco_row"},
+        {"name": "font_bold", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Bold"},
+        {"name": "font_italic", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Italic"},
+        {"name": "font_underline", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Underline"},
+        {"name": "font_overstrike", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Strike"},
+        {"name": "font_wrap", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Wrap"},
 
         {"name": "anchor", "type": "anchor", "label": "",
-         "group": "Text", "subgroup": "Alignment", "row_label": "Anchor"},
+         "group": "Text", "row_label": "Anchor"},
         {"name": "justify", "type": "justify", "label": "",
-         "group": "Text", "subgroup": "Alignment", "row_label": "Justify"},
+         "group": "Text", "row_label": "Justify"},
         {"name": "wraplength", "type": "number", "label": "",
-         "group": "Text", "subgroup": "Alignment",
-         "row_label": "Wrap Length", "min": 0, "max": 2000},
+         "group": "Text", "row_label": "Wrap Length",
+         "min": 0, "max": 2000},
 
         {"name": "text_color", "type": "color", "label": "",
-         "group": "Text", "subgroup": "Color", "row_label": "Normal"},
+         "group": "Text", "row_label": "Normal Text Color"},
         {"name": "text_color_disabled", "type": "color", "label": "",
-         "group": "Text", "subgroup": "Color", "row_label": "Disabled"},
+         "group": "Text", "row_label": "Disabled Text Color"},
     ]
 
     derived_triggers = {"text", "width", "height", "font_bold", "font_autofit"}
@@ -102,6 +97,7 @@ class CTkLabelDescriptor(WidgetDescriptor):
     _FONT_KEYS = {
         "font_size", "font_bold", "font_italic",
         "font_underline", "font_overstrike", "font_autofit",
+        "font_wrap",
     }
 
     # ==================================================================
