@@ -52,7 +52,7 @@ APPEARANCE_MODES = ["Light", "Dark", "System"]
 
 ABOUT_TEXT = (
     "CTk Visual Builder\n"
-    "Phase 2\n\n"
+    "v0.0.7\n\n"
     "Drag-and-drop designer for CustomTkinter that exports clean Python code.\n\n"
     "Built with:\n"
     "  • CustomTkinter (MIT)\n"
