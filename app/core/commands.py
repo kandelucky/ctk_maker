@@ -255,10 +255,18 @@ class ReparentCommand(Command):
 
 
 class RenameCommand(Command):
-    def __init__(self, widget_id: str, before: str, after: str):
+    def __init__(
+        self,
+        widget_id: str,
+        before: str,
+        after: str,
+        coalesce_key: str | None = None,
+    ):
         self.widget_id = widget_id
         self.before = before
         self.after = after
+        self.coalesce_key = coalesce_key
+        self.timestamp = time.monotonic()
         self.description = f"Rename to '{after}'"
 
     def undo(self, project: "Project") -> None:
@@ -266,3 +274,130 @@ class RenameCommand(Command):
 
     def redo(self, project: "Project") -> None:
         project.rename_widget(self.widget_id, self.after)
+
+    def merge_into(self, other: "Command") -> bool:
+        if self.coalesce_key is None:
+            return False
+        if not isinstance(other, RenameCommand):
+            return False
+        if other.coalesce_key != self.coalesce_key:
+            return False
+        if other.widget_id != self.widget_id:
+            return False
+        if self.timestamp - other.timestamp > COALESCE_WINDOW_SEC:
+            return False
+        other.after = self.after
+        other.timestamp = self.timestamp
+        other.description = f"Rename to '{self.after}'"
+        return True
+
+
+class BulkAddCommand(Command):
+    """Paste / duplicate — restores multiple widget subtrees from
+    snapshots. Each entry carries its own (snapshot, parent_id, index)
+    so z-order survives undo + redo round trips.
+    """
+
+    def __init__(
+        self,
+        entries: list[tuple[dict, str | None, int]],
+        label: str = "Paste",
+    ):
+        self._entries = entries
+        self.description = (
+            f"{label} {len(entries)} widgets" if len(entries) > 1
+            else label
+        )
+
+    def undo(self, project: "Project") -> None:
+        for snapshot, _parent_id, _index in self._entries:
+            project.remove_widget(snapshot["id"])
+
+    def redo(self, project: "Project") -> None:
+        restored_ids: list[str] = []
+        for snapshot, parent_id, index in self._entries:
+            node = WidgetNode.from_dict(snapshot)
+            project.add_widget(node, parent_id=parent_id)
+            project.reparent(node.id, parent_id, index=index)
+            restored_ids.append(node.id)
+        if len(restored_ids) == 1:
+            project.select_widget(restored_ids[0])
+        elif restored_ids:
+            project.set_multi_selection(
+                set(restored_ids), primary=restored_ids[0],
+            )
+
+
+class ZOrderCommand(Command):
+    """Bring-to-Front / Send-to-Back reorder within a parent's
+    children list. Captured as old / new sibling indices so undo is
+    a single reparent call with the restored index.
+    """
+
+    def __init__(
+        self,
+        widget_id: str,
+        parent_id: str | None,
+        old_index: int,
+        new_index: int,
+        direction: str,
+    ):
+        self.widget_id = widget_id
+        self.parent_id = parent_id
+        self.old_index = old_index
+        self.new_index = new_index
+        self.description = {
+            "front": "Bring to Front",
+            "back": "Send to Back",
+        }.get(direction, "Reorder")
+
+    def undo(self, project: "Project") -> None:
+        project.reparent(
+            self.widget_id, self.parent_id, index=self.old_index,
+        )
+        project.select_widget(self.widget_id)
+
+    def redo(self, project: "Project") -> None:
+        project.reparent(
+            self.widget_id, self.parent_id, index=self.new_index,
+        )
+        project.select_widget(self.widget_id)
+
+
+class ToggleFlagCommand(Command):
+    """Visibility or lock toggle — both flags live on WidgetNode
+    outside the normal ``properties`` dict, so they need their own
+    setter routing rather than ChangePropertyCommand.
+    """
+
+    def __init__(
+        self,
+        widget_id: str,
+        flag: str,
+        before: bool,
+        after: bool,
+    ):
+        self.widget_id = widget_id
+        self.flag = flag
+        self.before = before
+        self.after = after
+        self.description = {
+            "visible": (
+                "Hide widget" if not after else "Show widget"
+            ),
+            "locked": (
+                "Lock widget" if after else "Unlock widget"
+            ),
+        }.get(flag, f"Toggle {flag}")
+
+    def _apply(self, project: "Project", value: bool) -> None:
+        if self.flag == "visible":
+            project.set_visibility(self.widget_id, value)
+        elif self.flag == "locked":
+            project.set_locked(self.widget_id, value)
+
+    def undo(self, project: "Project") -> None:
+        self._apply(project, self.before)
+
+    def redo(self, project: "Project") -> None:
+        self._apply(project, self.after)

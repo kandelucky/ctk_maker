@@ -25,3 +25,23 @@ Thumbs.db
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Auto-generated — regenerate via tools/gen_architecture_dashboard.py
+docs/architecture_dashboard.html
+docs/architecture_graph.dot
+docs/architecture_graph.svg
+
+# Test artifacts
+tools/_test_alpha.png
+
+# External reference material — run tools/fetch_ctk_reference.py to get it
+reference/ctk_official/
+
+# Developer-only tooling and notes (not shipped)
+docs/ARCHITECTURE.md
+docs/module_descriptions.ka.json
+tools/ctk_examples/
+tools/fetch_ctk_reference.py
+tools/gen_architecture_dashboard.py
+tools/gen_architecture_graph.py
+tools/test_transparent_png.py

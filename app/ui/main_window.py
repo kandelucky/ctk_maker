@@ -53,7 +53,7 @@ APPEARANCE_MODES = ["Light", "Dark", "System"]
 
 ABOUT_TEXT = (
     "CTk Visual Builder\n"
-    "v0.0.7\n\n"
+    "v0.0.8\n\n"
     "Drag-and-drop designer for CustomTkinter that exports clean Python code.\n\n"
     "Built with:\n"
     "  • CustomTkinter (MIT)\n"
@@ -690,14 +690,14 @@ class MainWindow(ctk.CTk):
     # Undo / redo
     # ------------------------------------------------------------------
     def _on_undo(self) -> str | None:
-        if isinstance(self.focus_get(), (tk.Entry, tk.Text)):
-            return None
+        # Always route Ctrl+Z through the project history, even when
+        # an Entry widget has focus — the name entry's edits are
+        # already tracked as coalesced RenameCommands, so app-level
+        # undo is the right behaviour everywhere.
         self.project.history.undo()
         return "break"
 
     def _on_redo(self) -> str | None:
-        if isinstance(self.focus_get(), (tk.Entry, tk.Text)):
-            return None
         self.project.history.redo()
         return "break"
 
@@ -781,7 +781,32 @@ class MainWindow(ctk.CTk):
                     parent_id = primary
                 elif node.parent is not None:
                     parent_id = node.parent.id
-        self.project.paste_from_clipboard(parent_id=parent_id)
+        new_ids = self.project.paste_from_clipboard(parent_id=parent_id)
+        self._push_paste_history(new_ids)
+
+    def _push_paste_history(self, new_ids: list[str]) -> None:
+        if not new_ids:
+            return
+        from app.core.commands import BulkAddCommand
+        entries: list[tuple[dict, str | None, int]] = []
+        for nid in new_ids:
+            node = self.project.get_widget(nid)
+            if node is None:
+                continue
+            parent_id = (
+                node.parent.id if node.parent is not None else None
+            )
+            siblings = (
+                node.parent.children if node.parent is not None
+                else self.project.root_widgets
+            )
+            try:
+                index = siblings.index(node)
+            except ValueError:
+                index = len(siblings) - 1
+            entries.append((node.to_dict(), parent_id, index))
+        if entries:
+            self.project.history.push(BulkAddCommand(entries, label="Paste"))
 
     def _on_menu_delete(self) -> None:
         sid = self.project.selected_id
@@ -829,12 +854,40 @@ class MainWindow(ctk.CTk):
     def _on_menu_bring_to_front(self) -> None:
         sid = self.project.selected_id
         if sid is not None:
-            self.project.bring_to_front(sid)
+            self._z_order_with_history(sid, "front")
 
     def _on_menu_send_to_back(self) -> None:
         sid = self.project.selected_id
         if sid is not None:
-            self.project.send_to_back(sid)
+            self._z_order_with_history(sid, "back")
+
+    def _z_order_with_history(self, nid: str, direction: str) -> None:
+        from app.core.commands import ZOrderCommand
+        node = self.project.get_widget(nid)
+        if node is None:
+            return
+        siblings = (
+            node.parent.children if node.parent is not None
+            else self.project.root_widgets
+        )
+        try:
+            old_index = siblings.index(node)
+        except ValueError:
+            return
+        if direction == "front":
+            self.project.bring_to_front(nid)
+        else:
+            self.project.send_to_back(nid)
+        try:
+            new_index = siblings.index(node)
+        except ValueError:
+            return
+        if old_index == new_index:
+            return
+        parent_id = node.parent.id if node.parent is not None else None
+        self.project.history.push(
+            ZOrderCommand(nid, parent_id, old_index, new_index, direction),
+        )
 
     def _on_theme_toggle(self) -> None:
         current = self._appearance_var.get()

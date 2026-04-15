@@ -25,7 +25,7 @@ import customtkinter as ctk
 
 from ctk_color_picker import ColorPickerDialog
 
-from app.core.commands import ChangePropertyCommand
+from app.core.commands import ChangePropertyCommand, RenameCommand
 from app.core.logger import log_error
 from app.core.project import Project
 from app.ui.icons import load_icon
@@ -428,8 +428,21 @@ class PropertiesPanelV2(ctk.CTkFrame):
     def _on_name_var_write(self, *_args) -> None:
         if self._suspend_name_trace or self.current_id is None:
             return
-        self.project.rename_widget(
-            self.current_id, self._name_var.get(),
+        new_name = self._name_var.get()
+        node = self.project.get_widget(self.current_id)
+        if node is None or node.name == new_name:
+            return
+        before = node.name
+        self.project.rename_widget(self.current_id, new_name)
+        # "rename" coalesce key collapses a burst of keystrokes into
+        # a single undo step — History.merge_into preserves the tail's
+        # original `before` and refreshes its `after` on each push
+        # within COALESCE_WINDOW_SEC.
+        self.project.history.push(
+            RenameCommand(
+                self.current_id, before, new_name,
+                coalesce_key="rename",
+            ),
         )
 
     # ==================================================================

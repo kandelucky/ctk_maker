@@ -18,9 +18,12 @@ from typing import TYPE_CHECKING, Callable
 import customtkinter as ctk
 
 from app.core.commands import (
+    BulkAddCommand,
     DeleteMultipleCommand,
     DeleteWidgetCommand,
     RenameCommand,
+    ToggleFlagCommand,
+    ZOrderCommand,
 )
 from app.ui.dialogs import RenameDialog
 from app.ui.icons import load_icon, load_tk_icon
@@ -645,8 +648,11 @@ class ObjectTreeWindow(ctk.CTkToplevel):
         column = self.tree.identify_column(event.x)
         # #0 column (tree column) holds the visibility icon image.
         if column == "#0":
-            self.project.set_visibility(
-                iid, not self._node_visible(iid),
+            before = self._node_visible(iid)
+            after = not before
+            self.project.set_visibility(iid, after)
+            self.project.history.push(
+                ToggleFlagCommand(iid, "visible", before, after),
             )
             self._drag_source_id = None
             return "break"
@@ -654,7 +660,12 @@ class ObjectTreeWindow(ctk.CTkToplevel):
         if column == "#1":
             node = self.project.get_widget(iid)
             if node is not None:
-                self.project.set_locked(iid, not node.locked)
+                before = node.locked
+                after = not before
+                self.project.set_locked(iid, after)
+                self.project.history.push(
+                    ToggleFlagCommand(iid, "locked", before, after),
+                )
             self._drag_source_id = None
             return "break"
         # #2 is the Name column — click on the leading arrow area
@@ -927,7 +938,7 @@ class ObjectTreeWindow(ctk.CTkToplevel):
             )
             menu.add_command(
                 label="Duplicate",
-                command=lambda nid=iid: self.project.duplicate_widget(nid),
+                command=lambda nid=iid: self._duplicate_with_history(nid),
             )
             menu.add_command(
                 label="Delete",
@@ -936,11 +947,15 @@ class ObjectTreeWindow(ctk.CTkToplevel):
             menu.add_separator()
             menu.add_command(
                 label="Bring to Front",
-                command=lambda nid=iid: self.project.bring_to_front(nid),
+                command=lambda nid=iid: self._z_order_with_history(
+                    nid, "front",
+                ),
             )
             menu.add_command(
                 label="Send to Back",
-                command=lambda nid=iid: self.project.send_to_back(nid),
+                command=lambda nid=iid: self._z_order_with_history(
+                    nid, "back",
+                ),
             )
         try:
             menu.tk_popup(event.x_root, event.y_root)
@@ -978,8 +993,82 @@ class ObjectTreeWindow(ctk.CTkToplevel):
         if not self.project.clipboard:
             return "break"
         parent_id = self._paste_target_parent_id()
-        self.project.paste_from_clipboard(parent_id=parent_id)
+        new_ids = self.project.paste_from_clipboard(parent_id=parent_id)
+        self._push_paste_history(new_ids)
         return "break"
+
+    def _push_paste_history(self, new_ids: list[str]) -> None:
+        if not new_ids:
+            return
+        entries: list[tuple[dict, str | None, int]] = []
+        for nid in new_ids:
+            node = self.project.get_widget(nid)
+            if node is None:
+                continue
+            parent_id = (
+                node.parent.id if node.parent is not None else None
+            )
+            siblings = (
+                node.parent.children if node.parent is not None
+                else self.project.root_widgets
+            )
+            try:
+                index = siblings.index(node)
+            except ValueError:
+                index = len(siblings) - 1
+            entries.append((node.to_dict(), parent_id, index))
+        if entries:
+            self.project.history.push(BulkAddCommand(entries, label="Paste"))
+
+    def _duplicate_with_history(self, nid: str) -> None:
+        new_id = self.project.duplicate_widget(nid)
+        if new_id is None:
+            return
+        clone = self.project.get_widget(new_id)
+        if clone is None:
+            return
+        parent_id = clone.parent.id if clone.parent is not None else None
+        siblings = (
+            clone.parent.children if clone.parent is not None
+            else self.project.root_widgets
+        )
+        try:
+            index = siblings.index(clone)
+        except ValueError:
+            index = len(siblings) - 1
+        self.project.history.push(
+            BulkAddCommand(
+                [(clone.to_dict(), parent_id, index)],
+                label="Duplicate",
+            ),
+        )
+
+    def _z_order_with_history(self, nid: str, direction: str) -> None:
+        node = self.project.get_widget(nid)
+        if node is None:
+            return
+        siblings = (
+            node.parent.children if node.parent is not None
+            else self.project.root_widgets
+        )
+        try:
+            old_index = siblings.index(node)
+        except ValueError:
+            return
+        if direction == "front":
+            self.project.bring_to_front(nid)
+        else:
+            self.project.send_to_back(nid)
+        try:
+            new_index = siblings.index(node)
+        except ValueError:
+            return
+        if old_index == new_index:
+            return
+        parent_id = node.parent.id if node.parent is not None else None
+        self.project.history.push(
+            ZOrderCommand(nid, parent_id, old_index, new_index, direction),
+        )
 
     def _paste_target_parent_id(self) -> str | None:
         """Where should the pasted widgets land?

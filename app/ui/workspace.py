@@ -22,11 +22,13 @@ import customtkinter as ctk
 
 from app.core.commands import (
     AddWidgetCommand,
+    BulkAddCommand,
     ChangePropertyCommand,
     DeleteWidgetCommand,
     MoveCommand,
     RenameCommand,
     ReparentCommand,
+    ZOrderCommand,
 )
 from app.core.logger import log_error
 from app.core.project import Project
@@ -1209,23 +1211,73 @@ class Workspace(ctk.CTkFrame):
         )
         menu.add_command(
             label="Duplicate",
-            command=lambda: self.project.duplicate_widget(nid),
+            command=lambda: self._duplicate_with_history(nid),
         )
         menu.add_command(label="Delete", command=self._on_delete)
         menu.add_separator()
         menu.add_command(
             label="Bring to Front",
-            command=lambda: self.project.bring_to_front(nid),
+            command=lambda: self._z_order_with_history(nid, "front"),
         )
         menu.add_command(
             label="Send to Back",
-            command=lambda: self.project.send_to_back(nid),
+            command=lambda: self._z_order_with_history(nid, "back"),
         )
         try:
             menu.tk_popup(event.x_root, event.y_root)
         finally:
             menu.grab_release()
         return "break"
+
+    def _duplicate_with_history(self, nid: str) -> None:
+        new_id = self.project.duplicate_widget(nid)
+        if new_id is None:
+            return
+        clone = self.project.get_widget(new_id)
+        if clone is None:
+            return
+        parent_id = clone.parent.id if clone.parent is not None else None
+        siblings = (
+            clone.parent.children if clone.parent is not None
+            else self.project.root_widgets
+        )
+        try:
+            index = siblings.index(clone)
+        except ValueError:
+            index = len(siblings) - 1
+        self.project.history.push(
+            BulkAddCommand(
+                [(clone.to_dict(), parent_id, index)],
+                label="Duplicate",
+            ),
+        )
+
+    def _z_order_with_history(self, nid: str, direction: str) -> None:
+        node = self.project.get_widget(nid)
+        if node is None:
+            return
+        siblings = (
+            node.parent.children if node.parent is not None
+            else self.project.root_widgets
+        )
+        try:
+            old_index = siblings.index(node)
+        except ValueError:
+            return
+        if direction == "front":
+            self.project.bring_to_front(nid)
+        else:
+            self.project.send_to_back(nid)
+        try:
+            new_index = siblings.index(node)
+        except ValueError:
+            return
+        if old_index == new_index:
+            return
+        parent_id = node.parent.id if node.parent is not None else None
+        self.project.history.push(
+            ZOrderCommand(nid, parent_id, old_index, new_index, direction),
+        )
 
     def _prompt_rename_widget(self, nid: str) -> None:
         node = self.project.get_widget(nid)
