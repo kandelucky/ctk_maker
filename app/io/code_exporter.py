@@ -147,7 +147,10 @@ def _emit_widget(
         if "compound" not in props:
             kwargs.append(("compound", '"left"'))
 
-    lines = [f"{var_name} = ctk.{node.widget_type}("]
+    ctk_class = (
+        getattr(descriptor, "ctk_class_name", "") or node.widget_type
+    )
+    lines = [f"{var_name} = ctk.{ctk_class}("]
     lines.append(f"    {master_var},")
     for key, src in kwargs:
         lines.append(f"    {key}={src},")
@@ -175,8 +178,16 @@ def _font_source(props: dict) -> str:
 
 
 def _image_source(props: dict, image_path: str) -> str:
-    iw = _safe_int(props.get("image_width"), 20)
-    ih = _safe_int(props.get("image_height"), 20)
+    # CTkButton keeps the icon size separate (`image_width/height`),
+    # but the pure Image widget uses the row's own `width/height` as
+    # the image size — fall back to those when the icon-specific keys
+    # are missing.
+    if "image_width" in props or "image_height" in props:
+        iw = _safe_int(props.get("image_width"), 20)
+        ih = _safe_int(props.get("image_height"), 20)
+    else:
+        iw = _safe_int(props.get("width"), 64)
+        ih = _safe_int(props.get("height"), 64)
     path_src = _py_literal(image_path)
     return (
         f"ctk.CTkImage("

@@ -1,5 +1,10 @@
 class WidgetDescriptor:
     type_name: str = ""
+    # Name of the actual CTk class the exporter should emit. Defaults
+    # to type_name for descriptors that map 1:1 onto a CTk class
+    # (CTkButton / CTkLabel / …). Builder-only composite widgets
+    # (e.g. Image → CTkLabel with text="" + image=) override this.
+    ctk_class_name: str = ""
     display_name: str = ""
     default_properties: dict = {}
     property_schema: list[dict] = []

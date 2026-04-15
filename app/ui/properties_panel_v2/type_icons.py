@@ -19,6 +19,7 @@ _TYPE_ICON_NAMES = {
     "CTkScrollableFrame": "scroll-text",
     "CTkTabview": "layout-panel-top",
     "CTkProgressBar": "loader",
+    "Image": "image",
 }
 
 

@@ -80,6 +80,7 @@ CATALOG: tuple[WidgetGroup, ...] = (
     )),
     WidgetGroup("Display", (
         WidgetEntry("CTkLabel", "Label", "type"),
+        WidgetEntry("Image", "Image", "image"),
         WidgetEntry("CTkProgressBar", "Progress Bar", "loader"),
     )),
 )

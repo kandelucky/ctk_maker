@@ -163,6 +163,37 @@ class ChangePropertyCommand(Command):
         return True
 
 
+class MultiChangePropertyCommand(Command):
+    """Bundle multiple property changes for a single widget into
+    one undo step. Used when a single UI action triggers derived
+    side-effects via the descriptor's ``compute_derived`` hook —
+    e.g. setting an image on an Image widget also recomputes its
+    height when ``preserve_aspect`` is on. Without bundling, the
+    derived change would be lost on undo because only the primary
+    commit path pushes history entries.
+    """
+
+    def __init__(
+        self,
+        widget_id: str,
+        changes: dict,
+    ):
+        # changes: {prop_name: (before, after)}
+        self.widget_id = widget_id
+        self.changes = dict(changes)
+        self.description = f"Change {len(changes)} properties"
+
+    def undo(self, project: "Project") -> None:
+        for name, (before, _after) in self.changes.items():
+            project.update_property(self.widget_id, name, before)
+        project.select_widget(self.widget_id)
+
+    def redo(self, project: "Project") -> None:
+        for name, (_before, after) in self.changes.items():
+            project.update_property(self.widget_id, name, after)
+        project.select_widget(self.widget_id)
+
+
 class MoveCommand(Command):
     """Workspace drag — one entry per press→release. ``before`` and
     ``after`` are dicts like {"x": …, "y": …}.

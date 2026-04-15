@@ -25,7 +25,11 @@ import customtkinter as ctk
 
 from ctk_color_picker import ColorPickerDialog
 
-from app.core.commands import ChangePropertyCommand, RenameCommand
+from app.core.commands import (
+    ChangePropertyCommand,
+    MultiChangePropertyCommand,
+    RenameCommand,
+)
 from app.core.logger import log_error
 from app.core.project import Project
 from app.ui.icons import load_icon
@@ -1043,15 +1047,30 @@ class PropertiesPanelV2(ctk.CTkFrame):
         if self.current_id is None:
             return
         node = self.project.get_widget(self.current_id)
-        before = node.properties.get(pname) if node is not None else None
+        if node is None:
+            return
+        # Full-dict snapshot so `compute_derived` side-effect changes
+        # (e.g. Image width→height recompute on preserve_aspect) end
+        # up in the same undo entry as the primary commit. Without
+        # this, the derived prop silently drifts during undo/redo.
+        before_snapshot = dict(node.properties)
         self.project.update_property(self.current_id, pname, value)
-        # Skip history records during live drag-scrub — the scrub
-        # controller pushes one ChangePropertyCommand at release with
-        # the full before → after diff.
         if getattr(self, "_suspend_history", False):
             return
-        if before == value:
+        after_snapshot = dict(node.properties)
+        changed = {
+            k: (before_snapshot.get(k), after_snapshot.get(k))
+            for k in set(before_snapshot) | set(after_snapshot)
+            if before_snapshot.get(k) != after_snapshot.get(k)
+        }
+        if not changed:
+            return
+        if len(changed) == 1:
+            (k, (b, a)), = changed.items()
+            self.project.history.push(
+                ChangePropertyCommand(self.current_id, k, b, a),
+            )
             return
         self.project.history.push(
-            ChangePropertyCommand(self.current_id, pname, before, value),
+            MultiChangePropertyCommand(self.current_id, changed),
         )
