@@ -40,6 +40,7 @@ reference/ctk_official/
 # Developer-only tooling and notes (not shipped)
 docs/ARCHITECTURE.md
 docs/module_descriptions.ka.json
+docs/New folder/
 tools/ctk_examples/
 tools/fetch_ctk_reference.py
 tools/gen_architecture_dashboard.py

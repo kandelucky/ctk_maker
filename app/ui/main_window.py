@@ -19,7 +19,7 @@ from app.io.project_saver import save_project
 from app.ui.dialogs import NewProjectSizeDialog
 from app.ui.history_window import HistoryWindow
 from app.ui.icons import load_tk_icon
-from app.ui.object_tree_window import ObjectTreeWindow
+from app.ui.object_tree_window import ObjectTreePanel, ObjectTreeWindow
 from app.ui.palette import Palette
 from app.ui.properties_panel_v2 import PropertiesPanelV2 as PropertiesPanel
 from app.ui.startup_dialog import StartupDialog
@@ -53,7 +53,7 @@ APPEARANCE_MODES = ["Light", "Dark", "System"]
 
 ABOUT_TEXT = (
     "CTk Visual Builder\n"
-    "v0.0.8\n\n"
+    "v0.0.9\n\n"
     "Drag-and-drop designer for CustomTkinter that exports clean Python code.\n\n"
     "Built with:\n"
     "  • CustomTkinter (MIT)\n"
@@ -98,7 +98,9 @@ class MainWindow(ctk.CTk):
         self._current_path: str | None = None
         self._dirty: bool = False
         self._object_tree_window: ObjectTreeWindow | None = None
-        self._object_tree_var = tk.BooleanVar(value=True)
+        # Default: Object Tree is docked above the Properties panel —
+        # the floating window only opens via the View menu toggle.
+        self._object_tree_var = tk.BooleanVar(value=False)
         self._history_window: HistoryWindow | None = None
         self._history_var = tk.BooleanVar(value=False)
 
@@ -138,23 +140,51 @@ class MainWindow(ctk.CTk):
 
         self.palette = Palette(self.paned, self.project)
         self.workspace = Workspace(self.paned, self.project)
-        self.properties = PropertiesPanel(self.paned, self.project)
+
+        # Right sidebar: Object Tree docked above the Properties panel
+        # in a nested vertical PanedWindow. A slightly-wider horizontal
+        # sash so the user can actually grab it; bg colour picks up the
+        # same gutter shade the main horizontal sash uses.
+        self.right_pane = tk.PanedWindow(
+            self.paned,
+            orient=tk.VERTICAL,
+            sashwidth=7,
+            sashrelief=tk.FLAT,
+            bg="#3a3a3a",
+            borderwidth=0,
+            showhandle=False,
+        )
+        self.object_tree = ObjectTreePanel(self.right_pane, self.project)
+        self.properties = PropertiesPanel(self.right_pane, self.project)
+        self.right_pane.add(
+            self.object_tree, minsize=160, height=280, stretch="never",
+        )
+        self.right_pane.add(
+            self.properties, minsize=320, stretch="always",
+        )
 
         self.paned.add(self.palette, minsize=150, width=200, stretch="never")
         self.paned.add(self.workspace, minsize=400, stretch="always")
-        self.paned.add(self.properties, minsize=320, width=340, stretch="never")
+        self.paned.add(self.right_pane, minsize=320, width=360, stretch="never")
 
         bus = self.project.event_bus
         for evt in ("widget_added", "widget_removed", "property_changed",
                     "widget_z_changed", "document_resized"):
             bus.subscribe(evt, self._on_project_modified)
         bus.subscribe("history_changed", self._on_history_changed)
+        bus.subscribe(
+            "request_close_project",
+            lambda *_a, **_k: self._on_close_project(),
+        )
+        bus.subscribe(
+            "request_add_dialog",
+            lambda *_a, **_k: self._on_add_dialog(),
+        )
         self._refresh_undo_redo_buttons()
 
         self.protocol("WM_DELETE_WINDOW", self._on_window_close)
 
         self.after(120, self._show_startup_dialog)
-        self.after(250, self._auto_open_object_tree)
 
     # ------------------------------------------------------------------
     # Non-Latin keyboard layout fallback
@@ -218,11 +248,13 @@ class MainWindow(ctk.CTk):
         if not self._dirty:
             self._dirty = True
             self._refresh_title()
+            self.project.event_bus.publish("dirty_changed", True)
 
     def _clear_dirty(self) -> None:
         if self._dirty:
             self._dirty = False
             self._refresh_title()
+            self.project.event_bus.publish("dirty_changed", False)
 
     def _refresh_title(self) -> None:
         base = "CTk Visual Builder"
@@ -271,6 +303,7 @@ class MainWindow(ctk.CTk):
             self.project.clear()
             self.project.resize_document(w, h)
             self.project.name = name
+            self.project.active_document.name = name
             try:
                 save_project(self.project, path)
             except OSError:
@@ -378,7 +411,17 @@ class MainWindow(ctk.CTk):
 
         # ---- Form ----
         form_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
-        self._add_cmd(form_menu, "Preview", self._on_preview, icon="play", accelerator="Ctrl+R")
+        self._add_cmd(
+            form_menu, "Preview", self._on_preview,
+            icon="play", accelerator="Ctrl+R",
+        )
+        form_menu.add_separator()
+        self._add_cmd(
+            form_menu, "Add Dialog", self._on_add_dialog,
+        )
+        self._add_cmd(
+            form_menu, "Remove Current", self._on_remove_current_document,
+        )
         menubar.add_cascade(label="Form", menu=form_menu)
 
         # ---- View ----
@@ -465,6 +508,9 @@ class MainWindow(ctk.CTk):
             add_recent(path)
             self._rebuild_recent_menu()
         self._refresh_title()
+        # Canvas chrome + anything else that mirrors project.name
+        # needs a poke — New, Open and Save As all flow through here.
+        self.project.event_bus.publish("project_renamed", self.project.name)
 
     def _open_path(self, path: str) -> None:
         if not Path(path).exists():
@@ -507,6 +553,11 @@ class MainWindow(ctk.CTk):
         self.project.clear()
         self.project.resize_document(w, h)
         self.project.name = name
+        # Seed the first document's title from the project name so
+        # the exported `app.title(...)` matches what the user typed
+        # in the New dialog. They can still rename the window via
+        # the Properties panel afterwards.
+        self.project.active_document.name = name
         try:
             save_project(self.project, path)
         except OSError:
@@ -565,6 +616,106 @@ class MainWindow(ctk.CTk):
 
     def _on_quit(self) -> None:
         self._on_window_close()
+
+    # ------------------------------------------------------------------
+    # Form menu — add / remove dialogs (multi-document projects)
+    # ------------------------------------------------------------------
+    def _on_add_dialog(self) -> None:
+        from app.ui.dialogs import AddDialogSizeDialog
+        existing = {doc.name for doc in self.project.documents}
+        base_name = "Dialog"
+        default_name = base_name
+        n = 1
+        while default_name in existing:
+            n += 1
+            default_name = f"{base_name} {n}"
+        # Seed defaults from the main window (first document) so
+        # "Same as Main" preset resolves to the right numbers.
+        main_doc = self.project.documents[0] if self.project.documents else None
+        main_w = main_doc.width if main_doc else 800
+        main_h = main_doc.height if main_doc else 600
+        dialog = AddDialogSizeDialog(
+            self,
+            default_name=default_name,
+            main_w=main_w,
+            main_h=main_h,
+        )
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        name, w, h = dialog.result
+        self._add_document(name, is_toplevel=True, width=w, height=h)
+
+    def _add_document(
+        self,
+        name: str,
+        is_toplevel: bool,
+        width: int = 400,
+        height: int = 300,
+    ) -> None:
+        from app.core.commands import AddDocumentCommand
+        from app.core.document import Document
+        max_right = 0
+        for doc in self.project.documents:
+            right = doc.canvas_x + doc.width
+            if right > max_right:
+                max_right = right
+        new_doc = Document(
+            name=name,
+            width=width,
+            height=height,
+            canvas_x=max_right + 120,
+            canvas_y=0,
+            is_toplevel=is_toplevel,
+        )
+        self.project.documents.append(new_doc)
+        self.project.set_active_document(new_doc.id)
+        self._on_project_modified()
+        self.project.event_bus.publish(
+            "project_renamed", self.project.name,
+        )
+        self.project.history.push(
+            AddDocumentCommand(
+                new_doc.to_dict(),
+                len(self.project.documents) - 1,
+            ),
+        )
+
+    def _on_remove_current_document(self) -> None:
+        doc = self.project.active_document
+        if not doc.is_toplevel:
+            messagebox.showinfo(
+                "Remove document",
+                "The main window can't be removed — only dialogs can.",
+                parent=self,
+            )
+            return
+        confirmed = messagebox.askyesno(
+            "Remove document",
+            f"Remove '{doc.name}' from the project?",
+            icon="warning",
+            parent=self,
+        )
+        if not confirmed:
+            return
+        from app.core.commands import DeleteDocumentCommand
+        snapshot = doc.to_dict()
+        index = self.project.documents.index(doc)
+        for node in list(doc.root_widgets):
+            self.project.remove_widget(node.id)
+        self.project.documents.remove(doc)
+        self.project.active_document_id = self.project.documents[0].id
+        self.project.event_bus.publish(
+            "active_document_changed",
+            self.project.active_document_id,
+        )
+        self.project.event_bus.publish(
+            "project_renamed", self.project.name,
+        )
+        self._on_project_modified()
+        self.project.history.push(
+            DeleteDocumentCommand(snapshot, index),
+        )
 
     def _on_preview(self) -> None:
         if not self.project.root_widgets:
@@ -660,14 +811,6 @@ class MainWindow(ctk.CTk):
     def _on_f9_history_window(self) -> None:
         self._history_var.set(not self._history_var.get())
         self._on_toggle_history_window()
-
-    def _auto_open_object_tree(self) -> None:
-        """Open Object Tree on launch if the checkbox says it should be
-        visible. Runs after the startup dialog so the main window has
-        its final position (the tree window auto-places relative to
-        the main window's top-right)."""
-        if self._object_tree_var.get():
-            self._on_toggle_object_tree()
 
     def _on_export(self) -> None:
         path = filedialog.asksaveasfilename(

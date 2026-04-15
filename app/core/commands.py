@@ -395,6 +395,122 @@ class ZOrderCommand(Command):
         project.select_widget(self.widget_id)
 
 
+class AddDocumentCommand(Command):
+    """Adding a brand-new Document (main window or dialog) to the
+    project. Snapshot captures the full Document state so undo can
+    recreate it at its original list position with its widgets intact.
+    """
+
+    def __init__(self, snapshot: dict, index: int):
+        self._snapshot = snapshot
+        self._index = index
+        self.description = f"Add {snapshot.get('name', 'document')}"
+
+    def undo(self, project: "Project") -> None:
+        _remove_document_by_id(project, self._snapshot["id"])
+
+    def redo(self, project: "Project") -> None:
+        _restore_document(project, self._snapshot, self._index)
+
+
+class DeleteDocumentCommand(Command):
+    """Removing a Document (typically a dialog — the main window is
+    protected). Snapshot + index mirror AddDocumentCommand; their
+    undo / redo sides are the same mechanic in opposite directions.
+    """
+
+    def __init__(self, snapshot: dict, index: int):
+        self._snapshot = snapshot
+        self._index = index
+        self.description = f"Delete {snapshot.get('name', 'document')}"
+
+    def undo(self, project: "Project") -> None:
+        _restore_document(project, self._snapshot, self._index)
+
+    def redo(self, project: "Project") -> None:
+        _remove_document_by_id(project, self._snapshot["id"])
+
+
+class MoveDocumentCommand(Command):
+    """Dragging a document's title bar to a new canvas position.
+    Only the canvas_x / canvas_y change — widgets stay put relative
+    to their document, so undo is just a coord swap.
+    """
+
+    def __init__(
+        self,
+        document_id: str,
+        before: tuple[int, int],
+        after: tuple[int, int],
+    ):
+        self.document_id = document_id
+        self.before = before
+        self.after = after
+        self.description = "Move document"
+
+    def _apply(self, project: "Project", xy: tuple[int, int]) -> None:
+        doc = project.get_document(self.document_id)
+        if doc is None:
+            return
+        doc.canvas_x, doc.canvas_y = int(xy[0]), int(xy[1])
+        project.event_bus.publish(
+            "active_document_changed", project.active_document_id,
+        )
+
+    def undo(self, project: "Project") -> None:
+        self._apply(project, self.before)
+
+    def redo(self, project: "Project") -> None:
+        self._apply(project, self.after)
+
+
+def _restore_document(
+    project: "Project", snapshot: dict, index: int,
+) -> None:
+    """Re-instantiate a Document from a saved snapshot at the
+    original list position and replay every widget so workspace /
+    inspectors rebuild their views in the new document.
+    """
+    from app.core.document import Document
+    doc = Document.from_dict(snapshot)
+    roots = list(doc.root_widgets)
+    doc.root_widgets = []
+    pos = max(0, min(int(index), len(project.documents)))
+    project.documents.insert(pos, doc)
+    project.active_document_id = doc.id
+    project.event_bus.publish("active_document_changed", doc.id)
+    for node in roots:
+        children = list(node.children)
+        node.children = []
+        node.parent = None
+        project.add_widget(node, parent_id=None)
+        _replay_children(project, node, children)
+
+
+def _replay_children(project, parent_node, children) -> None:
+    for child in children:
+        grand = list(child.children)
+        child.children = []
+        child.parent = None
+        project.add_widget(child, parent_id=parent_node.id)
+        _replay_children(project, child, grand)
+
+
+def _remove_document_by_id(project: "Project", doc_id: str) -> None:
+    doc = project.get_document(doc_id)
+    if doc is None:
+        return
+    for node in list(doc.root_widgets):
+        project.remove_widget(node.id)
+    if doc in project.documents:
+        project.documents.remove(doc)
+    if project.active_document_id == doc_id and project.documents:
+        project.active_document_id = project.documents[0].id
+    project.event_bus.publish(
+        "active_document_changed", project.active_document_id,
+    )
+
+
 class ToggleFlagCommand(Command):
     """Visibility or lock toggle — both flags live on WidgetNode
     outside the normal ``properties`` dict, so they need their own

@@ -28,6 +28,7 @@ _EDITORS: dict[str, Editor] = {
     "compound": _ENUM,
     "justify": _ENUM,
     "orientation": _ENUM,
+    "grid_style": _ENUM,
 }
 
 

@@ -309,6 +309,25 @@
 
 ---
 
+## Phase 2.13 — Object Tree dock + Image widget (2026-04-15) ✅
+
+- [x] **ObjectTreeWindow split** — the old `ObjectTreeWindow(CTkToplevel)` was a single ~1200-line class that only existed as a floating inspector. Refactored into two:
+  - **`ObjectTreePanel(ctk.CTkFrame)`** — all the tree-building, filter row, event-bus subscriptions, drag-to-reparent, right-click menu, rename/copy/paste/delete/z-order handlers — everything non-Toplevel now lives in a plain Frame so the main window can embed it into a sidebar.
+  - **`ObjectTreeWindow(ctk.CTkToplevel)`** — ~90-line wrapper that creates a Toplevel (title / geometry / transient / protocol / `_center_on_parent` / `_raise_above_parent`) and puts a `ObjectTreePanel` inside. Kept for the floating "pop-out" inspector that users can still toggle via the View menu.
+- [x] **Docked in the main window right sidebar** — `main_window.py` now wraps the Properties panel in a **nested vertical `tk.PanedWindow`** with the docked `ObjectTreePanel` above it. Drag the horizontal sash (7px, `#3a3a3a`) to resize either region. Initial heights: 280 / stretch.
+- [x] **Startup no longer auto-opens the floating Object Tree** — `_auto_open_object_tree` removed, `_object_tree_var` defaults to `False`. The docked panel is always visible; the View menu's "Object Tree" checkbutton now only toggles the additional floating window for users who want a detachable view.
+- [x] **Scrollbar overflow** — the docked tree originally wouldn't scroll because `ttk.Treeview` inside a default `pack_propagate(True)` chain was expanding its parent frames past the PanedWindow's assigned pane height. Fix: `pack_propagate(False)` on the Panel frame + inner container + `tree_row` frame, so the PanedWindow sash size wins over the tree's content request.
+- [x] **Scrollbar pack order fix** — scrollbar was invisible because `self.tree.pack(side="left", fill="both", expand=True)` was called BEFORE `vscroll.pack(side="right", fill="y")`. Tk's pack geometry manager gave the tree's `expand=True` ALL the horizontal space first, leaving zero for the scrollbar. Flipped the order so the scrollbar packs first.
+- [x] **Scrollbar styling** — `tk.Scrollbar` on Windows ignores colour kwargs in favour of the OS theme, so it rendered as white. Switched to a `ttk.Scrollbar` with a custom `ObjectTree.Vertical.TScrollbar` style (`background=#3a3a3a`, `troughcolor=#1a1a1a`, `arrowcolor=#888888`, pressed/active maps) to match the dark dark-theme look.
+- [x] **Row density** — dropped tree row height from 30 → 22 and font size from 11 → 10 so the compact docked pane fits more widgets.
+- [x] **Copy / paste focus fix** — after the refactor Ctrl+C / Ctrl+V only worked once because the bindings lived on the old Toplevel; in the docked Frame they had to move onto `self.tree` directly (widget-level). Handlers also call `self.tree.focus_set()` at the end so subsequent shortcuts keep routing to the tree after a paste rebuilds the rows.
+- [x] **Image widget descriptor** — new `app/widgets/image.py` + palette entry (`Display › Image`). Builder-only composite: CTk doesn't ship a pure image widget, so it wraps `CTkLabel(text="", image=CTkImage(...))`. Schema: Geometry, Image (file + preserve_aspect), Tint (normal / disabled colour overlay), Background. Placeholder fg_color = `#444444` when no image is set so the widget is still visible in the canvas.
+- [x] **`ctk_class_name` base-class hook** — new descriptor attribute the exporter uses when emitting the constructor call. Defaults to `type_name`, but builder-only composite widgets override (Image → `CTkLabel`) so the generated code stays on CTk's public API.
+- [x] **`_image_source` exporter fallback** — CTkButton keeps the icon size in `image_width/height`, but the pure Image widget uses the row's own `width/height`. The exporter now falls back to `width/height` when the icon-specific keys are absent.
+- [x] **CTkLabel warning silenced** — `self._type_icon_label.configure(image="")` on deselect was passing an empty string (not `None`), which tripped CTkLabel's "Given image is not CTkImage but <class 'str'>" warning at startup. Replaced both call sites with `configure(image=None)`.
+
+---
+
 ## Phase 2.10 — Refactor + icon system (2026-04-14) ✅
 
 - [x] **Extract `NewProjectForm`** (`app/ui/new_project_form.py`, 306 lines) — shared form component used by both StartupDialog and File → New. Constants (SCREEN_SIZES_BY_DEVICE, FORBIDDEN_NAME_CHARS, …), form builders, and `validate_and_get()` all live here.
@@ -336,15 +355,94 @@
 
 ---
 
-## Phase 5 — Window Settings
+## Phase 5 — Window Settings ✅ (partial — v0.0.8)
 
-- [ ] Window settings panel (separate tab or area)
-- [ ] Target window title
-- [ ] Target window size (width, height)
-- [ ] `overrideredirect` (frameless)
-- [ ] `resizable` toggle
-- [ ] Background color (`fg_color`)
-- [ ] `appearance_mode` (system / light / dark)
+- [x] Virtual `WINDOW_ID` node + `WindowDescriptor` property schema
+- [x] Properties panel routes the virtual Window selection through `Project.update_property(WINDOW_ID, …)`
+- [x] Canvas title-bar chrome (title, settings icon, minimize placeholder, close button)
+- [x] Title-bar drag-to-pan (works regardless of active tool)
+- [x] Dirty indicator `*` next to the project name on the chrome
+- [x] Close button → `request_close_project` event → MainWindow close flow
+- [x] Width / height bound to `document_width` / `document_height` (single source of truth)
+- [x] `fg_color`, `resizable_x`, `resizable_y`, `frameless`
+- [x] Unified `project.name` as the window title — no separate rename field, only New / Save As
+- [x] Exporter emits `app.title(project.name)` + resizable / frameless / fg_color
+- [ ] `appearance_mode` (system / light / dark) — kept at the global Settings menu for now
+- [ ] Window icon (`iconbitmap` / `iconphoto`) — Phase 8
+
+---
+
+## Phase 5.5 — Multi-document canvas ✅
+
+> One `.ctkproj` holds a main window + any number of dialogs, all visible on the
+> same canvas and editable side by side. Qt Designer-style MDI inside a single
+> project.
+
+### Model ✅
+- [x] `Document` dataclass: `id`, `name`, `width`, `height`, `canvas_x`, `canvas_y`, `window_properties`, `is_toplevel`, `root_widgets`
+- [x] `Project` holds `documents: list[Document]` + `active_document_id`
+- [x] Accessors: `project.active_document`, `project.get_document(id)`, `project.set_active_document(id)`, `project.find_document_for_widget(id)`
+- [x] Migration layer: legacy `project.root_widgets` / `document_width` / `window_properties` are `@property` shims that read/write through the active document so existing call sites keep working untouched
+- [x] `iter_all_widgets` walks every document's tree so cross-doc lookups resolve
+
+### Persistence ✅
+- [x] `project_saver` writes v2 format with a `documents[]` array (+ active id)
+- [x] `project_loader` reads v1 single-document files and auto-upgrades them into a one-entry `documents` list
+- [x] `clear()` resets to a single fresh `Main Window` document and fires `active_document_changed`
+
+### Canvas rendering ✅
+- [x] Workspace iterates `project.documents` in render order (active last) and draws each one's rect + grid + chrome + raised widgets as a stacked block so overlapping forms compose correctly
+- [x] Shared zoom applies uniformly to every document via `logical_to_canvas(lx, ly, document=...)`
+- [x] Chrome drag moves the clicked document's `canvas_x / canvas_y`; canvas-level `<B1-Motion>` fallback catches motion when the cursor slips off the chrome mid-drag
+- [x] Hand-tool pan is unchanged — it still drags the whole viewport
+- [x] Active document's chrome is full-bright, inactive docs render dimmer (`#222222` bg + grey fg)
+- [x] Document coordinate system: widget `x / y` is document-relative; `logical_to_canvas` adds each doc's offset at paint time
+
+### Palette + drag ✅
+- [x] Palette drop picks the document under the cursor via `_find_document_at_canvas` and adds the new widget to that doc's tree
+- [x] Dragging a top-level widget from Document A to Document B detects the cross-doc case in `_maybe_reparent_dragged`, moves the node between root lists, and replays the `widget_reparented` event so the workspace rebuilds the subtree under the new root
+- [x] Drop outside any document falls back to the currently active document
+
+### Inspectors ✅
+- [x] Object Tree shows only the active document's widget tree
+- [x] Doc header strip pinned to the BOTTOM of the Object Tree window shows which form is being edited (icon + name + `(Dialog)` suffix for toplevels); click = open Window settings
+- [x] 6-space indent per depth level so nested widgets visually step away from their parent
+- [x] `app-window` icon picked for the Window header (distinct from `layout-panel-top` used by CTkTabview)
+- [x] Selection routing ignores synthetic `doc:*` iids so multi-select only tracks real widgets
+- [x] Properties panel Window selection routes through `_WindowProxy`, which always resolves to the active document and exposes every `DEFAULT_WINDOW_PROPERTIES` key (fg_color, resizable_x/y, frameless, grid_style/color/spacing)
+
+### Lifecycle ✅
+- [x] Menu `Form → Add Dialog` / `Form → Remove Current Document`
+- [x] Workspace top toolbar `+ Add Dialog` button (mirrors the menu)
+- [x] `AddDialogSizeDialog` — name + size preset picker (Same as Main / Alert / Compact / Medium / Settings / Wizard / Custom), seeds defaults from the main window
+- [x] Chrome close `✕` on a Dialog removes that document (with confirm); on the Main Window it runs the project-close flow — you can't accidentally delete the root form
+- [x] Default new project has a single `Main Window` document (`is_toplevel=False`); the first document is protected from rename-less removal via menu + chrome
+- [x] Rename for dialogs happens through the Properties panel's name entry (inline); main window name stays tied to `project.name` (New / Save As only)
+
+### Undo / redo ✅
+- [x] `AddDocumentCommand`, `DeleteDocumentCommand`, `MoveDocumentCommand` (press→release coalesced for title-bar drag)
+- [x] Widget commands key off the widget `id` unchanged; `find_document_for_widget` + widget-level reparent events keep cross-doc drags undoable
+- [x] Undo after `Remove Dialog` restores the document + every widget at its original index
+
+### Code exporter ✅
+- [x] Emits one `.py` with one class per document:
+  - First document (`is_toplevel=False`) → `class MainWindow(ctk.CTk):`
+  - Dialogs → `class LoginDialog(ctk.CTkToplevel):` etc.
+- [x] Each class has a clean `__init__` (title / geometry / resizable / frameless / fg_color) that calls `self._build_ui()` for widget construction
+- [x] `if __name__ == "__main__":` wires `ctk.set_appearance_mode(...)` + the main class + `mainloop()` and leaves commented instructions for opening each dialog (`# dialog = LoginDialog(app)`)
+- [x] Per-class variable names stay attributes (`self.button_1 = …`) so event handlers added later can reach them
+
+### Window Properties polish ✅
+- [x] `fg_color` live preview — document rectangle recolours on change
+- [x] `Builder Grid` group in the Window schema: Style (none / dots / lines), Colour, Spacing (4–200)
+- [x] Grid is builder-only metadata, never emitted in exported code
+- [x] Grid bleed fixed: overlapping docs no longer show each other's grid through their rectangle (per-doc stacked draw order)
+
+### Test plan ✅
+- [x] Create Main Window + Dialog in one project, add widgets to each
+- [x] Export → one `.py` with both classes, runs cleanly
+- [x] Save / close / reopen — active doc + positions + sizes + grid settings persist
+- [x] Chrome drag, cross-doc widget drag, undo/redo of document lifecycle all survive the round trip
 
 ---
 

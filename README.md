@@ -2,9 +2,9 @@
 
 A desktop visual designer for **CustomTkinter** — drag and drop widgets onto a canvas, edit their properties live, and export the result as clean runnable Python.
 
-> **Status:** v0.0.8 — active development. Phase 4 (Undo/Redo) complete. 13 of 15 widget descriptors shipped, drag + resize + nested containers, full history, code export, and live preview all working.
+> **Status:** v0.0.9 — active development. Phase 5 (Window Settings) + Phase 5.5 (Multi-document canvas) complete. One project now holds a main window plus any number of dialogs, all editable on the same canvas with per-form chrome, active highlight, cross-document widget drag, and a multi-class code exporter.
 
-[![v0.0.8](docs/history/v0.0.8.png)](docs/history/v0.0.8.png)
+[![v0.0.9](docs/history/v0.0.9.png)](docs/history/v0.0.9.png)
 
 ## Features
 
@@ -12,10 +12,25 @@ A desktop visual designer for **CustomTkinter** — drag and drop widgets onto a
 - Real CTk widgets rendered on a tk Canvas (preview = reality)
 - Drag to move, resize via 8 handles, arrow-key nudge (1 px / 10 px with Shift)
 - Nested containers — drop widgets inside `CTkFrame`, composite widgets wired through `canvas_anchor`
-- Reparent by dragging a widget from one container to another
+- Reparent by dragging a widget from one container to another, including across documents
 - Multi-select from the Object Tree with sync'd workspace highlighting
 - Zoom controls + dot grid, hand-tool pan, middle-mouse pan
 - Georgian keyboard fallback — `Ctrl+Z/Y/C/V/...` work regardless of layout
+
+### Multi-document canvas
+- One `.ctkproj` holds a `Main Window` (`ctk.CTk`) plus any number of `Dialogs` (`ctk.CTkToplevel`), all visible on the same canvas
+- Per-document chrome (title bar, settings, close) with drag-to-move, active highlight, stacked correctly when forms overlap
+- `+ Add Dialog` on the workspace toolbar (plus `Form → Add Dialog`) with preset picker (Alert / Compact / Medium / Settings / Wizard / Same as Main)
+- Smart widget masking — widgets sitting behind another form are hidden automatically so the active form always reads cleanly
+- Object Tree focused on the active document, with a bottom status strip showing which form is being edited
+- Click the chrome ⚙ to open the Window settings for that document; ✕ closes dialogs (confirm prompt) or the whole project when pressed on the main window
+- Undo / redo covers Add Dialog, Remove Dialog, chrome drag, and cross-document widget drag
+
+### Window Settings
+- Virtual `Window` node with a full property schema: title (name entry), size, `fg_color`, `resizable_x / y`, `frameless`
+- Builder Grid group: style (`none / dots / lines`), colour, spacing — grid is design-time only, never emitted in the export
+- Live preview — `fg_color` recolours the document rectangle the moment you change it
+- Unified project name → Main Window title (Save As renames both in lockstep)
 
 ### Properties panel (v2)
 - `ttk.Treeview` backbone with flicker-free persistent overlays
@@ -44,8 +59,8 @@ A desktop visual designer for **CustomTkinter** — drag and drop widgets onto a
 - **History** (`F9`) — undo stack, current-state marker, redo stack
 - **Properties panel** — per-widget schema-driven editors
 
-### Widgets (13 of 15 implemented)
-`CTkButton`, `CTkLabel`, `CTkFrame`, `CTkEntry`, `CTkCheckBox`, `CTkRadioButton`, `CTkComboBox`, `CTkOptionMenu`, `CTkSlider`, `CTkProgressBar`, `CTkSegmentedButton`, `CTkSwitch`, `CTkTextbox`, plus partial `CTkScrollableFrame` and `CTkTabview` (render + all style properties work, nesting children is limited — see [widget docs](docs/widgets/README.md)).
+### Widgets (14 of 15 implemented)
+`CTkButton`, `CTkLabel`, `CTkFrame`, `CTkEntry`, `CTkCheckBox`, `CTkRadioButton`, `CTkComboBox`, `CTkOptionMenu`, `CTkSlider`, `CTkProgressBar`, `CTkSegmentedButton`, `CTkSwitch`, `CTkTextbox`, plus a builder-specific `Image` descriptor that wraps `CTkLabel` with a `CTkImage` and ships a default PNG so a fresh drop is immediately visible. `CTkScrollableFrame` and `CTkTabview` render with every colour / label / scrollbar / tab-name property but their nested-children path is still partial — see [widget docs](docs/widgets/README.md).
 
 ## Tech stack
 
@@ -67,8 +82,9 @@ ctk_visual_builder/
 └── app/
     ├── core/                         # pure model, no UI deps
     │   ├── event_bus.py              # pub/sub
-    │   ├── widget_node.py            # node + JSON serialization
-    │   ├── project.py                # project state + selection + clipboard
+    │   ├── widget_node.py            # widget node + JSON serialization
+    │   ├── document.py                # Document dataclass (per-form state)
+    │   ├── project.py                # project state + documents + clipboard
     │   ├── commands.py               # undo/redo command classes
     │   └── history.py                # history stack with coalescing
     ├── io/
@@ -131,20 +147,21 @@ python main.py
 - [x] Widget palette with drag + click to add
 - [x] Properties panel v2 (Treeview-based, modular editors, drag-scrub)
 - [x] Object Tree inspector with hierarchy, drag-to-reparent, multi-select
-- [x] Save / Load (`.ctkproj`) + recent files
-- [x] Code export to runnable Python
+- [x] Save / Load (`.ctkproj` — v1 + v2) + recent files
+- [x] Code export to runnable Python (multi-class for multi-document projects)
 - [x] Live preview (`Ctrl+R`)
-- [x] 13 of 15 widget descriptors
+- [x] 14 of 15 widget descriptors (Image included)
 - [x] Full Undo / Redo with History panel
 - [x] Edit menu + Ctrl+Z / Ctrl+Y (Georgian keyboard support)
 - [x] Copy / Paste / Duplicate / Bring-to-Front / Send-to-Back
-- [x] Reparent via drag into container
+- [x] Reparent via drag into container — including across documents
 - [x] Visibility / Lock toggles
 - [x] Light / Dark theme toggle
+- [x] **Window Settings** — title, size, `fg_color` live preview, resizable, frameless, builder grid (style / colour / spacing)
+- [x] **Multi-document canvas** — main window + N dialogs in one project, per-form chrome, drag-to-move, active highlight, smart mask for overlapping forms, AddDialog preset picker, cross-document widget drag, `AddDocument` / `DeleteDocument` / `MoveDocument` undo entries
 
 ### Next
-- [ ] Remaining widgets — `CTkScrollableFrame` + `CTkTabview` nesting (composite widget integration)
-- [ ] Window Settings panel (title, size, frameless, resizable, bg_color, appearance_mode)
+- [ ] Remaining widget — `CTkScrollableFrame` + `CTkTabview` nested-children path (composite widget integration)
 - [ ] Layout managers — `place` / `pack` / `grid` per widget with visual indicator
 - [ ] Polish — marquee selection, snap-to-grid, alignment guides, asset manager
 - [ ] Advanced — custom user widgets, variables panel, event handlers, templates, plugin system

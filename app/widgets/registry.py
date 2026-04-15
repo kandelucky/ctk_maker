@@ -15,9 +15,11 @@ from app.widgets.ctk_switch import CTkSwitchDescriptor
 from app.widgets.ctk_tabview import CTkTabviewDescriptor
 from app.widgets.ctk_textbox import CTkTextboxDescriptor
 from app.widgets.image import ImageDescriptor
+from app.widgets.window_descriptor import WindowDescriptor
 
 
 _REGISTRY: dict[str, type[WidgetDescriptor]] = {
+    WindowDescriptor.type_name: WindowDescriptor,
     CTkButtonDescriptor.type_name: CTkButtonDescriptor,
     CTkCheckBoxDescriptor.type_name: CTkCheckBoxDescriptor,
     CTkComboBoxDescriptor.type_name: CTkComboBoxDescriptor,

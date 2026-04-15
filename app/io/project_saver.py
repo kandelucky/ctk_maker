@@ -1,16 +1,28 @@
 """Save a Project to disk as JSON.
 
-File format (version 1):
+File format (version 2 — multi-document):
     {
-        "version": 1,
-        "widgets": [
-            {"id": "...", "widget_type": "CTkButton", "properties": {...}, "children": []},
+        "version": 2,
+        "name": "...",
+        "active_document": "<uuid>",
+        "documents": [
+            {
+                "id": "<uuid>",
+                "name": "Main Window",
+                "width": 800, "height": 600,
+                "canvas_x": 0, "canvas_y": 0,
+                "is_toplevel": false,
+                "window_properties": {...},
+                "widgets": [...]
+            },
             ...
-        ]
+        ],
+        "name_counters": {...}
     }
 
-The `version` field enables forward migration. Loader reads it and dispatches
-to the appropriate migration path when new versions ship.
+Version 1 files (single-document) are still loadable — the loader
+wraps their top-level ``widgets`` / ``document`` / ``window`` blocks
+into a one-entry ``documents`` list. Writes always use version 2.
 """
 
 from __future__ import annotations
@@ -20,19 +32,16 @@ from pathlib import Path
 
 from app.core.project import Project
 
-FILE_VERSION = 1
+FILE_VERSION = 2
 
 
 def project_to_dict(project: Project) -> dict:
     return {
         "version": FILE_VERSION,
         "name": project.name,
-        "document": {
-            "width": project.document_width,
-            "height": project.document_height,
-        },
+        "active_document": project.active_document_id,
+        "documents": [doc.to_dict() for doc in project.documents],
         "name_counters": dict(project._name_counters),
-        "widgets": [node.to_dict() for node in project.root_widgets],
     }
 
 

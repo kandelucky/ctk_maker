@@ -16,6 +16,8 @@ from .constants import (
     ORIENTATION_OPTIONS,
 )
 
+GRID_STYLE_OPTIONS = ("none", "dots", "lines")
+
 
 def format_value(ptype: str, value, prop: dict) -> str:
     """Render a schema value as the string shown in the tree cell."""
@@ -26,7 +28,7 @@ def format_value(ptype: str, value, prop: dict) -> str:
         return "☑" if value else "☐"
     if ptype == "anchor":
         return ANCHOR_CODE_TO_LABEL.get(str(value), str(value or ""))
-    if ptype in ("compound", "justify", "orientation"):
+    if ptype in ("compound", "justify", "orientation", "grid_style"):
         return str(value) if value is not None else ""
     if ptype in ("multiline", "image"):
         # Shown via overlay label, not the tree cell.
@@ -80,6 +82,8 @@ def enum_options_for(ptype: str):
         return JUSTIFY_OPTIONS
     if ptype == "orientation":
         return ORIENTATION_OPTIONS
+    if ptype == "grid_style":
+        return GRID_STYLE_OPTIONS
     return []
 
 

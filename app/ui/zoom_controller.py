@@ -52,19 +52,37 @@ class ZoomController:
         self._warning: ctk.CTkLabel | None = None
 
     # ------------------------------------------------------------------
-    # Coordinate helpers (zoom + padding dependent)
+    # Coordinate helpers (zoom + padding + per-document offset)
     # ------------------------------------------------------------------
-    def logical_to_canvas(self, lx: int, ly: int) -> tuple[int, int]:
+    def logical_to_canvas(
+        self, lx: int, ly: int, document=None,
+    ) -> tuple[int, int]:
+        """Return canvas coordinates for a logical point inside
+        ``document`` (defaults to the project's active document).
+        Applies padding, zoom, and the document's canvas_x/canvas_y
+        offset so multi-document projects render at their own
+        positions on the shared canvas.
+        """
+        if document is None:
+            document = self.project.active_document
+        offset_x = int(document.canvas_x * self.value)
+        offset_y = int(document.canvas_y * self.value)
         return (
-            self.document_padding + int(lx * self.value),
-            self.document_padding + int(ly * self.value),
+            self.document_padding + offset_x + int(lx * self.value),
+            self.document_padding + offset_y + int(ly * self.value),
         )
 
-    def canvas_to_logical(self, cx: float, cy: float) -> tuple[int, int]:
+    def canvas_to_logical(
+        self, cx: float, cy: float, document=None,
+    ) -> tuple[int, int]:
+        if document is None:
+            document = self.project.active_document
         z = self.value or 1.0
+        offset_x = document.canvas_x * z
+        offset_y = document.canvas_y * z
         return (
-            int((cx - self.document_padding) / z),
-            int((cy - self.document_padding) / z),
+            int((cx - self.document_padding - offset_x) / z),
+            int((cy - self.document_padding - offset_y) / z),
         )
 
     # ------------------------------------------------------------------
@@ -120,17 +138,22 @@ class ZoomController:
             node = self.project.get_widget(nid)
             if node is None:
                 continue
-            self.apply_to_widget(widget, window_id, node.properties)
+            document = self.project.find_document_for_widget(nid)
+            self.apply_to_widget(
+                widget, window_id, node.properties, document=document,
+            )
         self._on_zoom_changed()
 
-    def apply_to_widget(self, widget, window_id, properties: dict) -> None:
+    def apply_to_widget(
+        self, widget, window_id, properties: dict, document=None,
+    ) -> None:
         try:
             lx = int(properties.get("x", 0))
             ly = int(properties.get("y", 0))
         except (TypeError, ValueError):
             lx, ly = 0, 0
         if window_id is not None:
-            cx, cy = self.logical_to_canvas(lx, ly)
+            cx, cy = self.logical_to_canvas(lx, ly, document=document)
             self.canvas.coords(window_id, cx, cy)
         else:
             # Nested child — position via place() in local-parent coords.

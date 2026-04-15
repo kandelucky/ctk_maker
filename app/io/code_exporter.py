@@ -1,31 +1,38 @@
 """Generate a runnable Python source file from a Project.
 
-Walks the project widget tree depth-first and produces a self-contained
-`.py` file that, when run, recreates the designed UI using real
-CustomTkinter widgets. Nested widgets are emitted under their parent's
-variable name so the generated code preserves the builder's hierarchy.
+Multi-document projects emit one class per document:
 
-Per-widget convention (matches WidgetDescriptor.transform_properties):
-- Keys in `descriptor._NODE_ONLY_KEYS` are stripped from kwargs (still used
-  for `place(x=x, y=y)` and image size).
-- `state_disabled` bool → `state="disabled"/"normal"`.
-- `font_*` keys → `font=ctk.CTkFont(...)`.
-- `image` path + `image_width/height` → `image=ctk.CTkImage(...)`.
+- The first document (``is_toplevel=False``) becomes a ``ctk.CTk``
+  subclass and is the ``__main__`` entry point.
+- Every other document becomes a ``ctk.CTkToplevel`` subclass and is
+  left for user code to open with ``SomeDialog(self)``.
 
-Window settings (title/size/theme) are hardcoded for now; Phase 5 adds a
-proper Window settings panel that feeds this exporter.
+Widgets live on the class instance as attributes so event handlers
+added later can reach them via ``self``. The per-class
+``_build_ui`` method does all the widget construction; ``__init__``
+just sets window metadata and calls it.
+
+Per-widget convention (matches ``WidgetDescriptor.transform_properties``):
+
+- Keys in ``descriptor._NODE_ONLY_KEYS`` are stripped from kwargs
+  (still used for ``place(x=x, y=y)`` and image size).
+- ``button_enabled`` / ``state_disabled`` → ``state="disabled"/"normal"``.
+- ``font_*`` keys → ``font=ctk.CTkFont(...)``.
+- ``image`` path → ``image=ctk.CTkImage(...)`` with a PIL source.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
+from app.core.document import Document
 from app.core.project import Project
 from app.core.widget_node import WidgetNode
 from app.widgets.registry import get_descriptor
 
-WINDOW_TITLE = "CTk App"
-APPEARANCE_MODE = "dark"
+DEFAULT_APPEARANCE_MODE = "dark"
+INDENT = "    "
 
 
 def export_project(project: Project, path: str | Path) -> None:
@@ -38,27 +45,93 @@ def generate_code(project: Project) -> str:
         node.properties.get("image") for node in project.iter_all_widgets()
     )
 
-    geometry = f"{project.document_width}x{project.document_height}"
-
     lines: list[str] = ["import customtkinter as ctk"]
     if needs_pil:
         lines.append("from PIL import Image")
-    lines += [
-        "",
-        f'ctk.set_appearance_mode("{APPEARANCE_MODE}")',
-        "",
-        "app = ctk.CTk()",
-        f'app.title("{WINDOW_TITLE}")',
-        f'app.geometry("{geometry}")',
-        "",
-    ]
+    lines.append("")
 
-    name_counts: dict[str, int] = {}
-    for node in project.root_widgets:
-        _emit_subtree(node, master_var="app", lines=lines, counts=name_counts)
+    used_class_names: set[str] = set()
+    class_names: list[tuple[Document, str]] = []
+    for index, doc in enumerate(project.documents):
+        cls_name = _class_name_for(doc, index, used_class_names)
+        used_class_names.add(cls_name)
+        class_names.append((doc, cls_name))
 
-    lines += ["app.mainloop()", ""]
+    for doc, cls_name in class_names:
+        lines.extend(_emit_class(doc, cls_name))
+        lines.append("")
+        lines.append("")
+
+    first_doc, first_class = class_names[0]
+    lines.append('if __name__ == "__main__":')
+    lines.append(f'{INDENT}ctk.set_appearance_mode("{DEFAULT_APPEARANCE_MODE}")')
+    lines.append(f"{INDENT}app = {first_class}()")
+    # Comment out the way to open any Toplevel dialogs so the user
+    # can copy the line into an event handler when they want to.
+    for doc, cls in class_names[1:]:
+        var = _slug(doc.name) or "dialog"
+        lines.append(
+            f"{INDENT}# {var} = {cls}(app)  "
+            f"# open the '{doc.name}' dialog",
+        )
+    lines.append(f"{INDENT}app.mainloop()")
+    lines.append("")
     return "\n".join(lines)
+
+
+# ----------------------------------------------------------------------
+# Class + widget emission
+# ----------------------------------------------------------------------
+def _emit_class(doc: Document, class_name: str) -> list[str]:
+    base = "ctk.CTkToplevel" if doc.is_toplevel else "ctk.CTk"
+    lines: list[str] = [f"class {class_name}({base}):"]
+    if doc.is_toplevel:
+        lines.append(f"{INDENT}def __init__(self, master=None):")
+        lines.append(f"{INDENT}{INDENT}super().__init__(master)")
+    else:
+        lines.append(f"{INDENT}def __init__(self):")
+        lines.append(f"{INDENT}{INDENT}super().__init__()")
+
+    title = str(doc.name or "Window").replace('"', '\\"')
+    geometry = f"{doc.width}x{doc.height}"
+    lines.append(f'{INDENT}{INDENT}self.title("{title}")')
+    lines.append(f'{INDENT}{INDENT}self.geometry("{geometry}")')
+
+    win = doc.window_properties or {}
+    resizable_x = bool(win.get("resizable_x", True))
+    resizable_y = bool(win.get("resizable_y", True))
+    if not (resizable_x and resizable_y):
+        lines.append(
+            f"{INDENT}{INDENT}self.resizable("
+            f"{resizable_x}, {resizable_y})",
+        )
+    if bool(win.get("frameless", False)):
+        lines.append(f"{INDENT}{INDENT}self.overrideredirect(True)")
+    fg_color = win.get("fg_color")
+    if fg_color and fg_color != "transparent":
+        lines.append(
+            f'{INDENT}{INDENT}self.configure(fg_color="{fg_color}")',
+        )
+    lines.append(f"{INDENT}{INDENT}self._build_ui()")
+    lines.append("")
+    lines.append(f"{INDENT}def _build_ui(self):")
+
+    counts: dict[str, int] = {}
+    body_lines: list[str] = []
+    if not doc.root_widgets:
+        body_lines.append("pass")
+    else:
+        for node in doc.root_widgets:
+            _emit_subtree(
+                node,
+                master_var="self",
+                lines=body_lines,
+                counts=counts,
+                instance_prefix="self.",
+            )
+    for line in body_lines:
+        lines.append(f"{INDENT}{INDENT}{line}" if line else "")
+    return lines
 
 
 def _emit_subtree(
@@ -66,17 +139,22 @@ def _emit_subtree(
     master_var: str,
     lines: list[str],
     counts: dict[str, int],
+    instance_prefix: str = "",
 ) -> None:
-    """Emit this node then recursively emit its children.
-
-    Parent variables are declared before their children so the generated
-    file can reference them as `master` for each child widget.
-    """
     var_name = _make_var_name(node, counts)
-    lines += _emit_widget(node, var_name, master_var)
+    lines.extend(
+        _emit_widget(node, var_name, master_var, instance_prefix),
+    )
     lines.append("")
+    child_master = f"{instance_prefix}{var_name}"
     for child in node.children:
-        _emit_subtree(child, master_var=var_name, lines=lines, counts=counts)
+        _emit_subtree(
+            child,
+            master_var=child_master,
+            lines=lines,
+            counts=counts,
+            instance_prefix=instance_prefix,
+        )
 
 
 def _make_var_name(node: WidgetNode, counts: dict[str, int]) -> str:
@@ -86,7 +164,10 @@ def _make_var_name(node: WidgetNode, counts: dict[str, int]) -> str:
 
 
 def _emit_widget(
-    node: WidgetNode, var_name: str, master_var: str,
+    node: WidgetNode,
+    var_name: str,
+    master_var: str,
+    instance_prefix: str = "",
 ) -> list[str]:
     descriptor = get_descriptor(node.widget_type)
     if descriptor is None:
@@ -108,10 +189,6 @@ def _emit_widget(
         if key in overrides:
             val = overrides[key]
         if key in multiline_list_keys:
-            # Editor stores the value as a newline-separated string so
-            # the multi-line text editor can handle it; CTk expects a
-            # real Python list at runtime. Emit a list literal with
-            # empty lines stripped.
             lines_list = [
                 ln for ln in str(val or "").splitlines() if ln.strip()
             ] or [""]
@@ -126,14 +203,12 @@ def _emit_widget(
         )
         kwargs.append(("state", state_src))
     elif "state_disabled" in props:
-        # Legacy save format
         state_src = (
             '"disabled"' if props.get("state_disabled") else '"normal"'
         )
         kwargs.append(("state", state_src))
 
     if "border_enabled" in props and not props.get("border_enabled"):
-        # Override any leftover border_width to zero.
         kwargs = [
             (k, '0' if k == "border_width" else v) for k, v in kwargs
         ]
@@ -150,7 +225,8 @@ def _emit_widget(
     ctk_class = (
         getattr(descriptor, "ctk_class_name", "") or node.widget_type
     )
-    lines = [f"{var_name} = ctk.{ctk_class}("]
+    full_name = f"{instance_prefix}{var_name}"
+    lines = [f"{full_name} = ctk.{ctk_class}("]
     lines.append(f"    {master_var},")
     for key, src in kwargs:
         lines.append(f"    {key}={src},")
@@ -158,11 +234,36 @@ def _emit_widget(
 
     x = _safe_int(props.get("x"), 0)
     y = _safe_int(props.get("y"), 0)
-    lines.append(f"{var_name}.place(x={x}, y={y})")
-    # Descriptor-provided runtime init (initial_value .set, .select(),
-    # .insert(0, text), …) that mirrors `apply_state` at runtime.
-    lines.extend(descriptor.export_state(var_name, props))
+    lines.append(f"{full_name}.place(x={x}, y={y})")
+    lines.extend(descriptor.export_state(full_name, props))
     return lines
+
+
+# ----------------------------------------------------------------------
+# Helpers
+# ----------------------------------------------------------------------
+def _class_name_for(
+    doc: Document, index: int, used: set[str],
+) -> str:
+    slug = _slug(doc.name)
+    if slug:
+        parts = [p for p in slug.split("_") if p]
+        candidate = "".join(p.capitalize() for p in parts)
+    else:
+        candidate = f"Window{index + 1}"
+    if not candidate or not candidate[0].isalpha():
+        candidate = f"Window{index + 1}"
+    name = candidate
+    suffix = 1
+    while name in used:
+        suffix += 1
+        name = f"{candidate}{suffix}"
+    return name
+
+
+def _slug(value: str) -> str:
+    value = re.sub(r"[^a-zA-Z0-9]+", "_", value or "").strip("_")
+    return value.lower()
 
 
 def _font_source(props: dict) -> str:
@@ -178,10 +279,6 @@ def _font_source(props: dict) -> str:
 
 
 def _image_source(props: dict, image_path: str) -> str:
-    # CTkButton keeps the icon size separate (`image_width/height`),
-    # but the pure Image widget uses the row's own `width/height` as
-    # the image size — fall back to those when the icon-specific keys
-    # are missing.
     if "image_width" in props or "image_height" in props:
         iw = _safe_int(props.get("image_width"), 20)
         ih = _safe_int(props.get("image_height"), 20)

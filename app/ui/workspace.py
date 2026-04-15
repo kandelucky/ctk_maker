@@ -34,7 +34,7 @@ from app.core.logger import log_error
 from app.core.project import Project
 from app.core.widget_node import WidgetNode
 from app.ui.dialogs import RenameDialog
-from app.ui.icons import load_icon
+from app.ui.icons import load_icon, load_tk_icon
 from app.ui.selection_controller import SelectionController
 from app.ui.zoom_controller import ZoomController
 from app.widgets.registry import get_descriptor
@@ -59,6 +59,23 @@ TOOL_BAR_BG = "#252526"
 TOOL_BAR_HEIGHT = 30
 TOOL_BTN_HOVER = "#3a3a3a"
 TOOL_BTN_ACTIVE = "#094771"
+
+# Window chrome — the "title bar" drawn above the document
+# rectangle on the canvas. Visual representation of the form being
+# designed; clicking the bar area selects the virtual Window node,
+# clicking the ✕ glyph requests a project close.
+CHROME_TAG = "window_chrome"
+CHROME_BG_TAG = "window_chrome_bg"
+CHROME_TITLE_TAG = "window_chrome_title"
+CHROME_SETTINGS_TAG = "window_chrome_settings"
+CHROME_SETTINGS_IMG_TAG = "window_chrome_settings_img"
+CHROME_MIN_TAG = "window_chrome_min"
+CHROME_CLOSE_TAG = "window_chrome_close"
+CHROME_HEIGHT = 28
+CHROME_BG_COLOR = "#2d2d30"
+CHROME_FG_COLOR = "#cccccc"
+CHROME_FG_DIM = "#666666"
+CHROME_CLOSE_HOVER = "#c42b1c"
 
 TOOL_SELECT = "select"
 TOOL_HAND = "hand"
@@ -103,6 +120,21 @@ class Workspace(ctk.CTkFrame):
         self.zoom: ZoomController | None = None  # set in _build_canvas
         self._tool: str = TOOL_SELECT
         self._tool_buttons: dict[str, ctk.CTkButton] = {}
+        # Mirrors main_window's dirty flag so the canvas title strip
+        # can show a trailing "*" next to the project name.
+        self._dirty: bool = False
+        # tk PhotoImage pair for the canvas title-bar settings icon.
+        # Normal (dim) + hover (bright) variants swapped via
+        # itemconfigure on mouse enter / leave. Kept alive here so
+        # tk doesn't garbage-collect them out from under the canvas.
+        self._chrome_settings_icon = load_tk_icon(
+            "settings", size=14, color=CHROME_FG_DIM,
+        )
+        # (app-window is the Window widget icon — separate from the
+        # tab view's layout-panel-top used elsewhere.)
+        self._chrome_settings_icon_hover = load_tk_icon(
+            "settings", size=14, color="#ffffff",
+        )
 
         self._drag: dict | None = None
         self._pan_state: dict | None = None
@@ -203,6 +235,41 @@ class Workspace(ctk.CTkFrame):
             "widget_locked_changed", self._on_widget_locked_changed,
         )
         bus.subscribe("document_resized", self._on_document_resized)
+        bus.subscribe("project_renamed", self._on_project_renamed)
+        bus.subscribe("dirty_changed", self._on_dirty_changed)
+        bus.subscribe("widget_renamed", self._on_any_widget_renamed)
+        bus.subscribe(
+            "active_document_changed",
+            self._on_active_document_changed,
+        )
+
+    def _on_active_document_changed(self, *_args, **_kwargs) -> None:
+        # Add / remove / active-switch of a document changes which
+        # chrome strip is highlighted and, on add/remove, the total
+        # scroll region. A full redraw covers both cheaply.
+        self._redraw_document()
+
+    def _on_any_widget_renamed(
+        self, widget_id: str, _new_name: str,
+    ) -> None:
+        # Window renames retarget the active document's title —
+        # repaint the canvas chrome so the new title shows up.
+        from app.core.project import WINDOW_ID
+        if widget_id == WINDOW_ID:
+            self._draw_window_chrome()
+
+    def _on_project_renamed(self, *_args, **_kwargs) -> None:
+        # The canvas title strip mirrors `project.name`; New / Open /
+        # Save As all publish this event so the chrome repaints
+        # without needing a full document rebuild.
+        self._draw_window_chrome()
+
+    def _on_dirty_changed(self, dirty, *_args, **_kwargs) -> None:
+        new_dirty = bool(dirty)
+        if new_dirty == self._dirty:
+            return
+        self._dirty = new_dirty
+        self._draw_window_chrome()
 
     # ------------------------------------------------------------------
     # Utilities
@@ -252,6 +319,21 @@ class Workspace(ctk.CTkFrame):
         cy1 = int(self.canvas.canvasy(ry))
         return cx1, cy1, cx1 + w, cy1 + h
 
+    def _find_document_at_canvas(self, canvas_x: float, canvas_y: float):
+        """Return the Document whose rectangle contains the canvas
+        point, or None when the point is in empty workspace space.
+        """
+        zoom = self.zoom.value
+        pad = DOCUMENT_PADDING
+        for doc in self.project.documents:
+            dx1 = pad + int(doc.canvas_x * zoom)
+            dy1 = pad + int(doc.canvas_y * zoom)
+            dx2 = dx1 + int(doc.width * zoom)
+            dy2 = dy1 + int(doc.height * zoom)
+            if dx1 <= canvas_x <= dx2 and dy1 <= canvas_y <= dy2:
+                return doc
+        return None
+
     def _find_container_at(
         self, canvas_x: float, canvas_y: float, exclude_id: str | None = None,
     ):
@@ -288,41 +370,193 @@ class Workspace(ctk.CTkFrame):
         return found
 
     def _redraw_document(self) -> None:
+        # Wipe every layer up front so stacking starts from a clean
+        # state. Each document is then drawn in render order (active
+        # last) as a single stacked block: rect → grid → chrome →
+        # widgets. Tk's per-item Z order means later blocks cover
+        # earlier ones at overlap points — exactly what you want for
+        # multi-document forms sitting on top of each other.
         self.canvas.delete(DOC_TAG)
+        self.canvas.delete(GRID_TAG)
+        self.canvas.delete(CHROME_TAG)
         zoom = self.zoom.value
-        dw = int(self.project.document_width * zoom)
-        dh = int(self.project.document_height * zoom)
         pad = DOCUMENT_PADDING
-        x1, y1 = pad, pad
-        x2, y2 = pad + dw, pad + dh
-        self.canvas.create_rectangle(
-            x1, y1, x2, y2,
-            fill=DOCUMENT_BG, outline=DOCUMENT_BORDER, width=1,
-            tags=DOC_TAG,
-        )
-        self.canvas.tag_lower(DOC_TAG)
+        max_right = pad
+        max_bottom = pad
+        for doc in self._iter_render_order():
+            dw = int(doc.width * zoom)
+            dh = int(doc.height * zoom)
+            x1 = pad + int(doc.canvas_x * zoom)
+            y1 = pad + int(doc.canvas_y * zoom)
+            x2, y2 = x1 + dw, y1 + dh
+            fill = self._doc_fill_color(doc)
+            self.canvas.create_rectangle(
+                x1, y1, x2, y2,
+                fill=fill, outline=DOCUMENT_BORDER, width=1,
+                tags=(DOC_TAG, f"doc_rect:{doc.id}"),
+            )
+            self._draw_grid_for_doc(doc, x1, y1, dw, dh, zoom)
+            self._draw_single_chrome(doc)
+            # Raise this document's top-level widgets so they sit on
+            # top of its rect / grid / chrome and also above every
+            # earlier document's stack.
+            for node in list(doc.root_widgets):
+                entry = self.widget_views.get(node.id)
+                if entry is None:
+                    continue
+                _w, window_id = entry
+                if window_id is None:
+                    continue
+                try:
+                    self.canvas.tag_raise(window_id)
+                except tk.TclError:
+                    pass
+            if x2 > max_right:
+                max_right = x2
+            if y2 > max_bottom:
+                max_bottom = y2
         self.canvas.configure(
-            scrollregion=(0, 0, pad * 2 + dw, pad * 2 + dh),
+            scrollregion=(0, 0, max_right + pad, max_bottom + pad),
         )
-        self._draw_grid()
+        self._update_widget_visibility_across_docs()
+
+    def _doc_fill_color(self, doc) -> str:
+        """Resolve the rectangle fill for a document. ``transparent``
+        falls back to the canvas document background so the form
+        keeps looking like a workspace; explicit hex colours render
+        as their actual colour for live preview of the exported
+        ``fg_color`` setting.
+        """
+        value = doc.window_properties.get("fg_color")
+        if isinstance(value, str) and value.startswith("#"):
+            return value
+        return DOCUMENT_BG
+
+    def _iter_render_order(self) -> list:
+        docs = list(self.project.documents)
+        active_id = self.project.active_document_id
+        docs.sort(key=lambda d: 1 if d.id == active_id else 0)
+        return docs
+
+    def _raise_active_document_widgets(self) -> None:
+        # No-op kept as a stable hook: the `_redraw_document` loop
+        # now raises every document's widgets in render order, so a
+        # separate "lift active widgets" pass is redundant.
+        return
+
+    def _update_widget_visibility_across_docs(self) -> None:
+        """Hide top-level widgets whose canvas centre falls inside a
+        later-rendered document's rectangle. Works around tk's two-
+        layer limit — embedded ``create_window`` items always render
+        above drawing items like rectangles, so a widget in Main
+        would otherwise punch through Dialog when Dialog is dragged
+        on top of it. We fake the mask by flipping the widget item's
+        ``state`` to ``hidden`` whenever it's covered.
+        """
+        zoom = self.zoom.value
+        pad = DOCUMENT_PADDING
+        render_order = self._iter_render_order()
+        # Cache each document's canvas bbox once per pass.
+        doc_bboxes: dict[str, tuple[int, int, int, int]] = {}
+        for doc in render_order:
+            dw = int(doc.width * zoom)
+            dh = int(doc.height * zoom)
+            x1 = pad + int(doc.canvas_x * zoom)
+            y1 = pad + int(doc.canvas_y * zoom)
+            doc_bboxes[doc.id] = (x1, y1, x1 + dw, y1 + dh)
+        # Render order is [inactive… , active]. A widget belonging
+        # to index i is "behind" every doc at index > i, so only
+        # those are candidates for covering it.
+        for i, doc in enumerate(render_order):
+            covering = [
+                doc_bboxes[other.id]
+                for other in render_order[i + 1:]
+            ]
+            if not covering:
+                # Frontmost doc — its widgets never get hidden.
+                for node in list(doc.root_widgets):
+                    entry = self.widget_views.get(node.id)
+                    if entry is None:
+                        continue
+                    _w, window_id = entry
+                    if window_id is None:
+                        continue
+                    try:
+                        self.canvas.itemconfigure(
+                            window_id, state="normal",
+                        )
+                    except tk.TclError:
+                        pass
+                continue
+            for node in list(doc.root_widgets):
+                entry = self.widget_views.get(node.id)
+                if entry is None:
+                    continue
+                widget, window_id = entry
+                if window_id is None:
+                    continue
+                bbox = self._widget_canvas_bbox(widget)
+                if bbox is None:
+                    continue
+                wx1, wy1, wx2, wy2 = bbox
+                # Bbox-vs-bbox intersection — a single-pixel touch
+                # with any covering document hides the widget.
+                hidden = any(
+                    wx1 < x2 and wx2 > x1 and wy1 < y2 and wy2 > y1
+                    for (x1, y1, x2, y2) in covering
+                )
+                try:
+                    self.canvas.itemconfigure(
+                        window_id,
+                        state="hidden" if hidden else "normal",
+                    )
+                except tk.TclError:
+                    pass
 
     def _draw_grid(self) -> None:
+        # Legacy debounced entry point — `_on_canvas_configure`
+        # schedules this after a resize. Now that grid is drawn
+        # inside `_redraw_document` alongside rect + chrome, just
+        # bounce through to a full redraw so everything lines up.
         self._grid_redraw_after = None
-        self.canvas.delete(GRID_TAG)
-        zoom = self.zoom.value
-        dw = int(self.project.document_width * zoom)
-        dh = int(self.project.document_height * zoom)
-        if dw <= 0 or dh <= 0:
+        self._redraw_document()
+
+    def _draw_grid_for_doc(
+        self, doc, x1: int, y1: int, dw: int, dh: int, zoom: float,
+    ) -> None:
+        if zoom <= 0 or dw <= 0 or dh <= 0:
             return
-        spacing = max(4, int(GRID_SPACING * zoom))
-        pad = DOCUMENT_PADDING
-        for x in range(pad, pad + dw + 1, spacing):
-            for y in range(pad, pad + dh + 1, spacing):
-                self.canvas.create_rectangle(
-                    x, y, x + 1, y + 1,
-                    outline="", fill=GRID_DOT_COLOR, tags=GRID_TAG,
+        style = doc.window_properties.get("grid_style", "dots")
+        if style == "none":
+            return
+        color = doc.window_properties.get("grid_color", GRID_DOT_COLOR)
+        if not (isinstance(color, str) and color.startswith("#")):
+            color = GRID_DOT_COLOR
+        try:
+            logical_spacing = int(
+                doc.window_properties.get("grid_spacing", GRID_SPACING),
+            )
+        except (TypeError, ValueError):
+            logical_spacing = GRID_SPACING
+        logical_spacing = max(4, logical_spacing)
+        spacing = max(4, int(logical_spacing * zoom))
+        tag_set = (GRID_TAG, f"grid:{doc.id}")
+        if style == "lines":
+            for x in range(x1, x1 + dw + 1, spacing):
+                self.canvas.create_line(
+                    x, y1, x, y1 + dh, fill=color, tags=tag_set,
                 )
-        self.canvas.tag_raise(GRID_TAG, DOC_TAG)
+            for y in range(y1, y1 + dh + 1, spacing):
+                self.canvas.create_line(
+                    x1, y, x1 + dw, y, fill=color, tags=tag_set,
+                )
+        else:  # dots (default)
+            for x in range(x1, x1 + dw + 1, spacing):
+                for y in range(y1, y1 + dh + 1, spacing):
+                    self.canvas.create_rectangle(
+                        x, y, x + 1, y + 1,
+                        outline="", fill=color, tags=tag_set,
+                    )
 
     def _on_canvas_configure(self, _event=None) -> None:
         if self._grid_redraw_after is not None:
@@ -367,7 +601,358 @@ class Workspace(ctk.CTkFrame):
             )
             self._tool_buttons[tool_id] = btn
 
+        # Right-aligned "Add Dialog" shortcut — mirrors Form → Add
+        # Dialog. Explicit text beside the icon so users discover
+        # the multi-document flow without hunting through the menu.
+        plus_icon = load_icon("plus", size=14)
+        add_btn = ctk.CTkButton(
+            bar,
+            text="Add Dialog",
+            image=plus_icon,
+            compound="left",
+            width=110,
+            height=24,
+            corner_radius=3,
+            fg_color="transparent",
+            hover_color=TOOL_BTN_HOVER,
+            text_color="#cccccc",
+            font=("Segoe UI", 10),
+            command=self._on_add_dialog_click,
+        )
+        add_btn.pack(side="right", padx=(0, 6), pady=3)
+
         self._refresh_tool_buttons()
+
+    def _on_add_dialog_click(self) -> None:
+        self.project.event_bus.publish("request_add_dialog")
+
+    # ==================================================================
+    # Canvas window chrome — title bar drawn above the document rect
+    # ==================================================================
+    def _draw_window_chrome(self) -> None:
+        # Chrome is painted per-document inside `_redraw_document`
+        # now; this entry point is a thin passthrough kept for
+        # legacy callers that want a chrome-only refresh.
+        self._redraw_document()
+
+    def _draw_single_chrome(self, doc) -> None:
+        zoom = self.zoom.value
+        dw = int(doc.width * zoom)
+        pad = DOCUMENT_PADDING
+        doc_left = pad + int(doc.canvas_x * zoom)
+        doc_top = pad + int(doc.canvas_y * zoom)
+        top = doc_top - CHROME_HEIGHT
+        mid = top + CHROME_HEIGHT // 2
+        left = doc_left
+        right = doc_left + dw
+
+        title_raw = str(doc.name or "Untitled")
+        is_active = doc.id == self.project.active_document_id
+        if is_active and self._dirty:
+            title_raw = f"{title_raw} *"
+        max_chars = max(8, dw // 9)
+        if len(title_raw) > max_chars:
+            title_raw = title_raw[: max_chars - 1] + "…"
+
+        # Per-document tags so hit-testing + drag know *which*
+        # document the click landed on.
+        doc_bg_tag = f"chrome_bg:{doc.id}"
+        doc_title_tag = f"chrome_title:{doc.id}"
+        doc_settings_tag = f"chrome_settings:{doc.id}"
+        doc_settings_img_tag = f"chrome_settings_img:{doc.id}"
+        doc_close_tag = f"chrome_close:{doc.id}"
+
+        bg_fill = CHROME_BG_COLOR if is_active else "#222222"
+        title_fg = CHROME_FG_COLOR if is_active else CHROME_FG_DIM
+
+        self.canvas.create_rectangle(
+            left, top, right, doc_top,
+            fill=bg_fill, outline=bg_fill,
+            tags=(CHROME_TAG, CHROME_BG_TAG, doc_bg_tag),
+        )
+        self.canvas.create_text(
+            left + 14, mid,
+            text=title_raw,
+            anchor="w",
+            fill=title_fg,
+            font=("Segoe UI", 10),
+            tags=(CHROME_TAG, CHROME_TITLE_TAG, doc_title_tag),
+        )
+        # Right-hand action cluster: settings, minimize, close.
+        if self._chrome_settings_icon is not None:
+            sx = right - 78
+            self.canvas.create_rectangle(
+                sx - 10, top + 2, sx + 10, doc_top - 2,
+                fill=bg_fill, outline="",
+                tags=(CHROME_TAG, CHROME_SETTINGS_TAG, doc_settings_tag),
+            )
+            self.canvas.create_image(
+                sx, mid,
+                image=self._chrome_settings_icon,
+                anchor="center",
+                tags=(
+                    CHROME_TAG, CHROME_SETTINGS_TAG,
+                    CHROME_SETTINGS_IMG_TAG,
+                    doc_settings_tag, doc_settings_img_tag,
+                ),
+            )
+        self.canvas.create_text(
+            right - 48, mid,
+            text="−",
+            anchor="center",
+            fill=CHROME_FG_DIM,
+            font=("Segoe UI", 16, "bold"),
+            tags=(CHROME_TAG, CHROME_MIN_TAG),
+        )
+        self.canvas.create_text(
+            right - 20, mid,
+            text="✕",
+            anchor="center",
+            fill=title_fg,
+            font=("Segoe UI", 12, "bold"),
+            tags=(CHROME_TAG, CHROME_CLOSE_TAG, doc_close_tag),
+        )
+        # Per-document drag binding so clicking / dragging THIS
+        # document's strip moves THIS document only (next chunk
+        # wires the actual drag handler).
+        self._bind_chrome_for_document(
+            doc,
+            doc_bg_tag, doc_title_tag,
+            doc_settings_tag, doc_close_tag,
+        )
+
+    def _bind_chrome_for_document(
+        self, doc, bg_tag, title_tag, settings_tag, close_tag,
+    ) -> None:
+        """Wire the click / drag / hover bindings for a single
+        document's chrome strip. Each document gets its own tag
+        namespace (``chrome_bg:{doc.id}`` etc.) so handlers know
+        which form to mutate — essential for multi-document layouts
+        where dragging one form must not touch the others.
+        """
+        doc_id = doc.id
+        for tag in (bg_tag, title_tag):
+            self.canvas.tag_bind(
+                tag, "<ButtonPress-1>",
+                lambda e, d=doc_id: self._on_chrome_press(e, d),
+            )
+            self.canvas.tag_bind(
+                tag, "<B1-Motion>",
+                lambda e, d=doc_id: self._on_chrome_motion(e, d),
+            )
+            self.canvas.tag_bind(
+                tag, "<ButtonRelease-1>",
+                lambda e, d=doc_id: self._on_chrome_release(e, d),
+            )
+            self.canvas.tag_bind(
+                tag, "<Enter>",
+                lambda _e: self._set_chrome_cursor("fleur"),
+            )
+            self.canvas.tag_bind(
+                tag, "<Leave>",
+                lambda _e: self._set_chrome_cursor(""),
+            )
+        self.canvas.tag_bind(
+            settings_tag, "<Button-1>",
+            lambda e, d=doc_id: self._on_chrome_settings_click(e, d),
+        )
+        self.canvas.tag_bind(
+            settings_tag, "<Enter>", self._on_chrome_settings_enter,
+        )
+        self.canvas.tag_bind(
+            settings_tag, "<Leave>", self._on_chrome_settings_leave,
+        )
+        self.canvas.tag_bind(
+            close_tag, "<Button-1>",
+            lambda e, d=doc_id: self._on_chrome_close_click(e, d),
+        )
+        self.canvas.tag_bind(
+            close_tag, "<Enter>",
+            lambda _e, t=close_tag: self.canvas.itemconfigure(
+                t, fill=CHROME_CLOSE_HOVER,
+            ),
+        )
+        self.canvas.tag_bind(
+            close_tag, "<Leave>",
+            lambda _e, t=close_tag: self.canvas.itemconfigure(
+                t, fill=CHROME_FG_COLOR,
+            ),
+        )
+
+    def _on_chrome_select(self, doc_id: str | None = None) -> None:
+        from app.core.project import WINDOW_ID
+        if doc_id is not None:
+            self.project.set_active_document(doc_id)
+        self.project.select_widget(WINDOW_ID)
+
+    def _on_chrome_settings_click(
+        self, _event=None, doc_id: str | None = None,
+    ) -> str:
+        self._on_chrome_select(doc_id)
+        return "break"
+
+    def _on_chrome_settings_enter(self, _event=None) -> None:
+        if self._chrome_settings_icon_hover is None:
+            return
+        try:
+            self.canvas.itemconfigure(
+                CHROME_SETTINGS_IMG_TAG,
+                image=self._chrome_settings_icon_hover,
+            )
+            self.canvas.configure(cursor="hand2")
+        except tk.TclError:
+            pass
+
+    def _on_chrome_settings_leave(self, _event=None) -> None:
+        if self._chrome_settings_icon is None:
+            return
+        try:
+            self.canvas.itemconfigure(
+                CHROME_SETTINGS_IMG_TAG,
+                image=self._chrome_settings_icon,
+            )
+            self.canvas.configure(cursor="")
+        except tk.TclError:
+            pass
+
+    def _set_chrome_cursor(self, cursor: str) -> None:
+        # Don't fight the current tool's cursor (Hand mode owns
+        # the cursor for the whole canvas).
+        if self._tool == TOOL_HAND and cursor == "":
+            cursor = TOOL_CURSORS[TOOL_HAND]
+        try:
+            self.canvas.configure(cursor=cursor)
+        except tk.TclError:
+            pass
+
+    def _on_chrome_close_click(
+        self, _event=None, doc_id: str | None = None,
+    ) -> str:
+        # Dialog chrome close = remove that dialog from the project.
+        # Main window chrome close = project-level close (File/Close).
+        # This mirrors OS native behaviour: closing the main window
+        # quits the app, closing a dialog just dismisses it.
+        if doc_id is not None:
+            doc = self.project.get_document(doc_id)
+            if doc is not None and doc.is_toplevel:
+                self._remove_document(doc_id)
+                return "break"
+        self.project.event_bus.publish("request_close_project")
+        return "break"
+
+    def _remove_document(self, doc_id: str) -> None:
+        from app.core.commands import DeleteDocumentCommand
+        doc = self.project.get_document(doc_id)
+        if doc is None or not doc.is_toplevel:
+            return
+        # Confirm before destroying the dialog — chrome ✕ used to
+        # disappear silently, which was surprising when it happened
+        # on an accidental click.
+        confirmed = messagebox.askyesno(
+            title="Remove dialog",
+            message=f"Remove '{doc.name}' from the project?",
+            icon="warning",
+            parent=self.winfo_toplevel(),
+        )
+        if not confirmed:
+            return
+        snapshot = doc.to_dict()
+        index = self.project.documents.index(doc)
+        for node in list(doc.root_widgets):
+            self.project.remove_widget(node.id)
+        self.project.documents.remove(doc)
+        if self.project.active_document_id == doc_id:
+            self.project.active_document_id = (
+                self.project.documents[0].id
+            )
+            self.project.event_bus.publish(
+                "active_document_changed",
+                self.project.active_document_id,
+            )
+        self._redraw_document()
+        self.project.history.push(
+            DeleteDocumentCommand(snapshot, index),
+        )
+
+    def _on_chrome_press(self, event, doc_id: str) -> str:
+        # Capture the starting logical position of this document so
+        # motion events can slide it around the canvas. Dragging one
+        # document must not affect the others.
+        doc = self.project.get_document(doc_id)
+        if doc is None:
+            return "break"
+        self._chrome_drag = {
+            "doc_id": doc_id,
+            "start_canvas_x": doc.canvas_x,
+            "start_canvas_y": doc.canvas_y,
+            "press_x_root": event.x_root,
+            "press_y_root": event.y_root,
+            "moved": False,
+        }
+        # Activate the clicked document up front so the title bar
+        # immediately reflects focus during the drag.
+        self.project.set_active_document(doc_id)
+        return "break"
+
+    def _on_chrome_motion(self, event, doc_id: str) -> str:
+        # Delegated to the canvas-level motion handler once the
+        # press has started — tag_bind motion stops firing the
+        # instant the cursor slips off the moving chrome, but the
+        # canvas-level bind catches every motion while Button-1 is
+        # held. This shim just funnels the event into the same path.
+        return self._drive_chrome_drag(event)
+
+    def _drive_chrome_drag(self, event) -> str:
+        drag = getattr(self, "_chrome_drag", None)
+        if drag is None:
+            return ""
+        if not drag["moved"]:
+            dx = abs(event.x_root - drag["press_x_root"])
+            dy = abs(event.y_root - drag["press_y_root"])
+            if dx < DRAG_THRESHOLD and dy < DRAG_THRESHOLD:
+                return "break"
+            drag["moved"] = True
+        zoom = self.zoom.value or 1.0
+        dx_logical = int((event.x_root - drag["press_x_root"]) / zoom)
+        dy_logical = int((event.y_root - drag["press_y_root"]) / zoom)
+        doc = self.project.get_document(drag["doc_id"])
+        if doc is None:
+            return "break"
+        doc.canvas_x = max(0, drag["start_canvas_x"] + dx_logical)
+        doc.canvas_y = max(0, drag["start_canvas_y"] + dy_logical)
+        self._redraw_document()
+        self.zoom.apply_all()
+        if self.project.selected_id:
+            self.selection.update()
+        return "break"
+
+    def _on_chrome_release(
+        self, _event=None, doc_id: str | None = None,
+    ) -> str:
+        from app.core.commands import MoveDocumentCommand
+        drag = getattr(self, "_chrome_drag", None)
+        self._chrome_drag = None
+        if drag is None or doc_id is None:
+            return "break"
+        if not drag["moved"]:
+            # Click without drag → activate the document (no
+            # automatic Properties panel open; that's the settings
+            # icon's job, same as before).
+            self.project.set_active_document(doc_id)
+            self._redraw_document()
+            return "break"
+        # Title bar drag finished → push a single undo entry for
+        # the whole press→release gesture.
+        doc = self.project.get_document(doc_id)
+        if doc is None:
+            return "break"
+        before = (drag["start_canvas_x"], drag["start_canvas_y"])
+        after = (doc.canvas_x, doc.canvas_y)
+        if before != after:
+            self.project.history.push(
+                MoveDocumentCommand(doc_id, before, after),
+            )
+        return "break"
 
     def _refresh_tool_buttons(self) -> None:
         for tool_id, btn in self._tool_buttons.items():
@@ -649,8 +1234,6 @@ class Workspace(ctk.CTkFrame):
         else:
             parent_entry = self.widget_views.get(parent_node.id)
             if parent_entry is None:
-                # parent hasn't been rendered yet (shouldn't normally
-                # happen); fall back to canvas to avoid dropping the node
                 master = self.canvas
             else:
                 master, _ = parent_entry
@@ -659,9 +1242,6 @@ class Workspace(ctk.CTkFrame):
             master, node.properties, init_kwargs=init_kwargs,
         )
         self._sync_radio_initial(widget, node)
-        # Composite widgets (e.g. CTkScrollableFrame) expose a
-        # different outer container for `canvas.create_window` / place
-        # / event binding / selection bbox.
         anchor_widget = descriptor.canvas_anchor(widget)
         if anchor_widget is not widget:
             self._anchor_views[node.id] = anchor_widget
@@ -671,8 +1251,15 @@ class Workspace(ctk.CTkFrame):
         lw = int(node.properties.get("width", 0) or 0)
         lh = int(node.properties.get("height", 0) or 0)
         is_composite = anchor_widget is not widget
+        owning_doc = self.project.find_document_for_widget(node.id)
         if parent_node is None:
-            cx, cy = self.zoom.logical_to_canvas(lx, ly)
+            # Top-level widgets sit inside a specific document; the
+            # document's canvas_x/y offset feeds into logical_to_canvas
+            # so a second document at canvas_x=900 lands its widgets
+            # at (pad + 900*zoom + x*zoom).
+            cx, cy = self.zoom.logical_to_canvas(
+                lx, ly, document=owning_doc,
+            )
             kwargs = {"anchor": "nw", "window": anchor_widget}
             # Composite widgets (CTkScrollableFrame) don't propagate
             # their requested size to the canvas; pin the canvas item
@@ -693,7 +1280,13 @@ class Workspace(ctk.CTkFrame):
                 place_kwargs["height"] = max(1, int(lh * self.zoom.value))
             anchor_widget.place(**place_kwargs)
             window_id = None
-        self.zoom.apply_to_widget(widget, window_id, node.properties)
+        # Pass the owning document so apply_to_widget lands the
+        # canvas coords against the *correct* form's offset — not the
+        # currently-active one, which for a cross-doc drag is still
+        # the source document.
+        self.zoom.apply_to_widget(
+            widget, window_id, node.properties, document=owning_doc,
+        )
         self.widget_views[node.id] = (widget, window_id)
         self._bind_widget_events(anchor_widget, node.id)
         if not node.visible:
@@ -852,6 +1445,17 @@ class Workspace(ctk.CTkFrame):
         _ = direction  # retained in signature for future use
 
     def _on_property_changed(self, widget_id: str, prop_name: str, value) -> None:
+        from app.core.project import WINDOW_ID
+        if widget_id == WINDOW_ID:
+            # Window properties don't feed a real CTk widget — the
+            # canvas shows the form through its rectangle, chrome
+            # and grid. These keys trigger a redraw of the document
+            # surface; everything else is window metadata only.
+            if prop_name in (
+                "fg_color", "grid_style", "grid_color", "grid_spacing",
+            ):
+                self._redraw_document()
+            return
         if widget_id not in self.widget_views:
             return
         widget, window_id = self.widget_views[widget_id]
@@ -862,7 +1466,12 @@ class Workspace(ctk.CTkFrame):
                 x = int(node.properties.get("x", 0))
                 y = int(node.properties.get("y", 0))
                 if window_id is not None:
-                    cx, cy = self.zoom.logical_to_canvas(x, y)
+                    owning_doc = self.project.find_document_for_widget(
+                        widget_id,
+                    )
+                    cx, cy = self.zoom.logical_to_canvas(
+                        x, y, document=owning_doc,
+                    )
                     self.canvas.coords(window_id, cx, cy)
                 elif widget.winfo_manager() == "place":
                     widget.place_configure(
@@ -919,7 +1528,11 @@ class Workspace(ctk.CTkFrame):
                 # the shared IntVar — `group` changes themselves trip
                 # recreate_triggers above, not here.
                 self._sync_radio_initial(widget, node)
-                self.zoom.apply_to_widget(widget, window_id, node.properties)
+                owning_doc = self.project.find_document_for_widget(widget_id)
+                self.zoom.apply_to_widget(
+                    widget, window_id, node.properties,
+                    document=owning_doc,
+                )
                 # Composite widgets (CTkScrollableFrame) need the
                 # canvas item / place size updated separately because
                 # their inner widget's configure doesn't reach the
@@ -959,8 +1572,19 @@ class Workspace(ctk.CTkFrame):
 
         properties = dict(descriptor.default_properties)
         if container_node is None:
-            # Top-level drop on the canvas document.
-            lx, ly = self.zoom.canvas_to_logical(cx, cy)
+            # Top-level drop: figure out which document the cursor
+            # is over and add the widget to that doc's tree. Drops
+            # that land outside every document fall through to the
+            # active one (default), which matches single-document
+            # behaviour.
+            target_doc = self._find_document_at_canvas(cx, cy)
+            if target_doc is not None:
+                self.project.set_active_document(target_doc.id)
+            else:
+                target_doc = self.project.active_document
+            lx, ly = self.zoom.canvas_to_logical(
+                cx, cy, document=target_doc,
+            )
             properties["x"] = max(0, lx)
             properties["y"] = max(0, ly)
             parent_id = None
@@ -1120,13 +1744,18 @@ class Workspace(ctk.CTkFrame):
                             ),
                         )
         self._drag = None
+        # Refresh cover-mask after a drag release so a widget that
+        # just slid into / out of another document's area picks up
+        # the right hidden state.
+        self._update_widget_visibility_across_docs()
 
     def _maybe_reparent_dragged(self, event) -> bool:
         """On drag release, check if the widget was dropped into a
-        different container. If so, convert its coordinates to the
-        new parent's system and reparent via `project.reparent`.
-        Returns True when a reparent happened so the caller can skip
-        the Move history record.
+        different container OR a different document. Either case
+        reparents (containers via ``project.reparent``, cross-doc via
+        a manual move between document root lists) so undo + rendering
+        stay consistent. Returns True when a reparent happened so the
+        caller skips the per-widget Move history record.
         """
         if self._drag is None:
             return False
@@ -1139,12 +1768,25 @@ class Workspace(ctk.CTkFrame):
         target = self._find_container_at(cx, cy, exclude_id=nid)
         new_parent_id = target.id if target is not None else None
         old_parent_id = node.parent.id if node.parent is not None else None
-        if new_parent_id == old_parent_id:
-            return False  # same parent — drag was in-place
+
+        old_doc = self.project.find_document_for_widget(nid)
+        if target is not None:
+            new_doc = self.project.find_document_for_widget(target.id)
+        else:
+            new_doc = (
+                self._find_document_at_canvas(cx, cy)
+                or old_doc
+                or self.project.active_document
+            )
+
+        cross_doc = new_doc is not None and new_doc is not old_doc
+        if new_parent_id == old_parent_id and not cross_doc:
+            return False  # same parent, same doc — in-place drag
         # Capture the pre-reparent state for undo BEFORE any mutation.
         old_siblings = (
             node.parent.children if node.parent is not None
-            else self.project.root_widgets
+            else (old_doc.root_widgets if old_doc is not None
+                  else self.project.root_widgets)
         )
         try:
             old_index = old_siblings.index(node)
@@ -1156,13 +1798,16 @@ class Workspace(ctk.CTkFrame):
         widget, _ = self.widget_views[nid]
         zoom = self.zoom.value or 1.0
         if target is None:
-            # Back to top-level — use canvas doc coords.
+            # Top-level drop — logical coords relative to whichever
+            # document the drop landed in.
             rx = widget.winfo_rootx() - self.canvas.winfo_rootx()
             ry = widget.winfo_rooty() - self.canvas.winfo_rooty()
             canvas_x = self.canvas.canvasx(rx)
             canvas_y = self.canvas.canvasy(ry)
-            new_x = int((canvas_x - DOCUMENT_PADDING) / zoom)
-            new_y = int((canvas_y - DOCUMENT_PADDING) / zoom)
+            target_doc = new_doc or self.project.active_document
+            new_x, new_y = self.zoom.canvas_to_logical(
+                canvas_x, canvas_y, document=target_doc,
+            )
         else:
             target_widget, _ = self.widget_views[target.id]
             rel_x = widget.winfo_rootx() - target_widget.winfo_rootx()
@@ -1171,9 +1816,24 @@ class Workspace(ctk.CTkFrame):
             new_y = int(rel_y / zoom)
         # Write the new coords directly; reparent will trigger a
         # widget rebuild that picks them up.
-        node.properties["x"] = new_x
-        node.properties["y"] = new_y
-        self.project.reparent(nid, new_parent_id)
+        node.properties["x"] = max(0, new_x)
+        node.properties["y"] = max(0, new_y)
+        if cross_doc and target is None:
+            # Cross-document top-level move: project.reparent targets
+            # the active document, which isn't necessarily the drop
+            # target. Pop from old doc, push to new doc manually and
+            # raise the reparent event so the workspace rebuilds the
+            # widget under the new root.
+            if old_doc is not None and node in old_doc.root_widgets:
+                old_doc.root_widgets.remove(node)
+            node.parent = None
+            new_doc.root_widgets.append(node)
+            self.project.event_bus.publish(
+                "widget_reparented", nid,
+                old_parent_id, new_parent_id,
+            )
+        else:
+            self.project.reparent(nid, new_parent_id)
         # Capture post-reparent index so redo can restore z-order.
         post_node = self.project.get_widget(nid)
         if post_node is not None:
@@ -1297,6 +1957,15 @@ class Workspace(ctk.CTkFrame):
     def _on_canvas_click(self, event) -> str | None:
         if event.widget is not self.canvas:
             return None
+        # If the click landed on a chrome item (title bar strip,
+        # settings icon, min/close glyphs), the tag_bind handlers
+        # already processed it — do NOT run the default
+        # deselect-everything behaviour which would undo the
+        # selection the tag handler just set. `"current"` is tk's
+        # special tag for the item the cursor is hovering over.
+        for item in self.canvas.find_withtag("current"):
+            if CHROME_TAG in self.canvas.gettags(item):
+                return "break"
         if self._tool == TOOL_HAND:
             self._begin_pan(event)
             return "break"
@@ -1306,12 +1975,24 @@ class Workspace(ctk.CTkFrame):
         return None
 
     def _on_canvas_motion(self, event) -> str | None:
+        # Chrome drag in progress wins over every other motion
+        # handler — it needs every single Button-1 motion, even when
+        # the cursor slips off the title bar items mid-gesture.
+        if getattr(self, "_chrome_drag", None) is not None:
+            return self._drive_chrome_drag(event)
         if self._tool == TOOL_HAND and self._pan_state is not None:
             self._update_pan(event)
             return "break"
         return None
 
     def _on_canvas_release(self, event) -> str | None:
+        # Canvas-level release terminates any in-progress chrome drag
+        # that started on a title bar but slipped off — same reason
+        # the motion handler has a canvas-level fallback.
+        if getattr(self, "_chrome_drag", None) is not None:
+            doc_id = self._chrome_drag.get("doc_id")
+            self._on_chrome_release(event, doc_id=doc_id)
+            return "break"
         if self._tool == TOOL_HAND:
             self._end_pan(event)
             return "break"

@@ -51,9 +51,9 @@ LOCK_OFF = ""
 ARROW_EXPANDED = "▾ "
 ARROW_COLLAPSED = "▸ "
 ARROW_LEAF = "   "
-INDENT_STR = "   "  # 3 spaces per depth level
-TREE_ROW_HEIGHT = 30
-TREE_FONT_SIZE = 11
+INDENT_STR = "      "  # 6 spaces per depth level — clearer nesting
+TREE_ROW_HEIGHT = 22
+TREE_FONT_SIZE = 10
 
 DIALOG_W = 360
 DIALOG_H = 460
@@ -75,29 +75,25 @@ CTX_MENU_STYLE = dict(
 )
 
 
-class ObjectTreeWindow(ctk.CTkToplevel):
+class ObjectTreePanel(ctk.CTkFrame):
+    """Embeddable Object Tree panel.
+
+    The same logic previously lived inside a floating
+    `ObjectTreeWindow(CTkToplevel)`; now it's a plain CTkFrame so
+    the main window can dock it into the right sidebar above the
+    Properties panel. `ObjectTreeWindow` (at the bottom of this file)
+    is a thin Toplevel wrapper that composes a panel inside itself
+    for users who still want a detachable floating view.
+    """
+
     def __init__(
         self,
         parent,
         project: "Project",
-        on_close: Callable[[], None] | None = None,
     ):
-        super().__init__(parent)
-        self.title("Object Tree")
-        self.configure(fg_color=BG)
-        self.geometry(f"{DIALOG_W}x{DIALOG_H}")
-        self.minsize(280, 200)
-
-        # Stay above the main builder window. `transient` tells the WM
-        # that this window is a child of the main builder so it never
-        # slips behind it on focus change.
-        try:
-            self.transient(parent)
-        except tk.TclError:
-            pass
+        super().__init__(parent, fg_color=BG, corner_radius=0)
 
         self.project = project
-        self._on_close_callback = on_close
         self._syncing = False  # guard against selection feedback loops
 
         self._filter_var = tk.StringVar(value=FILTER_ALL_LABEL)
@@ -120,6 +116,12 @@ class ObjectTreeWindow(ctk.CTkToplevel):
         # because ttk.Treeview's image= parameter rejects CTkImage).
         self._eye_icon = load_tk_icon("eye", size=16, color="#cccccc")
         self._eye_off_icon = load_tk_icon("eye-off", size=16, color="#666666")
+        self._window_icon_active = load_tk_icon(
+            "app-window", size=16, color="#cccccc",
+        )
+        self._window_icon_dim = load_tk_icon(
+            "app-window", size=16, color="#666666",
+        )
 
         # Drag-to-reparent / reorder state
         self._drag_source_id: str | None = None
@@ -146,31 +148,30 @@ class ObjectTreeWindow(ctk.CTkToplevel):
             ("widget_visibility_changed", self._on_widget_visibility_changed),
             ("widget_locked_changed", self._on_widget_locked_changed),
             ("selection_changed", self._on_selection_changed),
+            ("active_document_changed", self._on_project_changed),
         ]
         bus = self.project.event_bus
         for event_name, handler in self._bus_subs:
             bus.subscribe(event_name, handler)
 
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
-        self.bind("<Escape>", lambda _e: self.project.select_widget(None))
-        # Copy / paste — works on the full multi-selection. Skipped
-        # when a text entry (rename dialog, search box) has focus so
-        # Ctrl+C / Ctrl+V keep their normal text-editing meaning.
+        self.tree.bind(
+            "<Escape>", lambda _e: self.project.select_widget(None),
+        )
+        # Copy / paste — widget-level bindings on the tree so the
+        # shortcut only fires when the tree has keyboard focus (typing
+        # into the search entry still does plain text copy/paste).
         # Latin keysym bindings (standard English keyboard layout):
-        self.bind("<Control-c>", self._on_copy_shortcut)
-        self.bind("<Control-C>", self._on_copy_shortcut)
-        self.bind("<Control-v>", self._on_paste_shortcut)
-        self.bind("<Control-V>", self._on_paste_shortcut)
+        self.tree.bind("<Control-c>", self._on_copy_shortcut)
+        self.tree.bind("<Control-C>", self._on_copy_shortcut)
+        self.tree.bind("<Control-v>", self._on_paste_shortcut)
+        self.tree.bind("<Control-V>", self._on_paste_shortcut)
         # Non-Latin layout fallback (Georgian, Russian, ...): MainWindow's
         # bind_all("<Control-KeyPress>") routes by hardware keycode and
-        # emits <<Copy>>/<<Paste>> virtual events on the focused widget.
-        # Catch them at the toplevel so our tree handlers run instead
-        # of the default text-editing no-op.
-        self.bind("<<Copy>>", self._on_copy_shortcut)
-        self.bind("<<Paste>>", self._on_paste_shortcut)
+        # emits <<Copy>>/<<Paste>> virtual events on the focused widget
+        # — when the tree has focus, that's the tree.
+        self.tree.bind("<<Copy>>", self._on_copy_shortcut)
+        self.tree.bind("<<Paste>>", self._on_paste_shortcut)
         self.refresh()
-        self.after(100, self._center_on_parent)
-        self.after(150, self._raise_above_parent)
 
     # ------------------------------------------------------------------
     # Layout
@@ -181,6 +182,26 @@ class ObjectTreeWindow(ctk.CTkToplevel):
             style.theme_use("default")
         except tk.TclError:
             pass
+        # Dark-theme scrollbar — tk.Scrollbar on Windows uses the OS
+        # theme and ignores colour kwargs, so we route through a
+        # styled ttk.Scrollbar instead.
+        style.configure(
+            "ObjectTree.Vertical.TScrollbar",
+            background="#3a3a3a",
+            troughcolor="#1a1a1a",
+            bordercolor=BG,
+            arrowcolor="#888888",
+            lightcolor="#3a3a3a",
+            darkcolor="#3a3a3a",
+            relief="flat",
+        )
+        style.map(
+            "ObjectTree.Vertical.TScrollbar",
+            background=[
+                ("active", "#4a4a4a"),
+                ("pressed", "#5a5a5a"),
+            ],
+        )
         style.configure(
             "ObjectTree.Treeview",
             background=TREE_BG,
@@ -212,9 +233,51 @@ class ObjectTreeWindow(ctk.CTkToplevel):
         )
 
     def _build_tree(self) -> None:
+        # The Object Tree lives inside a vertical PanedWindow pane.
+        # Locking propagation on the outer panel frame + the inner
+        # container forces the PanedWindow sash to dictate height,
+        # which in turn lets ttk.Treeview overflow properly and
+        # engage the scrollbar instead of silently pushing the
+        # container taller than its assigned pane size.
+        self.pack_propagate(False)
         container = tk.Frame(self, bg=BG, highlightthickness=0)
         container.pack(fill="both", expand=True, padx=8, pady=8)
+        container.pack_propagate(False)
         self._tree_container = container
+
+        # Active-document status strip — pinned to the BOTTOM of the
+        # Object Tree window. Shows which form is currently being
+        # edited without taking vertical space above the widget
+        # tree. Click it to open its Window settings.
+        doc_header = tk.Frame(
+            container, bg="#2d2d30", highlightthickness=0, height=28,
+        )
+        doc_header.pack(side="bottom", fill="x", pady=(6, 0))
+        doc_header.pack_propagate(False)
+        self._doc_header_icon = load_tk_icon(
+            "app-window", size=16, color="#cccccc",
+        )
+        self._doc_header_icon_label = tk.Label(
+            doc_header,
+            image=self._doc_header_icon,
+            bg="#2d2d30",
+            borderwidth=0,
+        )
+        self._doc_header_icon_label.pack(side="left", padx=(8, 6))
+        self._doc_header_label = tk.Label(
+            doc_header,
+            text="",
+            bg="#2d2d30",
+            fg="#cccccc",
+            font=("Segoe UI", 10, "bold"),
+            anchor="w",
+        )
+        self._doc_header_label.pack(side="left", fill="x", expand=True)
+        for w in (doc_header, self._doc_header_label,
+                  self._doc_header_icon_label):
+            w.configure(cursor="hand2")
+            w.bind("<Button-1>", self._on_doc_header_click)
+        self._doc_header = doc_header
 
         # Filter row: dropdown (type) + entry (name search). Both
         # apply together (AND).
@@ -264,6 +327,7 @@ class ObjectTreeWindow(ctk.CTkToplevel):
 
         tree_row = tk.Frame(container, bg=BG, highlightthickness=0)
         tree_row.pack(side="top", fill="both", expand=True)
+        tree_row.pack_propagate(False)
         self._tree_row = tree_row
 
         self.tree = ttk.Treeview(
@@ -287,17 +351,19 @@ class ObjectTreeWindow(ctk.CTkToplevel):
         self.tree.column("type", width=100, stretch=False, anchor="w")
         self.tree.column("layer", width=56, stretch=False, anchor="center")
 
-        vscroll = ctk.CTkScrollbar(
-            tree_row, orientation="vertical",
+        # ttk.Scrollbar with a custom dark style — tk.Scrollbar on
+        # Windows ignores colour kwargs in favour of the OS theme.
+        vscroll = ttk.Scrollbar(
+            tree_row, orient="vertical",
             command=self.tree.yview,
-            width=10, corner_radius=4,
-            fg_color="#1a1a1a", button_color="#3a3a3a",
-            button_hover_color="#4a4a4a",
+            style="ObjectTree.Vertical.TScrollbar",
         )
         self.tree.configure(yscrollcommand=vscroll.set)
 
+        # Pack the scrollbar FIRST so tree's `expand=True` doesn't
+        # eat the horizontal space that the scrollbar needs.
+        vscroll.pack(side="right", fill="y")
         self.tree.pack(side="left", fill="both", expand=True)
-        vscroll.pack(side="right", fill="y", padx=(2, 0))
 
         self.tree.tag_configure("drop-target", background=DROP_TARGET_BG)
         self.tree.tag_configure("drop-invalid", background=DROP_INVALID_BG)
@@ -316,32 +382,6 @@ class ObjectTreeWindow(ctk.CTkToplevel):
         self.tree.bind("<ButtonRelease-1>", self._on_drag_release, add="+")
         self.tree.bind("<Button-3>", self._on_right_click, add="+")
 
-    def _raise_above_parent(self) -> None:
-        """Force this Toplevel above the main builder window.
-
-        Uses a brief `-topmost` toggle because `transient()` alone is
-        sometimes not enough on Windows — the window gets focus but
-        stays stacking-order-wise behind the parent on launch.
-        """
-        try:
-            self.lift()
-            self.attributes("-topmost", True)
-            self.after(200, lambda: self.attributes("-topmost", False))
-        except tk.TclError:
-            pass
-
-    def _center_on_parent(self) -> None:
-        self.update_idletasks()
-        try:
-            px = self.master.winfo_rootx()
-            py = self.master.winfo_rooty()
-            pw = self.master.winfo_width()
-        except tk.TclError:
-            return
-        x = px + pw - DIALOG_W - 24
-        y = py + 80
-        self.geometry(f"+{max(0, x)}+{max(0, y)}")
-
     # ------------------------------------------------------------------
     # Refresh / population
     # ------------------------------------------------------------------
@@ -350,14 +390,61 @@ class ObjectTreeWindow(ctk.CTkToplevel):
         try:
             self._rebuild_filter_options()
             self.tree.delete(*self.tree.get_children(""))
+            self._refresh_doc_header()
             visible = self._compute_visible_set()
-            for index, node in enumerate(self.project.root_widgets):
-                self._insert_node_flat(
-                    node, depth=0, layer=index, visible=visible,
-                )
+            active = self.project.active_document
+            if active is not None:
+                for index, node in enumerate(active.root_widgets):
+                    self._insert_node_flat(
+                        node, depth=0, layer=index, visible=visible,
+                    )
             self._apply_selection(self.project.selected_id)
         finally:
             self._syncing = False
+
+    def _refresh_doc_header(self) -> None:
+        """Update the 'currently editing' strip above the treeview
+        to match the active document."""
+        active = self.project.active_document
+        if active is None or self._doc_header_label is None:
+            return
+        label = active.name or "Untitled"
+        if active.is_toplevel:
+            label = f"{label}  (Dialog)"
+        self._doc_header_label.configure(text=label)
+
+    def _on_doc_header_click(self, _event=None) -> None:
+        """Clicking the doc header opens the active document's
+        Window settings in the Properties panel."""
+        from app.core.project import WINDOW_ID
+        self.project.select_widget(WINDOW_ID)
+
+    def _insert_document_row(self, doc, index: int) -> None:
+        from app.core.project import WINDOW_ID
+        is_active = doc.id == self.project.active_document_id
+        icon = (
+            self._window_icon_active if is_active
+            else self._window_icon_dim
+        )
+        # Use a synthetic iid for document rows — distinct from the
+        # virtual WINDOW_ID sentinel so selection handling can tell
+        # them apart. Clicking one sets that document active.
+        doc_iid = f"doc:{doc.id}"
+        label = f"{doc.name}"
+        if doc.is_toplevel:
+            label = f"{label}  (Dialog)"
+        if is_active:
+            label = f"▸ {label}"
+        else:
+            label = f"  {label}"
+        self.tree.insert(
+            "", "end",
+            iid=doc_iid,
+            text="",
+            image=icon if icon is not None else "",
+            values=("", label, "Window", str(index)),
+            tags=("doc-row",),
+        )
 
     def _rebuild_filter_options(self) -> None:
         """Rebuild the filter dropdown so it only lists widget types
@@ -619,12 +706,26 @@ class ObjectTreeWindow(ctk.CTkToplevel):
             if not sel:
                 self.project.select_widget(None)
             elif len(sel) == 1:
-                self.project.select_widget(sel[0])
+                iid = sel[0]
+                if iid.startswith("doc:"):
+                    # Clicking a document header sets it active and
+                    # opens its Window properties; it's not a real
+                    # widget so skip select_widget(iid).
+                    from app.core.project import WINDOW_ID
+                    doc_id = iid[4:]
+                    self.project.set_active_document(doc_id)
+                    self.project.select_widget(WINDOW_ID)
+                else:
+                    self.project.select_widget(iid)
             else:
-                # Multi — primary = focused item (most recent click)
                 focus = self.tree.focus()
                 primary = focus if focus in sel else sel[-1]
-                self.project.set_multi_selection(set(sel), primary)
+                # Skip document header rows when tracking multi.
+                ids = {i for i in sel if not i.startswith("doc:")}
+                if not ids:
+                    return
+                primary_id = primary if not primary.startswith("doc:") else None
+                self.project.set_multi_selection(ids, primary_id)
         finally:
             self._syncing = False
 
@@ -985,6 +1086,10 @@ class ObjectTreeWindow(ctk.CTkToplevel):
         if not ids:
             return "break"
         self.project.copy_to_clipboard(ids)
+        # Keep the tree focused so subsequent Ctrl+C/V keep routing
+        # through our bindings — rebuilds in the docked version
+        # otherwise drop focus back to the main window.
+        self.tree.focus_set()
         return "break"
 
     def _on_paste_shortcut(self, _event=None) -> str | None:
@@ -995,6 +1100,7 @@ class ObjectTreeWindow(ctk.CTkToplevel):
         parent_id = self._paste_target_parent_id()
         new_ids = self.project.paste_from_clipboard(parent_id=parent_id)
         self._push_paste_history(new_ids)
+        self.tree.focus_set()
         return "break"
 
     def _push_paste_history(self, new_ids: list[str]) -> None:
@@ -1167,7 +1273,9 @@ class ObjectTreeWindow(ctk.CTkToplevel):
             DeleteWidgetCommand(snapshot, parent_id, index),
         )
 
-    def _on_close(self) -> None:
+    def destroy(self) -> None:
+        # Ensure bus unsubscribes happen even if the caller calls
+        # destroy() directly (e.g. main window toggling the menu item).
         self._unsubscribe_bus()
         if self._search_refresh_id is not None:
             try:
@@ -1175,17 +1283,6 @@ class ObjectTreeWindow(ctk.CTkToplevel):
             except tk.TclError:
                 pass
             self._search_refresh_id = None
-        if self._on_close_callback is not None:
-            try:
-                self._on_close_callback()
-            except Exception:
-                pass
-        self.destroy()
-
-    def destroy(self) -> None:
-        # Ensure bus unsubscribes happen even if the caller calls
-        # destroy() directly (e.g. main window toggling the menu item).
-        self._unsubscribe_bus()
         super().destroy()
 
     def _unsubscribe_bus(self) -> None:
@@ -1195,3 +1292,77 @@ class ObjectTreeWindow(ctk.CTkToplevel):
                 bus.unsubscribe(event_name, handler)
         except Exception:
             pass
+
+
+# ======================================================================
+# Floating-window wrapper — keeps the old "pop-out" Object Tree alive
+# ======================================================================
+class ObjectTreeWindow(ctk.CTkToplevel):
+    """Thin Toplevel wrapper around `ObjectTreePanel`.
+
+    Most users see the docked ObjectTreePanel embedded in the right
+    sidebar; this wrapper is only created when the View menu's
+    "Object Tree" option is checked, or programmatically for a
+    detachable floating inspector.
+    """
+
+    def __init__(
+        self,
+        parent,
+        project: "Project",
+        on_close: Callable[[], None] | None = None,
+    ):
+        super().__init__(parent)
+        self.title("Object Tree")
+        self.configure(fg_color=BG)
+        self.geometry(f"{DIALOG_W}x{DIALOG_H}")
+        self.minsize(280, 200)
+        try:
+            self.transient(parent)
+        except tk.TclError:
+            pass
+
+        self._on_close_callback = on_close
+        self.panel = ObjectTreePanel(self, project)
+        self.panel.pack(fill="both", expand=True)
+
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.after(100, self._center_on_parent)
+        self.after(150, self._raise_above_parent)
+
+    def refresh(self) -> None:
+        self.panel.refresh()
+
+    def _raise_above_parent(self) -> None:
+        """Force the Toplevel above the main builder window.
+
+        `transient()` alone is sometimes not enough on Windows —
+        briefly flip `-topmost` so the window lands in front instead
+        of behind its parent on launch.
+        """
+        try:
+            self.lift()
+            self.attributes("-topmost", True)
+            self.after(200, lambda: self.attributes("-topmost", False))
+        except tk.TclError:
+            pass
+
+    def _center_on_parent(self) -> None:
+        self.update_idletasks()
+        try:
+            px = self.master.winfo_rootx()
+            py = self.master.winfo_rooty()
+            pw = self.master.winfo_width()
+        except tk.TclError:
+            return
+        x = px + pw - DIALOG_W - 24
+        y = py + 80
+        self.geometry(f"+{max(0, x)}+{max(0, y)}")
+
+    def _on_close(self) -> None:
+        if self._on_close_callback is not None:
+            try:
+                self._on_close_callback()
+            except Exception:
+                pass
+        self.destroy()

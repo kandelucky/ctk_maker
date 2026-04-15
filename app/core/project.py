@@ -29,18 +29,107 @@ from __future__ import annotations
 
 from typing import Iterator
 
+from app.core.document import (
+    DEFAULT_DOCUMENT_HEIGHT,
+    DEFAULT_DOCUMENT_WIDTH,
+    DEFAULT_WINDOW_PROPERTIES,
+    Document,
+)
 from app.core.event_bus import EventBus
 from app.core.history import History
 from app.core.widget_node import WidgetNode
 
-DEFAULT_DOCUMENT_WIDTH = 800
-DEFAULT_DOCUMENT_HEIGHT = 600
+# Sentinel id for the virtual "Window" node that represents the
+# top-level CTk window in the Object Tree + Properties panel. It's
+# not stored in the widget tree and has no render — every reference
+# routes through Project's window_properties accessor methods.
+WINDOW_ID = "__window__"
+
+
+def _walk_tree(nodes):
+    """Depth-first top-down iteration over a forest of WidgetNodes."""
+    stack = list(reversed(nodes))
+    while stack:
+        node = stack.pop()
+        yield node
+        stack.extend(reversed(node.children))
+
+
+class _WindowProxy:
+    """Fake WidgetNode for the Window selection. Exposes the same
+    surface the Object Tree + Properties panel use on real nodes —
+    ``id``, ``name``, ``widget_type``, ``parent``, ``children``,
+    ``visible``, ``locked``, and a ``properties`` mapping. The
+    properties view always reflects current project state because
+    it's a fresh dict built from live fields on every access.
+    """
+
+    __slots__ = ("_project",)
+
+    def __init__(self, project: "Project"):
+        self._project = project
+
+    # Node-like attributes
+    @property
+    def id(self) -> str:
+        return WINDOW_ID
+
+    @property
+    def name(self) -> str:
+        return self._project.active_document.name or "Untitled"
+
+    @property
+    def widget_type(self) -> str:
+        return WINDOW_ID
+
+    @property
+    def parent(self):
+        return None
+
+    @property
+    def children(self) -> list:
+        return []
+
+    @property
+    def visible(self) -> bool:
+        return True
+
+    @property
+    def locked(self) -> bool:
+        return False
+
+    @property
+    def properties(self) -> dict:
+        project = self._project
+        wp = project.window_properties
+        # Build a fresh dict every call so Properties panel reads
+        # always see live state. Every key in DEFAULT_WINDOW_PROPERTIES
+        # must appear here (including grid_*), otherwise the panel's
+        # property rows render with a None value and the overlays
+        # look blank.
+        result = {
+            "width": project.document_width,
+            "height": project.document_height,
+        }
+        for key, default in DEFAULT_WINDOW_PROPERTIES.items():
+            result[key] = wp.get(key, default)
+        return result
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "widget_type": self.widget_type,
+            "properties": self.properties,
+            "visible": True,
+            "locked": False,
+            "children": [],
+        }
 
 
 class Project:
     def __init__(self):
         self.event_bus = EventBus()
-        self.root_widgets: list[WidgetNode] = []
         # `selected_id` is the "primary" / most-recently-clicked
         # selected widget (what handles resize / property editing).
         # `selected_ids` is the full set — only relevant while the
@@ -49,8 +138,13 @@ class Project:
         # `selection_changed(None)` event when multi is active.
         self.selected_id: str | None = None
         self.selected_ids: set[str] = set()
-        self.document_width: int = DEFAULT_DOCUMENT_WIDTH
-        self.document_height: int = DEFAULT_DOCUMENT_HEIGHT
+        # Phase 5.5: a project holds a LIST of documents (forms).
+        # Single-document projects keep the one default document;
+        # ``active_document_id`` drives legacy ``root_widgets`` /
+        # ``document_width`` / ``window_properties`` accessors for
+        # code paths that haven't been ported to multi-doc yet.
+        self.documents: list[Document] = [Document(name="Main Window")]
+        self.active_document_id: str = self.documents[0].id
         self.name: str = "Untitled"
         # Monotonic per-widget-type counter used to auto-name new widgets
         # ("Button", "Button (1)", "Button (2)", …). Persisted with the
@@ -60,9 +154,81 @@ class Project:
         # full WidgetNode.to_dict() snapshot of a copied subtree.
         # Not persisted — lost when the app quits.
         self.clipboard: list[dict] = []
+        self._window_proxy = _WindowProxy(self)
         # Undo / redo history. UI code pushes Command objects after
         # applying mutations; history replays them backward / forward.
         self.history = History(self)
+
+    # ------------------------------------------------------------------
+    # Document accessors — migration layer so legacy code paths that
+    # read project.root_widgets / document_width / document_height /
+    # window_properties keep working against the currently active
+    # document. Phase 5.5 rewires rendering / drops / selection to
+    # address specific documents by id; until then, everything
+    # implicitly targets the active one.
+    # ------------------------------------------------------------------
+    @property
+    def active_document(self) -> Document:
+        for doc in self.documents:
+            if doc.id == self.active_document_id:
+                return doc
+        # Defensive fallback: drift in active_document_id shouldn't
+        # crash the app. Pick the first document and realign.
+        if self.documents:
+            self.active_document_id = self.documents[0].id
+            return self.documents[0]
+        # Nothing at all — create one on the fly so the rest of the
+        # invariants ("there's always a document") hold.
+        doc = Document()
+        self.documents.append(doc)
+        self.active_document_id = doc.id
+        return doc
+
+    def get_document(self, document_id: str) -> Document | None:
+        for doc in self.documents:
+            if doc.id == document_id:
+                return doc
+        return None
+
+    def set_active_document(self, document_id: str) -> None:
+        if document_id == self.active_document_id:
+            return
+        if self.get_document(document_id) is None:
+            return
+        self.active_document_id = document_id
+        self.event_bus.publish("active_document_changed", document_id)
+
+    @property
+    def root_widgets(self) -> list[WidgetNode]:
+        return self.active_document.root_widgets
+
+    @root_widgets.setter
+    def root_widgets(self, value: list[WidgetNode]) -> None:
+        self.active_document.root_widgets = list(value)
+
+    @property
+    def document_width(self) -> int:
+        return self.active_document.width
+
+    @document_width.setter
+    def document_width(self, value: int) -> None:
+        self.active_document.width = int(value)
+
+    @property
+    def document_height(self) -> int:
+        return self.active_document.height
+
+    @document_height.setter
+    def document_height(self, value: int) -> None:
+        self.active_document.height = int(value)
+
+    @property
+    def window_properties(self) -> dict:
+        return self.active_document.window_properties
+
+    @window_properties.setter
+    def window_properties(self, value: dict) -> None:
+        self.active_document.window_properties = dict(value)
 
     # ------------------------------------------------------------------
     # Document
@@ -77,19 +243,37 @@ class Project:
         self.event_bus.publish("document_resized", width, height)
 
     # ------------------------------------------------------------------
-    # Tree traversal
+    # Tree traversal — walks every document so lookups + selection
+    # work across the entire multi-document project, not just the
+    # active one.
     # ------------------------------------------------------------------
     def iter_all_widgets(self) -> Iterator[WidgetNode]:
-        """Yield every widget in the project, depth-first top-down."""
+        """Yield every widget in every document, depth-first top-down."""
         def walk(node: WidgetNode):
             yield node
             for child in node.children:
                 yield from walk(child)
 
-        for root in self.root_widgets:
-            yield from walk(root)
+        for doc in self.documents:
+            for root in doc.root_widgets:
+                yield from walk(root)
 
-    def get_widget(self, widget_id: str) -> WidgetNode | None:
+    def find_document_for_widget(
+        self, widget_id: str,
+    ) -> Document | None:
+        """Return the Document whose tree contains ``widget_id``.
+        Used by add/remove/reparent paths to pick the right root
+        list regardless of which document is currently active.
+        """
+        for doc in self.documents:
+            for node in _walk_tree(doc.root_widgets):
+                if node.id == widget_id:
+                    return doc
+        return None
+
+    def get_widget(self, widget_id: str):
+        if widget_id == WINDOW_ID:
+            return self._window_proxy
         for node in self.iter_all_widgets():
             if node.id == widget_id:
                 return node
@@ -97,10 +281,17 @@ class Project:
 
     def _sibling_list(self, node: WidgetNode) -> list[WidgetNode]:
         """Return the list that contains `node` (its parent's children
-        or root_widgets if top-level)."""
-        if node.parent is None:
-            return self.root_widgets
-        return node.parent.children
+        or the document's root list when top-level). Walks every
+        document so nodes from non-active documents still resolve
+        correctly."""
+        if node.parent is not None:
+            return node.parent.children
+        doc = self.find_document_for_widget(node.id)
+        if doc is not None:
+            return doc.root_widgets
+        # Fallback: active document's roots, matching pre-refactor
+        # behaviour for orphan / in-flight nodes.
+        return self.active_document.root_widgets
 
     # ------------------------------------------------------------------
     # Naming
@@ -124,6 +315,16 @@ class Project:
         return f"{base} ({count})"
 
     def rename_widget(self, widget_id: str, new_name: str) -> None:
+        # The virtual Window node renames the *active document* —
+        # i.e. the form's window title, which is independent of the
+        # project filename (only changed via New / Save As).
+        if widget_id == WINDOW_ID:
+            doc = self.active_document
+            if doc.name == new_name:
+                return
+            doc.name = new_name
+            self.event_bus.publish("widget_renamed", widget_id, new_name)
+            return
         node = self.get_widget(widget_id)
         if node is None:
             return
@@ -256,9 +457,20 @@ class Project:
         return False
 
     def clear(self) -> None:
-        for node in list(self.root_widgets):
-            self.remove_widget(node.id)
+        # Remove every widget across every document — listeners
+        # (workspace, object tree, properties panel) observe these
+        # one by one and tear down their views. Afterward the
+        # document list is reset to a single fresh Main Window so
+        # the project always has exactly one document.
+        for doc in list(self.documents):
+            for node in list(doc.root_widgets):
+                self.remove_widget(node.id)
+        self.documents = [Document(name="Main Window")]
+        self.active_document_id = self.documents[0].id
         self.history.clear()
+        self.event_bus.publish(
+            "active_document_changed", self.active_document_id,
+        )
 
     # ------------------------------------------------------------------
     # Selection + properties
@@ -296,12 +508,50 @@ class Project:
     def update_property(
         self, widget_id: str, prop_name: str, value,
     ) -> None:
+        if widget_id == WINDOW_ID:
+            self._set_window_property(prop_name, value)
+            return
         node = self.get_widget(widget_id)
         if node is None:
             return
         node.properties[prop_name] = value
         self.event_bus.publish(
             "property_changed", widget_id, prop_name, value,
+        )
+
+    # ------------------------------------------------------------------
+    # Window (virtual node) setters
+    # ------------------------------------------------------------------
+    def _set_window_property(self, prop_name: str, value) -> None:
+        """Route an update on the virtual Window node to the right
+        field. Width/height dispatch to ``resize_document`` so the
+        workspace canvas and everything else stays in sync; other
+        keys land in ``window_properties`` and publish the normal
+        ``property_changed`` event so the panel + history pick them
+        up."""
+        if prop_name == "width":
+            try:
+                w = int(value)
+            except (TypeError, ValueError):
+                return
+            self.resize_document(w, self.document_height)
+            self.event_bus.publish(
+                "property_changed", WINDOW_ID, prop_name, w,
+            )
+            return
+        if prop_name == "height":
+            try:
+                h = int(value)
+            except (TypeError, ValueError):
+                return
+            self.resize_document(self.document_width, h)
+            self.event_bus.publish(
+                "property_changed", WINDOW_ID, prop_name, h,
+            )
+            return
+        self.window_properties[prop_name] = value
+        self.event_bus.publish(
+            "property_changed", WINDOW_ID, prop_name, value,
         )
 
     def set_visibility(self, widget_id: str, visible: bool) -> None:
