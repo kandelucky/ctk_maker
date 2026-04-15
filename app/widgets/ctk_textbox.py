@@ -1,15 +1,18 @@
-"""CTkEntry widget descriptor.
+"""CTkTextbox widget descriptor.
 
-A single-line text input with an optional placeholder hint.
+A multi-line text editor — CTkEntry's big brother. Inherits from
+`tkinter.Text` so `.insert(index, text)` / `.delete(start, end)` /
+`.get(start, end)` follow the Text widget's `"line.col"` index
+conventions.
 
 Groups shown in the Properties panel, in order:
 
     Geometry           — x/y, width/height
-    Rectangle          — corner radius, optional border
-    Content            — placeholder + initial text
+    Rectangle          — corner radius, optional border, inner padding
+    Content            — initial text + scrollbar toggle
     Button Interaction — interactable toggle
-    Main Colors        — field background
-    Text               — font + style, text + placeholder colors
+    Main Colors        — background, scrollbar, scrollbar hover
+    Text               — font + style, text color
 """
 import customtkinter as ctk
 
@@ -17,28 +20,31 @@ from app.core.logger import log_error
 from app.widgets.base import WidgetDescriptor
 
 
-class CTkEntryDescriptor(WidgetDescriptor):
-    type_name = "CTkEntry"
-    display_name = "Entry"
+class CTkTextboxDescriptor(WidgetDescriptor):
+    type_name = "CTkTextbox"
+    display_name = "Textbox"
 
     default_properties = {
         # Geometry
         "x": 120,
         "y": 120,
-        "width": 140,
-        "height": 28,
+        "width": 200,
+        "height": 200,
         # Rectangle
         "corner_radius": 6,
-        "border_enabled": True,
-        "border_width": 2,
+        "border_enabled": False,
+        "border_width": 1,
         "border_color": "#565b5e",
+        "border_spacing": 3,
         # Content
-        "placeholder_text": "Enter text…",
-        "initial_value": "",
+        "initial_text": "",
+        "activate_scrollbars": True,
         # Button Interaction
         "button_enabled": True,
         # Main colors
-        "fg_color": "#343638",
+        "fg_color": "#1d1e1e",
+        "scrollbar_button_color": "#696969",
+        "scrollbar_button_hover_color": "#878787",
         # Text content + style
         "font_size": 13,
         "font_bold": False,
@@ -46,7 +52,6 @@ class CTkEntryDescriptor(WidgetDescriptor):
         "font_underline": False,
         "font_overstrike": False,
         "text_color": "#dce4ee",
-        "placeholder_text_color": "#9ea0a2",
     }
 
     property_schema = [
@@ -58,9 +63,9 @@ class CTkEntryDescriptor(WidgetDescriptor):
 
         {"name": "width", "type": "number", "label": "W",
          "group": "Geometry", "pair": "size", "row_label": "Size",
-         "min": 40, "max": 2000},
+         "min": 50, "max": 4000},
         {"name": "height", "type": "number", "label": "H",
-         "group": "Geometry", "pair": "size", "min": 20, "max": 2000},
+         "group": "Geometry", "pair": "size", "min": 30, "max": 4000},
 
         # --- Rectangle ---------------------------------------------------
         {"name": "corner_radius", "type": "number", "label": "",
@@ -75,22 +80,21 @@ class CTkEntryDescriptor(WidgetDescriptor):
          "row_label": "Enabled"},
         {"name": "border_width", "type": "number", "label": "",
          "group": "Rectangle", "subgroup": "Border",
-         "row_label": "Thickness", "min": 1,
-         "max": lambda p: max(
-             1,
-             min(int(p.get("width", 0)), int(p.get("height", 0))) // 2,
-         ),
+         "row_label": "Thickness", "min": 1, "max": 20,
          "disabled_when": lambda p: not p.get("border_enabled")},
         {"name": "border_color", "type": "color", "label": "",
          "group": "Rectangle", "subgroup": "Border",
          "row_label": "Color",
          "disabled_when": lambda p: not p.get("border_enabled")},
+        {"name": "border_spacing", "type": "number", "label": "",
+         "group": "Rectangle",
+         "row_label": "Inner Padding", "min": 0, "max": 50},
 
         # --- Content -----------------------------------------------------
-        {"name": "placeholder_text", "type": "multiline", "label": "",
-         "group": "Content", "row_label": "Placeholder"},
-        {"name": "initial_value", "type": "multiline", "label": "",
+        {"name": "initial_text", "type": "multiline", "label": "",
          "group": "Content", "row_label": "Initial Text"},
+        {"name": "activate_scrollbars", "type": "boolean", "label": "",
+         "group": "Content", "row_label": "Show Scrollbars"},
 
         # --- Button Interaction ------------------------------------------
         {"name": "button_enabled", "type": "boolean", "label": "",
@@ -98,7 +102,12 @@ class CTkEntryDescriptor(WidgetDescriptor):
 
         # --- Main Colors -------------------------------------------------
         {"name": "fg_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Field Background"},
+         "group": "Main Colors", "row_label": "Background"},
+        {"name": "scrollbar_button_color", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Scrollbar"},
+        {"name": "scrollbar_button_hover_color", "type": "color",
+         "label": "", "group": "Main Colors",
+         "row_label": "Scrollbar Hover"},
 
         # --- Text --------------------------------------------------------
         {"name": "font_size", "type": "number", "label": "",
@@ -115,30 +124,31 @@ class CTkEntryDescriptor(WidgetDescriptor):
 
         {"name": "text_color", "type": "color", "label": "",
          "group": "Text", "row_label": "Normal Text Color"},
-        {"name": "placeholder_text_color", "type": "color", "label": "",
-         "group": "Text", "row_label": "Placeholder Color"},
     ]
 
     _NODE_ONLY_KEYS = {
         "x", "y",
-        "button_enabled", "border_enabled", "initial_value",
+        "button_enabled", "border_enabled", "initial_text",
     }
     _FONT_KEYS = {
         "font_size", "font_bold", "font_italic",
         "font_underline", "font_overstrike",
     }
+    # CTkTextbox accepts `activate_scrollbars` only in __init__ —
+    # configure(activate_scrollbars=…) raises ValueError. The editor
+    # reinjects it at construction; changing it at runtime triggers a
+    # full destroy + recreate via `recreate_triggers`.
+    init_only_keys = {"activate_scrollbars"}
+    recreate_triggers = frozenset({"activate_scrollbars"})
 
     @classmethod
     def transform_properties(cls, properties: dict) -> dict:
         result = {
             k: v for k, v in properties.items()
-            if k not in cls._NODE_ONLY_KEYS and k not in cls._FONT_KEYS
+            if k not in cls._NODE_ONLY_KEYS
+            and k not in cls._FONT_KEYS
+            and k not in cls.init_only_keys
         }
-
-        result["state"] = (
-            "normal" if properties.get("button_enabled", True)
-            else "disabled"
-        )
 
         if not properties.get("border_enabled"):
             result["border_width"] = 0
@@ -157,43 +167,50 @@ class CTkEntryDescriptor(WidgetDescriptor):
                 underline=underline, overstrike=overstrike,
             )
         except Exception:
-            log_error("CTkEntryDescriptor.transform_properties font")
+            log_error("CTkTextboxDescriptor.transform_properties font")
 
         return result
 
     @classmethod
     def create_widget(cls, master, properties: dict, init_kwargs=None):
         kwargs = cls.transform_properties(properties)
+        # Reinject init-only kwargs (e.g. activate_scrollbars) that
+        # `transform_properties` filters out for runtime configure.
+        for key in cls.init_only_keys:
+            if key in properties:
+                kwargs[key] = properties[key]
         if init_kwargs:
             kwargs.update(init_kwargs)
-        widget = ctk.CTkEntry(master, **kwargs)
+        widget = ctk.CTkTextbox(master, **kwargs)
         cls.apply_state(widget, properties)
         return widget
 
     @classmethod
     def apply_state(cls, widget, properties: dict) -> None:
-        # CTkEntry needs state="normal" to accept delete/insert; if the
-        # widget is disabled we temporarily flip it then restore.
-        was_disabled = str(widget.cget("state")) == "disabled"
+        # CTkTextbox doesn't take `state` in __init__ — flip via
+        # configure. Temporarily go to "normal" so delete/insert work,
+        # then restore whatever the user asked for.
+        enabled = bool(properties.get("button_enabled", True))
         try:
-            if was_disabled:
-                widget.configure(state="normal")
-            widget.delete(0, "end")
-            initial = properties.get("initial_value") or ""
+            widget.configure(state="normal")
+            widget.delete("1.0", "end")
+            initial = properties.get("initial_text") or ""
             if initial:
-                widget.insert(0, str(initial))
+                widget.insert("1.0", str(initial))
         except Exception:
-            log_error("CTkEntryDescriptor.apply_state insert")
+            log_error("CTkTextboxDescriptor.apply_state insert")
         finally:
-            if was_disabled:
-                try:
-                    widget.configure(state="disabled")
-                except Exception:
-                    pass
+            try:
+                widget.configure(state="normal" if enabled else "disabled")
+            except Exception:
+                pass
 
     @classmethod
     def export_state(cls, var_name: str, properties: dict) -> list[str]:
-        initial = properties.get("initial_value") or ""
-        if not initial:
-            return []
-        return [f"{var_name}.insert(0, {str(initial)!r})"]
+        lines: list[str] = []
+        initial = properties.get("initial_text") or ""
+        if initial:
+            lines.append(f'{var_name}.insert("1.0", {str(initial)!r})')
+        if not properties.get("button_enabled", True):
+            lines.append(f'{var_name}.configure(state="disabled")')
+        return lines

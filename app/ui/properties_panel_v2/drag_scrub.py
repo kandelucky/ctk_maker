@@ -15,6 +15,8 @@ from __future__ import annotations
 import tkinter as tk
 from typing import TYPE_CHECKING
 
+from app.core.commands import ChangePropertyCommand
+
 if TYPE_CHECKING:
     from .panel import PropertiesPanelV2
 
@@ -81,8 +83,13 @@ class DragScrubController:
             "prop": prop,
             "last_x": event.x_root,
             "current": current,
+            "start_value": current,
+            "start_widget_id": self.panel.current_id,
             "accumulator": 0.0,
         }
+        # Silence per-step commits so the scrub collapses into one
+        # undo entry on release.
+        self.panel._suspend_history = True
 
     def _on_motion(self, event) -> None:
         if self._state is None:
@@ -104,8 +111,22 @@ class DragScrubController:
         self.panel._commit_prop(self._state["pname"], new_value)
 
     def _on_release(self, _event) -> None:
+        state = self._state
         self._state = None
         self._set_cursor("")
+        self.panel._suspend_history = False
+        if state is None:
+            return
+        widget_id = state["start_widget_id"]
+        before = state["start_value"]
+        after = state["current"]
+        if widget_id is None or before == after:
+            return
+        self.panel.project.history.push(
+            ChangePropertyCommand(
+                widget_id, state["pname"], before, after,
+            ),
+        )
 
     def _on_hover(self, event) -> None:
         if self._state is not None:

@@ -213,3 +213,10 @@ class CTkComboBoxDescriptor(WidgetDescriptor):
                 widget.set(str(initial))
             except Exception:
                 log_error("CTkComboBoxDescriptor.apply_state set")
+
+    @classmethod
+    def export_state(cls, var_name: str, properties: dict) -> list[str]:
+        initial = properties.get("initial_value")
+        if not initial:
+            return []
+        return [f"{var_name}.set({str(initial)!r})"]

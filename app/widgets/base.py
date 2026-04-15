@@ -62,3 +62,22 @@ class WidgetDescriptor:
         into the original `widget`.
         """
         return widget
+
+    @classmethod
+    def export_kwarg_overrides(cls, properties: dict) -> dict:
+        """Per-descriptor kwarg transformations the exporter should
+        apply when emitting the constructor call. Values returned here
+        REPLACE the raw value from `node.properties`. Use this for
+        runtime-only translations like CTkSlider's
+        `number_of_steps=0 → None`. Default: no overrides.
+        """
+        return {}
+
+    @classmethod
+    def export_state(cls, var_name: str, properties: dict) -> list[str]:
+        """Lines the exporter should emit AFTER the widget has been
+        constructed and placed. Used for runtime state that isn't a
+        constructor kwarg — `.set(value)` / `.select()` /
+        `.insert(0, text)` — mirroring `apply_state`. Default: none.
+        """
+        return []

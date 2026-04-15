@@ -201,3 +201,9 @@ class CTkCheckBoxDescriptor(WidgetDescriptor):
                 widget.deselect()
         except Exception:
             log_error("CTkCheckBoxDescriptor.apply_state")
+
+    @classmethod
+    def export_state(cls, var_name: str, properties: dict) -> list[str]:
+        if properties.get("initially_checked"):
+            return [f"{var_name}.select()"]
+        return []

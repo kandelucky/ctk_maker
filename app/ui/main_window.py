@@ -17,6 +17,7 @@ from app.io.code_exporter import export_project
 from app.io.project_loader import ProjectLoadError, load_project
 from app.io.project_saver import save_project
 from app.ui.dialogs import NewProjectSizeDialog
+from app.ui.history_window import HistoryWindow
 from app.ui.icons import load_tk_icon
 from app.ui.object_tree_window import ObjectTreeWindow
 from app.ui.palette import Palette
@@ -31,7 +32,7 @@ MENU_BG = "#2d2d30"
 MENU_FG = "#cccccc"
 MENU_ACTIVE_BG = "#094771"
 MENU_ACTIVE_FG = "#ffffff"
-MENU_DISABLED_FG = "#6a6a6a"
+MENU_DISABLED_FG = "#888888"
 MENU_FONT = ("Segoe UI", 11)
 MENU_ICON_SIZE = 18
 
@@ -98,6 +99,8 @@ class MainWindow(ctk.CTk):
         self._dirty: bool = False
         self._object_tree_window: ObjectTreeWindow | None = None
         self._object_tree_var = tk.BooleanVar(value=True)
+        self._history_window: HistoryWindow | None = None
+        self._history_var = tk.BooleanVar(value=False)
 
         settings = load_settings()
         initial_mode = settings.get("appearance_mode", "Dark")
@@ -117,6 +120,8 @@ class MainWindow(ctk.CTk):
             on_preview=self._on_preview,
             on_export=self._on_export,
             on_theme_toggle=self._on_theme_toggle,
+            on_undo=self._on_undo,
+            on_redo=self._on_redo,
         )
         self.toolbar.pack(side="top", fill="x")
 
@@ -143,6 +148,8 @@ class MainWindow(ctk.CTk):
         for evt in ("widget_added", "widget_removed", "property_changed",
                     "widget_z_changed", "document_resized"):
             bus.subscribe(evt, self._on_project_modified)
+        bus.subscribe("history_changed", self._on_history_changed)
+        self._refresh_undo_redo_buttons()
 
         self.protocol("WM_DELETE_WINDOW", self._on_window_close)
 
@@ -156,7 +163,7 @@ class MainWindow(ctk.CTk):
         # If the keysym is already the Latin letter, tk's default
         # binding handled (or will handle) the shortcut — don't double.
         latin = event.keysym.lower()
-        if latin in ("v", "c", "x", "a", "s", "n", "o", "w", "q", "r"):
+        if latin in ("v", "c", "x", "a", "s", "n", "o", "w", "q", "r", "z", "y"):
             return None
         kc = event.keycode
         widget = event.widget
@@ -192,6 +199,15 @@ class MainWindow(ctk.CTk):
             return "break"
         if kc == 82:  # R
             self._on_preview()
+            return "break"
+        if kc == 90:  # Z
+            if event.state & 0x0001:  # Shift → redo
+                self._on_redo()
+            else:
+                self._on_undo()
+            return "break"
+        if kc == 89:  # Y
+            self._on_redo()
             return "break"
         return None
 
@@ -317,6 +333,49 @@ class MainWindow(ctk.CTk):
         self._add_cmd(file_menu, "Quit", self._on_quit, icon="log-out", accelerator="Ctrl+Q")
         menubar.add_cascade(label="File", menu=file_menu)
 
+        # ---- Edit ----
+        # postcommand recomputes enabled/disabled state just before
+        # the menu drops open so it always reflects current selection,
+        # clipboard, and history state.
+        edit_menu = tk.Menu(
+            menubar, tearoff=0,
+            postcommand=self._refresh_edit_menu_state,
+            **MENU_STYLE,
+        )
+        self._edit_menu = edit_menu
+        self._add_cmd(
+            edit_menu, "Undo", self._on_undo, accelerator="Ctrl+Z",
+        )
+        self._add_cmd(
+            edit_menu, "Redo", self._on_redo, accelerator="Ctrl+Y",
+        )
+        edit_menu.add_separator()
+        self._add_cmd(
+            edit_menu, "Copy", self._on_menu_copy,
+            accelerator="Ctrl+C",
+        )
+        self._add_cmd(
+            edit_menu, "Paste", self._on_menu_paste,
+            accelerator="Ctrl+V",
+        )
+        self._add_cmd(
+            edit_menu, "Delete", self._on_menu_delete,
+            accelerator="Del",
+        )
+        edit_menu.add_separator()
+        self._add_cmd(
+            edit_menu, "Select All", self._on_menu_select_all,
+            accelerator="Ctrl+A",
+        )
+        edit_menu.add_separator()
+        self._add_cmd(
+            edit_menu, "Bring to Front", self._on_menu_bring_to_front,
+        )
+        self._add_cmd(
+            edit_menu, "Send to Back", self._on_menu_send_to_back,
+        )
+        menubar.add_cascade(label="Edit", menu=edit_menu)
+
         # ---- Form ----
         form_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
         self._add_cmd(form_menu, "Preview", self._on_preview, icon="play", accelerator="Ctrl+R")
@@ -329,6 +388,12 @@ class MainWindow(ctk.CTk):
             variable=self._object_tree_var,
             command=self._on_toggle_object_tree,
             accelerator="F8",
+        )
+        view_menu.add_checkbutton(
+            label="History",
+            variable=self._history_var,
+            command=self._on_toggle_history_window,
+            accelerator="F9",
         )
         menubar.add_cascade(label="View", menu=view_menu)
 
@@ -362,7 +427,14 @@ class MainWindow(ctk.CTk):
         self.bind("<Control-r>", lambda e: self._on_preview())
         self.bind("<Control-w>", lambda e: self._on_close_project())
         self.bind("<F8>", lambda e: self._on_f8_object_tree())
+        self.bind("<F9>", lambda e: self._on_f9_history_window())
         self.bind("<Control-q>", lambda e: self._on_quit())
+        # bind_all so undo/redo works when the Object Tree toplevel
+        # has focus too — regular `self.bind` only fires for the
+        # main window's widget tree.
+        self.bind_all("<Control-z>", lambda e: self._on_undo())
+        self.bind_all("<Control-y>", lambda e: self._on_redo())
+        self.bind_all("<Control-Shift-Z>", lambda e: self._on_redo())
 
     def _rebuild_recent_menu(self) -> None:
         self._recent_menu.delete(0, "end")
@@ -563,6 +635,32 @@ class MainWindow(ctk.CTk):
         self._object_tree_var.set(not self._object_tree_var.get())
         self._on_toggle_object_tree()
 
+    def _on_toggle_history_window(self) -> None:
+        want_open = bool(self._history_var.get())
+        alive = (
+            self._history_window is not None
+            and self._history_window.winfo_exists()
+        )
+        if want_open and not alive:
+            self._history_window = HistoryWindow(
+                self, self.project,
+                on_close=self._on_history_window_closed,
+            )
+        elif not want_open and alive:
+            try:
+                self._history_window.destroy()
+            except tk.TclError:
+                pass
+            self._history_window = None
+
+    def _on_history_window_closed(self) -> None:
+        self._history_window = None
+        self._history_var.set(False)
+
+    def _on_f9_history_window(self) -> None:
+        self._history_var.set(not self._history_var.get())
+        self._on_toggle_history_window()
+
     def _auto_open_object_tree(self) -> None:
         """Open Object Tree on launch if the checkbox says it should be
         visible. Runs after the startup dialog so the main window has
@@ -587,6 +685,156 @@ class MainWindow(ctk.CTk):
             messagebox.showerror("Export failed", "Could not write the file.", parent=self)
             return
         messagebox.showinfo("Export", f"Saved to:\n{path}", parent=self)
+
+    # ------------------------------------------------------------------
+    # Undo / redo
+    # ------------------------------------------------------------------
+    def _on_undo(self) -> str | None:
+        if isinstance(self.focus_get(), (tk.Entry, tk.Text)):
+            return None
+        self.project.history.undo()
+        return "break"
+
+    def _on_redo(self) -> str | None:
+        if isinstance(self.focus_get(), (tk.Entry, tk.Text)):
+            return None
+        self.project.history.redo()
+        return "break"
+
+    def _on_history_changed(self, *_args, **_kwargs) -> None:
+        self._refresh_undo_redo_buttons()
+
+    def _refresh_undo_redo_buttons(self) -> None:
+        if not hasattr(self, "toolbar"):
+            return
+        self.toolbar.set_undo_enabled(self.project.history.can_undo())
+        self.toolbar.set_redo_enabled(self.project.history.can_redo())
+
+    def _refresh_edit_menu_state(self) -> None:
+        """Dims menu entries whose action can't run right now.
+
+        Windows tk.Menu draws a nasty emboss/shadow effect on
+        ``state=disabled`` entries, so we keep them enabled and only
+        swap the foreground colour. The command callbacks themselves
+        no-op when the action can't run, and the inert-color rows
+        visually communicate 'not available'.
+        """
+        menu = getattr(self, "_edit_menu", None)
+        if menu is None:
+            return
+        has_selection = bool(self.project.selected_ids)
+        has_clipboard = bool(self.project.clipboard)
+        has_any = any(True for _ in self.project.iter_all_widgets())
+        states = {
+            "Undo": self.project.history.can_undo(),
+            "Redo": self.project.history.can_redo(),
+            "Copy": has_selection,
+            "Paste": has_clipboard,
+            "Delete": has_selection,
+            "Select All": has_any,
+            "Bring to Front": has_selection,
+            "Send to Back": has_selection,
+        }
+        try:
+            last = menu.index("end")
+        except tk.TclError:
+            return
+        if last is None:
+            return
+        for i in range(last + 1):
+            try:
+                if menu.type(i) != "command":
+                    continue
+                label = menu.entrycget(i, "label")
+            except tk.TclError:
+                continue
+            if label in states:
+                menu.entryconfigure(
+                    i,
+                    foreground=MENU_FG if states[label] else MENU_DISABLED_FG,
+                )
+
+    # ------------------------------------------------------------------
+    # Edit menu dispatchers — route to project methods so the same
+    # action works regardless of which window has focus.
+    # ------------------------------------------------------------------
+    def _on_menu_copy(self) -> None:
+        ids = self.project.selected_ids
+        if ids:
+            self.project.copy_to_clipboard(ids)
+
+    def _on_menu_paste(self) -> None:
+        if not self.project.clipboard:
+            return
+        # Paste into the currently selected container if one is, else
+        # as a sibling of the selected leaf, else top level.
+        parent_id: str | None = None
+        primary = self.project.selected_id
+        if primary is not None:
+            from app.widgets.registry import get_descriptor
+            node = self.project.get_widget(primary)
+            if node is not None:
+                descriptor = get_descriptor(node.widget_type)
+                if descriptor is not None and getattr(
+                    descriptor, "is_container", False,
+                ):
+                    parent_id = primary
+                elif node.parent is not None:
+                    parent_id = node.parent.id
+        self.project.paste_from_clipboard(parent_id=parent_id)
+
+    def _on_menu_delete(self) -> None:
+        sid = self.project.selected_id
+        if sid is None:
+            return
+        node = self.project.get_widget(sid)
+        if node is None:
+            return
+        from app.core.commands import DeleteWidgetCommand
+        from app.widgets.registry import get_descriptor
+        descriptor = get_descriptor(node.widget_type)
+        type_label = (
+            descriptor.display_name if descriptor else node.widget_type
+        )
+        confirmed = messagebox.askyesno(
+            title="Delete widget",
+            message=f"Delete this {type_label}?",
+            icon="warning",
+            parent=self,
+        )
+        if not confirmed:
+            return
+        snapshot = node.to_dict()
+        parent_id = node.parent.id if node.parent is not None else None
+        siblings = (
+            node.parent.children if node.parent is not None
+            else self.project.root_widgets
+        )
+        try:
+            index = siblings.index(node)
+        except ValueError:
+            index = len(siblings)
+        self.project.remove_widget(sid)
+        self.project.history.push(
+            DeleteWidgetCommand(snapshot, parent_id, index),
+        )
+
+    def _on_menu_select_all(self) -> None:
+        all_ids = {node.id for node in self.project.iter_all_widgets()}
+        if not all_ids:
+            return
+        primary = self.project.selected_id or next(iter(all_ids))
+        self.project.set_multi_selection(all_ids, primary=primary)
+
+    def _on_menu_bring_to_front(self) -> None:
+        sid = self.project.selected_id
+        if sid is not None:
+            self.project.bring_to_front(sid)
+
+    def _on_menu_send_to_back(self) -> None:
+        sid = self.project.selected_id
+        if sid is not None:
+            self.project.send_to_back(sid)
 
     def _on_theme_toggle(self) -> None:
         current = self._appearance_var.get()

@@ -25,6 +25,7 @@ import customtkinter as ctk
 
 from ctk_color_picker import ColorPickerDialog
 
+from app.core.commands import ChangePropertyCommand
 from app.core.logger import log_error
 from app.core.project import Project
 from app.ui.icons import load_icon
@@ -106,6 +107,11 @@ class PropertiesPanelV2(ctk.CTkFrame):
         self._name_var: tk.StringVar | None = None
         self._name_entry: tk.Entry | None = None
         self._suspend_name_trace = False
+        # Set True while drag-scrub (or similar live-preview) is
+        # running so intermediate _commit_prop calls don't each push
+        # a history entry. The scrub controller pushes one command
+        # at release.
+        self._suspend_history: bool = False
 
         self._build_chrome()
         self._build_tree()
@@ -433,7 +439,7 @@ class PropertiesPanelV2(ctk.CTkFrame):
         self._clear_tree()
         self._type_label.configure(text="")
         self._id_label.configure(text="")
-        self._type_icon_label.configure(image="")
+        self._type_icon_label.configure(image=None)
         self._suspend_name_trace = True
         try:
             if self._name_var is not None:
@@ -531,7 +537,7 @@ class PropertiesPanelV2(ctk.CTkFrame):
             self._type_icon_label.configure(image=icon)
             self._type_icon_label.image = icon  # retain ref
         else:
-            self._type_icon_label.configure(image="")
+            self._type_icon_label.configure(image=None)
 
         self._suspend_name_trace = True
         try:
@@ -1023,4 +1029,16 @@ class PropertiesPanelV2(ctk.CTkFrame):
     def _commit_prop(self, pname: str, value) -> None:
         if self.current_id is None:
             return
+        node = self.project.get_widget(self.current_id)
+        before = node.properties.get(pname) if node is not None else None
         self.project.update_property(self.current_id, pname, value)
+        # Skip history records during live drag-scrub — the scrub
+        # controller pushes one ChangePropertyCommand at release with
+        # the full before → after diff.
+        if getattr(self, "_suspend_history", False):
+            return
+        if before == value:
+            return
+        self.project.history.push(
+            ChangePropertyCommand(self.current_id, pname, before, value),
+        )

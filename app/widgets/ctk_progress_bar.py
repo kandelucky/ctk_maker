@@ -146,3 +146,12 @@ class CTkProgressBarDescriptor(WidgetDescriptor):
         except (TypeError, ValueError):
             return {}
         return {"width": h, "height": w}
+
+    @classmethod
+    def export_state(cls, var_name: str, properties: dict) -> list[str]:
+        try:
+            pct = int(properties.get("initial_percent", 50) or 0)
+        except (TypeError, ValueError):
+            return []
+        pct = max(0, min(100, pct))
+        return [f"{var_name}.set({pct / 100.0!r})"]

@@ -303,9 +303,14 @@ class Palette(ctk.CTkFrame):
             self._ghost = None
 
     def _add_widget_default(self, descriptor) -> None:
+        from app.core.commands import AddWidgetCommand
+
         node = WidgetNode(
             widget_type=descriptor.type_name,
             properties=dict(descriptor.default_properties),
         )
         self.project.add_widget(node)
         self.project.select_widget(node.id)
+        self.project.history.push(
+            AddWidgetCommand(node.to_dict(), parent_id=None),
+        )

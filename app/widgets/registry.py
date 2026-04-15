@@ -10,6 +10,10 @@ from app.widgets.ctk_progress_bar import CTkProgressBarDescriptor
 from app.widgets.ctk_radio_button import CTkRadioButtonDescriptor
 from app.widgets.ctk_scrollable_frame import CTkScrollableFrameDescriptor
 from app.widgets.ctk_segmented_button import CTkSegmentedButtonDescriptor
+from app.widgets.ctk_slider import CTkSliderDescriptor
+from app.widgets.ctk_switch import CTkSwitchDescriptor
+from app.widgets.ctk_tabview import CTkTabviewDescriptor
+from app.widgets.ctk_textbox import CTkTextboxDescriptor
 
 
 _REGISTRY: dict[str, type[WidgetDescriptor]] = {
@@ -24,6 +28,10 @@ _REGISTRY: dict[str, type[WidgetDescriptor]] = {
     CTkRadioButtonDescriptor.type_name: CTkRadioButtonDescriptor,
     CTkScrollableFrameDescriptor.type_name: CTkScrollableFrameDescriptor,
     CTkSegmentedButtonDescriptor.type_name: CTkSegmentedButtonDescriptor,
+    CTkSliderDescriptor.type_name: CTkSliderDescriptor,
+    CTkSwitchDescriptor.type_name: CTkSwitchDescriptor,
+    CTkTabviewDescriptor.type_name: CTkTabviewDescriptor,
+    CTkTextboxDescriptor.type_name: CTkTextboxDescriptor,
 }
 
 

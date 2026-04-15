@@ -16,6 +16,8 @@ from __future__ import annotations
 import tkinter as tk
 from typing import Callable
 
+from app.core.commands import ResizeCommand
+
 HANDLE_NAMES = ("nw", "n", "ne", "w", "e", "sw", "s", "se")
 HANDLE_SIZE = 8
 HANDLE_FILL = "#3b8ed0"
@@ -173,11 +175,35 @@ class SelectionController:
         self.update()
 
     def end_resize(self, _event=None) -> None:
+        r = self._resize
         self._resize = None
         try:
             self.canvas.configure(cursor="")
         except tk.TclError:
             pass
+        if r is not None:
+            node = self.project.get_widget(r["nid"])
+            if node is not None:
+                try:
+                    end_x = int(node.properties.get("x", 0))
+                    end_y = int(node.properties.get("y", 0))
+                    end_w = int(node.properties.get("width", 0))
+                    end_h = int(node.properties.get("height", 0))
+                except (TypeError, ValueError):
+                    end_x, end_y = r["start_x"], r["start_y"]
+                    end_w, end_h = r["start_w"], r["start_h"]
+                before = {
+                    "x": r["start_x"], "y": r["start_y"],
+                    "width": r["start_w"], "height": r["start_h"],
+                }
+                after = {
+                    "x": end_x, "y": end_y,
+                    "width": end_w, "height": end_h,
+                }
+                if before != after:
+                    self.project.history.push(
+                        ResizeCommand(r["nid"], before, after),
+                    )
         self.draw()
 
     # ------------------------------------------------------------------

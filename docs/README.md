@@ -78,8 +78,10 @@ The loader is [`../app/ui/icons.py`](../app/ui/icons.py).
 
 ## Status
 
-**Phase 1 complete.** Core interactions, Properties panel polish, and
-CTkButton descriptor fully implemented and documented. Phase 2 (Toolbar
-+ Save/Load + Python export) is next.
+- **Phase 0–2** complete (MVP, property editor polish, toolbar + save/load + Python export + menubar + startup dialog + dirty tracking + recent files).
+- **Phase 2.5–2.11** complete (palette polish, workspace canvas, refactors, icon tinting, ZoomController extraction, properties_panel_v2 split, architecture dashboard, Georgian descriptions).
+- **Phase 3** — **12 / 15 widget descriptors** done. Remaining: CTkSwitch, CTkTextbox, CTkTabview.
+- **Phase 6.1–6.6** complete (widget nesting, drop-to-reparent, sibling reorder, nested export, Object Tree polish, multi-select, Ctrl+C/V).
+- **Phase 4 (undo/redo), 5 (window settings), 6.7 (layout managers), 7 (polish), 7.5 (Python import), 8 (advanced)** — pending.
 
 Check [TODO.md](../TODO.md) for the detailed roadmap.

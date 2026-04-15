@@ -16,22 +16,22 @@ renders; the doc page explains it in plain language.
 | # | Widget | Status | Docs |
 |---|---|---|---|
 | 1 | **CTkButton** | ✅ | [ctk_button.md](ctk_button.md) |
-| 2 | CTkLabel | ⬜ | — |
-| 3 | CTkFrame | ⬜ | — |
-| 4 | CTkEntry | ⬜ | — |
-| 5 | CTkSlider | ⬜ | — |
+| 2 | **CTkLabel** | ✅ | [ctk_label.md](ctk_label.md) |
+| 3 | **CTkFrame** | ✅ | [ctk_frame.md](ctk_frame.md) |
+| 4 | **CTkEntry** | ✅ | [ctk_entry.md](ctk_entry.md) |
+| 5 | **CTkSlider** | ✅ | [ctk_slider.md](ctk_slider.md) |
 | 6 | CTkSwitch | ⬜ | — |
-| 7 | CTkProgressBar | ⬜ | — |
-| 8 | CTkComboBox | ⬜ | — |
-| 9 | CTkOptionMenu | ⬜ | — |
-| 10 | CTkSegmentedButton | ⬜ | — |
-| 11 | CTkCheckBox | ⬜ | — |
-| 12 | CTkRadioButton | ⬜ | — |
+| 7 | **CTkProgressBar** | ✅ | [ctk_progress_bar.md](ctk_progress_bar.md) |
+| 8 | **CTkComboBox** | ✅ | [ctk_combo_box.md](ctk_combo_box.md) |
+| 9 | **CTkOptionMenu** | ✅ | [ctk_option_menu.md](ctk_option_menu.md) |
+| 10 | **CTkSegmentedButton** | ✅ | [ctk_segmented_button.md](ctk_segmented_button.md) |
+| 11 | **CTkCheckBox** | ✅ | [ctk_check_box.md](ctk_check_box.md) |
+| 12 | **CTkRadioButton** | ✅ | [ctk_radio_button.md](ctk_radio_button.md) |
 | 13 | CTkTextbox | ⬜ | — |
-| 14 | CTkScrollableFrame | ⬜ | — |
+| 14 | **CTkScrollableFrame** | 🏗️ | [ctk_scrollable_frame.md](ctk_scrollable_frame.md) |
 | 15 | CTkTabview | ⬜ | — |
 
-Phase 3 ([TODO.md](../../TODO.md)) tracks the 14 remaining descriptors.
+**12 / 15 descriptors done** (CTkScrollableFrame partial — see Phase 6.8 in [TODO.md](../../TODO.md)). Remaining: CTkSwitch, CTkTextbox, CTkTabview. Phase 3 ([TODO.md](../../TODO.md)) tracks progress.
 
 ## Descriptor anatomy
 

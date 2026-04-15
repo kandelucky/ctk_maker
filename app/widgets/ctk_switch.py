@@ -1,18 +1,16 @@
-"""CTkRadioButton widget descriptor.
+"""CTkSwitch widget descriptor.
 
-A labeled radio button. Multiple radios that share a `variable`
-form a group where only one can be selected at a time; in the
-builder preview each radio is standalone and the grouping is
-resolved during code export.
+A toggle switch — like CTkCheckBox visually but rendered as an
+iOS-style slider.
 
 Groups shown in the Properties panel, in order:
 
-    Geometry          — x/y, widget size
-    Rectangle         — corner radius + border widths (unchecked/checked)
-    Radio Button      — the inner dot's own width/height
-    Button Interaction — interactable, hover, initial state
-    Main Colors       — fill (when checked), hover
-    Text              — label, font + style, text colors
+    Geometry           — x/y, widget size
+    Rectangle          — corner radius, button length
+    Switch             — the inner toggle's own width/height
+    Button Interaction — interactable, hover, initially on
+    Main Colors        — track (off / on), knob, knob hover
+    Text               — label, font + style, text colors
 """
 import customtkinter as ctk
 
@@ -20,34 +18,33 @@ from app.core.logger import log_error
 from app.widgets.base import WidgetDescriptor
 
 
-class CTkRadioButtonDescriptor(WidgetDescriptor):
-    type_name = "CTkRadioButton"
-    display_name = "Radio Button"
+class CTkSwitchDescriptor(WidgetDescriptor):
+    type_name = "CTkSwitch"
+    display_name = "Switch"
 
     default_properties = {
         # Geometry
         "x": 120,
         "y": 120,
         "width": 100,
-        "height": 22,
+        "height": 24,
         # Rectangle
-        "corner_radius": 11,
-        "border_width_unchecked": 3,
-        "border_width_checked": 6,
-        "border_color": "#949A9F",
-        # Radio dot size
-        "radiobutton_width": 22,
-        "radiobutton_height": 22,
+        "corner_radius": 1000,
+        "button_length": 0,
+        # Switch box
+        "switch_width": 36,
+        "switch_height": 18,
         # Button Interaction
         "button_enabled": True,
         "hover": True,
         "initially_checked": False,
-        "group": "",
         # Main colors
-        "fg_color": "#1f6aa5",
-        "hover_color": "#144870",
+        "fg_color": "#4a4d50",
+        "progress_color": "#1f6aa5",
+        "button_color": "#d5d9de",
+        "button_hover_color": "#ffffff",
         # Text content + style
-        "text": "CTkRadioButton",
+        "text": "CTkSwitch",
         "font_size": 13,
         "font_bold": False,
         "font_italic": False,
@@ -76,36 +73,21 @@ class CTkRadioButtonDescriptor(WidgetDescriptor):
          "row_label": "Corner Radius", "min": 0,
          "max": lambda p: max(
              0,
-             min(int(p.get("radiobutton_width", 0)),
-                 int(p.get("radiobutton_height", 0))) // 2,
+             min(int(p.get("switch_width", 0)),
+                 int(p.get("switch_height", 0))) // 2,
          )},
-        {"name": "border_width_unchecked", "type": "number", "label": "",
-         "group": "Rectangle", "subgroup": "Border",
-         "row_label": "Unchecked Width", "min": 0,
-         "max": lambda p: max(
-             1,
-             min(int(p.get("radiobutton_width", 0)),
-                 int(p.get("radiobutton_height", 0))) // 2,
-         )},
-        {"name": "border_width_checked", "type": "number", "label": "",
-         "group": "Rectangle", "subgroup": "Border",
-         "row_label": "Checked Width", "min": 0,
-         "max": lambda p: max(
-             1,
-             min(int(p.get("radiobutton_width", 0)),
-                 int(p.get("radiobutton_height", 0))) // 2,
-         )},
-        {"name": "border_color", "type": "color", "label": "",
-         "group": "Rectangle", "subgroup": "Border",
-         "row_label": "Color"},
+        {"name": "button_length", "type": "number", "label": "",
+         "group": "Rectangle",
+         "row_label": "Button Length", "min": 0,
+         "max": lambda p: max(0, int(p.get("switch_width", 36)))},
 
-        # --- Radio button box size --------------------------------------
-        {"name": "radiobutton_width", "type": "number", "label": "W",
-         "group": "Radio Button", "pair": "box_size",
-         "row_label": "Box Size", "min": 10, "max": 200},
-        {"name": "radiobutton_height", "type": "number", "label": "H",
-         "group": "Radio Button", "pair": "box_size",
-         "min": 10, "max": 200},
+        # --- Switch box size ---------------------------------------------
+        {"name": "switch_width", "type": "number", "label": "W",
+         "group": "Switch", "pair": "switch_size",
+         "row_label": "Switch Size", "min": 10, "max": 200},
+        {"name": "switch_height", "type": "number", "label": "H",
+         "group": "Switch", "pair": "switch_size",
+         "min": 8, "max": 200},
 
         # --- Button Interaction ------------------------------------------
         {"name": "button_enabled", "type": "boolean", "label": "",
@@ -113,15 +95,17 @@ class CTkRadioButtonDescriptor(WidgetDescriptor):
         {"name": "hover", "type": "boolean", "label": "",
          "group": "Button Interaction", "row_label": "Hover Effect"},
         {"name": "initially_checked", "type": "boolean", "label": "",
-         "group": "Button Interaction", "row_label": "Initially Checked"},
-        {"name": "group", "type": "multiline", "label": "",
-         "group": "Button Interaction", "row_label": "Group"},
+         "group": "Button Interaction", "row_label": "Initially On"},
 
         # --- Main Colors -------------------------------------------------
         {"name": "fg_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Fill (Checked)"},
-        {"name": "hover_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Hover",
+         "group": "Main Colors", "row_label": "Track (Off)"},
+        {"name": "progress_color", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Track (On)"},
+        {"name": "button_color", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Knob"},
+        {"name": "button_hover_color", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Knob Hover",
          "disabled_when": lambda p: not p.get("hover")},
 
         # --- Text --------------------------------------------------------
@@ -148,16 +132,12 @@ class CTkRadioButtonDescriptor(WidgetDescriptor):
 
     _NODE_ONLY_KEYS = {
         "x", "y",
-        "button_enabled", "initially_checked", "group",
+        "button_enabled", "initially_checked",
     }
     _FONT_KEYS = {
         "font_size", "font_bold", "font_italic",
         "font_underline", "font_overstrike",
     }
-
-    # Changing the group name requires a fresh widget because variable
-    # + value are init-only kwargs.
-    recreate_triggers = frozenset({"group"})
 
     @classmethod
     def transform_properties(cls, properties: dict) -> dict:
@@ -165,7 +145,6 @@ class CTkRadioButtonDescriptor(WidgetDescriptor):
             k: v for k, v in properties.items()
             if k not in cls._NODE_ONLY_KEYS and k not in cls._FONT_KEYS
         }
-
         result["state"] = (
             "normal" if properties.get("button_enabled", True)
             else "disabled"
@@ -185,35 +164,28 @@ class CTkRadioButtonDescriptor(WidgetDescriptor):
                 underline=underline, overstrike=overstrike,
             )
         except Exception:
-            log_error("CTkRadioButtonDescriptor.transform_properties font")
+            log_error("CTkSwitchDescriptor.transform_properties font")
 
         return result
 
     @classmethod
     def create_widget(cls, master, properties: dict, init_kwargs=None):
-        # `variable` + `value` come from the workspace via init_kwargs
-        # when a group name is set — CTkRadioButton accepts them only
-        # in __init__, not via `configure`.
         kwargs = cls.transform_properties(properties)
         if init_kwargs:
             kwargs.update(init_kwargs)
-        widget = ctk.CTkRadioButton(master, **kwargs)
+        widget = ctk.CTkSwitch(master, **kwargs)
         cls.apply_state(widget, properties)
         return widget
 
     @classmethod
     def apply_state(cls, widget, properties: dict) -> None:
-        # Group radios rely on the workspace syncing the shared
-        # `tk.StringVar`; calling `.deselect()` here would clobber
-        # another radio in the same group.
-        in_group = bool(str(properties.get("group") or "").strip())
         try:
             if properties.get("initially_checked"):
                 widget.select()
-            elif not in_group:
+            else:
                 widget.deselect()
         except Exception:
-            log_error("CTkRadioButtonDescriptor.apply_state")
+            log_error("CTkSwitchDescriptor.apply_state")
 
     @classmethod
     def export_state(cls, var_name: str, properties: dict) -> list[str]:

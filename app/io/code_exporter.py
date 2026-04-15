@@ -98,12 +98,15 @@ def _emit_widget(
     multiline_list_keys: set[str] = getattr(
         descriptor, "multiline_list_keys", set(),
     )
+    overrides: dict = descriptor.export_kwarg_overrides(props)
 
     kwargs: list[tuple[str, str]] = []
 
     for key, val in props.items():
         if key in node_only or key in font_keys or key == "image":
             continue
+        if key in overrides:
+            val = overrides[key]
         if key in multiline_list_keys:
             # Editor stores the value as a newline-separated string so
             # the multi-line text editor can handle it; CTk expects a
@@ -153,6 +156,9 @@ def _emit_widget(
     x = _safe_int(props.get("x"), 0)
     y = _safe_int(props.get("y"), 0)
     lines.append(f"{var_name}.place(x={x}, y={y})")
+    # Descriptor-provided runtime init (initial_value .set, .select(),
+    # .insert(0, text), …) that mirrors `apply_state` at runtime.
+    lines.extend(descriptor.export_state(var_name, props))
     return lines
 
 

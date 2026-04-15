@@ -20,6 +20,14 @@ from tkinter import messagebox
 
 import customtkinter as ctk
 
+from app.core.commands import (
+    AddWidgetCommand,
+    ChangePropertyCommand,
+    DeleteWidgetCommand,
+    MoveCommand,
+    RenameCommand,
+    ReparentCommand,
+)
 from app.core.logger import log_error
 from app.core.project import Project
 from app.core.widget_node import WidgetNode
@@ -492,9 +500,21 @@ class Workspace(ctk.CTkFrame):
         except (ValueError, TypeError):
             x, y = 0, 0
         if dx:
-            self.project.update_property(sid, "x", x + dx * step)
+            new_x = x + dx * step
+            self.project.update_property(sid, "x", new_x)
+            self.project.history.push(
+                ChangePropertyCommand(
+                    sid, "x", x, new_x, coalesce_key="nudge",
+                ),
+            )
         if dy:
-            self.project.update_property(sid, "y", y + dy * step)
+            new_y = y + dy * step
+            self.project.update_property(sid, "y", new_y)
+            self.project.history.push(
+                ChangePropertyCommand(
+                    sid, "y", y, new_y, coalesce_key="nudge",
+                ),
+            )
         return "break"
 
     def _on_delete(self, _event=None) -> str | None:
@@ -520,7 +540,20 @@ class Workspace(ctk.CTkFrame):
         )
         if not confirmed:
             return "break"
+        snapshot = node.to_dict()
+        parent_id = node.parent.id if node.parent is not None else None
+        siblings = (
+            node.parent.children if node.parent is not None
+            else self.project.root_widgets
+        )
+        try:
+            index = siblings.index(node)
+        except ValueError:
+            index = len(siblings)
         self.project.remove_widget(sid)
+        self.project.history.push(
+            DeleteWidgetCommand(snapshot, parent_id, index),
+        )
         return "break"
 
     def _on_escape(self, _event=None) -> str | None:
@@ -945,6 +978,9 @@ class Workspace(ctk.CTkFrame):
         )
         self.project.add_widget(node, parent_id=parent_id)
         self.project.select_widget(node.id)
+        self.project.history.push(
+            AddWidgetCommand(node.to_dict(), parent_id),
+        )
 
     def _on_selection_changed(self, _widget_id: str | None) -> None:
         self.selection.draw()
@@ -990,7 +1026,7 @@ class Workspace(ctk.CTkFrame):
         )
         try:
             widget.configure(cursor="fleur")
-        except (tk.TclError, NotImplementedError):
+        except (tk.TclError, NotImplementedError, ValueError):
             pass
         for child in widget.winfo_children():
             self._bind_widget_events(child, nid)
@@ -1058,28 +1094,62 @@ class Workspace(ctk.CTkFrame):
         if self._tool == TOOL_HAND:
             self._end_pan(event)
             return
-        if self._drag is not None and self._drag.get("moved"):
-            self._maybe_reparent_dragged(event)
+        drag = self._drag
+        if drag is not None and drag.get("moved"):
+            reparented = self._maybe_reparent_dragged(event)
+            # Skip the Move record if the widget jumped parents —
+            # a proper ReparentCommand would need to capture the full
+            # before/after (parent_id, coords) and is out of scope
+            # for the first undo/redo pass.
+            if not reparented:
+                node = self.project.get_widget(drag["nid"])
+                if node is not None:
+                    try:
+                        end_x = int(node.properties.get("x", 0))
+                        end_y = int(node.properties.get("y", 0))
+                    except (TypeError, ValueError):
+                        end_x, end_y = drag["start_x"], drag["start_y"]
+                    if (end_x, end_y) != (drag["start_x"], drag["start_y"]):
+                        self.project.history.push(
+                            MoveCommand(
+                                drag["nid"],
+                                {"x": drag["start_x"], "y": drag["start_y"]},
+                                {"x": end_x, "y": end_y},
+                            ),
+                        )
         self._drag = None
 
-    def _maybe_reparent_dragged(self, event) -> None:
+    def _maybe_reparent_dragged(self, event) -> bool:
         """On drag release, check if the widget was dropped into a
         different container. If so, convert its coordinates to the
         new parent's system and reparent via `project.reparent`.
+        Returns True when a reparent happened so the caller can skip
+        the Move history record.
         """
         if self._drag is None:
-            return
+            return False
         nid = self._drag["nid"]
         node = self.project.get_widget(nid)
         if node is None:
-            return
+            return False
         self.canvas.update_idletasks()
         cx, cy = self._screen_to_canvas(event.x_root, event.y_root)
         target = self._find_container_at(cx, cy, exclude_id=nid)
         new_parent_id = target.id if target is not None else None
         old_parent_id = node.parent.id if node.parent is not None else None
         if new_parent_id == old_parent_id:
-            return  # same parent — drag was in-place
+            return False  # same parent — drag was in-place
+        # Capture the pre-reparent state for undo BEFORE any mutation.
+        old_siblings = (
+            node.parent.children if node.parent is not None
+            else self.project.root_widgets
+        )
+        try:
+            old_index = old_siblings.index(node)
+        except ValueError:
+            old_index = len(old_siblings)
+        old_x = self._drag["start_x"]
+        old_y = self._drag["start_y"]
         # Compute the widget's new logical x/y in the target's coord space.
         widget, _ = self.widget_views[nid]
         zoom = self.zoom.value or 1.0
@@ -1102,6 +1172,33 @@ class Workspace(ctk.CTkFrame):
         node.properties["x"] = new_x
         node.properties["y"] = new_y
         self.project.reparent(nid, new_parent_id)
+        # Capture post-reparent index so redo can restore z-order.
+        post_node = self.project.get_widget(nid)
+        if post_node is not None:
+            new_siblings = (
+                post_node.parent.children if post_node.parent is not None
+                else self.project.root_widgets
+            )
+            try:
+                new_index = new_siblings.index(post_node)
+            except ValueError:
+                new_index = len(new_siblings) - 1
+        else:
+            new_index = 0
+        self.project.history.push(
+            ReparentCommand(
+                nid,
+                old_parent_id=old_parent_id,
+                old_index=old_index,
+                old_x=old_x,
+                old_y=old_y,
+                new_parent_id=new_parent_id,
+                new_index=new_index,
+                new_x=new_x,
+                new_y=new_y,
+            ),
+        )
+        return True
 
     def _on_widget_right_click(self, event, nid: str) -> str:
         self.project.select_widget(nid)
@@ -1135,8 +1232,12 @@ class Workspace(ctk.CTkFrame):
         if node is None:
             return
         dialog = RenameDialog(self.winfo_toplevel(), node.name)
-        if dialog.result:
+        if dialog.result and dialog.result != node.name:
+            before = node.name
             self.project.rename_widget(nid, dialog.result)
+            self.project.history.push(
+                RenameCommand(nid, before, dialog.result),
+            )
 
     # ==================================================================
     # Canvas mouse events (click / motion / release)

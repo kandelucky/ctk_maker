@@ -1,0 +1,268 @@
+"""Undo / redo command objects.
+
+Each command wraps a mutation and knows how to reverse + re-apply
+itself. Commands are pushed to ``project.history`` AFTER the
+mutation has already been applied — the ``do`` side happens at the
+call site (drop, delete, drag-release, etc.), the command only
+stores the before/after state needed to replay it both ways.
+
+Widget IDs stay stable across undo/redo because ``WidgetNode.from_dict``
+restores the original UUID. That lets properties panel, object tree,
+and selection keep their references live even after a delete+undo
+round trip.
+"""
+
+from __future__ import annotations
+
+import time
+from typing import TYPE_CHECKING
+
+from app.core.widget_node import WidgetNode
+
+if TYPE_CHECKING:
+    from app.core.project import Project
+
+COALESCE_WINDOW_SEC = 0.6
+
+
+class Command:
+    description: str = ""
+
+    def undo(self, project: "Project") -> None:
+        raise NotImplementedError
+
+    def redo(self, project: "Project") -> None:
+        raise NotImplementedError
+
+    def merge_into(self, other: "Command") -> bool:
+        """If ``other`` (the tail of the undo stack) can absorb this
+        command, mutate it in place and return True. Used for
+        rapid-fire sequences like arrow-key nudges so they collapse
+        into a single undo step.
+
+        Default implementation: never merge.
+        """
+        return False
+
+
+class AddWidgetCommand(Command):
+    def __init__(
+        self,
+        snapshot: dict,
+        parent_id: str | None,
+        index: int | None = None,
+    ):
+        self._snapshot = snapshot
+        self._parent_id = parent_id
+        self._index = index
+        self.description = f"Add {snapshot.get('widget_type', 'widget')}"
+
+    def undo(self, project: "Project") -> None:
+        project.remove_widget(self._snapshot["id"])
+
+    def redo(self, project: "Project") -> None:
+        node = WidgetNode.from_dict(self._snapshot)
+        project.add_widget(node, parent_id=self._parent_id)
+        if self._index is not None:
+            project.reparent(node.id, self._parent_id, index=self._index)
+        project.select_widget(node.id)
+
+
+class DeleteWidgetCommand(Command):
+    def __init__(
+        self,
+        snapshot: dict,
+        parent_id: str | None,
+        index: int,
+    ):
+        self._snapshot = snapshot
+        self._parent_id = parent_id
+        self._index = index
+        label = snapshot.get("name") or snapshot.get("widget_type", "widget")
+        self.description = f"Delete {label}"
+
+    def undo(self, project: "Project") -> None:
+        node = WidgetNode.from_dict(self._snapshot)
+        project.add_widget(node, parent_id=self._parent_id)
+        project.reparent(node.id, self._parent_id, index=self._index)
+        project.select_widget(node.id)
+
+    def redo(self, project: "Project") -> None:
+        project.remove_widget(self._snapshot["id"])
+
+
+class DeleteMultipleCommand(Command):
+    """Multi-delete bundled into one undo step. Snapshots are stored
+    top-down in pre-deletion tree order; undo replays them in the
+    same order so each sibling lands back at its original index.
+    """
+
+    def __init__(self, entries: list[tuple[dict, str | None, int]]):
+        self._entries = entries
+        self.description = f"Delete {len(entries)} widgets"
+
+    def undo(self, project: "Project") -> None:
+        restored_ids: list[str] = []
+        for snapshot, parent_id, index in self._entries:
+            node = WidgetNode.from_dict(snapshot)
+            project.add_widget(node, parent_id=parent_id)
+            project.reparent(node.id, parent_id, index=index)
+            restored_ids.append(node.id)
+        if restored_ids:
+            project.set_multi_selection(
+                set(restored_ids), primary=restored_ids[0],
+            )
+
+    def redo(self, project: "Project") -> None:
+        for snapshot, _parent_id, _index in self._entries:
+            project.remove_widget(snapshot["id"])
+
+
+class ChangePropertyCommand(Command):
+    def __init__(
+        self,
+        widget_id: str,
+        prop_name: str,
+        before,
+        after,
+        coalesce_key: str | None = None,
+    ):
+        self.widget_id = widget_id
+        self.prop_name = prop_name
+        self.before = before
+        self.after = after
+        self.coalesce_key = coalesce_key
+        self.timestamp = time.monotonic()
+        self.description = f"Change {prop_name}"
+
+    def undo(self, project: "Project") -> None:
+        project.update_property(self.widget_id, self.prop_name, self.before)
+        project.select_widget(self.widget_id)
+
+    def redo(self, project: "Project") -> None:
+        project.update_property(self.widget_id, self.prop_name, self.after)
+        project.select_widget(self.widget_id)
+
+    def merge_into(self, other: "Command") -> bool:
+        if self.coalesce_key is None:
+            return False
+        if not isinstance(other, ChangePropertyCommand):
+            return False
+        if other.coalesce_key != self.coalesce_key:
+            return False
+        if other.widget_id != self.widget_id:
+            return False
+        if other.prop_name != self.prop_name:
+            return False
+        if self.timestamp - other.timestamp > COALESCE_WINDOW_SEC:
+            return False
+        # Extend tail: keep its 'before', adopt our 'after', slide
+        # the timestamp forward so rapid sequences keep coalescing.
+        other.after = self.after
+        other.timestamp = self.timestamp
+        return True
+
+
+class MoveCommand(Command):
+    """Workspace drag — one entry per press→release. ``before`` and
+    ``after`` are dicts like {"x": …, "y": …}.
+    """
+
+    def __init__(self, widget_id: str, before: dict, after: dict):
+        self.widget_id = widget_id
+        self.before = dict(before)
+        self.after = dict(after)
+        self.description = "Move widget"
+
+    def _apply(self, project: "Project", values: dict) -> None:
+        for key, val in values.items():
+            project.update_property(self.widget_id, key, val)
+        project.select_widget(self.widget_id)
+
+    def undo(self, project: "Project") -> None:
+        self._apply(project, self.before)
+
+    def redo(self, project: "Project") -> None:
+        self._apply(project, self.after)
+
+
+class ResizeCommand(MoveCommand):
+    """Resize covers x, y, width, height. Shape-identical to Move."""
+
+    def __init__(self, widget_id: str, before: dict, after: dict):
+        super().__init__(widget_id, before, after)
+        self.description = "Resize widget"
+
+
+class ReparentCommand(Command):
+    """Move a widget between containers via drag. Captures old and
+    new parent, sibling index, and coordinates so undo puts the
+    widget back exactly where it was.
+    """
+
+    def __init__(
+        self,
+        widget_id: str,
+        old_parent_id: str | None,
+        old_index: int,
+        old_x: int,
+        old_y: int,
+        new_parent_id: str | None,
+        new_index: int,
+        new_x: int,
+        new_y: int,
+    ):
+        self.widget_id = widget_id
+        self.old_parent_id = old_parent_id
+        self.old_index = old_index
+        self.old_x = old_x
+        self.old_y = old_y
+        self.new_parent_id = new_parent_id
+        self.new_index = new_index
+        self.new_x = new_x
+        self.new_y = new_y
+        self.description = "Reparent widget"
+
+    def _move(
+        self,
+        project: "Project",
+        parent_id: str | None,
+        index: int,
+        x: int,
+        y: int,
+    ) -> None:
+        node = project.get_widget(self.widget_id)
+        if node is None:
+            return
+        # Write coords before reparent so the destroy+recreate that
+        # reparent triggers picks up the restored x/y.
+        node.properties["x"] = x
+        node.properties["y"] = y
+        project.reparent(self.widget_id, parent_id, index=index)
+        project.select_widget(self.widget_id)
+
+    def undo(self, project: "Project") -> None:
+        self._move(
+            project, self.old_parent_id, self.old_index,
+            self.old_x, self.old_y,
+        )
+
+    def redo(self, project: "Project") -> None:
+        self._move(
+            project, self.new_parent_id, self.new_index,
+            self.new_x, self.new_y,
+        )
+
+
+class RenameCommand(Command):
+    def __init__(self, widget_id: str, before: str, after: str):
+        self.widget_id = widget_id
+        self.before = before
+        self.after = after
+        self.description = f"Rename to '{after}'"
+
+    def undo(self, project: "Project") -> None:
+        project.rename_widget(self.widget_id, self.before)
+
+    def redo(self, project: "Project") -> None:
+        project.rename_widget(self.widget_id, self.after)

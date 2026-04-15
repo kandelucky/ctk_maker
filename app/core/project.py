@@ -30,6 +30,7 @@ from __future__ import annotations
 from typing import Iterator
 
 from app.core.event_bus import EventBus
+from app.core.history import History
 from app.core.widget_node import WidgetNode
 
 DEFAULT_DOCUMENT_WIDTH = 800
@@ -59,6 +60,9 @@ class Project:
         # full WidgetNode.to_dict() snapshot of a copied subtree.
         # Not persisted — lost when the app quits.
         self.clipboard: list[dict] = []
+        # Undo / redo history. UI code pushes Command objects after
+        # applying mutations; history replays them backward / forward.
+        self.history = History(self)
 
     # ------------------------------------------------------------------
     # Document
@@ -254,6 +258,7 @@ class Project:
     def clear(self) -> None:
         for node in list(self.root_widgets):
             self.remove_widget(node.id)
+        self.history.clear()
 
     # ------------------------------------------------------------------
     # Selection + properties

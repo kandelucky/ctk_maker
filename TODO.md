@@ -185,26 +185,49 @@
 
 ---
 
-## Phase 3 — Widget Descriptors (2 / 15 done)
+## Phase 3 — Widget Descriptors (13 / 15 full + 2 partial) ✅
 
 - [x] CTkButton (Phase 0)
 - [x] CTkLabel — Geometry + Text (Style/Alignment/Color), transparent bg, justify + wraplength editor
 - [x] CTkFrame — Geometry + Rectangle (Corners + Border) + Main Colors
 - [x] **Font Decoration** (Underline + Strike) added to CTkButton + CTkLabel via CTkFont(underline, overstrike)
-- [ ] CTkEntry
-- [ ] CTkSlider
-- [ ] CTkSwitch
-- [ ] CTkProgressBar
-- [ ] CTkComboBox
-- [ ] CTkOptionMenu
-- [ ] CTkSegmentedButton
-- [ ] CTkCheckBox
-- [ ] CTkRadioButton
-- [ ] CTkTextbox
-- [ ] CTkScrollableFrame
-- [ ] CTkTabview
+- [x] **CTkCheckBox** — Geometry, Rectangle (+ Border), Checkbox Box Size, Button Interaction (Interactable + Hover + Initially Checked via `apply_state` hook), Main Colors (Fill/Hover/Check Mark), Text + Style subgroup + colors
+- [x] **CTkComboBox** — Geometry, Rectangle, Values (multiline → list in `transform_properties`), Initial Value via `apply_state`, Button Interaction, Main + Dropdown Colors, Text + Style + Text Align + colors. `multiline_list_keys = {"values"}` used by the exporter.
+- [x] **CTkEntry** — Geometry, Rectangle, Content (Placeholder + Initial Text), Button Interaction, Main Colors (Field Background), Text + Style + placeholder color. `apply_state` delete+insert to push initial text (temporarily flips state to normal for disabled widgets).
+- [x] **CTkOptionMenu** — Geometry, Rectangle (no border), Values, Button Interaction, Main + Dropdown Colors, Text + Style + Text Align + colors. `dynamic_resizing=False` hardcoded; builder `text_align` → CTk `anchor` translation in transform.
+- [x] **CTkProgressBar** — Geometry, Rectangle + Border, Progress (orientation + `initial_percent` 0–100 int), Main Colors (Track / Progress Fill). `orientation` is init-only → `init_only_keys` + `recreate_triggers`. `on_prop_recreate` hook swaps width/height when orientation flips. `apply_state` converts percent → 0-1 for `widget.set`.
+- [x] **CTkRadioButton** — Geometry, Rectangle (+ Border with separate `border_width_unchecked` / `border_width_checked`), Radio Button Box Size, Button Interaction (Interactable + Hover + Initially Checked + **Group**), Main Colors, Text + Style + colors. **Radio group coordination**: radios with the same `group` name share a `tk.StringVar` managed by workspace (`_radio_groups`, `_radio_values`, `_radio_group_counts`). `create_widget` now accepts `init_kwargs` so workspace can inject `{variable, value}` at construction — both are init-only and `configure(value=...)` raises. `recreate_triggers = {"group"}` + workspace `_sync_radio_initial` for live `initially_checked` flips. Standalone radios (empty group) fall back to `widget.select()/.deselect()`; group radios skip `.deselect()` in `apply_state` because it would clobber siblings.
+- [~] **CTkScrollableFrame** — partial. Descriptor + schema + registry in place, widget renders and all style/label/scrollbar props work, but nesting children through the builder's `place()` path clashes with CTk's grid/pack-based scrollregion tracking. Unfinished — return to it with the composite-widget integration story (see Phase 6.8 below).
+- [x] **CTkSegmentedButton** — schema + descriptor + registry. CTk's `.bind()` raises `NotImplementedError` because it composes multiple inner CTkButtons; workspace `_bind_widget_events` now wraps every bind call in a `_safe_bind` helper that catches `NotImplementedError`, `TclError`, and `ValueError` (the last one because `configure(cursor="fleur")` also rejects unknown kwargs on composite CTk widgets). Events land on the inner buttons via the recursive child loop instead.
+- [x] **CTkSlider** — schema + descriptor + registry. `number_of_steps=0` means "continuous" in the builder → `transform_properties` maps 0 to `None`, and the NEW `export_kwarg_overrides` hook mirrors that for the exporter so `CTkSlider(..., number_of_steps=0)` never lands in generated code (it would crash with `ZeroDivisionError` on drag).
+- [x] **CTkSwitch** — schema + descriptor + registry. Switch box W/H + `initially_checked` via `apply_state` + `export_state` (`widget.select()`). Button length > 0 gives a pill-shaped knob.
+- [~] **CTkTabview** — partial. Descriptor + schema + registry + runtime tab diff (add/delete tabs when `tab_names` changes) + `export_state` emitting `tabview.add("name")` per tab. `is_container=False` for now — **dropping widgets into a specific tab is not yet supported**; the builder only lets you declare tabs + style, and the user must hand-edit the exported file to populate each tab via `tabview.tab("name")` as the master. Revisit with the composite-widget integration story (Phase 6.8) together with CTkScrollableFrame.
+- [x] **CTkTextbox** — schema + descriptor + registry. Multi-line text editor; `initial_text` via `apply_state` (`delete("1.0","end")` + `insert("1.0", text)`) + `export_state` mirror. `activate_scrollbars` is init-only on CTkTextbox (configure raises `ValueError`) so it lives in `init_only_keys` + `recreate_triggers`. `button_enabled=False` toggles the widget to `state="disabled"` via `configure`, not `__init__`, because CTkTextbox doesn't take `state` as a kwarg at construction time.
 - [ ] Per-widget docs page under `docs/widgets/ctk_*.md` for each new descriptor (help icon already wired)
 - [ ] **Perf check**: naive `disabled_when` re-evaluation in properties_panel `_on_property_changed` iterates all props on every change. For 15 widgets × ~5 disabled_when lambdas each, measure drag-time overhead. If noticeable, switch to dep-map approach (`TrackingDict` auto-detects which properties a lambda reads, builds `{trigger_prop: [dependent_props]}` map at rebuild time, so most changes hit O(1) dict lookup instead of O(N) re-evaluation).
+- [ ] **Shared descriptor infrastructure** added this session — document once the remaining widgets are done:
+  - `init_only_keys` (base class) — schema keys that go to `__init__` but never to `configure`
+  - `recreate_triggers` — props whose change causes the workspace to destroy + recreate the widget
+  - `on_prop_recreate(prop_name, properties)` — optional hook to commit derived overrides before recreation (e.g. ProgressBar width↔height swap)
+  - `apply_state(widget, properties)` — runtime state that can't go through kwargs (`.select()`, `.set()`, `delete+insert`)
+  - `export_state(var_name, properties)` — exporter-side counterpart: list of post-construction lines the exporter should emit (`.select()`, `.set(val)`, `.insert(0, text)`, `.add("tab")`…) so the exported `.py` reaches the same visual state as the builder preview. Needed because the exporter can't call `apply_state` directly (it works with source code, not live widgets).
+  - `export_kwarg_overrides(properties)` — exporter-side per-key replacements, used when a raw property value can't go straight into generated code (CTkSlider's `number_of_steps=0 → None` is the first user).
+  - `create_widget(master, properties, init_kwargs=None)` — workspace-injected constructor kwargs for cross-widget coordination (currently radio group `{variable, value}`)
+  - `canvas_anchor(widget)` — composite widgets return their outer container for canvas embedding / event binding / selection bbox. Workspace keeps a parallel `_anchor_views` dict and passes it to `SelectionController`.
+  - `_safe_bind` in workspace `_bind_widget_events` — catches `NotImplementedError`/`TclError`/`ValueError` around both `.bind(...)` and `widget.configure(cursor=...)` so CTk composite widgets (CTkSegmentedButton, CTkScrollableFrame) that override `.bind` or reject unknown configure kwargs don't blow up widget creation. Events land on the inner children via the recursive bind loop instead.
+  - New enum `ptype`: **"orientation"** → `["horizontal", "vertical"]`, added to `format_utils.enum_options_for` and the editor registry.
+
+- [ ] **CTkTabview: drop widgets into specific tabs (container nesting)** — deferred from Phase 3 when we built the descriptor. Today the builder only lets you configure the tab bar itself (tab names, colors, size, border) and the exporter emits a naked `tabview.add("name")` per tab. To actually populate a tab you hand-edit the exported `.py` and use `tabview.tab("name")` as the master of each child widget.
+
+  **What's missing in the builder:**
+  - The "active tab" context — when the user has a CTkTabview selected and drags a widget from the palette onto it, the builder has to know which tab the drop should land in. Cleanest: whatever tab is currently visible (`tabview.get()`) becomes the parent, same as how ScrollableFrame would work once that lands.
+  - Per-child "parent tab" storage in `WidgetNode` — child already has `parent_id`; we need an additional `parent_slot` (string, tab name) that stays stable across saves/loads and reparents.
+  - Runtime rendering in the workspace: `_on_widget_added` for a child whose parent is a CTkTabview must use `tabview.tab(node.parent_slot)` as the master instead of the tabview itself. Same for reparent and when the active tab changes.
+  - `is_container = True` flip once the above lands. Until then CTkTabview stays `False` so palette drops don't silently go to the canvas root.
+  - Exporter: two-pass (assign var names first, then emit) so `child = CTkLabel(tabview_1.tab("Tab 1"), …)` can reference the parent's var. The `parent_slot` gets inlined as the `.tab("...")` call.
+  - Tab name edit propagation: if the user renames `Tab 1` → `Main`, every child with `parent_slot == "Tab 1"` must migrate to `"Main"`. Currently the tab diff in `apply_state` treats renames as a delete + add, which would orphan children. Needs a proper rename path with old→new name tracking.
+
+  **Same story applies to CTkScrollableFrame** (Phase 6.8 composite-widget integration) — the two widgets share enough that the solution should be designed once and applied to both.
 
 ---
 
@@ -248,6 +271,41 @@
 - [x] **Georgian font rendering** — `ctk.ThemeManager.theme["CTkFont"]["family"] = "Segoe UI"` on Windows, plus `tkfont.nametofont(...).configure(family="Segoe UI")` for every named Tk font, plus a bulk replacement of `font=("", N)` → `font=("Segoe UI", N)` across palette / dialogs / properties_panel / startup_dialog (CTkFont's None-fallback doesn't trigger for `family=""`, so explicit family was required)
 - [x] **Non-Latin keyboard layout shortcut fallback** — `bind_all("<Control-KeyPress>")` routes by hardware keycode so Ctrl+V/C/X/A and Ctrl+S/N/O/W/Q/R keep working under Georgian/Russian layouts where the Latin keysym is remapped
 - [ ] **Georgian keyboard input** — known tkinter/Windows IME bug (bpo-46052), typing Georgian into an Entry yields `?` — paste works, direct typing does not. Real fix requires a non-tkinter UI toolkit (PyQt6, Flet, wxPython). Not scheduled.
+
+---
+
+## Phase 2.11 — Refactor round 2 + architecture dashboard ✅
+
+- [x] **ZoomController extraction** (`app/ui/zoom_controller.py`, 270 lines) — owns zoom value, `logical↔canvas` coordinate helpers, `apply_to_widget`, scaled font building, and the bottom status-bar `[−] [+] [1:1] [menu ▼]` widgets. Workspace wires an `on_zoom_changed` callback that redraws the document rect + grid + selection chrome. Added a **1:1 reset button** between `+` and the percentage menu — one click back to 100%. `Ctrl+MouseWheel` binding moved to `_bind_widget_events` so it works on workspace widgets too, not only on empty canvas.
+- [x] `workspace.py` shrunk **1232 → 1006 lines** (-226) after the ZoomController extraction + `_dbg` logging cleanup (defense guards `event.state & 0x0100` and `winfo_manager() == "place"` kept as belt-and-suspenders).
+- [x] **`_RenameDialog` extraction** — moved from `workspace.py` into `app/ui/dialogs.py` as public `RenameDialog`. Object Tree now imports the public symbol from `dialogs.py` instead of leaking a `_`-prefixed name across modules.
+- [x] **Properties panel v2 package split** (`app/ui/properties_panel_v2/`) — 1445-line prototype turned into a real package: pure pieces (`constants.py`, `format_utils.py`, `type_icons.py`) live next to the panel; per-type UI lives under `editors/` (base / color / boolean / number / multiline / image / enum); `OverlayRegistry` keyed by `(iid, slot)` replaces the 6 per-type dicts + 5 placement methods the prototype carried. `panel.py` shrunk **1445 → 1003 lines**. Behaviour unchanged — mechanical extract only.
+- [x] **Object Tree performance overhaul** — generic `_on_project_changed` split into granular handlers so cosmetic events (`widget_renamed`, `widget_visibility_changed`, `widget_locked_changed`) update a single cell or subtree tag cascade instead of deleting + reinserting every row. Structural events (add / remove / reparent / z_changed) still fall back to full refresh. Dead `property_changed` subscription removed.
+- [x] **Search debounce** in Object Tree — 200ms `after_cancel` pattern on the name search entry so typing a 10-character query triggers one refresh at the end of the burst, not one per keystroke. Cancelled cleanly on window close.
+- [x] **Ctrl+C / Ctrl+V in Object Tree** — `Project.clipboard: list[dict]`, `copy_to_clipboard(ids)` (filters out descendants whose ancestor is also selected so containers cover their children), `paste_from_clipboard(parent_id)` (fresh UUIDs via `_clone_with_fresh_ids`, +20/+20 offset, auto-selects the pasted widgets). Paste target rules: container selection → inside it, leaf selection → sibling, nothing selected → top level. **Non-Latin layout fallback**: `<<Copy>>` / `<<Paste>>` virtual events bound on the Toplevel so main_window's `bind_all("<Control-KeyPress>")` keycode router reaches our handlers on Georgian / Russian keyboards.
+- [x] **Architecture dashboard** — `tools/gen_architecture_dashboard.py` walks `app/` with AST, extracts LOC + docstring + top-level classes/functions + internal imports, emits `docs/architecture_dashboard.html` as a single self-contained vis.js interactive network. Nodes are sized by LOC, coloured by package (core / io / widgets / ui), hover tooltip shows the one-line description, click opens a right panel with full metadata + imports / imported-by lists + three action buttons: **📋 Copy context** (markdown snippet for pasting into chat), **💾 Copy path**, **✏️ Open in VSCode** via `vscode://file/` protocol.
+- [x] **Georgian module descriptions** — `docs/module_descriptions.ka.json` (one-line human-language explanation per module, 38/39 coverage). Dashboard loads the sidecar at generation time and renders the Georgian text in an accent-coloured block inside the details panel; copy-context snippet uses the Georgian text when available. Scripts stay clean — descriptions live entirely in the JSON sidecar.
+- [x] **Architecture reference docs** — `docs/ARCHITECTURE.md` (layered index of every source file with one-line purpose, grouped by `core` / `io` / `widgets` / `ui`; event-bus traffic table showing who publishes and who listens) + `tools/gen_architecture_graph.py` (falls back to `.dot` output without requiring the `dot` binary — paste into https://dreampuf.github.io/GraphvizOnline/).
+- [x] **`.gitignore` updates** — added `docs/architecture_dashboard.html`, `docs/architecture_graph.dot`, `docs/architecture_graph.svg`, `tools/_test_alpha.png` so auto-generated artifacts stay out of git.
+
+---
+
+## Phase 2.12 — Properties panel UX polish + docs (2026-04-14) ✅
+
+- [x] **DragScrubController extraction** (`app/ui/properties_panel_v2/drag_scrub.py`) — Photoshop/Figma-style horizontal drag on numeric row labels. `<ButtonPress-1>` on column `#0` of a number row starts a scrub; `<B1-Motion>` commits `±1` per pixel accumulated in a float buffer; `<ButtonRelease-1>` cleans up; `<Motion>` flips the cursor to `sb_h_double_arrow` when hovering a valid target. Alt-hold = 0.2× fine scrub. `min` / `max` schema lambdas re-evaluated against the live props dict so clamps respect `disabled_when`-style dependencies.
+- [x] **Pair row labels fix** — `_insert_prop` in `panel.py` was using `prop["row_label"]` for every child of a numeric pair, so the first item (X / W) showed up as "Position" / "Size" under the virtual parent. Now paired props always fall back to `prop["label"]`, so children read "X / Y" and "W / H" correctly.
+- [x] **Selection focus release** — clicking empty tree area clears the tree's visual selection *and* the internal `focus("")` active item *and* hands keyboard focus back to `winfo_toplevel()`. `_on_selection` from the event bus also releases focus after a workspace-driven selection, so arrow keys nudge the widget in the canvas instead of re-activating the tree cursor.
+- [x] **Corner Radius flatten** — removed the single-child "Corners" subgroup from `CTkFrame` and `CTkButton`; `corner_radius` now renders as a flat row under "Rectangle" with `row_label` "Corner Radius". The subgroup preview (showing the value next to the header while collapsed) was the root of user confusion — single-child subgroups are officially banned from the schema convention.
+- [x] **Image & Alignment cleanup** (CTkButton) — flattened the misleading "Alignment" subgroup that only wrapped the Size pair; renamed `row_label`s to user-friendly names (`Size` → `Icon Size`, `Position` → `Icon Side`, `Normal Image Color` → `Normal Color`, `Disabled Image Color` → `Disabled Color`); replaced the `open` / `clear` text buttons on the Image row with compact `⋯` / `✕` icon labels (100 → 50 px reserve, filename label gets the extra width).
+- [x] **Style preview initials** — `STYLE_BOOL_NAMES` switched from full words (`Bold / Italic / ...`) to single letters (`B I U S`) so the subgroup preview fits within the value cell at any reasonable panel width. Active bool = bright (`#cccccc`), inactive = dim (`BOOL_OFF_FG`).
+- [x] **CTkLabel Wrap subgroup** — `font_wrap` moved from the Style subgroup into a new "Wrap" subgroup together with `wraplength`; `Enabled` + `Length` rows, length is `disabled_when` Enabled is off. Leaves the Style subgroup pure (Bold / Italic / Underline / Strike only).
+- [x] **`justify` → "Line Align"** — renamed in CTkLabel schema so the user-facing label isn't a raw Tk term. Explicitly distinct from `anchor` which is the text-block placement.
+- [x] **CTkButton `font_wrap` removed** — the flag was never wired to any real CTk kwarg (CTkButton doesn't accept `wraplength` or equivalent). Removed from `default_properties`, `property_schema`, and `_FONT_KEYS`.
+- [x] **`bg_color="transparent"` attempt (reverted)** — tried syncing `widget.configure(bg_color=<effective parent bg>)` after every create/reconfigure plus walking up the parent chain to resolve transparent ancestors. Did not fix the black-corner artifact on rounded widgets sitting directly on `tk.Canvas`. Root cause is in CTk itself (`_detect_color_of_master` can't read a canvas background). User decided to accept the visual artifact rather than keep patching. All workspace and schema changes reverted.
+- [x] **Help button → wiki URL** — `_open_widget_docs` was pointing at `github.com/.../blob/main/docs/widgets/{slug}.md`; switched to `github.com/.../wiki/{TypeName}` so the `?` icon lands on the rendered wiki page directly.
+- [x] **CTkLabel docs (repo + wiki)** — `docs/widgets/ctk_label.md` + `ctk_visual_builder.wiki/CTkLabel.md` with matching tables (Geometry / Text → Size / Style / Alignment / Wrap / Color). Wiki sidebar + catalog status bumped to ✅. `label.png` screenshot added to wiki `images/`.
+- [x] **CTkButton docs refresh** — existing `ctk_button.md` (repo + wiki) was stale from before the Corner Radius flatten, Button Interaction rename, Icon Size / Icon Side rename, and Normal/Disabled Color shortening. Both files rewritten to match the current schema; new wiki `button.png` screenshot committed.
+- [x] **`canvas-workspace.md` user guide** — the `docs/user-guide/canvas-workspace.md` file was a TODO-list stub; filled in with Layout / Tools / Placing / Selecting / Moving / Resizing / Delete+Rename / Zoom+Pan / Tips sections using compact tables (no ASCII diagrams, no dev internals per the concise-docs rule).
 
 ---
 
@@ -357,11 +415,12 @@
 - [x] **Lock toggle (🔒 column)** — per-row emoji toggle on `WidgetNode.locked`; workspace `_effective_locked(id)` walks ancestors, blocks drag/resize/arrow-nudge/delete. SelectionController suppresses the 8 resize handles on a locked widget (rectangle still draws so the user sees what's selected).
 - [x] **Multi-selection (Object Tree only, Delete only)** — `selectmode="extended"` on the Treeview + `Project.set_multi_selection(ids, primary)`; emits `selection_changed(None)` when `len > 1` so workspace handles + properties panel clear, while the tree keeps its multi-row highlight. Right-click menu on multi-selection shows **only** "Delete N widgets" — duplicate / bring to front / drag-reparent are deliberately disabled for multi (user decision: multi is purely for batch delete).
 - [x] **SelectionController rewrite — embedded tk.Frame widgets** for the 4 rectangle edges + 8 resize handles via `canvas.create_window` + `.lift()`. Canvas items sit below any `create_window`-embedded widget, so the old `create_rectangle` approach was hidden by overlapping widgets. Trade-off: lost dashed border pattern.
-- [ ] **Workspace: stale drag after slow properties panel load** — clicking a tree row kicks off a heavy properties panel rebuild; motion events queued during the block still carry `B1=held` state, so the workspace widget follows the mouse after release. Partial defense added (`event.state & 0x0100` check in `_on_widget_motion`, `_drag = None` reset on press, `winfo_manager()=="place"` guard in `_apply_zoom_to_widget`). Root cause is properties-panel latency — refactor in progress (see below).
+- [~] **Workspace: stale drag after slow properties panel load** — defense guards in place (`event.state & 0x0100` check in `_on_widget_motion`, `_drag = None` reset on press, `winfo_manager() == "place"` guard in `ZoomController.apply_to_widget`). Properties panel v2 package split is done (see Phase 2.11), so root-cause retest is pending — if the stale drag no longer reproduces, the guards stay as belt-and-suspenders.
 
-### Phase 6.x — Properties panel rewrite (in progress)
+### Phase 6.x — Properties panel rewrite
 
-- [ ] Properties panel is heavy enough that clicking a tree row blocks the Tk event loop long enough for queued `<B1-Motion>` events to fire after the physical button release, dragging the workspace widget unintentionally. User is refactoring the panel to cut per-selection rebuild cost. Prototype lives in `tools/ctk_button_treeview_mock.py`. Once the panel is fast, re-test the "widget follows mouse after tree click" bug — if it disappears, keep the defense guards as belt-and-suspenders; if not, dig deeper.
+- [x] **Package structure** — prototype in `tools/ctk_button_treeview_mock.py` has graduated to a real `app/ui/properties_panel_v2/` package (see Phase 2.11 for the A/B/C split: package extract, editor registry, overlay registry).
+- [ ] **Retest stale drag** — with the faster panel, re-verify whether "widget follows mouse after tree click" still reproduces. If gone, close the Phase 6.6 guard-only entry; if not, dig deeper into where motion events are queueing up.
 
 ### Phase 6.7 — Layout manager options (later)
 
@@ -377,16 +436,70 @@
 
 ## Phase 7 — Polish & Pro Features
 
-- [ ] Multi-selection (Ctrl+click)
+- [ ] Multi-selection (Ctrl+click) — Object Tree already supports it via `selectmode="extended"`; workspace canvas still single-select only
 - [ ] Marquee selection (drag on empty canvas area)
 - [ ] Snap-to-grid (8px grid)
 - [ ] Alignment guides (snap to other widgets' edges/centers)
-- [ ] Copy / Paste / Cut (Ctrl+C / V / X)
-- [ ] Widget tree panel (hierarchical view, parent-child)
+- [~] **Copy / Paste / Cut (Ctrl+C / V / X)** — Ctrl+C / Ctrl+V implemented in Object Tree (multi-select aware, container-as-target, non-Latin layout fallback via `<<Copy>>` / `<<Paste>>` virtual events). Still pending: workspace canvas bindings, Cut (Ctrl+X), OS-level clipboard integration so snippets survive across app restarts or cross-project paste.
+- [ ] Widget tree panel (hierarchical view, parent-child) — already exists (`app/ui/object_tree_window.py`), this legacy entry predates it
 - [ ] Z-order management
 - [ ] Group / Ungroup widgets
 - [ ] Asset manager — copy images into project `assets/` folder for portability
 - [ ] **Assets library panel** — user drops fonts/images/icons into a project-scoped library; property dropdowns (e.g., `font_family`, `image`) pull from this library only. No raw system-font selection. Fonts bundled with the exported project for consistent rendering on other machines.
+
+---
+
+## Phase 7.5 — Python import (`.py` → editable project)
+
+> Reverse of `code_exporter` — take an existing CustomTkinter `.py`
+> file and rebuild a `.ctkproj` so the user can open it in the
+> builder, rearrange visually, then re-export. Three realistic tiers,
+> ordered by effort:
+
+### Tier 1 — round-trip our own exports (easy)
+- [ ] AST parser that only recognises files emitted by
+      `code_exporter.generate_code`: predictable shape, every widget
+      has a `ctk.CTkXxx(master, kwargs...)` call followed by a
+      `var.place(x=, y=)` line, all kwargs are literal (strings, ints,
+      bools, list literals, `ctk.CTkFont(...)`, `ctk.CTkImage(...)`).
+- [ ] Resolve kwargs back to `node.properties`, reverse the exporter's
+      `_NODE_ONLY_KEYS` + `init_only_keys` + `multiline_list_keys`
+      conventions (e.g. `values=['a','b']` → newline-separated string
+      again).
+- [ ] Reconstruct the nesting tree from the `master=` parameter chain.
+- [ ] File → Open Python... menu entry that accepts `.py` files emitted
+      by the builder. Clear error dialog when a file doesn't match the
+      expected shape.
+- [ ] Round-trip test: export a project → delete `.ctkproj` → open the
+      `.py` → project reproduced exactly.
+
+### Tier 2 — arbitrary `.place()`-based CTk code (medium, depends on Tier 1)
+- [ ] Handle constructor variables that point at helper values earlier
+      in the file (`self.logo = CTkImage(...)` + `CTkButton(image=self.logo)`).
+- [ ] Recognise `class App(ctk.CTk)` patterns — walk the `__init__`
+      body, treat `self.<name> = ctk.CTkXxx(...)` as top-level widgets,
+      parent-resolve via the first positional arg.
+- [ ] Drop / warn on things we cannot represent yet: `command=` callbacks,
+      lambdas, loops, conditionals, `.bind(...)` calls — log them in
+      the import report dialog so the user knows what was skipped.
+- [ ] `font=ctk.CTkFont(...)` and `image=ctk.CTkImage(...)` nested calls
+      → re-extract into our `font_size` / `font_bold` / `image` properties.
+
+### Tier 3 — grid / pack layouts (hard, depends on Phase 6.7)
+- [ ] Requires Phase 6.7 (layout managers) shipped first — there is no
+      point parsing `.grid(row=0, column=1, sticky="nsew")` if our
+      model can't express it.
+- [ ] Once layout managers exist: read `.grid()` / `.pack()` calls
+      alongside `.place()`, store the options on the node, and teach
+      the exporter to round-trip them.
+- [ ] Open CTk's own `examples/complex_example.py` and
+      `examples/image_example.py` as a success criterion — both use
+      `grid` heavily.
+
+### Alternative / complement — side-by-side reference viewer (no import)
+- [ ] "Open in VSCode" button on the CTk reference entries (we already
+      have this pattern in `docs/architecture_dashboard.html`) so the
+      user can read the real `.py` next to the builder without import.
 
 ---
 
@@ -400,6 +513,33 @@
 - [ ] Plugin system for new widget types
 - [ ] **Gradient button support** — CTk has no native gradient fill for buttons. `background_corner_colors` only tints the tiny padding area outside the rounded shape, not the fill. Three exploration paths to try: (1) PIL-generated gradient image + `CTkButton(image=..., compound="center", fg_color="transparent")` — the export must regenerate the image at runtime for preview = reality; (2) custom `CTkGradientButton` subclass that overrides `_draw()` to paint a PIL gradient on the internal canvas with a rounded-corner mask — ~150–200 lines, fragile across CTk versions; (3) adopt/adapt [tkGradientButton](https://github.com/Neil-Brown/tkGradientButton) (plain tk, canvas color stripes, no rounded corners) — wrong widget family, not CTk-compatible. Pick whichever best preserves `preview = reality` when tried in Phase 8.
 
+- [ ] **Widget-to-widget value binding ("Command Target")** — CTkSlider, CTkSwitch, CTkSegmentedButton, CTkCheckBox, CTkRadioButton, CTkComboBox, CTkOptionMenu, and CTkEntry all accept a `command=callable` callback that fires when the user changes the widget's value. CTk's official `reference/ctk_official/manual_tests/test_vertical_widgets.py` demonstrates the simplest form of data binding: `slider_1 = CTkSlider(app, command=progressbar_1.set)` — dragging the slider pushes its current value straight into `progressbar_1.set()` every tick so the two stay in sync.
+
+  **Goal:** let the builder expose this pattern as a "Command Target" property on any command-capable widget, without dragging in the full Variables panel (which is a separate Phase 8 item above).
+
+  **Schema side:**
+  - Add a `Command Target` row to each command-capable descriptor.
+  - New schema `type` `"widget_ref"` — renders as an enum dropdown whose options are populated from `project.iter_all_widgets()` at open time, filtered to widgets that expose a `.set(value)` method (CTkProgressBar, CTkSlider, CTkSwitch, CTkCheckBox, CTkRadioButton, CTkSegmentedButton, CTkComboBox, CTkOptionMenu). CTkLabel and CTkEntry need an adapter because they don't have a direct `.set(value)` (Label uses `configure(text=...)`, Entry uses `delete(0,"end") + insert(0, ...)`). First pass: only offer targets that have a native `.set`.
+  - Store the target node id (UUID) in `node.properties["command_target"]`; editor shows the target's friendly name.
+  - Cleared silently when the target is deleted or the target no longer has a `.set`.
+
+  **Builder-side live preview:**
+  - Workspace installs a bridge callback: on each `property_changed` for either side, or on widget creation, rebind `source_widget.configure(command=lambda v: target_widget.set(v))`.
+  - Two widgets in the canvas then stay visually in sync — drag the slider, watch the progress bar fill.
+  - Needs cleanup on widget destroy, parent reparent, and target clear.
+
+  **Exporter side:**
+  - Requires the exporter to know the target node's generated variable name when emitting the source widget. Today `_make_var_name` assigns names top-down in tree order so a sibling reference might not yet exist.
+  - Fix: two-pass emit — pass 1 walks the tree and assigns `node_id → var_name`; pass 2 emits widgets using the full mapping.
+  - Exporter then emits `source_var.configure(command=target_var.set)` as a line AFTER both widgets have been constructed (not in the constructor kwargs — that would require forward references).
+
+  **New base class hook (probably):**
+  - `export_post_lines(cls, var_name, properties, node_to_var: dict) -> list[str]` — like `export_state` but with access to the full id→var map so descriptors can emit cross-widget wiring.
+
+  **Candidate source widgets that should expose `Command Target` first:** CTkSlider (highest ROI, pairs with ProgressBar), CTkSwitch, CTkSegmentedButton. The rest can follow.
+
+  **Why deferred:** deferred from Phase 3 (CTkSlider session) because it needs the new `widget_ref` ptype + editor, the exporter two-pass refactor, and a per-widget `command=` wiring design that also has to cooperate nicely with the future Variables panel / Event Handlers items above — we don't want to paint ourselves into a corner.
+
 ---
 
 ## Notes / Ideas
@@ -410,3 +550,9 @@
 - ჩარჩოს ფერი — `border_color` property for buttons/frames
 - Configurable image size (currently hardcoded 20×20 in `transform_properties`)
 - CTk corner_radius limitation note: CTk grows button to `text_w + 2*radius + padding`, so true small circles aren't possible with text — preview = reality, exported code matches
+- **Semi-transparent images work out of the box** — PNG's alpha channel is preserved by PIL and respected by CTk's image rendering. Verified with `tools/test_transparent_png.py` using `Image.new("RGBA", ..., fill=(r, g, b, alpha))`. No workaround needed — the same PNG with 50% alpha blends correctly over any parent colour. Colour-level transparency (e.g. 50% red text) is **not** possible because Tk only accepts 6-char `#RRGGBB`; use image-based text if you truly need it.
+- **`fg_color="transparent"` picker option** — for image-only buttons (no fill), the user has to type `"transparent"` into the colour field manually. Add a dedicated toggle / checkbox to the colour picker so the case is discoverable.
+- **Drag PNG/JPG from Windows Explorer → workspace** — native Tk doesn't support OS file drag-drop. Adding it requires the `tkinterdnd2` PyPI package (lightweight, ~200 KB). Worth trying once the asset panel (Phase 7) lands so dropped files can auto-populate the project's `assets/` folder and auto-create a widget bound to the image.
+- **Official CTk reference bundled** — `tools/fetch_ctk_reference.py` shallow-clones TomSchimansky/CustomTkinter and copies `examples/` + `test/manual_integration_tests/` into `reference/ctk_official/` (gitignored, ~9 MB). Used as visual + code reference when implementing new widget descriptors so our preview matches the official library's look. `reference/ctk_official/README.md` has the file map.
+- **"Large Test Image" trick** — the official `image_example.py` "title-looking" gradient-with-text block is not a dynamic Label, it's a pre-rendered PNG (`test_images/large_test_image.png`) displayed via `CTkLabel(text="", image=CTkImage(...))`. If a user wants dynamic text on a gradient, the pattern is `CTkLabel(text="My text", image=<gradient-only PNG>, compound="center")` — same image trick, text overlay via `compound="center"`.
+- **PyUIBuilder comparison** — PaulleDemon/PyUIBuilder is the closest competitor (2.3k stars, JavaScript/Electron, multi-framework: Tkinter + CustomTkinter + WIP Kivy/PySide). Ironically his **paid** ($29-49) premium features — save/load project files, dark theme, live preview, commercial use — are all **free** in this project. His advantages: multi-framework output, flex/grid layout managers, web-based distribution, ProductHunt + Discord ecosystem, requirements.txt generation, 3rd party plugin system. Our advantages: **preview = reality** (we ARE a CTk app, not a JavaScript approximation), native font scaling with zoom, real PNG alpha rendering, deep CTk integration via descriptor pattern (`transform_properties`, `derived_triggers`, `disabled_when`), Object Tree with multi-select + visibility/lock + drag-reparent, custom colour picker with tint strip + saved colours, Georgian UI + i18n readiness, no Electron overhead. Positioning: **"CustomTkinter's native Qt Designer — free, open source, always authentic preview"**.

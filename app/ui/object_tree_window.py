@@ -17,6 +17,11 @@ from typing import TYPE_CHECKING, Callable
 
 import customtkinter as ctk
 
+from app.core.commands import (
+    DeleteMultipleCommand,
+    DeleteWidgetCommand,
+    RenameCommand,
+)
 from app.ui.dialogs import RenameDialog
 from app.ui.icons import load_icon, load_tk_icon
 from app.widgets.registry import all_descriptors, get_descriptor
@@ -948,8 +953,12 @@ class ObjectTreeWindow(ctk.CTkToplevel):
         if node is None:
             return
         dialog = RenameDialog(self, node.name)
-        if dialog.result:
+        if dialog.result and dialog.result != node.name:
+            before = node.name
             self.project.rename_widget(widget_id, dialog.result)
+            self.project.history.push(
+                RenameCommand(widget_id, before, dialog.result),
+            )
 
     # ------------------------------------------------------------------
     # Copy / paste shortcuts
@@ -1004,11 +1013,40 @@ class ObjectTreeWindow(ctk.CTkToplevel):
             )
             if not confirmed:
                 return
-            # Snapshot before iterating — removing a parent drops its
-            # subtree which could invalidate child ids mid-loop.
-            for wid in list(selected):
-                if self.project.get_widget(wid) is not None:
-                    self.project.remove_widget(wid)
+            # Walk the project's tree once in top-down order to
+            # capture per-id snapshots + parent/index before any
+            # removal shifts the sibling lists. Skip descendants
+            # whose ancestor is also selected — a parent deletion
+            # already covers them.
+            entries: list[tuple[dict, str | None, int]] = []
+            for node in self.project.iter_all_widgets():
+                if node.id not in selected:
+                    continue
+                ancestor = node.parent
+                covered = False
+                while ancestor is not None:
+                    if ancestor.id in selected:
+                        covered = True
+                        break
+                    ancestor = ancestor.parent
+                if covered:
+                    continue
+                parent_id = (
+                    node.parent.id if node.parent is not None else None
+                )
+                siblings = (
+                    node.parent.children if node.parent is not None
+                    else self.project.root_widgets
+                )
+                try:
+                    index = siblings.index(node)
+                except ValueError:
+                    index = len(siblings)
+                entries.append((node.to_dict(), parent_id, index))
+            for snapshot, _parent_id, _index in entries:
+                self.project.remove_widget(snapshot["id"])
+            if entries:
+                self.project.history.push(DeleteMultipleCommand(entries))
             return
         node = self.project.get_widget(widget_id)
         if node is None:
@@ -1025,7 +1063,20 @@ class ObjectTreeWindow(ctk.CTkToplevel):
         )
         if not confirmed:
             return
+        snapshot = node.to_dict()
+        parent_id = node.parent.id if node.parent is not None else None
+        siblings = (
+            node.parent.children if node.parent is not None
+            else self.project.root_widgets
+        )
+        try:
+            index = siblings.index(node)
+        except ValueError:
+            index = len(siblings)
         self.project.remove_widget(widget_id)
+        self.project.history.push(
+            DeleteWidgetCommand(snapshot, parent_id, index),
+        )
 
     def _on_close(self) -> None:
         self._unsubscribe_bus()

@@ -21,6 +21,7 @@ BAR_BG = "#252526"
 BTN_HOVER = "#3a3a3a"
 SEP_FG = "#3c3c3c"
 ICON_TINT = "#cccccc"
+ICON_TINT_DISABLED = "#555555"
 
 BAR_HEIGHT = 34
 BTN_SIZE = 26
@@ -38,6 +39,8 @@ class Toolbar(ctk.CTkFrame):
         on_preview: Callable[[], None],
         on_export: Callable[[], None],
         on_theme_toggle: Callable[[], None],
+        on_undo: Callable[[], None],
+        on_redo: Callable[[], None],
     ):
         super().__init__(
             master, fg_color=BAR_BG, corner_radius=0, height=BAR_HEIGHT,
@@ -48,7 +51,65 @@ class Toolbar(ctk.CTkFrame):
         self._add_button("folder", on_open, tooltip="Open project")
         self._add_button("save-all", on_save, tooltip="Save")
         self._add_separator()
+        # Pre-load both icon variants so we can swap in place without
+        # triggering a CTkButton layout shift on state change.
+        self._icon_undo_on = load_icon("undo", size=ICON_SIZE, color=ICON_TINT)
+        self._icon_undo_off = load_icon(
+            "undo", size=ICON_SIZE, color=ICON_TINT_DISABLED,
+        )
+        self._icon_redo_on = load_icon("redo", size=ICON_SIZE, color=ICON_TINT)
+        self._icon_redo_off = load_icon(
+            "redo", size=ICON_SIZE, color=ICON_TINT_DISABLED,
+        )
+        self._undo_button = self._add_toggle_button(
+            self._icon_undo_off, on_undo, tooltip="Undo (Ctrl+Z)",
+        )
+        self._redo_button = self._add_toggle_button(
+            self._icon_redo_off, on_redo, tooltip="Redo (Ctrl+Y)",
+        )
+        self._add_separator()
         self._add_button("play", on_preview, tooltip="Preview (Ctrl+R)")
+        self._undo_enabled = False
+        self._redo_enabled = False
+
+    def set_undo_enabled(self, enabled: bool) -> None:
+        if enabled == self._undo_enabled:
+            return
+        self._undo_enabled = enabled
+        self._undo_button.configure(
+            image=self._icon_undo_on if enabled else self._icon_undo_off,
+        )
+
+    def set_redo_enabled(self, enabled: bool) -> None:
+        if enabled == self._redo_enabled:
+            return
+        self._redo_enabled = enabled
+        self._redo_button.configure(
+            image=self._icon_redo_on if enabled else self._icon_redo_off,
+        )
+
+    def _add_toggle_button(
+        self,
+        image,
+        command: Callable[[], None],
+        *,
+        tooltip: str | None = None,
+    ) -> ctk.CTkButton:
+        btn = ctk.CTkButton(
+            self,
+            text="",
+            image=image,
+            width=BTN_SIZE,
+            height=BTN_SIZE,
+            corner_radius=4,
+            fg_color="transparent",
+            hover_color=BTN_HOVER,
+            command=command,
+        )
+        btn.pack(side="left", padx=0, pady=3)
+        if tooltip:
+            _attach_tooltip(btn, tooltip)
+        return btn
 
     def _add_button(
         self,
@@ -56,7 +117,7 @@ class Toolbar(ctk.CTkFrame):
         command: Callable[[], None],
         *,
         tooltip: str | None = None,
-    ) -> None:
+    ) -> ctk.CTkButton:
         icon = load_icon(icon_name, size=ICON_SIZE, color=ICON_TINT)
         btn = ctk.CTkButton(
             self,
@@ -72,6 +133,7 @@ class Toolbar(ctk.CTkFrame):
         btn.pack(side="left", padx=0, pady=3)
         if tooltip:
             _attach_tooltip(btn, tooltip)
+        return btn
 
     def _add_separator(self) -> None:
         sep = ctk.CTkFrame(self, width=1, fg_color=SEP_FG, corner_radius=0)
