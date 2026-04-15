@@ -50,10 +50,15 @@ class SelectionController:
         project,
         widget_views: dict,
         zoom_provider: Callable[[], float] = lambda: 1.0,
+        anchor_views: dict | None = None,
     ):
         self.canvas = canvas
         self.project = project
         self.widget_views = widget_views
+        # Composite widgets (e.g. CTkScrollableFrame) put a different
+        # outer container on the canvas — selection geometry must
+        # measure that container, not the inner widget.
+        self.anchor_views = anchor_views if anchor_views is not None else {}
         self._zoom_provider = zoom_provider
 
         # name → (canvas_window_id, tk.Frame)
@@ -193,7 +198,8 @@ class SelectionController:
         sid = self.project.selected_id
         if sid is None or sid not in self.widget_views:
             return None
-        widget, _window_id = self.widget_views[sid]
+        inner, _window_id = self.widget_views[sid]
+        widget = self.anchor_views.get(sid, inner)
         self.canvas.update_idletasks()
         try:
             rx = widget.winfo_rootx() - self.canvas.winfo_rootx()

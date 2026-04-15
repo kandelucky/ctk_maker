@@ -47,6 +47,7 @@ ANCHOR_DROPDOWN_ORDER = list(ANCHOR_CODE_TO_LABEL.values())
 
 COMPOUND_OPTIONS = ["top", "left", "right", "bottom"]
 JUSTIFY_OPTIONS = ["left", "center", "right"]
+ORIENTATION_OPTIONS = ["horizontal", "vertical"]
 
 
 # =====================================================================

@@ -358,5 +358,8 @@ class CTkButtonDescriptor(WidgetDescriptor):
         return tinted
 
     @classmethod
-    def create_widget(cls, master, properties: dict):
-        return ctk.CTkButton(master, **cls.transform_properties(properties))
+    def create_widget(cls, master, properties: dict, init_kwargs=None):
+        kwargs = cls.transform_properties(properties)
+        if init_kwargs:
+            kwargs.update(init_kwargs)
+        return ctk.CTkButton(master, **kwargs)

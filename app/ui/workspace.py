@@ -98,6 +98,23 @@ class Workspace(ctk.CTkFrame):
         self._pan_state: dict | None = None
         self._grid_redraw_after: str | None = None
 
+        # Shared tk.StringVar per radio-button `group` name so multiple
+        # CTkRadioButton widgets with the same group name coordinate
+        # their selection state like a real radio group. StringVar is
+        # used (not IntVar) because CTk's `.deselect()` sets the
+        # variable to "" which blows up an IntVar's .get().
+        self._radio_groups: dict[str, tk.StringVar] = {}
+        # Per-widget string value within its group (assigned on first
+        # bind — encoded as "r<n>" for readability in the exporter).
+        self._radio_values: dict[str, str] = {}
+        self._radio_group_counts: dict[str, int] = {}
+
+        # Composite widgets (e.g. CTkScrollableFrame) expose a
+        # different outer container for canvas embedding + event
+        # binding than the widget stored in `widget_views`. Absent
+        # entries mean "outer == inner" (the default).
+        self._anchor_views: dict[str, tk.Widget] = {}
+
     def _build_canvas(self) -> None:
         container = ctk.CTkFrame(self, fg_color="transparent", corner_radius=0)
         container.pack(fill="both", expand=True, padx=10, pady=(10, 4))
@@ -140,6 +157,7 @@ class Workspace(ctk.CTkFrame):
         self.selection = SelectionController(
             self.canvas, self.project, self.widget_views,
             zoom_provider=lambda: self.zoom.value,
+            anchor_views=self._anchor_views,
         )
 
         self.canvas.bind("<Button-1>", self._on_canvas_click)
@@ -512,6 +530,78 @@ class Workspace(ctk.CTkFrame):
         return "break"
 
     # ==================================================================
+    # Radio button group coordination
+    # ==================================================================
+    def _get_radio_init_kwargs(self, node) -> dict | None:
+        """Compute the `variable` + `value` constructor kwargs for a
+        CTkRadioButton node that belongs to a named group. Returns
+        None for standalone radios (empty group).
+        """
+        group = str(node.properties.get("group") or "").strip()
+        if not group:
+            return None
+        var = self._radio_groups.setdefault(
+            group, tk.StringVar(master=self, value=""),
+        )
+        if node.id not in self._radio_values:
+            next_val = self._radio_group_counts.get(group, 0) + 1
+            self._radio_group_counts[group] = next_val
+            self._radio_values[node.id] = f"r{next_val}"
+        value = self._radio_values[node.id]
+        return {"variable": var, "value": value}
+
+    def _sync_radio_initial(self, widget, node) -> None:
+        """Push the radio's `initially_checked` bool onto the shared
+        group variable. Standalone radios fall through to the
+        descriptor's `apply_state` select/deselect path.
+        """
+        if not isinstance(widget, ctk.CTkRadioButton):
+            return
+        group = str(node.properties.get("group") or "").strip()
+        if not group or group not in self._radio_groups:
+            return
+        var = self._radio_groups[group]
+        value = self._radio_values.get(node.id)
+        if value is None:
+            return
+        try:
+            if node.properties.get("initially_checked"):
+                var.set(value)
+            elif var.get() == value:
+                var.set("")
+        except Exception:
+            log_error("workspace._sync_radio_initial")
+
+    def _unbind_radio_group(self, widget_id: str) -> None:
+        self._radio_values.pop(widget_id, None)
+
+    def _sync_composite_size(self, widget_id: str, node) -> None:
+        """Push width/height onto the outer anchor container for
+        composite widgets. Top-level uses `canvas.itemconfigure` on
+        the window item; nested uses `place_configure`.
+        """
+        anchor = self._anchor_views.get(widget_id)
+        if anchor is None:
+            return
+        _widget, window_id = self.widget_views[widget_id]
+        try:
+            lw = int(node.properties.get("width", 0) or 0)
+            lh = int(node.properties.get("height", 0) or 0)
+        except (TypeError, ValueError):
+            return
+        if lw <= 0 or lh <= 0:
+            return
+        zw = max(1, int(lw * self.zoom.value))
+        zh = max(1, int(lh * self.zoom.value))
+        try:
+            if window_id is not None:
+                self.canvas.itemconfigure(window_id, width=zw, height=zh)
+            elif anchor.winfo_manager() == "place":
+                anchor.place_configure(width=zw, height=zh)
+        except tk.TclError:
+            pass
+
+    # ==================================================================
     # Widget lifecycle (event-bus → canvas)
     # ==================================================================
     def _on_widget_added(self, node) -> None:
@@ -529,26 +619,48 @@ class Workspace(ctk.CTkFrame):
                 master = self.canvas
             else:
                 master, _ = parent_entry
-        widget = descriptor.create_widget(master, node.properties)
+        init_kwargs = self._get_radio_init_kwargs(node)
+        widget = descriptor.create_widget(
+            master, node.properties, init_kwargs=init_kwargs,
+        )
+        self._sync_radio_initial(widget, node)
+        # Composite widgets (e.g. CTkScrollableFrame) expose a
+        # different outer container for `canvas.create_window` / place
+        # / event binding / selection bbox.
+        anchor_widget = descriptor.canvas_anchor(widget)
+        if anchor_widget is not widget:
+            self._anchor_views[node.id] = anchor_widget
 
         lx = int(node.properties.get("x", 0))
         ly = int(node.properties.get("y", 0))
+        lw = int(node.properties.get("width", 0) or 0)
+        lh = int(node.properties.get("height", 0) or 0)
+        is_composite = anchor_widget is not widget
         if parent_node is None:
             cx, cy = self.zoom.logical_to_canvas(lx, ly)
-            window_id = self.canvas.create_window(
-                cx, cy, anchor="nw", window=widget,
-            )
+            kwargs = {"anchor": "nw", "window": anchor_widget}
+            # Composite widgets (CTkScrollableFrame) don't propagate
+            # their requested size to the canvas; pin the canvas item
+            # size explicitly so the outer container doesn't grow.
+            if is_composite and lw > 0 and lh > 0:
+                kwargs["width"] = max(1, int(lw * self.zoom.value))
+                kwargs["height"] = max(1, int(lh * self.zoom.value))
+            window_id = self.canvas.create_window(cx, cy, **kwargs)
         else:
             # nested: place inside parent widget, local coords scaled
             # by zoom. No canvas window id.
-            widget.place(
-                x=int(lx * self.zoom.value),
-                y=int(ly * self.zoom.value),
-            )
+            place_kwargs = {
+                "x": int(lx * self.zoom.value),
+                "y": int(ly * self.zoom.value),
+            }
+            if is_composite and lw > 0 and lh > 0:
+                place_kwargs["width"] = max(1, int(lw * self.zoom.value))
+                place_kwargs["height"] = max(1, int(lh * self.zoom.value))
+            anchor_widget.place(**place_kwargs)
             window_id = None
         self.zoom.apply_to_widget(widget, window_id, node.properties)
         self.widget_views[node.id] = (widget, window_id)
-        self._bind_widget_events(widget, node.id)
+        self._bind_widget_events(anchor_widget, node.id)
         if not node.visible:
             self._set_widget_visibility(widget, window_id, node, False)
 
@@ -664,13 +776,15 @@ class Workspace(ctk.CTkFrame):
         if widget_id not in self.widget_views:
             return
         widget, window_id = self.widget_views.pop(widget_id)
+        self._unbind_radio_group(widget_id)
+        anchor = self._anchor_views.pop(widget_id, None)
         if window_id is not None:
             try:
                 self.canvas.delete(window_id)
             except tk.TclError:
                 pass
         try:
-            widget.destroy()
+            (anchor or widget).destroy()
         except tk.TclError:
             pass
 
@@ -728,6 +842,24 @@ class Workspace(ctk.CTkFrame):
 
         descriptor = get_descriptor(node.widget_type) if node else None
 
+        # Init-only kwargs (e.g. CTkProgressBar.orientation) can't be
+        # reconfigured live — destroy and recreate the widget subtree.
+        recreate = (
+            getattr(descriptor, "recreate_triggers", None)
+            if descriptor else None
+        )
+        if recreate and prop_name in recreate:
+            # Pre-recreate hook — e.g. swap w/h when orientation flips.
+            updates = descriptor.on_prop_recreate(prop_name, node.properties)
+            for k, v in updates.items():
+                if node.properties.get(k) != v:
+                    self.project.update_property(widget_id, k, v)
+            self._on_widget_removed(widget_id)
+            self._create_widget_subtree(node)
+            if widget_id == self.project.selected_id:
+                self._schedule_selection_redraw()
+            return
+
         triggers = (
             getattr(descriptor, "derived_triggers", None) if descriptor else None
         )
@@ -747,7 +879,18 @@ class Workspace(ctk.CTkFrame):
                 transformed = descriptor.transform_properties(node.properties)
                 if transformed:
                     widget.configure(**transformed)
+                descriptor.apply_state(widget, node.properties)
+                # Radio group: reflect `initially_checked` changes on
+                # the shared IntVar — `group` changes themselves trip
+                # recreate_triggers above, not here.
+                self._sync_radio_initial(widget, node)
                 self.zoom.apply_to_widget(widget, window_id, node.properties)
+                # Composite widgets (CTkScrollableFrame) need the
+                # canvas item / place size updated separately because
+                # their inner widget's configure doesn't reach the
+                # outer container.
+                if widget_id in self._anchor_views:
+                    self._sync_composite_size(widget_id, node)
             else:
                 widget.configure(**{prop_name: value})
         except Exception:
@@ -810,34 +953,44 @@ class Workspace(ctk.CTkFrame):
     # Widget mouse events (press / motion / release / right-click)
     # ==================================================================
     def _bind_widget_events(self, widget, nid: str) -> None:
-        widget.bind(
+        # Some composite CTk widgets (e.g. CTkSegmentedButton) raise
+        # NotImplementedError from `.bind()` because they compose
+        # multiple inner clickable widgets — the children loop below
+        # is what actually wires the handlers for those.
+        def _safe_bind(seq, cb):
+            try:
+                widget.bind(seq, cb, add="+")
+            except NotImplementedError:
+                pass
+            except tk.TclError:
+                pass
+
+        _safe_bind(
             "<ButtonPress-1>",
-            lambda e, n=nid: self._on_widget_press(e, n), add="+",
+            lambda e, n=nid: self._on_widget_press(e, n),
         )
-        widget.bind(
+        _safe_bind(
             "<B1-Motion>",
-            lambda e, n=nid: self._on_widget_motion(e, n), add="+",
+            lambda e, n=nid: self._on_widget_motion(e, n),
         )
-        widget.bind(
+        _safe_bind(
             "<ButtonRelease-1>",
-            lambda e, n=nid: self._on_widget_release(e, n), add="+",
+            lambda e, n=nid: self._on_widget_release(e, n),
         )
-        widget.bind("<Button-2>", self._on_middle_press, add="+")
-        widget.bind("<B2-Motion>", self._on_middle_motion, add="+")
-        widget.bind("<ButtonRelease-2>", self._on_middle_release, add="+")
+        _safe_bind("<Button-2>", self._on_middle_press)
+        _safe_bind("<B2-Motion>", self._on_middle_motion)
+        _safe_bind("<ButtonRelease-2>", self._on_middle_release)
         # Ctrl+wheel forwards to ZoomController so zoom works even
         # when the pointer happens to hover a widget instead of empty
         # canvas area.
-        widget.bind(
-            "<Control-MouseWheel>", self.zoom.handle_ctrl_wheel, add="+",
-        )
-        widget.bind(
+        _safe_bind("<Control-MouseWheel>", self.zoom.handle_ctrl_wheel)
+        _safe_bind(
             "<Button-3>",
-            lambda e, n=nid: self._on_widget_right_click(e, n), add="+",
+            lambda e, n=nid: self._on_widget_right_click(e, n),
         )
         try:
             widget.configure(cursor="fleur")
-        except tk.TclError:
+        except (tk.TclError, NotImplementedError):
             pass
         for child in widget.winfo_children():
             self._bind_widget_events(child, nid)

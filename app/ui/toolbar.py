@@ -47,6 +47,8 @@ class Toolbar(ctk.CTkFrame):
         self._add_button("file-plus", on_new, tooltip="New project")
         self._add_button("folder", on_open, tooltip="Open project")
         self._add_button("save-all", on_save, tooltip="Save")
+        self._add_separator()
+        self._add_button("play", on_preview, tooltip="Preview (Ctrl+R)")
 
     def _add_button(
         self,

@@ -13,6 +13,7 @@ from .constants import (
     ANCHOR_DROPDOWN_ORDER,
     COMPOUND_OPTIONS,
     JUSTIFY_OPTIONS,
+    ORIENTATION_OPTIONS,
 )
 
 
@@ -25,7 +26,7 @@ def format_value(ptype: str, value, prop: dict) -> str:
         return "☑" if value else "☐"
     if ptype == "anchor":
         return ANCHOR_CODE_TO_LABEL.get(str(value), str(value or ""))
-    if ptype in ("compound", "justify"):
+    if ptype in ("compound", "justify", "orientation"):
         return str(value) if value is not None else ""
     if ptype in ("multiline", "image"):
         # Shown via overlay label, not the tree cell.
@@ -77,6 +78,8 @@ def enum_options_for(ptype: str):
         return COMPOUND_OPTIONS
     if ptype == "justify":
         return JUSTIFY_OPTIONS
+    if ptype == "orientation":
+        return ORIENTATION_OPTIONS
     return []
 
 

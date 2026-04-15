@@ -95,11 +95,24 @@ def _emit_widget(
     props = node.properties
     node_only: set[str] = getattr(descriptor, "_NODE_ONLY_KEYS", set())
     font_keys: set[str] = getattr(descriptor, "_FONT_KEYS", set())
+    multiline_list_keys: set[str] = getattr(
+        descriptor, "multiline_list_keys", set(),
+    )
 
     kwargs: list[tuple[str, str]] = []
 
     for key, val in props.items():
         if key in node_only or key in font_keys or key == "image":
+            continue
+        if key in multiline_list_keys:
+            # Editor stores the value as a newline-separated string so
+            # the multi-line text editor can handle it; CTk expects a
+            # real Python list at runtime. Emit a list literal with
+            # empty lines stripped.
+            lines_list = [
+                ln for ln in str(val or "").splitlines() if ln.strip()
+            ] or [""]
+            kwargs.append((key, _py_literal(lines_list)))
             continue
         kwargs.append((key, _py_literal(val)))
 
