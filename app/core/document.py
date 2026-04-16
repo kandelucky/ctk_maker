@@ -32,6 +32,10 @@ DEFAULT_WINDOW_PROPERTIES = {
     "grid_style": "dots",
     "grid_color": "#555555",
     "grid_spacing": 20,
+    # Tk geometry manager used for the window's direct children at
+    # export time. Canvas always positions widgets by absolute x/y
+    # in the editor — this only changes the .py output.
+    "layout_type": "place",
 }
 
 

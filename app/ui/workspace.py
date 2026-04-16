@@ -37,6 +37,7 @@ from app.ui.dialogs import RenameDialog
 from app.ui.icons import load_icon, load_tk_icon
 from app.ui.selection_controller import SelectionController
 from app.ui.zoom_controller import ZoomController
+from app.widgets.layout_schema import LAYOUT_NODE_ONLY_KEYS
 from app.widgets.registry import get_descriptor
 
 # ---- Drag + canvas ----------------------------------------------------------
@@ -49,6 +50,29 @@ GRID_SPACING = 20
 GRID_DOT_COLOR = "#555555"
 GRID_TAG = "grid_dot"
 DOC_TAG = "document_bg"
+
+# Layout-manager overlays — semantic hints (grid lines on grid
+# containers, "[pack]"/"[grid]" badges) drawn on top of widgets.
+# Independent from the builder's dot/line GRID_TAG.
+LAYOUT_OVERLAY_TAG = "layout_overlay"
+LAYOUT_BADGE_FG = "#7a7a7a"
+LAYOUT_GRID_LINE = "#3d4954"
+LAYOUT_OVERLAY_TRIGGERS = frozenset({
+    "layout_type",
+    "grid_row", "grid_column",
+    "grid_rowspan", "grid_columnspan",
+})
+
+
+def _strip_layout_keys(properties: dict) -> dict:
+    """Drop layout_type / pack_* / grid_* before handing properties
+    to a CTk widget. Those keys live on the node only — they drive
+    the code exporter and the Properties panel, never CTk itself.
+    """
+    return {
+        k: v for k, v in properties.items()
+        if k not in LAYOUT_NODE_ONLY_KEYS
+    }
 
 # ---- Bottom status bar ------------------------------------------------------
 STATUS_BAR_BG = "#252526"
@@ -170,7 +194,7 @@ class Workspace(ctk.CTkFrame):
             container, orientation="vertical",
             command=self.canvas.yview,
             width=10, corner_radius=4,
-            fg_color="#1a1a1a",
+            fg_color="transparent",
             button_color="#3a3a3a",
             button_hover_color="#4a4a4a",
         )
@@ -178,7 +202,7 @@ class Workspace(ctk.CTkFrame):
             container, orientation="horizontal",
             command=self.canvas.xview,
             height=10, corner_radius=4,
-            fg_color="#1a1a1a",
+            fg_color="transparent",
             button_color="#3a3a3a",
             button_hover_color="#4a4a4a",
         )
@@ -379,6 +403,7 @@ class Workspace(ctk.CTkFrame):
         self.canvas.delete(DOC_TAG)
         self.canvas.delete(GRID_TAG)
         self.canvas.delete(CHROME_TAG)
+        self.canvas.delete(LAYOUT_OVERLAY_TAG)
         zoom = self.zoom.value
         pad = DOCUMENT_PADDING
         max_right = pad
@@ -411,6 +436,7 @@ class Workspace(ctk.CTkFrame):
                     self.canvas.tag_raise(window_id)
                 except tk.TclError:
                     pass
+            self._draw_layout_overlays_for_doc(doc, x1, y1, x2, y2)
             if x2 > max_right:
                 max_right = x2
             if y2 > max_bottom:
@@ -443,6 +469,100 @@ class Workspace(ctk.CTkFrame):
         # now raises every document's widgets in render order, so a
         # separate "lift active widgets" pass is redundant.
         return
+
+    # ------------------------------------------------------------------
+    # Layout overlays — semantic hints for pack/grid containers
+    # ------------------------------------------------------------------
+    def _draw_layout_overlays_for_doc(
+        self, doc, dx1: int, dy1: int, dx2: int, dy2: int,
+    ) -> None:
+        """Per-doc semantic overlay: dashed grid-cell lines on every
+        container whose ``layout_type == "grid"`` plus a small badge
+        on every non-default container. The Window's badge is folded
+        into the chrome title strip — only Frame-level containers get
+        a separate badge here.
+        """
+        doc_layout = doc.window_properties.get("layout_type", "place")
+        if doc_layout == "grid":
+            self._draw_grid_overlay_lines(
+                doc.root_widgets, dx1, dy1, dx2, dy2,
+            )
+        zoom = self.zoom.value
+        for container in self._iter_containers(doc.root_widgets):
+            layout = container.properties.get("layout_type", "place")
+            if layout == "place":
+                continue
+            try:
+                lx = int(container.properties.get("x", 0))
+                ly = int(container.properties.get("y", 0))
+                lw = int(container.properties.get("width", 0) or 0)
+                lh = int(container.properties.get("height", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if lw <= 0 or lh <= 0:
+                continue
+            cx1, cy1 = self.zoom.logical_to_canvas(lx, ly, document=doc)
+            cx2 = cx1 + int(lw * zoom)
+            cy2 = cy1 + int(lh * zoom)
+            if layout == "grid":
+                self._draw_grid_overlay_lines(
+                    container.children, cx1, cy1, cx2, cy2,
+                )
+            self._draw_layout_badge(layout, cx2, cy1)
+
+    def _iter_containers(self, nodes):
+        for n in nodes:
+            descriptor = get_descriptor(n.widget_type)
+            if descriptor is not None and getattr(
+                descriptor, "is_container", False,
+            ):
+                yield n
+            yield from self._iter_containers(n.children)
+
+    def _draw_grid_overlay_lines(
+        self, children, x1: int, y1: int, x2: int, y2: int,
+    ) -> None:
+        if not children or x2 <= x1 or y2 <= y1:
+            return
+        rows: set[int] = set()
+        cols: set[int] = set()
+        for c in children:
+            try:
+                rows.add(int(c.properties.get("grid_row", 0)))
+                cols.add(int(c.properties.get("grid_column", 0)))
+            except (TypeError, ValueError):
+                pass
+        if not rows or not cols:
+            return
+        nrows = max(rows) + 1
+        ncols = max(cols) + 1
+        cell_w = (x2 - x1) / max(ncols, 1)
+        cell_h = (y2 - y1) / max(nrows, 1)
+        for c in range(1, ncols):
+            cx = x1 + int(cell_w * c)
+            self.canvas.create_line(
+                cx, y1 + 1, cx, y2 - 1,
+                fill=LAYOUT_GRID_LINE, dash=(2, 4),
+                tags=(LAYOUT_OVERLAY_TAG,),
+            )
+        for r in range(1, nrows):
+            ry = y1 + int(cell_h * r)
+            self.canvas.create_line(
+                x1 + 1, ry, x2 - 1, ry,
+                fill=LAYOUT_GRID_LINE, dash=(2, 4),
+                tags=(LAYOUT_OVERLAY_TAG,),
+            )
+
+    def _draw_layout_badge(
+        self, layout: str, x_right: int, y_top: int,
+    ) -> None:
+        self.canvas.create_text(
+            x_right - 6, y_top + 4,
+            text=f"[{layout}]", anchor="ne",
+            fill=LAYOUT_BADGE_FG,
+            font=("Segoe UI", 9, "italic"),
+            tags=(LAYOUT_OVERLAY_TAG,),
+        )
 
     def _update_widget_visibility_across_docs(self) -> None:
         """Hide top-level widgets whose canvas centre falls inside a
@@ -650,6 +770,9 @@ class Workspace(ctk.CTkFrame):
         is_active = doc.id == self.project.active_document_id
         if is_active and self._dirty:
             title_raw = f"{title_raw} *"
+        layout = doc.window_properties.get("layout_type", "place")
+        if layout != "place":
+            title_raw = f"{title_raw}  · {layout}"
         max_chars = max(8, dw // 9)
         if len(title_raw) > max_chars:
             title_raw = title_raw[: max_chars - 1] + "…"
@@ -1239,7 +1362,8 @@ class Workspace(ctk.CTkFrame):
                 master, _ = parent_entry
         init_kwargs = self._get_radio_init_kwargs(node)
         widget = descriptor.create_widget(
-            master, node.properties, init_kwargs=init_kwargs,
+            master, _strip_layout_keys(node.properties),
+            init_kwargs=init_kwargs,
         )
         self._sync_radio_initial(widget, node)
         anchor_widget = descriptor.canvas_anchor(widget)
@@ -1453,8 +1577,14 @@ class Workspace(ctk.CTkFrame):
             # surface; everything else is window metadata only.
             if prop_name in (
                 "fg_color", "grid_style", "grid_color", "grid_spacing",
+                "layout_type",
             ):
                 self._redraw_document()
+            return
+        if prop_name in LAYOUT_OVERLAY_TRIGGERS:
+            # Layout-overlay props don't change the CTk widget itself;
+            # they only affect the semantic hint rendered on the canvas.
+            self._redraw_document()
             return
         if widget_id not in self.widget_views:
             return
@@ -1520,7 +1650,9 @@ class Workspace(ctk.CTkFrame):
 
         try:
             if descriptor is not None:
-                transformed = descriptor.transform_properties(node.properties)
+                transformed = descriptor.transform_properties(
+                    _strip_layout_keys(node.properties),
+                )
                 if transformed:
                     widget.configure(**transformed)
                 descriptor.apply_state(widget, node.properties)

@@ -109,9 +109,9 @@ class Palette(ctk.CTkFrame):
     def _build_header(self) -> None:
         title = ctk.CTkLabel(
             self, text="Widget Box",
-            font=("Segoe UI", 11, "bold"), text_color=TITLE_FG, anchor="w",
+            font=("Segoe UI", 13, "bold"), text_color=TITLE_FG,
         )
-        title.pack(fill="x", padx=10, pady=(10, 6))
+        title.pack(pady=(6, 2), padx=10)
 
     def _build_filter(self) -> None:
         self._filter_var = tk.StringVar()
@@ -131,8 +131,15 @@ class Palette(ctk.CTkFrame):
     def _build_scroll_body(self) -> None:
         self.scroll = ctk.CTkScrollableFrame(
             self, fg_color=PANEL_BG, corner_radius=0,
+            scrollbar_fg_color="transparent",
+            scrollbar_button_color="#3a3a3a",
+            scrollbar_button_hover_color="#4a4a4a",
         )
         self.scroll.pack(fill="both", expand=True, padx=0, pady=0)
+        # Slim the internal scrollbar to 10px (matches Properties/
+        # Object Tree). CTkScrollableFrame exposes no kwarg for this,
+        # so we reach into its internal CTkScrollbar after construction.
+        self.scroll._scrollbar.configure(width=10, corner_radius=4)
         self.body = self.scroll  # alias for children
 
     # ------------------------------------------------------------------

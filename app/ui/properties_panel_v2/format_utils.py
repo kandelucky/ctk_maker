@@ -8,6 +8,13 @@ Tkinter glue and per-row overlay management.
 
 from __future__ import annotations
 
+from app.widgets.layout_schema import (
+    GRID_STICKY_OPTIONS,
+    LAYOUT_TYPE_OPTIONS,
+    PACK_FILL_OPTIONS,
+    PACK_SIDE_OPTIONS,
+)
+
 from .constants import (
     ANCHOR_CODE_TO_LABEL,
     ANCHOR_DROPDOWN_ORDER,
@@ -17,6 +24,9 @@ from .constants import (
 )
 
 GRID_STYLE_OPTIONS = ("none", "dots", "lines")
+LAYOUT_ENUM_TYPES = frozenset({
+    "layout_type", "pack_side", "pack_fill", "grid_sticky",
+})
 
 
 def format_value(ptype: str, value, prop: dict) -> str:
@@ -30,6 +40,8 @@ def format_value(ptype: str, value, prop: dict) -> str:
         return ANCHOR_CODE_TO_LABEL.get(str(value), str(value or ""))
     if ptype in ("compound", "justify", "orientation", "grid_style"):
         return str(value) if value is not None else ""
+    if ptype in LAYOUT_ENUM_TYPES:
+        return str(value) if value not in (None, "") else "—"
     if ptype in ("multiline", "image"):
         # Shown via overlay label, not the tree cell.
         return ""
@@ -84,6 +96,14 @@ def enum_options_for(ptype: str):
         return ORIENTATION_OPTIONS
     if ptype == "grid_style":
         return GRID_STYLE_OPTIONS
+    if ptype == "layout_type":
+        return LAYOUT_TYPE_OPTIONS
+    if ptype == "pack_side":
+        return PACK_SIDE_OPTIONS
+    if ptype == "pack_fill":
+        return PACK_FILL_OPTIONS
+    if ptype == "grid_sticky":
+        return GRID_STICKY_OPTIONS
     return []
 
 

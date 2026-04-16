@@ -31,8 +31,13 @@ from app.core.commands import (
     RenameCommand,
 )
 from app.core.logger import log_error
-from app.core.project import Project
+from app.core.project import WINDOW_ID, Project
 from app.ui.icons import load_icon
+from app.widgets.layout_schema import (
+    DEFAULT_LAYOUT_TYPE,
+    LAYOUT_DEFAULTS,
+    child_layout_schema,
+)
 from app.widgets.registry import get_descriptor
 from tools.text_editor_dialog import TextEditorDialog
 
@@ -103,6 +108,10 @@ class PropertiesPanelV2(ctk.CTkFrame):
         # Cached disabled_when results — diffed on every property change
         # so we can flip the "disabled" tag on the affected rows only.
         self._disabled_states: dict[str, bool] = {}
+        # Schema rows injected per-rebuild based on the selected node's
+        # parent layout_type — pack_* / grid_* fields the descriptor
+        # itself doesn't carry. Empty when parent uses ``place``.
+        self._layout_extras: list[dict] = []
         # Active in-place editor (Entry) — one at a time
         self._active_editor: tk.Widget | None = None
         self._active_prop: str | None = None
@@ -273,7 +282,7 @@ class PropertiesPanelV2(ctk.CTkFrame):
         vscroll = ctk.CTkScrollbar(
             wrap, orientation="vertical", command=self._on_vscroll,
             width=10, corner_radius=4,
-            fg_color="#1a1a1a", button_color="#3a3a3a",
+            fg_color="transparent", button_color="#3a3a3a",
             button_hover_color="#4a4a4a",
         )
         self._vscroll = vscroll
@@ -392,7 +401,7 @@ class PropertiesPanelV2(ctk.CTkFrame):
             descriptor, node.properties,
         )
         changed: list[str] = []
-        for p in descriptor.property_schema:
+        for p in self._effective_schema(descriptor):
             name = p["name"]
             before = self._disabled_states.get(name, False)
             after = new_states.get(name, False)
@@ -495,6 +504,15 @@ class PropertiesPanelV2(ctk.CTkFrame):
             if k not in node.properties:
                 node.properties[k] = v
 
+        # Recompute the parent-driven Layout rows (pack_* / grid_*).
+        self._layout_extras = self._compute_layout_extras(node)
+        # Backfill defaults for any layout key the node hasn't seen
+        # before so editors render with a sensible value.
+        for prop in self._layout_extras:
+            key = prop["name"]
+            if key not in node.properties and key in LAYOUT_DEFAULTS:
+                node.properties[key] = LAYOUT_DEFAULTS[key]
+
         self._update_chrome(node, descriptor)
         self._disabled_states = self._compute_disabled_states(
             descriptor, node.properties,
@@ -502,7 +520,7 @@ class PropertiesPanelV2(ctk.CTkFrame):
         self._populate_schema(descriptor, node.properties)
         self._build_style_preview(node.properties)
         # Sync overlay appearance with initial disabled state
-        for prop in descriptor.property_schema:
+        for prop in self._effective_schema(descriptor):
             pname = prop["name"]
             if self._disabled_states.get(pname):
                 self._apply_disabled_overlay(pname, prop, True)
@@ -565,10 +583,41 @@ class PropertiesPanelV2(ctk.CTkFrame):
         self._name_entry.configure(state="normal")
 
     # ==================================================================
+    # Layout extras (parent-driven pack_* / grid_* rows)
+    # ==================================================================
+    def _parent_layout_type(self, node) -> str:
+        """``place`` / ``pack`` / ``grid`` for the container holding
+        ``node``. Window itself has no parent — we return the default
+        so its descriptor's own LAYOUT_TYPE_ROW is the only one shown.
+        """
+        if node is None or node.id == WINDOW_ID:
+            return DEFAULT_LAYOUT_TYPE
+        parent = getattr(node, "parent", None)
+        if parent is not None:
+            return parent.properties.get(
+                "layout_type", DEFAULT_LAYOUT_TYPE,
+            )
+        # Root-level node: parent is the document/window.
+        doc = self.project.find_document_for_widget(node.id)
+        if doc is None:
+            return DEFAULT_LAYOUT_TYPE
+        return doc.window_properties.get(
+            "layout_type", DEFAULT_LAYOUT_TYPE,
+        )
+
+    def _compute_layout_extras(self, node) -> list[dict]:
+        if node is None or node.id == WINDOW_ID:
+            return []
+        return list(child_layout_schema(self._parent_layout_type(node)))
+
+    def _effective_schema(self, descriptor) -> list[dict]:
+        return list(descriptor.property_schema) + self._layout_extras
+
+    # ==================================================================
     # Schema traversal → tree hierarchy
     # ==================================================================
     def _populate_schema(self, descriptor, properties: dict) -> None:
-        schema = descriptor.property_schema
+        schema = self._effective_schema(descriptor)
         current_group: str | None = None
         current_subgroup: str | None = None
         group_iid: str = ""
@@ -751,7 +800,7 @@ class PropertiesPanelV2(ctk.CTkFrame):
         if descriptor is None:
             return
         pair_items = [
-            p for p in descriptor.property_schema
+            p for p in self._effective_schema(descriptor)
             if p.get("pair") == pair_id
         ]
         if not all(p["type"] == "number" for p in pair_items):
@@ -771,7 +820,7 @@ class PropertiesPanelV2(ctk.CTkFrame):
             pass
 
     def _find_prop(self, descriptor, prop_name: str):
-        for p in descriptor.property_schema:
+        for p in self._effective_schema(descriptor):
             if p["name"] == prop_name:
                 return p
         return None
@@ -783,7 +832,7 @@ class PropertiesPanelV2(ctk.CTkFrame):
         self, descriptor, properties: dict,
     ) -> dict[str, bool]:
         result: dict[str, bool] = {}
-        for prop in descriptor.property_schema:
+        for prop in self._effective_schema(descriptor):
             fn = prop.get("disabled_when")
             if callable(fn):
                 try:

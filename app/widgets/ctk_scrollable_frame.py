@@ -15,6 +15,9 @@ Groups shown in the Properties panel, in order:
 import customtkinter as ctk
 
 from app.widgets.base import WidgetDescriptor
+from app.widgets.layout_schema import (
+    DEFAULT_LAYOUT_TYPE, LAYOUT_TYPE_ROW,
+)
 
 
 # builder label_text_align → CTkScrollableFrame label_anchor
@@ -49,6 +52,9 @@ class CTkScrollableFrameDescriptor(WidgetDescriptor):
         "scrollbar_button_hover_color": "#4a4a4a",
         # Main colors
         "fg_color": "#2b2b2b",
+        # Layout — geometry manager used for THIS frame's children
+        # at export time. Editor canvas always uses absolute placement.
+        "layout_type": DEFAULT_LAYOUT_TYPE,
     }
 
     property_schema = [
@@ -107,10 +113,13 @@ class CTkScrollableFrameDescriptor(WidgetDescriptor):
         # --- Main Colors -------------------------------------------------
         {"name": "fg_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Frame Background"},
+
+        # --- Layout (children manager) -----------------------------------
+        LAYOUT_TYPE_ROW,
     ]
 
     _NODE_ONLY_KEYS = {
-        "x", "y", "border_enabled", "label_text_align",
+        "x", "y", "border_enabled", "label_text_align", "layout_type",
     }
     init_only_keys = {"orientation"}
     recreate_triggers = frozenset({"orientation"})

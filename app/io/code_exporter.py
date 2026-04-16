@@ -29,6 +29,12 @@ from pathlib import Path
 from app.core.document import Document
 from app.core.project import Project
 from app.core.widget_node import WidgetNode
+from app.widgets.layout_schema import (
+    DEFAULT_LAYOUT_TYPE,
+    LAYOUT_DEFAULTS,
+    LAYOUT_NODE_ONLY_KEYS,
+    normalise_layout_type,
+)
 from app.widgets.registry import get_descriptor
 
 DEFAULT_APPEARANCE_MODE = "dark"
@@ -121,6 +127,9 @@ def _emit_class(doc: Document, class_name: str) -> list[str]:
     if not doc.root_widgets:
         body_lines.append("pass")
     else:
+        doc_layout = normalise_layout_type(
+            (doc.window_properties or {}).get("layout_type"),
+        )
         for node in doc.root_widgets:
             _emit_subtree(
                 node,
@@ -128,6 +137,7 @@ def _emit_class(doc: Document, class_name: str) -> list[str]:
                 lines=body_lines,
                 counts=counts,
                 instance_prefix="self.",
+                parent_layout=doc_layout,
             )
     for line in body_lines:
         lines.append(f"{INDENT}{INDENT}{line}" if line else "")
@@ -140,13 +150,19 @@ def _emit_subtree(
     lines: list[str],
     counts: dict[str, int],
     instance_prefix: str = "",
+    parent_layout: str = DEFAULT_LAYOUT_TYPE,
 ) -> None:
     var_name = _make_var_name(node, counts)
     lines.extend(
-        _emit_widget(node, var_name, master_var, instance_prefix),
+        _emit_widget(
+            node, var_name, master_var, instance_prefix, parent_layout,
+        ),
     )
     lines.append("")
     child_master = f"{instance_prefix}{var_name}"
+    child_layout = normalise_layout_type(
+        node.properties.get("layout_type", DEFAULT_LAYOUT_TYPE),
+    )
     for child in node.children:
         _emit_subtree(
             child,
@@ -154,6 +170,7 @@ def _emit_subtree(
             lines=lines,
             counts=counts,
             instance_prefix=instance_prefix,
+            parent_layout=child_layout,
         )
 
 
@@ -168,6 +185,7 @@ def _emit_widget(
     var_name: str,
     master_var: str,
     instance_prefix: str = "",
+    parent_layout: str = DEFAULT_LAYOUT_TYPE,
 ) -> list[str]:
     descriptor = get_descriptor(node.widget_type)
     if descriptor is None:
@@ -185,6 +203,10 @@ def _emit_widget(
 
     for key, val in props.items():
         if key in node_only or key in font_keys or key == "image":
+            continue
+        # pack_* / grid_* / layout_type live on the node for export,
+        # never as CTk constructor kwargs.
+        if key in LAYOUT_NODE_ONLY_KEYS:
             continue
         if key in overrides:
             val = overrides[key]
@@ -232,11 +254,76 @@ def _emit_widget(
         lines.append(f"    {key}={src},")
     lines.append(")")
 
-    x = _safe_int(props.get("x"), 0)
-    y = _safe_int(props.get("y"), 0)
-    lines.append(f"{full_name}.place(x={x}, y={y})")
+    lines.append(_geometry_call(full_name, props, parent_layout))
     lines.extend(descriptor.export_state(full_name, props))
     return lines
+
+
+def _geometry_call(
+    full_name: str, props: dict, parent_layout: str,
+) -> str:
+    layout = normalise_layout_type(parent_layout)
+    if layout == "pack":
+        parts: list[str] = []
+        side = props.get("pack_side", LAYOUT_DEFAULTS["pack_side"])
+        if side and side != LAYOUT_DEFAULTS["pack_side"]:
+            parts.append(f'side="{side}"')
+        fill = props.get("pack_fill", LAYOUT_DEFAULTS["pack_fill"])
+        if fill and fill != LAYOUT_DEFAULTS["pack_fill"]:
+            parts.append(f'fill="{fill}"')
+        expand = props.get("pack_expand", LAYOUT_DEFAULTS["pack_expand"])
+        if expand:
+            parts.append("expand=True")
+        padx = _safe_int(
+            props.get("pack_padx", LAYOUT_DEFAULTS["pack_padx"]), 0,
+        )
+        if padx:
+            parts.append(f"padx={padx}")
+        pady = _safe_int(
+            props.get("pack_pady", LAYOUT_DEFAULTS["pack_pady"]), 0,
+        )
+        if pady:
+            parts.append(f"pady={pady}")
+        return f"{full_name}.pack({', '.join(parts)})"
+    if layout == "grid":
+        row = _safe_int(
+            props.get("grid_row", LAYOUT_DEFAULTS["grid_row"]), 0,
+        )
+        col = _safe_int(
+            props.get("grid_column", LAYOUT_DEFAULTS["grid_column"]), 0,
+        )
+        parts = [f"row={row}", f"column={col}"]
+        rs = _safe_int(
+            props.get("grid_rowspan", LAYOUT_DEFAULTS["grid_rowspan"]), 1,
+        )
+        if rs > 1:
+            parts.append(f"rowspan={rs}")
+        cs = _safe_int(
+            props.get(
+                "grid_columnspan", LAYOUT_DEFAULTS["grid_columnspan"],
+            ),
+            1,
+        )
+        if cs > 1:
+            parts.append(f"columnspan={cs}")
+        sticky = props.get("grid_sticky", LAYOUT_DEFAULTS["grid_sticky"])
+        if sticky:
+            parts.append(f'sticky="{sticky}"')
+        padx = _safe_int(
+            props.get("grid_padx", LAYOUT_DEFAULTS["grid_padx"]), 0,
+        )
+        if padx:
+            parts.append(f"padx={padx}")
+        pady = _safe_int(
+            props.get("grid_pady", LAYOUT_DEFAULTS["grid_pady"]), 0,
+        )
+        if pady:
+            parts.append(f"pady={pady}")
+        return f"{full_name}.grid({', '.join(parts)})"
+    # place — default
+    x = _safe_int(props.get("x"), 0)
+    y = _safe_int(props.get("y"), 0)
+    return f"{full_name}.place(x={x}, y={y})"
 
 
 # ----------------------------------------------------------------------

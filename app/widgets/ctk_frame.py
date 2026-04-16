@@ -12,6 +12,9 @@ Groups shown in the Properties panel, in order:
 import customtkinter as ctk
 
 from app.widgets.base import WidgetDescriptor
+from app.widgets.layout_schema import (
+    DEFAULT_LAYOUT_TYPE, LAYOUT_TYPE_ROW,
+)
 
 
 class CTkFrameDescriptor(WidgetDescriptor):
@@ -32,6 +35,10 @@ class CTkFrameDescriptor(WidgetDescriptor):
         "border_color": "#565b5e",
         # Main colors
         "fg_color": "#2b2b2b",
+        # Layout — geometry manager used for THIS frame's children
+        # at export time. The canvas always uses absolute placement
+        # in the editor; this only affects the generated .py file.
+        "layout_type": DEFAULT_LAYOUT_TYPE,
     }
 
     property_schema = [
@@ -74,9 +81,12 @@ class CTkFrameDescriptor(WidgetDescriptor):
         # --- Main Colors -------------------------------------------------
         {"name": "fg_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Background"},
+
+        # --- Layout (children manager) -----------------------------------
+        LAYOUT_TYPE_ROW,
     ]
 
-    _NODE_ONLY_KEYS = {"x", "y", "border_enabled"}
+    _NODE_ONLY_KEYS = {"x", "y", "border_enabled", "layout_type"}
 
     @classmethod
     def transform_properties(cls, properties: dict) -> dict:

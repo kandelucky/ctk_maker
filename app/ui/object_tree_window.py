@@ -149,6 +149,9 @@ class ObjectTreePanel(ctk.CTkFrame):
             ("widget_locked_changed", self._on_widget_locked_changed),
             ("selection_changed", self._on_selection_changed),
             ("active_document_changed", self._on_project_changed),
+            # layout_type changes the container's name suffix, so we
+            # need to repaint the affected row.
+            ("property_changed", self._on_property_changed),
         ]
         bus = self.project.event_bus
         for event_name, handler in self._bus_subs:
@@ -240,20 +243,28 @@ class ObjectTreePanel(ctk.CTkFrame):
         # engage the scrollbar instead of silently pushing the
         # container taller than its assigned pane size.
         self.pack_propagate(False)
+
+        # Centered title — mirrors the Properties panel header so
+        # the docked right sidebar reads as two parallel panels.
+        title = ctk.CTkLabel(
+            self, text="Object Tree", font=("Segoe UI", 13, "bold"),
+        )
+        title.pack(pady=(6, 2), padx=10)
+
+        # Active-document status strip — pinned to the TOP of the
+        # panel right below the title, matching the Properties
+        # panel's type-header stripe position. Shows which form is
+        # currently being edited. Click to open its Window settings.
+        doc_header = tk.Frame(
+            self, bg="#2d2d30", highlightthickness=0, height=28,
+        )
+        doc_header.pack(side="top", fill="x", pady=(0, 2))
+        doc_header.pack_propagate(False)
+
         container = tk.Frame(self, bg=BG, highlightthickness=0)
-        container.pack(fill="both", expand=True, padx=8, pady=8)
+        container.pack(fill="both", expand=True, padx=8, pady=(6, 8))
         container.pack_propagate(False)
         self._tree_container = container
-
-        # Active-document status strip — pinned to the BOTTOM of the
-        # Object Tree window. Shows which form is currently being
-        # edited without taking vertical space above the widget
-        # tree. Click it to open its Window settings.
-        doc_header = tk.Frame(
-            container, bg="#2d2d30", highlightthickness=0, height=28,
-        )
-        doc_header.pack(side="bottom", fill="x", pady=(6, 0))
-        doc_header.pack_propagate(False)
         self._doc_header_icon = load_tk_icon(
             "app-window", size=16, color="#cccccc",
         )
@@ -351,18 +362,21 @@ class ObjectTreePanel(ctk.CTkFrame):
         self.tree.column("type", width=100, stretch=False, anchor="w")
         self.tree.column("layer", width=56, stretch=False, anchor="center")
 
-        # ttk.Scrollbar with a custom dark style — tk.Scrollbar on
-        # Windows ignores colour kwargs in favour of the OS theme.
-        vscroll = ttk.Scrollbar(
-            tree_row, orient="vertical",
+        # CTkScrollbar — matches the Properties panel style so the
+        # docked right sidebar reads consistently. Kwargs mirror the
+        # Properties vscroll in panel.py.
+        vscroll = ctk.CTkScrollbar(
+            tree_row, orientation="vertical",
             command=self.tree.yview,
-            style="ObjectTree.Vertical.TScrollbar",
+            width=10, corner_radius=4,
+            fg_color="transparent", button_color="#3a3a3a",
+            button_hover_color="#4a4a4a",
         )
         self.tree.configure(yscrollcommand=vscroll.set)
 
         # Pack the scrollbar FIRST so tree's `expand=True` doesn't
         # eat the horizontal space that the scrollbar needs.
-        vscroll.pack(side="right", fill="y")
+        vscroll.pack(side="right", fill="y", padx=(2, 0))
         self.tree.pack(side="left", fill="both", expand=True)
 
         self.tree.tag_configure("drop-target", background=DROP_TARGET_BG)
@@ -626,6 +640,25 @@ class ObjectTreePanel(ctk.CTkFrame):
             return
         self.tree.set(widget_id, "name", self._build_name_cell(node))
 
+    def _on_property_changed(
+        self, widget_id: str, prop_name: str, _value,
+    ) -> None:
+        """Container's ``layout_type`` is the only property that
+        affects the tree's name cell. Refresh just that row when it
+        changes; ignore everything else to keep prop edits cheap.
+        """
+        if prop_name != "layout_type":
+            return
+        if not self.tree.exists(widget_id):
+            return
+        node = self.project.get_widget(widget_id)
+        if node is None:
+            return
+        try:
+            self.tree.set(widget_id, "name", self._build_name_cell(node))
+        except tk.TclError:
+            pass
+
     def _on_widget_visibility_changed(
         self, widget_id: str, _visible: bool,
     ) -> None:
@@ -662,6 +695,15 @@ class ObjectTreePanel(ctk.CTkFrame):
             descriptor.display_name if descriptor else node.widget_type
         )
         base_name = node.name or display_name
+        # Container layout suffix — surfaces pack/grid choice without
+        # opening Properties. Default ``place`` stays unmarked so plain
+        # rows read the same as before.
+        if descriptor is not None and getattr(
+            descriptor, "is_container", False,
+        ):
+            layout = node.properties.get("layout_type", "place")
+            if layout != "place":
+                base_name = f"{base_name}  [{layout}]"
         depth = self._node_depth(node)
         has_children = bool(node.children)
         expanded = node.id not in self._collapsed_ids

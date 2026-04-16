@@ -328,6 +328,43 @@
 
 ---
 
+## Phase 6 — Layout managers, stage 1 + 2 (2026-04-16) ✅
+
+Tk's three geometry managers (`place` / `pack` / `grid`) modelled as a per-container property. Canvas editing stays absolute; only the exported `.py` file changes shape.
+
+### Stage 1 — data model + export
+- [x] **Shared schema module** (`app/widgets/layout_schema.py`) — `LAYOUT_TYPE_ROW`, `LAYOUT_DEFAULTS`, `LAYOUT_NODE_ONLY_KEYS`, `child_layout_schema(parent_layout_type)`. Defines `pack_*` / `grid_*` rows once so every descriptor pulls from the same source.
+- [x] **Containers carry `layout_type`** — `CTkFrameDescriptor`, `CTkScrollableFrameDescriptor`, `WindowDescriptor`, `Document.DEFAULT_WINDOW_PROPERTIES` all default to `place` (backwards-compatible).
+- [x] **Properties panel injects child layout rows dynamically** — `_layout_extras` cache + `_effective_schema(descriptor)` helper. Six existing `descriptor.property_schema` access sites switched to use the helper so disabled_when, pair detection, popup menus all see the parent-driven rows. Layout key defaults backfilled on first open.
+- [x] **New enum types** (`layout_type`, `pack_side`, `pack_fill`, `grid_sticky`) wired through `format_utils.enum_options_for` + `editors/__init__._EDITORS`.
+- [x] **Workspace strips layout keys** before passing properties to CTk — `_strip_layout_keys()` shared by the create-widget path and the live-configure path. Otherwise `pack_side="top"` would land in `CTkButton.__init__`.
+- [x] **Code exporter emits the right call per parent** — new `_geometry_call(full_name, props, parent_layout)` returns `.place(x=, y=)` / `.pack(side=, fill=, …)` / `.grid(row=, column=, sticky=, …)`. Default values are omitted from the generated kwargs to keep the output lean.
+
+### Stage 2 — visual feedback
+- [x] **Chrome title suffix** — Window's `layout_type ≠ place` → `· pack` / `· grid` appended to the document name strip.
+- [x] **Container badge on canvas** — `[pack]` / `[grid]` rendered in italic dim grey at every Frame's top-right corner when manager isn't default. Invisible for `place` containers so plain forms read the same as before.
+- [x] **Dashed grid-cell overlays** — for any container with `layout_type == "grid"`, faint dashed lines at proportional row/column positions derived from children's `grid_row` / `grid_column` values. Uses the document rect for root-level grids and the Frame's bbox for nested grids.
+- [x] **Object Tree marks containers** — name suffix `[pack]` / `[grid]` added to container rows; subscribed to `property_changed("layout_type")` so the row updates in place without a full tree rebuild.
+- [x] **Property triggers** — `LAYOUT_OVERLAY_TRIGGERS = {layout_type, grid_row, grid_column, grid_rowspan, grid_columnspan}` repaints overlays on the canvas without recreating widgets.
+
+### Stage 3 — true WYSIWYG (deferred)
+- [ ] Pack/grid containers arrange children automatically on canvas using the real geometry managers.
+- [ ] Drag in a non-place container reorders rather than repositioning pixels.
+- [ ] Resize handles + selection bbox react to manager (pack/grid hide manual resize, fall back to manager-driven sizing).
+
+---
+
+## Phase 2.14 — Panel visual unification (2026-04-16) ✅
+
+- [x] **Object Tree panel header matches Properties** — added a centered `Segoe UI 13 bold` title label at the top (`"Object Tree"`) and moved the document-status stripe from the bottom of the tree container to directly beneath the title, mirroring Properties' `title → type-header-stripe → body` structure. Both docked panels now read as parallel UI elements instead of one feeling like a stripped-down floating inspector.
+- [x] **Widget Box header matches Properties / Object Tree** — title restyled from `Segoe UI 11 bold, anchor="w", pady=(10,6)` to `Segoe UI 13 bold, centered, pady=(6,2)` so all three sidebar panels share the exact same title style.
+- [x] **Object Tree scrollbar switched ttk → CTkScrollbar** — the Phase 2.13 `ttk.Scrollbar` still carried Windows-style arrow buttons (▲▼) at each end. Now uses `CTkScrollbar` with the same kwargs as Properties (`width=10, corner_radius=4`) so every panel's scroll thumb is the identical thin modern pill. The old `_build_style` ttk Scrollbar map entries are left in place — harmless, and the Treeview still uses that ttk style block for its row/heading colours.
+- [x] **Widget Box CTkScrollableFrame scrollbar styled to match** — `CTkScrollableFrame` only exposes the scrollbar colour kwargs (`scrollbar_fg_color / scrollbar_button_color / scrollbar_button_hover_color`), not width, so we reach into `self.scroll._scrollbar.configure(width=10, corner_radius=4)` after construction. Not ideal to touch a private attribute, but customtkinter exposes no public API for it and the attribute has been stable across releases.
+- [x] **All scrollbars → transparent trough** — after comparing Current / NoTrough-w10 / Thin-w8 / Thinner-w6 / Minimal-w4 variants in `Desktop/Test/scrollbar_test.py`, settled on keeping width=10 for usable click targets but dropping the `#1a1a1a` trough background. Every scrollbar (Object Tree, Properties, Workspace h+v, Widget Box) now uses `fg_color="transparent"`, so only the `#3a3a3a` thumb pill is visible — the "flat" modern look with no dark channel reserving column space.
+- [x] **Scrollbar lab script kept** — `Desktop/Test/scrollbar_test.py` stays as a side-by-side comparison harness for future scrollbar tweaks. Five ScrollableFrame columns, one per variant, same content, instant A/B review.
+
+---
+
 ## Phase 2.10 — Refactor + icon system (2026-04-14) ✅
 
 - [x] **Extract `NewProjectForm`** (`app/ui/new_project_form.py`, 306 lines) — shared form component used by both StartupDialog and File → New. Constants (SCREEN_SIZES_BY_DEVICE, FORBIDDEN_NAME_CHARS, …), form builders, and `validate_and_get()` all live here.

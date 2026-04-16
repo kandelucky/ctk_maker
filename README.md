@@ -2,7 +2,7 @@
 
 A desktop visual designer for **CustomTkinter** — drag and drop widgets onto a canvas, edit their properties live, and export the result as clean runnable Python.
 
-> **Status:** v0.0.9 — active development. Phase 5 (Window Settings) + Phase 5.5 (Multi-document canvas) complete. One project now holds a main window plus any number of dialogs, all editable on the same canvas with per-form chrome, active highlight, cross-document widget drag, and a multi-class code exporter.
+> **Status:** v0.0.10 — active development. Phase 6 (Layout managers, stage 1+2) complete. Containers now carry a `layout_type` (`place` / `pack` / `grid`); the code exporter emits the matching geometry call per parent, and the canvas surfaces the choice through container badges, dashed grid-cell overlays, and Object Tree suffixes. Drag/drop on the canvas is still absolute placement — the WYSIWYG pack/grid arranger is stage 3.
 
 [![v0.0.9](docs/history/v0.0.9.png)](docs/history/v0.0.9.png)
 
@@ -159,10 +159,11 @@ python main.py
 - [x] Light / Dark theme toggle
 - [x] **Window Settings** — title, size, `fg_color` live preview, resizable, frameless, builder grid (style / colour / spacing)
 - [x] **Multi-document canvas** — main window + N dialogs in one project, per-form chrome, drag-to-move, active highlight, smart mask for overlapping forms, AddDialog preset picker, cross-document widget drag, `AddDocument` / `DeleteDocument` / `MoveDocument` undo entries
+- [x] **Layout managers (stage 1+2)** — every container (Window, Frame, ScrollableFrame) carries `layout_type` ∈ `place / pack / grid`; child widgets gain `pack_*` / `grid_*` rows in Properties driven by their parent; code exporter emits the matching `.place()` / `.pack()` / `.grid()` call; canvas surfaces the choice via chrome title suffix, container badges and dashed grid-cell overlays; Object Tree marks containers with `[pack]` / `[grid]`
 
 ### Next
 - [ ] Remaining widget — `CTkScrollableFrame` + `CTkTabview` nested-children path (composite widget integration)
-- [ ] Layout managers — `place` / `pack` / `grid` per widget with visual indicator
+- [ ] Layout managers (stage 3) — true WYSIWYG: pack/grid containers arrange children automatically on canvas; drag in those containers reorders rather than repositions
 - [ ] Polish — marquee selection, snap-to-grid, alignment guides, asset manager
 - [ ] Advanced — custom user widgets, variables panel, event handlers, templates, plugin system
 

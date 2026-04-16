@@ -29,6 +29,10 @@ _EDITORS: dict[str, Editor] = {
     "justify": _ENUM,
     "orientation": _ENUM,
     "grid_style": _ENUM,
+    "layout_type": _ENUM,
+    "pack_side": _ENUM,
+    "pack_fill": _ENUM,
+    "grid_sticky": _ENUM,
 }
 
 

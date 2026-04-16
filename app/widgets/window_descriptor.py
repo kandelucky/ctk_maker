@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from app.core.project import WINDOW_ID, DEFAULT_WINDOW_PROPERTIES
 from app.widgets.base import WidgetDescriptor
+from app.widgets.layout_schema import LAYOUT_TYPE_ROW
 
 
 class WindowDescriptor(WidgetDescriptor):
@@ -36,6 +37,8 @@ class WindowDescriptor(WidgetDescriptor):
          "group": "Behaviour", "row_label": "Resizable Y"},
         {"name": "frameless", "type": "boolean", "label": "",
          "group": "Behaviour", "row_label": "Frameless"},
+
+        LAYOUT_TYPE_ROW,
 
         {"name": "grid_style", "type": "grid_style", "label": "",
          "group": "Builder Grid", "row_label": "Style"},
