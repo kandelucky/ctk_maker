@@ -1,9 +1,4 @@
-"""Layout-manager helpers + semantic canvas overlays.
-
-Two concerns live together here because they share context — the
-same Stage 3 WYSIWYG pipeline that picks a tk geometry manager
-(``pack`` / ``place`` / ``grid``) for a child also decides whether
-to draw a ``[vbox]`` badge or dashed grid lines on the canvas:
+"""Layout-manager helpers for the Stage 3 WYSIWYG pipeline.
 
 1. **Module-level functions** (no workspace needed):
     - ``_strip_layout_keys``    — filter out node-only layout keys
@@ -12,11 +7,15 @@ to draw a ``[vbox]`` badge or dashed grid lines on the canvas:
       its parent's ``layout_type``.
     - ``_stretch_to_pack_kwargs`` — translate ``fixed/fill/grow`` to
       tk pack fill/expand kwargs.
+    - ``_child_grid_kwargs``    — translate a child's grid_* props to
+      tk grid() kwargs.
     - ``_forget_current_manager`` — cross-manager safe forget.
 
 2. **``LayoutOverlayManager``** (owns Workspace ref):
-    - Draws badges + grid-cell overlays into the workspace canvas.
     - Re-applies child managers when ``layout_type`` changes.
+    - Configures grid row/column weights so sticky children stretch.
+    - Reserved overlay hook — currently draws nothing (see the
+      docstring on ``draw_overlays_for_doc`` for why).
 
 Split out of the old monolithic ``workspace.py`` to keep Stage 3
 logic in one focused module. Core ``Workspace`` holds a single
@@ -30,22 +29,24 @@ import tkinter as tk
 from app.widgets.layout_schema import (
     LAYOUT_DEFAULTS,
     LAYOUT_NODE_ONLY_KEYS,
+    grid_effective_dims,
     normalise_layout_type,
     pack_side_for,
 )
 from app.widgets.registry import get_descriptor
 
-# Layout-manager overlays — semantic hints (grid lines on grid
-# containers, "[pack]"/"[grid]" badges) drawn on top of widgets.
-# Independent from the builder's dot/line GRID_TAG.
+
+def _safe_int(value, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+# Canvas tag reserved for future layout-semantic overlays. No overlay
+# is currently drawn — a real tk Frame (canvas window item) always
+# renders above canvas primitives, so in-Frame grid hints need a
+# different host than the main canvas.
 LAYOUT_OVERLAY_TAG = "layout_overlay"
-LAYOUT_BADGE_FG = "#7a7a7a"
-LAYOUT_GRID_LINE = "#3d4954"
-LAYOUT_OVERLAY_TRIGGERS = frozenset({
-    "layout_type",
-    "grid_row", "grid_column",
-    "grid_rowspan", "grid_columnspan",
-})
 
 
 # ----------------------------------------------------------------------
@@ -76,21 +77,57 @@ def _stretch_to_pack_kwargs(stretch: str, layout: str) -> dict:
     return {}
 
 
+def _child_grid_kwargs(
+    child_props: dict, parent_node, zoom: float = 1.0,
+) -> dict:
+    """Pick tk ``grid()`` kwargs for a grid child. Row/column come
+    directly from the child's own ``grid_row`` / ``grid_column``
+    props so the user's cursor-based drop sticks. Spacing on the
+    parent turns into padx/pady on each cell (half per side so
+    adjacent cells end up one full spacing apart).
+    """
+    if parent_node is None:
+        parent_props: dict = {}
+    else:
+        parent_props = parent_node.properties
+    row = _safe_int(
+        child_props.get("grid_row", LAYOUT_DEFAULTS["grid_row"]), 0,
+    )
+    col = _safe_int(
+        child_props.get("grid_column", LAYOUT_DEFAULTS["grid_column"]), 0,
+    )
+    kwargs: dict = {"row": row, "column": col}
+    sticky = child_props.get("grid_sticky", LAYOUT_DEFAULTS["grid_sticky"])
+    sticky = sticky or ""
+    if sticky:
+        kwargs["sticky"] = sticky
+    spacing = _safe_int(parent_props.get("layout_spacing", 0) or 0, 0)
+    half = spacing // 2
+    if half:
+        pad = max(0, int(half * zoom))
+        if pad:
+            kwargs["padx"] = pad
+            kwargs["pady"] = pad
+    return kwargs
+
+
 def _child_manager_kwargs(
     parent_node, child_props: dict, zoom: float = 1.0,
+    child_index: int | None = None,
 ) -> tuple[str, dict]:
     """Pick the tk geometry manager + its kwargs for a child whose
     parent is ``parent_node``. Returns ``(manager_name, kwargs)``
-    with manager ∈ ``place`` / ``pack``. Grid support lands in
-    Stage 3.2 — grid parents fall back to ``place`` so grid children
-    keep rendering where x/y put them even though the exporter emits
-    real ``.grid()`` calls.
+    with manager ∈ ``place`` / ``pack`` / ``grid``.
 
     vbox / hbox direction comes from the parent; per-child padx/pady
-    are derived from the parent's ``layout_spacing`` (half on each
-    side so consecutive siblings end up one full spacing apart).
-    The child's only layout knob is ``stretch`` (fixed / fill / grow).
+    are derived from the parent's ``layout_spacing``. The child's
+    only layout knob is ``stretch`` (fixed / fill / grow).
+    Grid parents emit ``.grid()`` with the child's own row/col so
+    the user's cursor-based drop lands at the target cell (no
+    auto-flow — empty cells are targetable and allowed).
+    ``child_index`` is kept for API compatibility but unused.
     """
+    _ = child_index
     parent_layout = "place"
     parent_props: dict = {}
     if parent_node is not None:
@@ -120,8 +157,8 @@ def _child_manager_kwargs(
                 else:
                     kwargs["pady"] = pad
         return "pack", kwargs
-    # Fall-through: place (both the legacy mode and the pre-Stage-3.2
-    # grid stand-in).
+    if layout == "grid":
+        return "grid", _child_grid_kwargs(child_props, parent_node, zoom)
     return "place", {}
 
 
@@ -197,43 +234,16 @@ class LayoutOverlayManager:
     def draw_overlays_for_doc(
         self, doc, dx1: int, dy1: int, dx2: int, dy2: int,
     ) -> None:
-        """Per-doc semantic overlay: dashed grid-cell lines on every
-        container whose ``layout_type == "grid"`` plus a small badge
-        on every non-default container. The Window's badge is folded
-        into the chrome title strip — only Frame-level containers get
-        a separate badge here.
+        """No semantic overlays are drawn — layout type is surfaced via
+        the palette preset name / Properties panel / Object Tree icon,
+        and grid-cell structure is surfaced through each child's
+        Inspector row/column fields. The method is kept as a stable
+        hook so the renderer can call it every redraw without a
+        conditional, and so a future overlay can be re-enabled in one
+        place.
         """
-        doc_layout = normalise_layout_type(
-            doc.window_properties.get("layout_type", "place"),
-        )
-        if doc_layout == "grid":
-            self._draw_grid_overlay_lines(
-                doc.root_widgets, dx1, dy1, dx2, dy2,
-            )
-        zoom = self.zoom.value
-        for container in self.iter_containers(doc.root_widgets):
-            layout = normalise_layout_type(
-                container.properties.get("layout_type", "place"),
-            )
-            if layout == "place":
-                continue
-            try:
-                lx = int(container.properties.get("x", 0))
-                ly = int(container.properties.get("y", 0))
-                lw = int(container.properties.get("width", 0) or 0)
-                lh = int(container.properties.get("height", 0) or 0)
-            except (TypeError, ValueError):
-                continue
-            if lw <= 0 or lh <= 0:
-                continue
-            cx1, cy1 = self.zoom.logical_to_canvas(lx, ly, document=doc)
-            cx2 = cx1 + int(lw * zoom)
-            cy2 = cy1 + int(lh * zoom)
-            if layout == "grid":
-                self._draw_grid_overlay_lines(
-                    container.children, cx1, cy1, cx2, cy2,
-                )
-            self._draw_layout_badge(layout, cx2, cy1)
+        # Parameters retained in signature for future overlay work.
+        _ = (doc, dx1, dy1, dx2, dy2)
 
     def iter_containers(self, nodes):
         for n in nodes:
@@ -244,64 +254,33 @@ class LayoutOverlayManager:
                 yield n
             yield from self.iter_containers(n.children)
 
-    def _draw_grid_overlay_lines(
-        self, children, x1: int, y1: int, x2: int, y2: int,
-    ) -> None:
-        if not children or x2 <= x1 or y2 <= y1:
-            return
-        rows: set[int] = set()
-        cols: set[int] = set()
-        for c in children:
-            try:
-                rows.add(int(c.properties.get("grid_row", 0)))
-                cols.add(int(c.properties.get("grid_column", 0)))
-            except (TypeError, ValueError):
-                pass
-        if not rows or not cols:
-            return
-        nrows = max(rows) + 1
-        ncols = max(cols) + 1
-        cell_w = (x2 - x1) / max(ncols, 1)
-        cell_h = (y2 - y1) / max(nrows, 1)
-        for c in range(1, ncols):
-            cx = x1 + int(cell_w * c)
-            self.canvas.create_line(
-                cx, y1 + 1, cx, y2 - 1,
-                fill=LAYOUT_GRID_LINE, dash=(2, 4),
-                tags=(LAYOUT_OVERLAY_TAG,),
-            )
-        for r in range(1, nrows):
-            ry = y1 + int(cell_h * r)
-            self.canvas.create_line(
-                x1 + 1, ry, x2 - 1, ry,
-                fill=LAYOUT_GRID_LINE, dash=(2, 4),
-                tags=(LAYOUT_OVERLAY_TAG,),
-            )
-
-    def _draw_layout_badge(
-        self, layout: str, x_right: int, y_top: int,
-    ) -> None:
-        self.canvas.create_text(
-            x_right - 6, y_top + 4,
-            text=f"[{layout}]", anchor="ne",
-            fill=LAYOUT_BADGE_FG,
-            font=("Segoe UI", 9, "italic"),
-            tags=(LAYOUT_OVERLAY_TAG,),
-        )
-
     # ------------------------------------------------------------------
     # Child-geometry manager switching (Stage 3.1)
     # ------------------------------------------------------------------
     def rearrange_container_children(self, container_id: str) -> None:
         """Re-apply each direct child's geometry manager against the
-        container's current ``layout_type``. Forgets the old manager
-        first so we never hit tk's "can't mix managers" error. Pack
-        ordering follows ``container.children`` so visual order stays
-        stable across edits.
+        container's current ``layout_type``. Pack queue visual order
+        must match the model order in ``container.children``, so we
+        do this in two passes: forget every child first (queue goes
+        empty), then pack them in order so each call lands at the
+        end of the queue. A single-pass forget-and-repack would pin
+        the current child ``before=`` a still-packed next sibling,
+        which leaves the queue in a stale, pre-reorder order.
         """
         container = self.project.get_widget(container_id)
         if container is None:
             return
+        layout = normalise_layout_type(
+            container.properties.get("layout_type", "place"),
+        )
+        if layout == "grid":
+            parent_entry = self.widget_views.get(container_id)
+            if parent_entry is not None:
+                self._configure_grid_weights(
+                    parent_entry[0], container.children,
+                    container_props=container.properties,
+                )
+        anchor_widgets: list[tuple[object, object]] = []
         for child in container.children:
             entry = self.widget_views.get(child.id)
             if entry is None:
@@ -312,7 +291,62 @@ class LayoutOverlayManager:
                 descriptor.canvas_anchor(widget)
                 if descriptor is not None else widget
             )
+            anchor_widgets.append((anchor_widget, child))
+        for anchor_widget, _child in anchor_widgets:
+            _forget_current_manager(anchor_widget)
+        for anchor_widget, child in anchor_widgets:
             self.apply_child_manager(anchor_widget, container, child)
+
+    def _next_sibling_anchor(self, parent_node, child_node):
+        """Return the anchor widget of the first sibling that comes
+        after ``child_node`` in the model and is already on-canvas.
+        Used by ``apply_child_manager`` to pin a re-packed child to
+        its correct slot via tk's ``pack(before=...)``. Returns
+        ``None`` if there's no next sibling with a view — caller
+        should append.
+        """
+        if parent_node is None:
+            return None
+        siblings = parent_node.children
+        try:
+            idx = siblings.index(child_node)
+        except ValueError:
+            return None
+        for sibling in siblings[idx + 1:]:
+            entry = self.widget_views.get(sibling.id)
+            if entry is None:
+                continue
+            widget, _ = entry
+            descriptor = get_descriptor(sibling.widget_type)
+            return (
+                descriptor.canvas_anchor(widget)
+                if descriptor is not None else widget
+            )
+        return None
+
+    def _configure_grid_weights(
+        self, parent_widget, children, container_props: dict | None = None,
+    ) -> None:
+        """Set weight=1 on every row/column in the container's
+        effective auto-flow grid so sticky children stretch evenly.
+        Dimensions come from ``grid_effective_dims(len(children),
+        container_props)`` — the same formula used at export time,
+        so canvas + runtime agree. Idempotent.
+        """
+        from app.widgets.layout_schema import grid_effective_dims
+        rows, cols = grid_effective_dims(
+            len(children), container_props or {},
+        )
+        for rr in range(rows):
+            try:
+                parent_widget.grid_rowconfigure(rr, weight=1)
+            except tk.TclError:
+                pass
+        for cc in range(cols):
+            try:
+                parent_widget.grid_columnconfigure(cc, weight=1)
+            except tk.TclError:
+                pass
 
     def apply_child_manager(
         self, anchor_widget, parent_node, child_node,
@@ -341,12 +375,57 @@ class LayoutOverlayManager:
                     )
                 except tk.TclError:
                     pass
+            # pack()-ing a fresh widget appends it to the end of its
+            # parent's pack queue. When we re-apply a manager for a
+            # child that already has siblings (e.g. stretch changed),
+            # we must anchor it to its model position via ``before=``
+            # the next sibling's widget, otherwise the widget sinks
+            # to the bottom of the stack. The ``before=`` widget MUST
+            # currently be packed — during a full rearrange (iterating
+            # children in order after a reorder) the next sibling is
+            # already forgotten, so passing before= would land the
+            # current child at the wrong queue position. Append
+            # instead and rely on the iteration order.
+            before_widget = self._next_sibling_anchor(
+                parent_node, child_node,
+            )
+            if before_widget is not None:
+                try:
+                    if before_widget.winfo_manager() == "pack":
+                        mgr_kwargs = {**mgr_kwargs, "before": before_widget}
+                except tk.TclError:
+                    pass
             try:
                 anchor_widget.pack(**mgr_kwargs)
             except tk.TclError:
                 pass
             return
-        # ``place`` (includes the pre-Stage-3.2 grid stand-in).
+        if manager == "grid":
+            if is_composite and lw > 0 and lh > 0:
+                try:
+                    anchor_widget.configure(
+                        width=max(1, int(lw * self.zoom.value)),
+                        height=max(1, int(lh * self.zoom.value)),
+                    )
+                except tk.TclError:
+                    pass
+            try:
+                anchor_widget.grid(**mgr_kwargs)
+            except tk.TclError:
+                pass
+            # Re-sync row/column weights: the caller may be this child
+            # joining the grid for the first time, or changing its
+            # span — either way the set of occupied rows/cols may
+            # have grown.
+            if parent_node is not None:
+                parent_entry = self.widget_views.get(parent_node.id)
+                if parent_entry is not None:
+                    self._configure_grid_weights(
+                        parent_entry[0], parent_node.children,
+                        container_props=parent_node.properties,
+                    )
+            return
+        # ``place`` (default).
         try:
             lx = int(child_node.properties.get("x", 0))
             ly = int(child_node.properties.get("y", 0))

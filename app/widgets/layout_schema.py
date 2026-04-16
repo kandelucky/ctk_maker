@@ -74,30 +74,68 @@ LAYOUT_SPACING_ROW = {
         p.get("layout_type", "place"),
     ) == "place",
 }
-CONTAINER_LAYOUT_ROWS: list[dict] = [LAYOUT_TYPE_ROW, LAYOUT_SPACING_ROW]
+# Grid-only dimensions — rows × columns. Hidden outside grid mode
+# so the Inspector doesn't clutter vbox / hbox / place users with
+# fields that don't apply.
+_GRID_ROWS_HIDDEN = lambda p: normalise_layout_type(  # noqa: E731
+    p.get("layout_type", "place"),
+) != "grid"
+LAYOUT_GRID_ROWS_ROW = {
+    "name": "grid_rows",
+    "type": "number",
+    "label": "R",
+    "group": "Layout",
+    "pair": "grid_dims",
+    "row_label": "Dimensions",
+    "min": 1,
+    "max": 50,
+    "hidden_when": _GRID_ROWS_HIDDEN,
+}
+LAYOUT_GRID_COLS_ROW = {
+    "name": "grid_cols",
+    "type": "number",
+    "label": "C",
+    "group": "Layout",
+    "pair": "grid_dims",
+    "min": 1,
+    "max": 50,
+    "hidden_when": _GRID_ROWS_HIDDEN,
+}
+CONTAINER_LAYOUT_ROWS: list[dict] = [
+    LAYOUT_TYPE_ROW, LAYOUT_SPACING_ROW,
+    LAYOUT_GRID_ROWS_ROW, LAYOUT_GRID_COLS_ROW,
+]
 
 # Defaults merged into every child node so save / undo / export all
-# see consistent values regardless of which manager is active.
-# Qt Designer inspiration: per-child layout tuning is deliberately
-# thin — a ``stretch`` hint is the only knob on the child; margins
-# / spacing live on the parent (see ``LAYOUT_CONTAINER_DEFAULTS``).
+# see consistent values regardless of which manager is active. Per-
+# child layout tuning is deliberately thin — pack children have a
+# single ``stretch`` hint, grid children have a single ``grid_sticky``
+# hint (cell fill direction). Cell assignment for grid is derived
+# from the child's index in ``parent.children`` + the parent's
+# ``grid_cols`` — there is no per-child row/column on the model.
 LAYOUT_DEFAULTS: dict = {
     # fixed = natural size, fill = stretch across-axis,
     # grow = take extra space + fill both.
     "stretch": "fixed",
+    # Explicit grid cell per child — (row, column) in the parent
+    # grid. Defaults to (0, 0); fresh drops auto-assign to the next
+    # free cell so the user doesn't have to edit Inspector for a
+    # normal fill-top-to-bottom flow.
     "grid_row": 0,
     "grid_column": 0,
-    "grid_rowspan": 1,
-    "grid_columnspan": 1,
+    # Cell fill — empty = natural-size centered, "nsew" = fill.
     "grid_sticky": "",
-    "grid_padx": 0,
-    "grid_pady": 0,
 }
 
 # Defaults merged onto a container node itself. ``layout_spacing``
 # controls the gap between siblings for pack (vbox/hbox) + grid.
+# ``grid_rows`` / ``grid_cols`` are only meaningful when
+# ``layout_type == "grid"`` — they carve the container into that
+# many cells even if no child occupies the trailing rows/cols.
 LAYOUT_CONTAINER_DEFAULTS: dict = {
     "layout_spacing": 4,
+    "grid_rows": 2,
+    "grid_cols": 2,
 }
 
 # Keys the workspace must strip from CTk constructor / configure
@@ -106,11 +144,15 @@ LAYOUT_CONTAINER_DEFAULTS: dict = {
 # ``pack_pady`` stay in the strip list because legacy v0.0.10 — v0.0.11
 # projects may still carry them; the migration layer rewrites them to
 # ``stretch`` but the workspace must not hand a stale copy to CTk if
-# one survives.
+# one survives. Same deal for the v0.0.12 per-child grid_row / column
+# / span / padding keys the v0.0.13 auto-flow rewrite dropped.
 LAYOUT_NODE_ONLY_KEYS = frozenset(LAYOUT_DEFAULTS.keys()) | {
     "layout_type", "layout_spacing",
+    "grid_rows", "grid_cols",
     "pack_side", "pack_fill", "pack_expand",
     "pack_padx", "pack_pady",
+    "grid_rowspan", "grid_columnspan",
+    "grid_padx", "grid_pady",
 }
 
 GRID_STICKY_OPTIONS = (
@@ -135,18 +177,8 @@ _GRID_ROWS: list[dict] = [
      "min": 0, "max": 99},
     {"name": "grid_column", "type": "number", "label": "C",
      "group": "Layout", "pair": "grid_cell", "min": 0, "max": 99},
-    {"name": "grid_rowspan", "type": "number", "label": "R",
-     "group": "Layout", "pair": "grid_span", "row_label": "Span",
-     "min": 1, "max": 99},
-    {"name": "grid_columnspan", "type": "number", "label": "C",
-     "group": "Layout", "pair": "grid_span", "min": 1, "max": 99},
     {"name": "grid_sticky", "type": "grid_sticky", "label": "",
-     "group": "Layout", "row_label": "Sticky"},
-    {"name": "grid_padx", "type": "number", "label": "X",
-     "group": "Layout", "pair": "grid_pad", "row_label": "Padding",
-     "min": 0, "max": 200},
-    {"name": "grid_pady", "type": "number", "label": "Y",
-     "group": "Layout", "pair": "grid_pad", "min": 0, "max": 200},
+     "group": "Layout", "row_label": "Fill"},
 ]
 
 
@@ -186,3 +218,55 @@ def pack_side_for(parent_layout_type: str) -> str | None:
     if parent_layout_type == "hbox":
         return _HBOX_SIDE
     return None
+
+
+def _safe_int(value, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def grid_effective_dims(
+    child_count: int, container_props: dict | None = None,
+) -> tuple[int, int]:
+    """Effective grid dimensions. The user's ``grid_rows`` /
+    ``grid_cols`` are authoritative — no auto-growth for capacity.
+    Children whose index exceeds ``rows*cols`` wrap around and
+    overlap existing cells (see ``grid_cell_for_index``). The
+    ``child_count`` argument is kept in the signature for API
+    stability / future use.
+    """
+    _ = child_count
+    if container_props is None:
+        container_props = {}
+    cols = max(1, _safe_int(container_props.get("grid_cols", 1), 1))
+    rows = max(1, _safe_int(container_props.get("grid_rows", 1), 1))
+    return rows, cols
+
+
+def next_free_grid_cell(
+    siblings, container_props: dict | None = None,
+) -> tuple[int, int]:
+    """Scan the container's grid row-major and return the first
+    (row, col) no sibling occupies. Used at widget-add time to
+    auto-place a fresh child without asking the user to pick a
+    cell. Wraps around (reuses ``(0, 0)``) once every cell in the
+    declared ``grid_rows × grid_cols`` is taken.
+    """
+    if container_props is None:
+        container_props = {}
+    rows, cols = grid_effective_dims(len(siblings), container_props)
+    occupied: set[tuple[int, int]] = set()
+    for sibling in siblings:
+        try:
+            r = int(sibling.properties.get("grid_row", 0) or 0)
+            c = int(sibling.properties.get("grid_column", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        occupied.add((r, c))
+    for r in range(rows):
+        for c in range(cols):
+            if (r, c) not in occupied:
+                return r, c
+    return 0, 0

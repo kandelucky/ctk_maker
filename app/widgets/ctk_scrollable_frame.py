@@ -18,6 +18,8 @@ from app.widgets.base import WidgetDescriptor
 from app.widgets.layout_schema import (
     DEFAULT_LAYOUT_TYPE,
     LAYOUT_CONTAINER_DEFAULTS,
+    LAYOUT_GRID_COLS_ROW,
+    LAYOUT_GRID_ROWS_ROW,
     LAYOUT_SPACING_ROW,
     LAYOUT_TYPE_ROW,
 )
@@ -122,11 +124,14 @@ class CTkScrollableFrameDescriptor(WidgetDescriptor):
         # --- Layout (children manager) -----------------------------------
         LAYOUT_TYPE_ROW,
         LAYOUT_SPACING_ROW,
+        LAYOUT_GRID_ROWS_ROW,
+        LAYOUT_GRID_COLS_ROW,
     ]
 
     _NODE_ONLY_KEYS = {
         "x", "y", "border_enabled", "label_text_align",
         "layout_type", "layout_spacing",
+        "grid_rows", "grid_cols",
     }
     init_only_keys = {"orientation"}
     recreate_triggers = frozenset({"orientation"})

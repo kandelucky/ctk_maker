@@ -104,16 +104,6 @@ CATALOG: tuple[WidgetGroup, ...] = (
             ),
             default_name="Grid Layout",
         ),
-        WidgetEntry(
-            "CTkFrame", "Group", "frame",
-            preset_overrides=(
-                ("border_enabled", True),
-                ("border_width", 1),
-                ("width", 240),
-                ("height", 180),
-            ),
-            default_name="Group",
-        ),
     )),
     WidgetGroup("Buttons", (
         WidgetEntry("CTkButton", "Button", "square"),

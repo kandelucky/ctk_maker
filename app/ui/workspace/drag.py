@@ -7,10 +7,13 @@ controller owns the logic for:
 - press      — capture the widget's starting logical x/y
 - motion     — translate the mouse delta (zoom-adjusted) into x/y
                property updates; tripping the 5 px threshold before
-               committing so click-without-drag stays silent
+               committing so click-without-drag stays silent. For
+               grid-parented widgets, x/y stays frozen and a cell
+               highlight is drawn under the cursor instead.
 - release    — either record a single ``MoveCommand`` for the
-               gesture or, if the widget was dropped on a different
-               container / document, a ``ReparentCommand`` instead
+               gesture, a ``MultiChangePropertyCommand`` for a grid
+               cell change, or a ``ReparentCommand`` if the widget
+               was dropped into a different container / document.
 
 Split out of the old monolithic ``workspace.py`` so drag logic lives
 in one focused module. Core ``Workspace`` holds a single instance on
@@ -21,9 +24,19 @@ from __future__ import annotations
 
 import tkinter as tk
 
-from app.core.commands import MoveCommand, ReparentCommand
+from app.core.commands import (
+    MoveCommand,
+    MultiChangePropertyCommand,
+    ReparentCommand,
+)
+from app.widgets.layout_schema import (
+    grid_effective_dims,
+    normalise_layout_type,
+)
 
 DRAG_THRESHOLD = 5
+GRID_HIGHLIGHT_TAG = "grid_drop_highlight"
+GRID_HIGHLIGHT_COLOR = "#6fb4f0"
 
 
 class WidgetDragController:
@@ -108,6 +121,7 @@ class WidgetDragController:
         # was missed — drop the stale drag and refuse to move.
         if not (event.state & 0x0100):
             self._drag = None
+            self._clear_grid_highlight()
             return
         if self._drag is None or self._drag["nid"] != nid:
             return
@@ -120,6 +134,36 @@ class WidgetDragController:
             ):
                 return
             self._drag["moved"] = True
+        # Determine the container under the cursor. If it's a grid
+        # container, the drag switches to cell-snap mode: no x/y
+        # updates, just a highlight on the target cell so the user
+        # sees where the widget will land on release.
+        cx, cy = ws._screen_to_canvas(event.x_root, event.y_root)
+        target = ws._find_container_at(cx, cy, exclude_id=nid)
+        target_grid = (
+            target is not None
+            and normalise_layout_type(
+                target.properties.get("layout_type", "place"),
+            ) == "grid"
+        )
+        node = self.project.get_widget(nid)
+        src_grid = (
+            node is not None and node.parent is not None
+            and normalise_layout_type(
+                node.parent.properties.get("layout_type", "place"),
+            ) == "grid"
+        )
+        if target_grid:
+            row, col = self._grid_cell_at(target, cx, cy)
+            self._draw_grid_highlight(target, row, col)
+            return
+        # Cursor left a grid container — erase any stale highlight.
+        self._clear_grid_highlight()
+        if src_grid:
+            # Grid-parented widget dragged outside any grid — still
+            # skip x/y updates so the model stays clean; we'll either
+            # reparent on release or snap back to its current cell.
+            return
         zoom = self.zoom.value or 1.0
         new_x = self._drag["start_x"] + int(dx_root / zoom)
         new_y = self._drag["start_y"] + int(dy_root / zoom)
@@ -133,34 +177,42 @@ class WidgetDragController:
             ws._end_pan(event)
             return
         drag = self._drag
-        if drag is not None and drag.get("moved"):
-            reparented = self._maybe_reparent_dragged(event)
-            # Skip the Move record if the widget jumped parents — a
-            # proper ReparentCommand captures the full before/after,
-            # Move would duplicate part of that record.
-            if not reparented:
-                node = self.project.get_widget(drag["nid"])
-                if node is not None:
-                    try:
-                        end_x = int(node.properties.get("x", 0))
-                        end_y = int(node.properties.get("y", 0))
-                    except (TypeError, ValueError):
-                        end_x, end_y = drag["start_x"], drag["start_y"]
-                    if (
-                        (end_x, end_y)
-                        != (drag["start_x"], drag["start_y"])
-                    ):
-                        self.project.history.push(
-                            MoveCommand(
-                                drag["nid"],
-                                {
-                                    "x": drag["start_x"],
-                                    "y": drag["start_y"],
-                                },
-                                {"x": end_x, "y": end_y},
-                            ),
-                        )
+        # Clear drag state BEFORE firing any project mutations so
+        # ``_schedule_selection_redraw`` stops short-circuiting on
+        # ``is_dragging()``. With the guard on, release-time updates
+        # (grid snap, reparent, move) would leave selection handles
+        # lingering at the pre-drop spot until the next UI event.
         self._drag = None
+        self._clear_grid_highlight()
+        if drag is not None and drag.get("moved"):
+            grid_handled = self._maybe_grid_drop(event, drag)
+            if not grid_handled:
+                reparented = self._maybe_reparent_dragged(event)
+                # Skip the Move record if the widget jumped parents — a
+                # proper ReparentCommand captures the full before/after,
+                # Move would duplicate part of that record.
+                if not reparented:
+                    node = self.project.get_widget(drag["nid"])
+                    if node is not None:
+                        try:
+                            end_x = int(node.properties.get("x", 0))
+                            end_y = int(node.properties.get("y", 0))
+                        except (TypeError, ValueError):
+                            end_x, end_y = drag["start_x"], drag["start_y"]
+                        if (
+                            (end_x, end_y)
+                            != (drag["start_x"], drag["start_y"])
+                        ):
+                            self.project.history.push(
+                                MoveCommand(
+                                    drag["nid"],
+                                    {
+                                        "x": drag["start_x"],
+                                        "y": drag["start_y"],
+                                    },
+                                    {"x": end_x, "y": end_y},
+                                ),
+                            )
         # Refresh cover-mask after a drag release so a widget that
         # just slid into / out of another document's area picks up
         # the right hidden state.
@@ -285,3 +337,186 @@ class WidgetDragController:
             ),
         )
         return True
+
+    # ------------------------------------------------------------------
+    # Grid drag-to-cell
+    # ------------------------------------------------------------------
+    def _maybe_grid_drop(self, event, drag: dict) -> bool:
+        """Explicit-cell grid drop. Cursor cell becomes the child's
+        own ``grid_row`` / ``grid_column`` — no sibling shift. Cross-
+        parent drops hand off to ``_maybe_reparent_dragged`` after
+        pre-setting the new cell on the node so the post-reparent
+        ``.grid()`` call lands in the target cell.
+        """
+        ws = self.workspace
+        nid = drag["nid"]
+        node = self.project.get_widget(nid)
+        if node is None:
+            return False
+        self.canvas.update_idletasks()
+        cx, cy = ws._screen_to_canvas(event.x_root, event.y_root)
+        target = ws._find_container_at(cx, cy, exclude_id=nid)
+        if target is None:
+            return False
+        target_layout = normalise_layout_type(
+            target.properties.get("layout_type", "place"),
+        )
+        if target_layout != "grid":
+            return False
+        row, col = self._grid_cell_at(target, cx, cy)
+        old_parent_id = node.parent.id if node.parent is not None else None
+        new_parent_id = target.id
+        try:
+            old_row = int(node.properties.get("grid_row", 0) or 0)
+            old_col = int(node.properties.get("grid_column", 0) or 0)
+        except (TypeError, ValueError):
+            old_row, old_col = 0, 0
+        if new_parent_id == old_parent_id:
+            if (row, col) == (old_row, old_col):
+                return True  # same cell — no-op drop
+            self.project.update_property(nid, "grid_row", row)
+            self.project.update_property(nid, "grid_column", col)
+            self.project.history.push(
+                MultiChangePropertyCommand(
+                    nid,
+                    {
+                        "grid_row": (old_row, row),
+                        "grid_column": (old_col, col),
+                    },
+                ),
+            )
+            return True
+        # Different parent — pre-set the new cell so the reparent's
+        # widget rebuild lands at the user's chosen cell, then fall
+        # through to the standard reparent flow for the destroy /
+        # recreate + history push.
+        node.properties["grid_row"] = row
+        node.properties["grid_column"] = col
+        self._maybe_reparent_dragged(event)
+        return True
+
+    def _grid_dimensions(
+        self, container_node, *, extra_child: bool = False,
+    ) -> tuple[int, int]:
+        """Rows × cols of ``container`` — authoritative user-set
+        ``grid_rows`` / ``grid_cols``. No auto-grow: children past
+        capacity wrap into existing cells (see
+        ``grid_cell_for_index``). ``extra_child`` kept for API
+        compatibility but no longer affects the answer.
+        """
+        _ = extra_child
+        return grid_effective_dims(
+            len(container_node.children), container_node.properties,
+        )
+
+    def _grid_cell_at(
+        self, container_node, canvas_x: float, canvas_y: float,
+    ) -> tuple[int, int]:
+        """Map a canvas position to a (row, col) cell on ``container``.
+        The cell grid matches the container's current structure — the
+        overlay won't show phantom rows/columns past the last filled
+        one. To grow the grid the user can drag onto an already-full
+        cell (overlap lands a sibling there) or edit row/col directly.
+        """
+        entry = self.widget_views.get(container_node.id)
+        if entry is None:
+            return (0, 0)
+        widget, _ = entry
+        bbox = self.workspace._widget_canvas_bbox(widget)
+        if bbox is None:
+            return (0, 0)
+        x1, y1, x2, y2 = bbox
+        nrows, ncols = self._grid_dimensions(container_node)
+        cell_w = (x2 - x1) / max(ncols, 1)
+        cell_h = (y2 - y1) / max(nrows, 1)
+        if cell_w <= 0 or cell_h <= 0:
+            return (0, 0)
+        col = int((canvas_x - x1) / cell_w)
+        row = int((canvas_y - y1) / cell_h)
+        col = max(0, min(ncols - 1, col))
+        row = max(0, min(nrows - 1, row))
+        return (row, col)
+
+    def _draw_grid_highlight(
+        self, container_node, row: int, col: int,
+    ) -> None:
+        """Paint a light-blue outline on the target cell — only the
+        border, so the cell's content (if any) stays visible. The
+        overlay is four thin ``tk.Frame`` stripes laid out around
+        the cell via ``.place()``: a single solid-bg Frame would
+        cover anything below, and canvas primitives can't render
+        above a window-item Frame. Frames are created ONCE per
+        gesture and repositioned on subsequent motion events —
+        recreating them every tick freezes the UI.
+        """
+        cache_key = (container_node.id, row, col)
+        if getattr(self, "_grid_highlight_key", None) == cache_key:
+            return  # nothing changed
+        entry = self.widget_views.get(container_node.id)
+        if entry is None:
+            self._clear_grid_highlight()
+            return
+        container_widget, _ = entry
+        try:
+            cw = int(container_widget.winfo_width())
+            ch = int(container_widget.winfo_height())
+        except tk.TclError:
+            self._clear_grid_highlight()
+            return
+        if cw <= 0 or ch <= 0:
+            self._clear_grid_highlight()
+            return
+        nrows, ncols = self._grid_dimensions(container_node)
+        cell_w = cw / max(ncols, 1)
+        cell_h = ch / max(nrows, 1)
+        if cell_w <= 0 or cell_h <= 0:
+            self._clear_grid_highlight()
+            return
+        rx = int(col * cell_w) + 2
+        ry = int(row * cell_h) + 2
+        rw = max(1, int(cell_w) - 4)
+        rh = max(1, int(cell_h) - 4)
+        stripes = getattr(self, "_grid_highlight", None)
+        stripe_parent = getattr(self, "_grid_highlight_parent", None)
+        if stripes is not None and stripe_parent is not container_widget:
+            self._clear_grid_highlight()
+            stripes = None
+        if stripes is None:
+            try:
+                stripes = tuple(
+                    tk.Frame(
+                        container_widget,
+                        bg=GRID_HIGHLIGHT_COLOR,
+                        bd=0, highlightthickness=0,
+                    )
+                    for _ in range(4)
+                )
+            except tk.TclError:
+                return
+            self._grid_highlight = stripes
+            self._grid_highlight_parent = container_widget
+        top, bottom, left, right = stripes
+        bw = 2  # border thickness
+        try:
+            top.place(x=rx, y=ry, width=rw, height=bw)
+            bottom.place(x=rx, y=ry + rh - bw, width=rw, height=bw)
+            left.place(x=rx, y=ry, width=bw, height=rh)
+            right.place(x=rx + rw - bw, y=ry, width=bw, height=rh)
+            for stripe in stripes:
+                stripe.lift()
+        except tk.TclError:
+            self._clear_grid_highlight()
+            return
+        self._grid_highlight_key = cache_key
+
+    def _clear_grid_highlight(self) -> None:
+        stripes = getattr(self, "_grid_highlight", None)
+        if stripes is not None:
+            for stripe in stripes:
+                try:
+                    stripe.destroy()
+                except tk.TclError:
+                    pass
+        self._grid_highlight = None
+        self._grid_highlight_parent = None
+        self._grid_highlight_key = None

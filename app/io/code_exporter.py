@@ -34,6 +34,7 @@ from app.widgets.layout_schema import (
     LAYOUT_CONTAINER_DEFAULTS,
     LAYOUT_DEFAULTS,
     LAYOUT_NODE_ONLY_KEYS,
+    grid_effective_dims,
     normalise_layout_type,
     pack_side_for,
 )
@@ -140,7 +141,28 @@ def _emit_class(doc: Document, class_name: str) -> list[str]:
             )
         except (TypeError, ValueError):
             doc_spacing = 0
-        for node in doc.root_widgets:
+        # Window itself needs propagate(False) for non-place layouts
+        # — otherwise pack/grid children would shrink self to their
+        # natural size on first frame, defeating self.geometry("WxH").
+        doc_rows = doc_cols = 1
+        if doc_layout == "grid":
+            doc_rows, doc_cols = grid_effective_dims(
+                len(doc.root_widgets), doc_props,
+            )
+        if doc_layout != DEFAULT_LAYOUT_TYPE:
+            body_lines.append("self.pack_propagate(False)")
+            body_lines.append("self.grid_propagate(False)")
+            if doc_layout == "grid":
+                for rr in range(doc_rows):
+                    body_lines.append(
+                        f"self.grid_rowconfigure({rr}, weight=1)",
+                    )
+                for cc in range(doc_cols):
+                    body_lines.append(
+                        f"self.grid_columnconfigure({cc}, weight=1)",
+                    )
+            body_lines.append("")
+        for idx, node in enumerate(doc.root_widgets):
             _emit_subtree(
                 node,
                 master_var="self",
@@ -149,6 +171,9 @@ def _emit_class(doc: Document, class_name: str) -> list[str]:
                 instance_prefix="self.",
                 parent_layout=doc_layout,
                 parent_spacing=doc_spacing,
+                child_index=idx,
+                parent_cols=doc_cols,
+                parent_rows=doc_rows,
             )
     for line in body_lines:
         lines.append(f"{INDENT}{INDENT}{line}" if line else "")
@@ -163,12 +188,16 @@ def _emit_subtree(
     instance_prefix: str = "",
     parent_layout: str = DEFAULT_LAYOUT_TYPE,
     parent_spacing: int = 0,
+    child_index: int = 0,
+    parent_cols: int = 1,
+    parent_rows: int = 1,
 ) -> None:
     var_name = _make_var_name(node, counts)
     lines.extend(
         _emit_widget(
             node, var_name, master_var, instance_prefix,
-            parent_layout, parent_spacing,
+            parent_layout, parent_spacing, child_index,
+            parent_cols, parent_rows,
         ),
     )
     lines.append("")
@@ -176,6 +205,32 @@ def _emit_subtree(
     child_layout = normalise_layout_type(
         node.properties.get("layout_type", DEFAULT_LAYOUT_TYPE),
     )
+    # Compute this node's own effective grid dims so its children
+    # know which column count to flow into.
+    child_rows = child_cols = 1
+    if child_layout == "grid":
+        child_rows, child_cols = grid_effective_dims(
+            len(node.children), node.properties,
+        )
+    # Containers with a non-place layout must freeze their configured
+    # size: tk's default ``propagate(True)`` makes pack/grid parents
+    # shrink to fit their children, which would collapse a Frame
+    # built at 240×180 down to the natural size of whatever vbox
+    # children it holds. Builder canvas already does this at widget
+    # creation — the exported runtime needs it too.
+    if child_layout != DEFAULT_LAYOUT_TYPE and node.children:
+        lines.append(f"{child_master}.pack_propagate(False)")
+        lines.append(f"{child_master}.grid_propagate(False)")
+        if child_layout == "grid":
+            for rr in range(child_rows):
+                lines.append(
+                    f"{child_master}.grid_rowconfigure({rr}, weight=1)",
+                )
+            for cc in range(child_cols):
+                lines.append(
+                    f"{child_master}.grid_columnconfigure({cc}, weight=1)",
+                )
+        lines.append("")
     try:
         child_spacing = int(
             node.properties.get(
@@ -185,7 +240,7 @@ def _emit_subtree(
         )
     except (TypeError, ValueError):
         child_spacing = 0
-    for child in node.children:
+    for idx, child in enumerate(node.children):
         _emit_subtree(
             child,
             master_var=child_master,
@@ -194,6 +249,9 @@ def _emit_subtree(
             instance_prefix=instance_prefix,
             parent_layout=child_layout,
             parent_spacing=child_spacing,
+            child_index=idx,
+            parent_cols=child_cols,
+            parent_rows=child_rows,
         )
 
 
@@ -210,6 +268,9 @@ def _emit_widget(
     instance_prefix: str = "",
     parent_layout: str = DEFAULT_LAYOUT_TYPE,
     parent_spacing: int = 0,
+    child_index: int = 0,
+    parent_cols: int = 1,
+    parent_rows: int = 1,
 ) -> list[str]:
     descriptor = get_descriptor(node.widget_type)
     if descriptor is None:
@@ -279,7 +340,10 @@ def _emit_widget(
     lines.append(")")
 
     lines.append(
-        _geometry_call(full_name, props, parent_layout, parent_spacing),
+        _geometry_call(
+            full_name, props, parent_layout, parent_spacing,
+            child_index, parent_cols, parent_rows,
+        ),
     )
     lines.extend(descriptor.export_state(full_name, props))
     return lines
@@ -287,7 +351,8 @@ def _emit_widget(
 
 def _geometry_call(
     full_name: str, props: dict, parent_layout: str,
-    parent_spacing: int = 0,
+    parent_spacing: int = 0, child_index: int = 0,
+    parent_cols: int = 1, parent_rows: int = 1,
 ) -> str:
     layout = normalise_layout_type(parent_layout)
     side = pack_side_for(layout)
@@ -315,32 +380,13 @@ def _geometry_call(
             props.get("grid_column", LAYOUT_DEFAULTS["grid_column"]), 0,
         )
         parts = [f"row={row}", f"column={col}"]
-        rs = _safe_int(
-            props.get("grid_rowspan", LAYOUT_DEFAULTS["grid_rowspan"]), 1,
-        )
-        if rs > 1:
-            parts.append(f"rowspan={rs}")
-        cs = _safe_int(
-            props.get(
-                "grid_columnspan", LAYOUT_DEFAULTS["grid_columnspan"],
-            ),
-            1,
-        )
-        if cs > 1:
-            parts.append(f"columnspan={cs}")
         sticky = props.get("grid_sticky", LAYOUT_DEFAULTS["grid_sticky"])
         if sticky:
             parts.append(f'sticky="{sticky}"')
-        padx = _safe_int(
-            props.get("grid_padx", LAYOUT_DEFAULTS["grid_padx"]), 0,
-        )
-        if padx:
-            parts.append(f"padx={padx}")
-        pady = _safe_int(
-            props.get("grid_pady", LAYOUT_DEFAULTS["grid_pady"]), 0,
-        )
-        if pady:
-            parts.append(f"pady={pady}")
+        half = parent_spacing // 2
+        if half > 0:
+            parts.append(f"padx={half}")
+            parts.append(f"pady={half}")
         return f"{full_name}.grid({', '.join(parts)})"
     # place — default
     x = _safe_int(props.get("x"), 0)
@@ -420,3 +466,5 @@ def _safe_int(val, default: int) -> int:
         return int(val)
     except (TypeError, ValueError):
         return default
+
+

@@ -51,7 +51,6 @@ from app.ui.workspace.render import (
     Renderer,
 )
 from app.ui.workspace.layout_overlay import (
-    LAYOUT_OVERLAY_TRIGGERS,
     LayoutOverlayManager,
     _child_manager_kwargs,  # noqa: F401 — re-exported for tests
     _forget_current_manager,  # noqa: F401 — re-exported for tests
@@ -589,6 +588,48 @@ class Workspace(ctk.CTkFrame):
     # ==================================================================
     # Widget lifecycle (event-bus → canvas)
     # ==================================================================
+    def _auto_assign_grid_cell(self, parent_node, node) -> None:
+        """If the new child would land in a grid parent at a cell
+        already taken by a sibling, bump it to the next free cell
+        via row-major scan. Respects an explicit non-default cell
+        the caller already set (e.g. palette drop under the cursor).
+        """
+        if parent_node is None:
+            return
+        from app.widgets.layout_schema import (
+            normalise_layout_type,
+            next_free_grid_cell,
+        )
+        if normalise_layout_type(
+            parent_node.properties.get("layout_type", "place"),
+        ) != "grid":
+            return
+        props = node.properties
+        try:
+            row = int(props.get("grid_row", 0) or 0)
+            col = int(props.get("grid_column", 0) or 0)
+        except (TypeError, ValueError):
+            return
+        # Only auto-assign when the child is sitting at the default
+        # (0, 0) — explicit cursor-based drops already picked their
+        # cell, paste/load keeps saved positions.
+        if row != 0 or col != 0:
+            return
+        occupied_at_00 = any(
+            sibling is not node
+            and int(sibling.properties.get("grid_row", 0) or 0) == 0
+            and int(sibling.properties.get("grid_column", 0) or 0) == 0
+            for sibling in parent_node.children
+        )
+        if not occupied_at_00:
+            return
+        free_row, free_col = next_free_grid_cell(
+            [s for s in parent_node.children if s is not node],
+            parent_node.properties,
+        )
+        props["grid_row"] = free_row
+        props["grid_column"] = free_col
+
     def _on_widget_added(self, node) -> None:
         descriptor = get_descriptor(node.widget_type)
         if descriptor is None:
@@ -602,6 +643,7 @@ class Workspace(ctk.CTkFrame):
                 master = self.canvas
             else:
                 master, _ = parent_entry
+            self._auto_assign_grid_cell(parent_node, node)
         init_kwargs = self._get_radio_init_kwargs(node)
         widget = descriptor.create_widget(
             master, _strip_layout_keys(node.properties),
@@ -668,6 +710,22 @@ class Workspace(ctk.CTkFrame):
                         height=max(1, int(lh * self.zoom.value)),
                     )
                 anchor_widget.pack(**mgr_kwargs)
+            elif manager == "grid":
+                if is_composite and lw > 0 and lh > 0:
+                    anchor_widget.configure(
+                        width=max(1, int(lw * self.zoom.value)),
+                        height=max(1, int(lh * self.zoom.value)),
+                    )
+                anchor_widget.grid(**mgr_kwargs)
+                # Sticky children only stretch when the parent has
+                # row/column weights set — mirror Qt Designer's
+                # default of weight=1 everywhere.
+                parent_entry = self.widget_views.get(parent_node.id)
+                if parent_entry is not None:
+                    self.layout_overlay._configure_grid_weights(
+                        parent_entry[0], parent_node.children,
+                        container_props=parent_node.properties,
+                    )
             else:
                 place_kwargs: dict = {
                     "x": int(lx * self.zoom.value),
@@ -756,7 +814,7 @@ class Workspace(ctk.CTkFrame):
 
     def _on_widget_reparented(
         self, widget_id: str,
-        _old_parent_id: str | None, _new_parent_id: str | None,
+        old_parent_id: str | None, _new_parent_id: str | None,
     ) -> None:
         """When a widget's parent changes, destroy its widget view
         subtree and recreate it under the new parent.
@@ -798,7 +856,9 @@ class Workspace(ctk.CTkFrame):
         for child in node.children:
             self._create_widget_subtree(child)
 
-    def _on_widget_removed(self, widget_id: str) -> None:
+    def _on_widget_removed(
+        self, widget_id: str, parent_id: str | None = None,
+    ) -> None:
         if widget_id not in self.widget_views:
             return
         widget, window_id = self.widget_views.pop(widget_id)
@@ -822,6 +882,11 @@ class Workspace(ctk.CTkFrame):
         Instead we re-`lift()` every sibling from bottom to top so the
         stacking order matches `parent.children`, leaving CTk internals
         below everything we control.
+
+        For vbox / hbox / grid parents, z-order alone doesn't move the
+        children — pack/grid ordering is decided at ``.pack()`` time.
+        So we also rearrange the parent's children so the new model
+        sequence drives the new visual sequence.
         """
         node = self.project.get_widget(widget_id)
         if node is None:
@@ -838,6 +903,15 @@ class Workspace(ctk.CTkFrame):
                 entry[0].lift()
             except tk.TclError:
                 pass
+        if node.parent is not None:
+            from app.widgets.layout_schema import normalise_layout_type
+            parent_layout = normalise_layout_type(
+                node.parent.properties.get("layout_type", "place"),
+            )
+            if parent_layout != "place":
+                self.layout_overlay.rearrange_container_children(
+                    node.parent.id,
+                )
         if widget_id == self.project.selected_id:
             self._schedule_selection_redraw()
         _ = direction  # retained in signature for future use
@@ -855,17 +929,36 @@ class Workspace(ctk.CTkFrame):
             ):
                 self._redraw_document()
             return
-        if prop_name in ("layout_type", "layout_spacing"):
-            # Container-level layout changes — manager swap or spacing
-            # tweak — re-pack / re-place every child through the new
-            # config, then redraw semantic overlays.
+        if prop_name in (
+            "layout_type", "layout_spacing", "grid_rows", "grid_cols",
+        ):
+            # Container-level layout changes — manager swap, spacing
+            # tweak, or grid dimensions — re-pack / re-place every
+            # child through the new config, then redraw overlays.
             self.layout_overlay.rearrange_container_children(widget_id)
             self._redraw_document()
+            if self.project.selected_id is not None:
+                self._schedule_selection_redraw()
             return
-        if prop_name in LAYOUT_OVERLAY_TRIGGERS:
-            # grid_row / grid_column etc. only affect the semantic
-            # hint overlay until Stage 3.2 switches grid to real tk.
-            self._redraw_document()
+        if prop_name in ("grid_sticky", "grid_row", "grid_column"):
+            # Per-child grid tweaks — re-apply .grid() with the new
+            # cell / sticky, no sibling shift.
+            node = self.project.get_widget(widget_id)
+            parent = node.parent if node is not None else None
+            if parent is not None:
+                entry = self.widget_views.get(widget_id)
+                if entry is not None:
+                    widget, _ = entry
+                    descriptor = get_descriptor(node.widget_type)
+                    anchor_widget = (
+                        descriptor.canvas_anchor(widget)
+                        if descriptor is not None else widget
+                    )
+                    self.layout_overlay.apply_child_manager(
+                        anchor_widget, parent, node,
+                    )
+            if widget_id == self.project.selected_id:
+                self._schedule_selection_redraw()
             return
         if prop_name == "stretch":
             # Child stretch hint — re-apply the manager on that child
@@ -885,6 +978,8 @@ class Workspace(ctk.CTkFrame):
                     self.layout_overlay.apply_child_manager(
                         anchor_widget, parent, node,
                     )
+            if widget_id == self.project.selected_id:
+                self._schedule_selection_redraw()
             return
         if widget_id not in self.widget_views:
             return
@@ -1034,6 +1129,19 @@ class Workspace(ctk.CTkFrame):
             properties["y"] = max(0, int(rel_y))
             parent_id = container_node.id
 
+        # Grid target: snap to whatever cell is under the cursor so
+        # the drop lands visibly where the user aimed. Sets the cell
+        # BEFORE add_widget so the initial render uses it.
+        if container_node is not None:
+            from app.widgets.layout_schema import normalise_layout_type
+            if normalise_layout_type(
+                container_node.properties.get("layout_type", "place"),
+            ) == "grid":
+                row, col = self.drag_controller._grid_cell_at(
+                    container_node, cx, cy,
+                )
+                properties["grid_row"] = row
+                properties["grid_column"] = col
         node = WidgetNode(
             widget_type=descriptor.type_name,
             properties=properties,

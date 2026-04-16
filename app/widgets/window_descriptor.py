@@ -10,6 +10,8 @@ from app.core.project import WINDOW_ID, DEFAULT_WINDOW_PROPERTIES
 from app.widgets.base import WidgetDescriptor
 from app.widgets.layout_schema import (
     LAYOUT_CONTAINER_DEFAULTS,
+    LAYOUT_GRID_COLS_ROW,
+    LAYOUT_GRID_ROWS_ROW,
     LAYOUT_SPACING_ROW,
     LAYOUT_TYPE_ROW,
 )
@@ -45,6 +47,8 @@ class WindowDescriptor(WidgetDescriptor):
 
         LAYOUT_TYPE_ROW,
         LAYOUT_SPACING_ROW,
+        LAYOUT_GRID_ROWS_ROW,
+        LAYOUT_GRID_COLS_ROW,
 
         {"name": "grid_style", "type": "grid_style", "label": "",
          "group": "Builder Grid", "row_label": "Style"},

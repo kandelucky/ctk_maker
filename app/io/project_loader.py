@@ -173,6 +173,12 @@ def _migrate_layout_types(documents: list[Document]) -> None:
     becomes ``hbox``; everything else becomes ``vbox`` (tk pack's
     default side was ``top``). The ``pack_side`` key is dropped off
     every child so the new schema stays clean.
+
+    v0.0.12 grid spans (``grid_rowspan`` / ``grid_columnspan``) and
+    per-child grid padding (``grid_padx`` / ``grid_pady``) are
+    dropped on load — v0.0.13 simplified the grid schema to
+    row/column/sticky only. ``grid_row`` / ``grid_column`` /
+    ``grid_sticky`` stay as-is so the user's cell layout survives.
     """
     for doc in documents:
         wp = doc.window_properties or {}
@@ -192,6 +198,12 @@ def _migrate_node_layout(node: WidgetNode) -> None:
     # ``stretch`` hint on the child and a ``layout_spacing`` on the
     # parent. Legacy keys are dropped after translation.
     _migrate_child_pack_to_stretch(props)
+    # v0.0.12 → v0.0.13: drop span + per-cell padding keys.
+    for key in (
+        "grid_rowspan", "grid_columnspan",
+        "grid_padx", "grid_pady",
+    ):
+        props.pop(key, None)
     for child in node.children:
         _migrate_node_layout(child)
 

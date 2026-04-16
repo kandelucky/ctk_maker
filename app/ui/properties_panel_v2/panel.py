@@ -389,6 +389,12 @@ class PropertiesPanelV2(ctk.CTkFrame):
         descriptor = self._current_descriptor()
         if descriptor is None:
             return
+        # layout_type flips which rows are hidden (grid Dimensions
+        # etc.), so rebuild the whole panel rather than patching one
+        # cell — the row count changes.
+        if prop_name == "layout_type":
+            self._rebuild()
+            return
         prop = self._find_prop(descriptor, prop_name)
         iid = self._prop_iids.get(prop_name)
         if prop is not None and iid is not None:
@@ -619,7 +625,10 @@ class PropertiesPanelV2(ctk.CTkFrame):
     # Schema traversal → tree hierarchy
     # ==================================================================
     def _populate_schema(self, descriptor, properties: dict) -> None:
-        schema = self._effective_schema(descriptor)
+        schema = [
+            p for p in self._effective_schema(descriptor)
+            if not self._is_hidden(p, properties)
+        ]
         current_group: str | None = None
         current_subgroup: str | None = None
         group_iid: str = ""
@@ -842,6 +851,21 @@ class PropertiesPanelV2(ctk.CTkFrame):
                 except Exception:
                     result[prop["name"]] = False
         return result
+
+    def _is_hidden(self, prop: dict, properties: dict) -> bool:
+        """Schema rows can declare a ``hidden_when(properties)``
+        callable that makes the row vanish (not just disable) when
+        the predicate holds. Used for layout-specific fields that
+        don't apply under other managers — e.g. grid Dimensions
+        shouldn't even show on a vbox Frame.
+        """
+        fn = prop.get("hidden_when")
+        if callable(fn):
+            try:
+                return bool(fn(properties))
+            except Exception:
+                return False
+        return False
 
     def _row_tags_for(self, pname: str, prop: dict, value) -> tuple[str, ...]:
         tags: list[str] = []

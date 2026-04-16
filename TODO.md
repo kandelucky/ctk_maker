@@ -328,6 +328,40 @@
 
 ---
 
+## Phase 6.5 — Grid WYSIWYG + drag-to-cell + runtime parity (2026-04-17) ✅
+
+Real grid rendering on canvas + a new drag UX that lets widgets
+snap to explicit cells in a grid container. WYSIWYG gap closed for
+grid parents the same way Phase 6.4 closed it for vbox/hbox.
+
+### Grid on canvas
+- [x] **`.grid(row, column, sticky, padx, pady)` for grid parents** — `_child_grid_kwargs()` reads each child's own `grid_row` / `grid_column` / `grid_sticky` and emits real tk grid calls. No more place-fallback stand-in; overlay lines retired with it.
+- [x] **Per-container `grid_rows` / `grid_cols`** — user pins grid size via the Layout group's Dimensions row (default 2×2). `grid_effective_dims()` returns the pinned value as-is — no auto-grow, no auto-shrink, so undo never desynchronises the Inspector readout.
+- [x] **Hidden when non-grid** — `hidden_when` predicate added to the Properties panel (layout_schema rows use it to vanish the Dimensions field on place/vbox/hbox containers instead of greying it out).
+- [x] **`hidden_when` in Properties panel v2** — new schema key; `_populate_schema` filters hidden rows before rendering; panel rebuilds from scratch when `layout_type` flips so rows can appear/disappear.
+
+### Drag-to-cell UX
+- [x] **Cursor-cell snap on release** — `_maybe_grid_drop()` computes the cell under the cursor and writes `grid_row` + `grid_column` on the dragged node via `MultiChangePropertyCommand` (same parent) or pre-sets them on the node before falling through to reparent (cross-parent).
+- [x] **Light-blue dashed cell outline during drag** — 4 `tk.Frame` stripes placed inside the target container form a hollow rectangle around the target cell. Created once per gesture + repositioned on subsequent motion events (recreating every tick froze the UI). Cache key `(container_id, row, col)` short-circuits redundant calls.
+- [x] **x / y stays frozen for grid-parented drags** — `on_motion` skips the `project.update_property` loop when source or target is a grid container. Prevents phantom x/y writes that the grid manager ignores at render time.
+- [x] **Palette drop respects cursor cell** — `_on_palette_drop` writes `grid_row` + `grid_column` from `_grid_cell_at()` before calling `add_widget`, so fresh drops into a grid container land exactly where the user aimed.
+- [x] **Auto-assign next-free cell** — `next_free_grid_cell()` scans row-major on widget-add so siblings created at default `(0, 0)` don't silently overlap the first one. Only triggers when the cell is still `(0, 0)` and something else already claims it; explicit cursor-based drops skip the auto path.
+
+### Runtime parity
+- [x] **`pack_propagate(False)` + `grid_propagate(False)` in the exporter** — every non-place container + every non-place Window emit both propagate calls so runtime Frames keep their configured size. Without this, pack children would shrink a 240×180 Frame to the natural size of whatever got packed in.
+- [x] **`grid_rowconfigure(weight=1)` + `grid_columnconfigure(weight=1)`** — exporter emits weights for the full `grid_rows × grid_cols` range so sticky children actually stretch with their cells at runtime (CTk's default weight is 0).
+- [x] **Selection handles follow drag releases** — `on_release` resets `_drag = None` *before* firing project updates so `_schedule_selection_redraw()`'s `is_dragging()` guard stops short-circuiting.
+- [x] **Pack queue order after reorder** — `rearrange_container_children()` now forgets every sibling first and then re-packs them in model order, instead of forget-and-repack in one pass (which pinned each child `before=` a still-packed next sibling and left the visual queue one step behind the model).
+- [x] **Loader strips legacy grid span / padding keys** — v0.0.12 `grid_rowspan` / `grid_columnspan` / `grid_padx` / `grid_pady` are dropped on load since v0.0.13's simpler child schema (`grid_row` + `grid_column` + `grid_sticky` only) doesn't carry them.
+
+### Cleanup
+- [x] **"Group" palette preset removed** — it was just "Frame with border on," which the plain Frame in Containers can do via the Rectangle → Border toggle. One preset fewer, less palette noise.
+- [x] **Canvas `[vbox]` / `[hbox]` / `[grid]` badges retired** — the textual overlay floated outside the frame bbox on some zoom levels and was redundant with the Object Tree suffix + palette preset name + widget icon. `_draw_layout_badge` removed; `LAYOUT_BADGE_FG` constant deleted.
+- [x] **Dashed grid-cell overlay retired** — the lines were rendered as canvas primitives but a real tk window-item Frame (the grid container) always paints above canvas drawings, so the overlay was always hidden in practice. `_draw_grid_overlay_lines` removed.
+- [x] **`project.reorder_child_at(widget_id, final_index)`** — new API that takes a destination slot in the *result* list, unlike `reparent`'s pre-removal-slot convention. Used by the drag-to-cell same-parent path + `ZOrderCommand.undo/redo` for clean final-position moves without compensation arithmetic.
+
+---
+
 ## Phase 6.4 — Stage 3 WYSIWYG + Layout presets + workspace split (2026-04-17) ✅
 
 Three closely-linked changes shipped together:

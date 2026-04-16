@@ -378,10 +378,11 @@ class Project:
         siblings = self._sibling_list(node)
         if node in siblings:
             siblings.remove(node)
+        parent_id = node.parent.id if node.parent is not None else None
         node.parent = None
         if self.selected_id == widget_id:
             self.select_widget(None)
-        self.event_bus.publish("widget_removed", widget_id)
+        self.event_bus.publish("widget_removed", widget_id, parent_id)
 
     def reparent(
         self,
@@ -713,6 +714,31 @@ class Project:
         self.add_widget(clone, parent_id=parent_id)
         self.select_widget(clone.id)
         return clone.id
+
+    def reorder_child_at(
+        self, widget_id: str, final_index: int,
+    ) -> None:
+        """Move a child to the exact ``final_index`` in its sibling
+        list. Unlike ``reparent``, the index is the destination slot
+        in the *result* list, not the pre-removal slot — callers
+        working with visible positions (grid drag, list reorder)
+        can pass the cursor-derived index directly without the
+        compensation arithmetic ``reparent`` does.
+        """
+        node = self.get_widget(widget_id)
+        if node is None:
+            return
+        siblings = self._sibling_list(node)
+        try:
+            old_index = siblings.index(node)
+        except ValueError:
+            return
+        final_index = max(0, min(len(siblings) - 1, final_index))
+        if final_index == old_index:
+            return
+        siblings.pop(old_index)
+        siblings.insert(final_index, node)
+        self.event_bus.publish("widget_z_changed", widget_id, "reorder")
 
     def bring_to_front(self, widget_id: str) -> None:
         node = self.get_widget(widget_id)

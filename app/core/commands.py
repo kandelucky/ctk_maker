@@ -383,15 +383,11 @@ class ZOrderCommand(Command):
         }.get(direction, "Reorder")
 
     def undo(self, project: "Project") -> None:
-        project.reparent(
-            self.widget_id, self.parent_id, index=self.old_index,
-        )
+        project.reorder_child_at(self.widget_id, self.old_index)
         project.select_widget(self.widget_id)
 
     def redo(self, project: "Project") -> None:
-        project.reparent(
-            self.widget_id, self.parent_id, index=self.new_index,
-        )
+        project.reorder_child_at(self.widget_id, self.new_index)
         project.select_widget(self.widget_id)
 
 
