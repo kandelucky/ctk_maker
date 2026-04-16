@@ -190,6 +190,17 @@ class Project:
                 return doc
         return None
 
+    def get_accent_color(self, document_id: str | None = None) -> str:
+        """Return a document's theme/accent colour.
+
+        Placeholder until per-document accent colours ship — for now
+        every document gets the same cyan. Object Tree / Properties
+        panels tint their border + title with whatever this returns
+        so the UI already tracks the "colour per form" concept the
+        user is designing against.
+        """
+        return "#4fc3d5"
+
     def set_active_document(self, document_id: str) -> None:
         if document_id == self.active_document_id:
             return

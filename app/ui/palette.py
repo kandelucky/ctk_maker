@@ -19,12 +19,14 @@ from __future__ import annotations
 
 import tkinter as tk
 from dataclasses import dataclass
+from typing import Callable
 
 import customtkinter as ctk
 
 from app.core.project import Project
 from app.core.widget_node import WidgetNode
 from app.ui.icons import load_icon
+from app.ui.toolbar import _attach_tooltip
 from app.widgets.registry import get_descriptor
 
 DRAG_THRESHOLD = 5
@@ -87,9 +89,18 @@ CATALOG: tuple[WidgetGroup, ...] = (
 
 
 class Palette(ctk.CTkFrame):
-    def __init__(self, master, project: Project):
+    def __init__(
+        self,
+        master,
+        project: Project,
+        on_collapse_changed: Callable[[bool], None] | None = None,
+    ):
         super().__init__(master, fg_color=PANEL_BG, corner_radius=0)
         self.project = project
+        # Called when the collapse button toggles. Main window uses it
+        # to resize the paned-window pane width so the collapsed
+        # palette only takes up icon-wide space.
+        self._on_collapse_changed = on_collapse_changed
 
         self._drag: dict | None = None
         self._ghost: tk.Toplevel | None = None
@@ -97,6 +108,13 @@ class Palette(ctk.CTkFrame):
         self._group_expanded: dict[str, bool] = {g.title: True for g in CATALOG}
         self._chevron_down = load_icon("chevron-down", size=12)
         self._chevron_right = load_icon("chevron-right", size=12)
+        # Collapse-button chevrons — direction flips when toggled so
+        # the arrow always points toward the action (left = collapse,
+        # right = expand).
+        self._chevron_left_btn = load_icon("chevron-left", size=14)
+        self._chevron_right_btn = load_icon("chevron-right", size=14)
+
+        self._collapsed: bool = False
 
         self._build_header()
         self._build_filter()
@@ -107,16 +125,31 @@ class Palette(ctk.CTkFrame):
     # Static chrome
     # ------------------------------------------------------------------
     def _build_header(self) -> None:
-        title = ctk.CTkLabel(
-            self, text="Widget Box",
+        self._header = ctk.CTkFrame(
+            self, fg_color="transparent", height=28,
+        )
+        self._header.pack(fill="x", pady=(6, 2), padx=4)
+        self._header.pack_propagate(False)
+
+        self._title_lbl = ctk.CTkLabel(
+            self._header, text="Widget Box",
             font=("Segoe UI", 13, "bold"), text_color=TITLE_FG,
         )
-        title.pack(pady=(6, 2), padx=10)
+        self._title_lbl.pack(side="left", expand=True)
+
+        self._collapse_btn = ctk.CTkButton(
+            self._header, text="", image=self._chevron_left_btn,
+            width=22, height=22, corner_radius=3,
+            fg_color="transparent", hover_color=ITEM_HOVER_BG,
+            command=self._toggle_collapsed,
+        )
+        self._collapse_btn.pack(side="right", padx=(0, 4))
+        _attach_tooltip(self._collapse_btn, "Collapse")
 
     def _build_filter(self) -> None:
         self._filter_var = tk.StringVar()
         self._filter_var.trace_add("write", lambda *a: self._on_filter_change())
-        entry = ctk.CTkEntry(
+        self._filter_entry = ctk.CTkEntry(
             self,
             textvariable=self._filter_var,
             placeholder_text="Filter",
@@ -126,7 +159,7 @@ class Palette(ctk.CTkFrame):
             border_width=1,
             corner_radius=3,
         )
-        entry.pack(fill="x", padx=8, pady=(0, 6))
+        self._filter_entry.pack(fill="x", padx=8, pady=(0, 6))
 
     def _build_scroll_body(self) -> None:
         self.scroll = ctk.CTkScrollableFrame(
@@ -148,6 +181,7 @@ class Palette(ctk.CTkFrame):
     def _rebuild_catalog(self) -> None:
         for child in self.body.winfo_children():
             child.destroy()
+        self._first_group_rendered = False
 
         needle = self._filter_text.strip().lower()
         for group in CATALOG:
@@ -159,8 +193,38 @@ class Palette(ctk.CTkFrame):
                 continue
             self._render_group(group, visible_items, force_expanded=bool(needle))
 
+    # ------------------------------------------------------------------
+    # Collapse / expand
+    # ------------------------------------------------------------------
+    def _toggle_collapsed(self) -> None:
+        self._collapsed = not self._collapsed
+        if self._collapsed:
+            self._title_lbl.pack_forget()
+            self._filter_entry.pack_forget()
+            self._collapse_btn.configure(image=self._chevron_right_btn)
+        else:
+            self._title_lbl.pack(side="left", expand=True, before=self._collapse_btn)
+            self._filter_entry.pack(fill="x", padx=8, pady=(0, 6))
+            self._collapse_btn.configure(image=self._chevron_left_btn)
+        self._rebuild_catalog()
+        if self._on_collapse_changed is not None:
+            self._on_collapse_changed(self._collapsed)
+
     def _render_group(self, group: WidgetGroup, items: list[WidgetEntry], *,
                       force_expanded: bool) -> None:
+        # In collapsed mode group headers disappear — we render a thin
+        # separator before every group after the first, then the items.
+        if self._collapsed:
+            if getattr(self, "_first_group_rendered", False):
+                sep = tk.Frame(
+                    self.body, bg="#333333", height=1, highlightthickness=0,
+                )
+                sep.pack(fill="x", padx=6, pady=(4, 2))
+            self._first_group_rendered = True
+            for entry in items:
+                self._render_item(entry)
+            return
+
         header = ctk.CTkFrame(
             self.body, fg_color=GROUP_HEADER_BG, corner_radius=0,
             height=GROUP_HEADER_HEIGHT,
@@ -202,15 +266,25 @@ class Palette(ctk.CTkFrame):
         row.pack_propagate(False)
 
         icon = load_icon(entry.icon, size=ICON_SIZE)
-        icon_lbl = ctk.CTkLabel(row, text="", image=icon, width=18)
-        icon_lbl.pack(side="left", padx=(12, 6))
-
-        fg = ITEM_FG if implemented else ITEM_DISABLED_FG
-        name_lbl = ctk.CTkLabel(
-            row, text=entry.display_name,
-            font=("Segoe UI", 10), text_color=fg, anchor="w",
-        )
-        name_lbl.pack(side="left", fill="x", expand=True)
+        if self._collapsed:
+            # icon-only: centered, no padding that reserves label room
+            icon_lbl = ctk.CTkLabel(row, text="", image=icon)
+            icon_lbl.pack(expand=True)
+            bind_targets = (row, icon_lbl)
+            # Tooltip replaces the visible label.
+            if implemented:
+                _attach_tooltip(icon_lbl, entry.display_name)
+                _attach_tooltip(row, entry.display_name)
+        else:
+            icon_lbl = ctk.CTkLabel(row, text="", image=icon, width=18)
+            icon_lbl.pack(side="left", padx=(12, 6))
+            fg = ITEM_FG if implemented else ITEM_DISABLED_FG
+            name_lbl = ctk.CTkLabel(
+                row, text=entry.display_name,
+                font=("Segoe UI", 10), text_color=fg, anchor="w",
+            )
+            name_lbl.pack(side="left", fill="x", expand=True)
+            bind_targets = (row, icon_lbl, name_lbl)
 
         if not implemented:
             return
@@ -221,7 +295,7 @@ class Palette(ctk.CTkFrame):
         def on_leave(_e, r=row):
             r.configure(fg_color="transparent")
 
-        for w in (row, icon_lbl, name_lbl):
+        for w in bind_targets:
             w.bind("<Enter>", on_enter, add="+")
             w.bind("<Leave>", on_leave, add="+")
             self._bind_drag(w, descriptor)

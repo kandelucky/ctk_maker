@@ -37,7 +37,11 @@ from app.ui.dialogs import RenameDialog
 from app.ui.icons import load_icon, load_tk_icon
 from app.ui.selection_controller import SelectionController
 from app.ui.zoom_controller import ZoomController
-from app.widgets.layout_schema import LAYOUT_NODE_ONLY_KEYS
+from app.widgets.layout_schema import (
+    LAYOUT_DISPLAY_NAMES,
+    LAYOUT_NODE_ONLY_KEYS,
+    normalise_layout_type,
+)
 from app.widgets.registry import get_descriptor
 
 # ---- Drag + canvas ----------------------------------------------------------
@@ -482,14 +486,18 @@ class Workspace(ctk.CTkFrame):
         into the chrome title strip — only Frame-level containers get
         a separate badge here.
         """
-        doc_layout = doc.window_properties.get("layout_type", "place")
+        doc_layout = normalise_layout_type(
+            doc.window_properties.get("layout_type", "place"),
+        )
         if doc_layout == "grid":
             self._draw_grid_overlay_lines(
                 doc.root_widgets, dx1, dy1, dx2, dy2,
             )
         zoom = self.zoom.value
         for container in self._iter_containers(doc.root_widgets):
-            layout = container.properties.get("layout_type", "place")
+            layout = normalise_layout_type(
+                container.properties.get("layout_type", "place"),
+            )
             if layout == "place":
                 continue
             try:
@@ -770,9 +778,12 @@ class Workspace(ctk.CTkFrame):
         is_active = doc.id == self.project.active_document_id
         if is_active and self._dirty:
             title_raw = f"{title_raw} *"
-        layout = doc.window_properties.get("layout_type", "place")
+        layout = normalise_layout_type(
+            doc.window_properties.get("layout_type", "place"),
+        )
         if layout != "place":
-            title_raw = f"{title_raw}  · {layout}"
+            display = LAYOUT_DISPLAY_NAMES.get(layout, layout).lower()
+            title_raw = f"{title_raw}  · {display}"
         max_chars = max(8, dw // 9)
         if len(title_raw) > max_chars:
             title_raw = title_raw[: max_chars - 1] + "…"

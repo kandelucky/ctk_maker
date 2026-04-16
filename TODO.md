@@ -328,6 +328,48 @@
 
 ---
 
+## Phase 6.3 — Layout managers split + icons (2026-04-16) 🚧
+
+Preparatory refactor before the real WYSIWYG arranger (stage 3). The tk
+`pack` geometry manager is split into two distinct layout types, matching
+Qt Designer's 20-year-old UX: `Vertical Layout` (QVBoxLayout, tk
+`side=top`) and `Horizontal Layout` (QHBoxLayout, tk `side=left`). The
+generic `pack` was ergonomically ambiguous — 95% of real layouts pick one
+direction and stick with it; the per-child `pack_side` row just created
+confusion.
+
+### Data model
+- [ ] `layout_type` ∈ `place / pack / grid` → `place / vbox / hbox / grid`.
+- [ ] Child widgets drop the `pack_side` property entirely — direction comes
+  from the parent's type. `pack_fill`, `pack_expand`, `pack_padx`,
+  `pack_pady` stay on the child.
+- [ ] Load migration for v0.0.10 `.ctkproj` files: `layout_type == "pack"`
+  → `vbox` (the pack default was `side=top`, so vertical is the safe
+  fallback).
+
+### Code exporter
+- [ ] `vbox` → `.pack(side="top", …)`, `hbox` → `.pack(side="left", …)`.
+- [ ] `pack_side` per-child is no longer read.
+
+### Icons (Lucide)
+- [ ] `place` → `crosshair`
+- [ ] `vbox` → `rows-3` (≡ horizontal bars stacked vertically — matches Qt)
+- [ ] `hbox` → `columns-3` (⋮⋮⋮ vertical bars side by side — matches Qt)
+- [ ] `grid` → `grid-3x3`
+
+### Surface area
+- [ ] Properties panel enum popup shows icon + display name per option
+  (`Absolute` / `Vertical` / `Horizontal` / `Grid`). `tk.Menu` supports
+  `image=` on `add_command` — no custom popup needed.
+- [ ] Canvas chrome title suffix (` · pack` → ` · vertical` / ` · horizontal`).
+- [ ] Canvas container badges (`[pack]` → `[vbox]` / `[hbox]`).
+- [ ] Object Tree suffix likewise.
+
+Canvas drag/drop stays absolute — the real WYSIWYG pack/grid arranger is
+still deferred to stage 3.
+
+---
+
 ## Phase 6 — Layout managers, stage 1 + 2 (2026-04-16) ✅
 
 Tk's three geometry managers (`place` / `pack` / `grid`) modelled as a per-container property. Canvas editing stays absolute; only the exported `.py` file changes shape.

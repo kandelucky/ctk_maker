@@ -53,6 +53,12 @@ def load_project(project: Project, path: str | Path) -> None:
     if not documents:
         raise ProjectLoadError("Project file has no documents.")
 
+    # v0.0.10 shipped with ``layout_type == "pack"`` and a per-child
+    # ``pack_side``. v0.0.11 split pack into ``vbox`` / ``hbox`` and
+    # removed pack_side — rewrite both on load so older projects
+    # round-trip cleanly.
+    _migrate_layout_types(documents)
+
     name = data.get("name")
     if isinstance(name, str) and name.strip():
         project.name = name.strip()
@@ -159,6 +165,38 @@ def _documents_from_v2(data: dict) -> list[Document]:
                 f"documents[{i}] failed to load: {exc}"
             ) from exc
     return documents
+
+
+def _migrate_layout_types(documents: list[Document]) -> None:
+    """In-place upgrade of legacy ``pack`` containers. A ``pack``
+    parent with any child whose ``pack_side`` is ``left`` / ``right``
+    becomes ``hbox``; everything else becomes ``vbox`` (tk pack's
+    default side was ``top``). The ``pack_side`` key is dropped off
+    every child so the new schema stays clean.
+    """
+    for doc in documents:
+        wp = doc.window_properties or {}
+        if wp.get("layout_type") == "pack":
+            wp["layout_type"] = _infer_pack_direction(doc.root_widgets)
+        for root in doc.root_widgets:
+            _migrate_node_layout(root)
+
+
+def _migrate_node_layout(node: WidgetNode) -> None:
+    props = node.properties
+    if props.get("layout_type") == "pack":
+        props["layout_type"] = _infer_pack_direction(node.children)
+    props.pop("pack_side", None)
+    for child in node.children:
+        _migrate_node_layout(child)
+
+
+def _infer_pack_direction(children: list[WidgetNode]) -> str:
+    for child in children:
+        side = child.properties.get("pack_side")
+        if side in ("left", "right"):
+            return "hbox"
+    return "vbox"
 
 
 def _add_recursive(

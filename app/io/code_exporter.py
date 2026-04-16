@@ -34,6 +34,7 @@ from app.widgets.layout_schema import (
     LAYOUT_DEFAULTS,
     LAYOUT_NODE_ONLY_KEYS,
     normalise_layout_type,
+    pack_side_for,
 )
 from app.widgets.registry import get_descriptor
 
@@ -263,11 +264,9 @@ def _geometry_call(
     full_name: str, props: dict, parent_layout: str,
 ) -> str:
     layout = normalise_layout_type(parent_layout)
-    if layout == "pack":
-        parts: list[str] = []
-        side = props.get("pack_side", LAYOUT_DEFAULTS["pack_side"])
-        if side and side != LAYOUT_DEFAULTS["pack_side"]:
-            parts.append(f'side="{side}"')
+    side = pack_side_for(layout)
+    if side is not None:
+        parts: list[str] = [f'side="{side}"']
         fill = props.get("pack_fill", LAYOUT_DEFAULTS["pack_fill"])
         if fill and fill != LAYOUT_DEFAULTS["pack_fill"]:
             parts.append(f'fill="{fill}"')

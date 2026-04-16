@@ -32,10 +32,12 @@ from app.core.commands import (
 )
 from app.core.logger import log_error
 from app.core.project import WINDOW_ID, Project
-from app.ui.icons import load_icon
+from app.ui.icons import load_icon, load_tk_icon
 from app.widgets.layout_schema import (
     DEFAULT_LAYOUT_TYPE,
     LAYOUT_DEFAULTS,
+    LAYOUT_DISPLAY_NAMES,
+    LAYOUT_ICON_NAMES,
     child_layout_schema,
 )
 from app.widgets.registry import get_descriptor
@@ -872,6 +874,10 @@ class PropertiesPanelV2(ctk.CTkFrame):
         node = self.project.get_widget(self.current_id)
         current = node.properties.get(pname) if node else None
         menu = tk.Menu(self, tearoff=0, **MENU_STYLE)
+        # tk.Menu drops PhotoImage refs as soon as the caller scope
+        # returns — stash them on the menu itself so the icons
+        # actually render.
+        icon_refs: list = []
         for opt in options:
             stored = (
                 ANCHOR_LABEL_TO_CODE.get(opt, opt)
@@ -882,11 +888,25 @@ class PropertiesPanelV2(ctk.CTkFrame):
                 commit_val = ANCHOR_LABEL_TO_CODE.get(opt, "center")
             else:
                 commit_val = opt
-            menu.add_command(
-                label=f"{prefix}{opt}",
-                command=lambda v=commit_val, p=pname:
+            label_text = opt
+            icon_image = None
+            if ptype == "layout_type":
+                label_text = LAYOUT_DISPLAY_NAMES.get(opt, opt)
+                icon_name = LAYOUT_ICON_NAMES.get(opt)
+                if icon_name:
+                    icon_image = load_tk_icon(icon_name, size=14)
+                    if icon_image is not None:
+                        icon_refs.append(icon_image)
+            kwargs = {
+                "label": f"{prefix}{label_text}",
+                "command": lambda v=commit_val, p=pname:
                     self._commit_prop(p, v),
-            )
+            }
+            if icon_image is not None:
+                kwargs["image"] = icon_image
+                kwargs["compound"] = "left"
+            menu.add_command(**kwargs)
+        menu._layout_icon_refs = icon_refs  # keep refs alive
         try:
             menu.tk_popup(x_root, y_root)
         finally:

@@ -2,7 +2,7 @@
 
 A desktop visual designer for **CustomTkinter** — drag and drop widgets onto a canvas, edit their properties live, and export the result as clean runnable Python.
 
-> **Status:** v0.0.10 — active development. Phase 6 (Layout managers, stage 1+2) complete. Containers now carry a `layout_type` (`place` / `pack` / `grid`); the code exporter emits the matching geometry call per parent, and the canvas surfaces the choice through container badges, dashed grid-cell overlays, and Object Tree suffixes. Drag/drop on the canvas is still absolute placement — the WYSIWYG pack/grid arranger is stage 3.
+> **Status:** v0.0.11 — active development. Phase 6 (Layout managers, stage 1 + 2 + 6.3 split) complete. Containers carry a `layout_type` ∈ `place / vbox / hbox / grid` matching Qt Designer's 20-year-old UX; the code exporter emits the matching geometry call per parent; the Properties panel dropdown shows each option with a Lucide icon (`crosshair` / `rows-3` / `columns-3` / `grid-3x3`); and the canvas surfaces the choice through container badges, dashed grid-cell overlays, and Object Tree suffixes. Drag/drop on the canvas is still absolute placement — the WYSIWYG pack/grid arranger is stage 3.
 
 [![v0.0.9](docs/history/v0.0.9.png)](docs/history/v0.0.9.png)
 
@@ -159,11 +159,11 @@ python main.py
 - [x] Light / Dark theme toggle
 - [x] **Window Settings** — title, size, `fg_color` live preview, resizable, frameless, builder grid (style / colour / spacing)
 - [x] **Multi-document canvas** — main window + N dialogs in one project, per-form chrome, drag-to-move, active highlight, smart mask for overlapping forms, AddDialog preset picker, cross-document widget drag, `AddDocument` / `DeleteDocument` / `MoveDocument` undo entries
-- [x] **Layout managers (stage 1+2)** — every container (Window, Frame, ScrollableFrame) carries `layout_type` ∈ `place / pack / grid`; child widgets gain `pack_*` / `grid_*` rows in Properties driven by their parent; code exporter emits the matching `.place()` / `.pack()` / `.grid()` call; canvas surfaces the choice via chrome title suffix, container badges and dashed grid-cell overlays; Object Tree marks containers with `[pack]` / `[grid]`
+- [x] **Layout managers (stage 1 + 2 + 6.3 split)** — every container (Window, Frame, ScrollableFrame) carries `layout_type` ∈ `place / vbox / hbox / grid` (Qt Designer style — `pack` was split into Vertical / Horizontal for cleaner UX); child widgets gain parent-driven `pack_*` / `grid_*` rows in Properties; code exporter emits the matching `.place()` / `.pack(side="top"/"left")` / `.grid()` call; Properties panel dropdown renders each option with its Lucide icon (`crosshair` / `rows-3` / `columns-3` / `grid-3x3`); canvas shows chrome title suffix, container badges and dashed grid-cell overlays; Object Tree marks containers with `[vbox]` / `[hbox]` / `[grid]`; legacy `pack` projects auto-migrate to `vbox` / `hbox` on load
 
 ### Next
 - [ ] Remaining widget — `CTkScrollableFrame` + `CTkTabview` nested-children path (composite widget integration)
-- [ ] Layout managers (stage 3) — true WYSIWYG: pack/grid containers arrange children automatically on canvas; drag in those containers reorders rather than repositions
+- [ ] Layout managers (stage 3) — true WYSIWYG: vbox / hbox / grid containers arrange children automatically on canvas; drag in those containers reorders rather than repositions
 - [ ] Polish — marquee selection, snap-to-grid, alignment guides, asset manager
 - [ ] Advanced — custom user widgets, variables panel, event handlers, templates, plugin system
 

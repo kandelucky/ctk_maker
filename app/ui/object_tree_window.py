@@ -27,6 +27,7 @@ from app.core.commands import (
 )
 from app.ui.dialogs import RenameDialog
 from app.ui.icons import load_icon, load_tk_icon
+from app.widgets.layout_schema import normalise_layout_type
 from app.widgets.registry import all_descriptors, get_descriptor
 
 if TYPE_CHECKING:
@@ -244,42 +245,65 @@ class ObjectTreePanel(ctk.CTkFrame):
         # container taller than its assigned pane size.
         self.pack_propagate(False)
 
-        # Centered title — mirrors the Properties panel header so
-        # the docked right sidebar reads as two parallel panels.
-        title = ctk.CTkLabel(
-            self, text="Object Tree", font=("Segoe UI", 13, "bold"),
-        )
-        title.pack(pady=(6, 2), padx=10)
+        accent = self.project.get_accent_color()
 
-        # Active-document status strip — pinned to the TOP of the
-        # panel right below the title, matching the Properties
-        # panel's type-header stripe position. Shows which form is
-        # currently being edited. Click to open its Window settings.
-        doc_header = tk.Frame(
-            self, bg="#2d2d30", highlightthickness=0, height=28,
+        # Accent-coloured border wrap. The 1px border is the active
+        # document's theme colour, so the user can see at a glance
+        # which form this panel tracks. The title overlaps the top
+        # border line (see below), which visually breaks it the way
+        # a Qt Designer dock title does.
+        wrap = tk.Frame(
+            self, bg=BG,
+            highlightbackground=accent,
+            highlightcolor=accent,
+            highlightthickness=1,
         )
-        doc_header.pack(side="top", fill="x", pady=(0, 2))
-        doc_header.pack_propagate(False)
+        # Top pady leaves room for the title to sit on the top border.
+        wrap.pack(fill="both", expand=True, padx=4, pady=(10, 4))
+        wrap.pack_propagate(False)
+        self._accent_wrap = wrap
 
-        container = tk.Frame(self, bg=BG, highlightthickness=0)
-        container.pack(fill="both", expand=True, padx=8, pady=(6, 8))
+        # Title — NOT inside wrap. Placed on the panel with an
+        # anchor=n at the top, so it sits half above and half on the
+        # wrap's top border. bg=BG (same as panel) "cuts out" the
+        # border segment under the title text, producing the classic
+        # fieldset / group-box look.
+        self._title = tk.Label(
+            self, text="Object Tree",
+            bg=BG, fg=accent,
+            font=("Segoe UI", 10),
+        )
+        self._title.place(relx=0.5, y=0, anchor="n")
+
+        container = tk.Frame(wrap, bg=BG, highlightthickness=0)
+        container.pack(fill="both", expand=True, padx=6, pady=(8, 6))
         container.pack_propagate(False)
         self._tree_container = container
+
+        # Active-document status strip — pinned to the BOTTOM of the
+        # container. Shows which form is currently being edited; click
+        # to open its Window settings. Accent fg matches the border so
+        # it reads as "this is the form this panel is bound to".
+        doc_header = tk.Frame(
+            container, bg=BG, highlightthickness=0, height=20,
+        )
+        doc_header.pack(side="bottom", fill="x", pady=(4, 0))
+        doc_header.pack_propagate(False)
         self._doc_header_icon = load_tk_icon(
-            "app-window", size=16, color="#cccccc",
+            "app-window", size=14, color=accent,
         )
         self._doc_header_icon_label = tk.Label(
             doc_header,
             image=self._doc_header_icon,
-            bg="#2d2d30",
+            bg=BG,
             borderwidth=0,
         )
-        self._doc_header_icon_label.pack(side="left", padx=(8, 6))
+        self._doc_header_icon_label.pack(side="left", padx=(2, 6))
         self._doc_header_label = tk.Label(
             doc_header,
             text="",
-            bg="#2d2d30",
-            fg="#cccccc",
+            bg=BG,
+            fg=accent,
             font=("Segoe UI", 10, "bold"),
             anchor="w",
         )
@@ -618,7 +642,30 @@ class ObjectTreePanel(ctk.CTkFrame):
     # Event-bus callbacks
     # ------------------------------------------------------------------
     def _on_project_changed(self, *_args, **_kwargs) -> None:
+        self._refresh_accent()
         self.refresh()
+
+    def _refresh_accent(self) -> None:
+        """Re-tint border / title / doc-header using the active
+        document's accent color. Called on init and whenever the
+        active document changes."""
+        accent = self.project.get_accent_color()
+        if hasattr(self, "_accent_wrap"):
+            self._accent_wrap.configure(
+                highlightbackground=accent,
+                highlightcolor=accent,
+            )
+        if hasattr(self, "_title"):
+            self._title.configure(fg=accent)
+        if hasattr(self, "_doc_header_label"):
+            self._doc_header_label.configure(fg=accent)
+        if hasattr(self, "_doc_header_icon_label"):
+            self._doc_header_icon = load_tk_icon(
+                "app-window", size=14, color=accent,
+            )
+            self._doc_header_icon_label.configure(
+                image=self._doc_header_icon,
+            )
 
     def _on_selection_changed(self, widget_id: str | None) -> None:
         if self._syncing:
@@ -701,7 +748,9 @@ class ObjectTreePanel(ctk.CTkFrame):
         if descriptor is not None and getattr(
             descriptor, "is_container", False,
         ):
-            layout = node.properties.get("layout_type", "place")
+            layout = normalise_layout_type(
+                node.properties.get("layout_type", "place"),
+            )
             if layout != "place":
                 base_name = f"{base_name}  [{layout}]"
         depth = self._node_depth(node)

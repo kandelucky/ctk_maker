@@ -53,7 +53,7 @@ APPEARANCE_MODES = ["Light", "Dark", "System"]
 
 ABOUT_TEXT = (
     "CTk Visual Builder\n"
-    "v0.0.10\n\n"
+    "v0.0.11\n\n"
     "Drag-and-drop designer for CustomTkinter that exports clean Python code.\n\n"
     "Built with:\n"
     "  • CustomTkinter (MIT)\n"
@@ -138,7 +138,10 @@ class MainWindow(ctk.CTk):
         )
         self.paned.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
-        self.palette = Palette(self.paned, self.project)
+        self.palette = Palette(
+            self.paned, self.project,
+            on_collapse_changed=self._on_palette_collapsed,
+        )
         self.workspace = Workspace(self.paned, self.project)
 
         # Right sidebar: Object Tree docked above the Properties panel
@@ -185,6 +188,21 @@ class MainWindow(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_window_close)
 
         self.after(120, self._show_startup_dialog)
+
+    # ------------------------------------------------------------------
+    # Palette collapse — Widget Box shrinks to an icon-only strip.
+    # Kept here (not in Palette) because only the main PanedWindow
+    # knows how to resize the pane that hosts it.
+    # ------------------------------------------------------------------
+    def _on_palette_collapsed(self, collapsed: bool) -> None:
+        width = 48 if collapsed else 200
+        minsize = 44 if collapsed else 150
+        try:
+            self.paned.paneconfigure(
+                self.palette, width=width, minsize=minsize,
+            )
+        except tk.TclError:
+            pass
 
     # ------------------------------------------------------------------
     # Non-Latin keyboard layout fallback
