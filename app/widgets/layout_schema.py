@@ -48,7 +48,13 @@ LAYOUT_ICON_NAMES: dict[str, str] = {
 _VBOX_SIDE = "top"
 _HBOX_SIDE = "left"
 
-# Container row — append to a container's property_schema.
+# Container rows — append to a container's property_schema. The
+# Manager row is always visible; ``Spacing`` is only meaningful for
+# vbox/hbox/grid layouts, so the panel's ``disabled_when`` grey-
+# scales it under the default ``place`` mode (where pack/grid aren't
+# in use). The two rows are intentionally split — callers may skip
+# the spacing row on a container that has no space-aware layout
+# (e.g. Tabview, whose layout is internal).
 LAYOUT_TYPE_ROW = {
     "name": "layout_type",
     "type": "layout_type",
@@ -56,14 +62,29 @@ LAYOUT_TYPE_ROW = {
     "group": "Layout",
     "row_label": "Manager",
 }
+LAYOUT_SPACING_ROW = {
+    "name": "layout_spacing",
+    "type": "number",
+    "label": "",
+    "group": "Layout",
+    "row_label": "Spacing",
+    "min": 0,
+    "max": 200,
+    "disabled_when": lambda p: normalise_layout_type(
+        p.get("layout_type", "place"),
+    ) == "place",
+}
+CONTAINER_LAYOUT_ROWS: list[dict] = [LAYOUT_TYPE_ROW, LAYOUT_SPACING_ROW]
 
 # Defaults merged into every child node so save / undo / export all
 # see consistent values regardless of which manager is active.
+# Qt Designer inspiration: per-child layout tuning is deliberately
+# thin — a ``stretch`` hint is the only knob on the child; margins
+# / spacing live on the parent (see ``LAYOUT_CONTAINER_DEFAULTS``).
 LAYOUT_DEFAULTS: dict = {
-    "pack_fill": "none",
-    "pack_expand": False,
-    "pack_padx": 0,
-    "pack_pady": 0,
+    # fixed = natural size, fill = stretch across-axis,
+    # grow = take extra space + fill both.
+    "stretch": "fixed",
     "grid_row": 0,
     "grid_column": 0,
     "grid_rowspan": 1,
@@ -73,34 +94,39 @@ LAYOUT_DEFAULTS: dict = {
     "grid_pady": 0,
 }
 
-# Keys the workspace must strip from CTk constructor / configure
-# kwargs — they're stored on the node only for export and the panel.
-# ``pack_side`` stays in the strip list because legacy v0.0.10
-# projects may still carry it; the migration layer removes it but
-# the workspace must not hand it to CTk if it survives.
-LAYOUT_NODE_ONLY_KEYS = frozenset(LAYOUT_DEFAULTS.keys()) | {
-    "layout_type", "pack_side",
+# Defaults merged onto a container node itself. ``layout_spacing``
+# controls the gap between siblings for pack (vbox/hbox) + grid.
+LAYOUT_CONTAINER_DEFAULTS: dict = {
+    "layout_spacing": 4,
 }
 
-PACK_FILL_OPTIONS = ("none", "x", "y", "both")
+# Keys the workspace must strip from CTk constructor / configure
+# kwargs — they're stored on the node only for export and the panel.
+# ``pack_side`` / ``pack_fill`` / ``pack_expand`` / ``pack_padx`` /
+# ``pack_pady`` stay in the strip list because legacy v0.0.10 — v0.0.11
+# projects may still carry them; the migration layer rewrites them to
+# ``stretch`` but the workspace must not hand a stale copy to CTk if
+# one survives.
+LAYOUT_NODE_ONLY_KEYS = frozenset(LAYOUT_DEFAULTS.keys()) | {
+    "layout_type", "layout_spacing",
+    "pack_side", "pack_fill", "pack_expand",
+    "pack_padx", "pack_pady",
+}
+
 GRID_STICKY_OPTIONS = (
     "", "n", "s", "e", "w",
     "ns", "ew", "ne", "nw", "se", "sw",
     "nsew",
 )
+STRETCH_OPTIONS = ("fixed", "fill", "grow")
+STRETCH_TO_INT: dict[str, int] = {"fixed": 0, "fill": 1, "grow": 2}
+STRETCH_INT_TO_LABEL: dict[int, str] = {0: "fixed", 1: "fill", 2: "grow"}
 LAYOUT_TYPE_OPTIONS = LAYOUT_TYPES
 
 
 _PACK_ROWS: list[dict] = [
-    {"name": "pack_fill", "type": "pack_fill", "label": "",
-     "group": "Layout", "row_label": "Fill"},
-    {"name": "pack_expand", "type": "boolean", "label": "",
-     "group": "Layout", "row_label": "Expand"},
-    {"name": "pack_padx", "type": "number", "label": "X",
-     "group": "Layout", "pair": "pack_pad", "row_label": "Padding",
-     "min": 0, "max": 200},
-    {"name": "pack_pady", "type": "number", "label": "Y",
-     "group": "Layout", "pair": "pack_pad", "min": 0, "max": 200},
+    {"name": "stretch", "type": "stretch", "label": "",
+     "group": "Layout", "row_label": "Stretch"},
 ]
 
 _GRID_ROWS: list[dict] = [

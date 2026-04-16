@@ -328,7 +328,88 @@
 
 ---
 
-## Phase 6.3 — Layout managers split + icons (2026-04-16) 🚧
+## Phase 6.4 — Stage 3 WYSIWYG + Layout presets + workspace split (2026-04-17) ✅
+
+Three closely-linked changes shipped together:
+
+### Stage 3.1 — real pack() for vbox / hbox on canvas
+- [x] **Canvas matches runtime** — children of a vbox / hbox Frame now
+  render through actual tk `pack(side="top"/"left")`, not absolute
+  `place(x, y)`. The gap between "what the builder shows" and "what the
+  exported .py produces" is closed for the first time.
+- [x] **`_child_manager_kwargs(parent_node, child_props, zoom)`** — the
+  workspace's new seam: decides manager name + kwargs from the parent's
+  `layout_type`, applies `stretch` + `layout_spacing` to real tk calls.
+- [x] **`_apply_child_manager()` + `_rearrange_container_children()`** —
+  swap managers on `layout_type` change without destroying the widget;
+  `_forget_current_manager()` cleans up whichever manager is active.
+- [x] **`pack_propagate(False) + grid_propagate(False) on every
+  container at creation time** — Frames keep their configured size
+  regardless of how their children pack. Without this, dropping a
+  button into a `vbox` Frame shrank the frame to the button's
+  dimensions and hid the outline.
+- [x] **Property-change routing** — `layout_type` / `layout_spacing` on
+  a container triggers a full re-arrangement; `stretch` on a child
+  re-applies the manager on that child only.
+- [x] **Grid stays on place fallback** — `layout_type=grid` still
+  renders children via `place()` for now so grid-cell UX doesn't
+  regress; real grid lands in Stage 3.2.
+- [x] **Document-level layout deferred** — root widgets in a document
+  (outside any Frame) still use `canvas.create_window()` because the
+  document itself isn't a real CTk container.
+
+### Layout presets + simplified child schema
+- [x] **Palette "Layouts" category** — four ready-made Frame presets
+  matching Qt Designer: `Vertical Layout` (vbox), `Horizontal Layout`
+  (hbox), `Grid Layout` (grid), `Group` (Frame with border). Backed
+  by the same `CTkFrameDescriptor` but with different
+  `preset_overrides` that the palette merges on creation.
+- [x] **`WidgetEntry` gains `preset_overrides` + `default_name`** — the
+  drag pipeline (palette ghost, canvas drop, click-to-add) carries
+  these through so `Vertical Layout 1` shows up in the Object Tree,
+  not `Frame 4`.
+- [x] **Child schema collapses 4 → 1** — `pack_fill` / `pack_expand`
+  / `pack_padx` / `pack_pady` are gone from the child's Properties
+  panel. A single `stretch` enum (`fixed` / `fill` / `grow`) replaces
+  all four and translates to the right tk pack kwargs at emit time.
+  Qt Designer takes the same "one knob on the child" approach with
+  `QSizePolicy`.
+- [x] **`layout_spacing` on the parent** — single number applied as
+  half-spacing on each child's padx/pady so consecutive siblings end
+  up one full spacing apart. Disabled (greyed) when parent is in
+  `place` mode since it has no effect there.
+- [x] **Load migration v0.0.11 → v0.0.12** — `_migrate_child_pack_to_stretch`
+  on every node: `pack_expand=True` → `stretch="grow"`, `pack_fill!="none"`
+  → `stretch="fill"`, else `stretch="fixed"`. Legacy pack_* keys are
+  stripped after translation.
+
+### Workspace split — 2372-line `workspace.py` → 6-file package
+Old `app/ui/workspace.py` moved to `app/ui/workspace/`:
+- [x] **`core.py` (1234 ხაზი)** — orchestrator; __init__, canvas
+  setup, event bus wiring, widget lifecycle, canvas events.
+- [x] **`chrome.py` (435 ხაზი)** — per-document title strip +
+  settings / close buttons + drag-to-move.
+- [x] **`layout_overlay.py` (365 ხაზი)** — Stage 3 helpers
+  (`_child_manager_kwargs` etc.) + semantic canvas overlays (badges,
+  dashed grid lines).
+- [x] **`render.py` (288 ხაზი)** — document rect + builder grid +
+  two-layer visibility mask (stops widgets from punching through
+  overlapping documents).
+- [x] **`drag.py` (287 ხაზი)** — widget drag-to-move / reparent
+  gesture controller.
+- [x] **`controls.py` (268 ხაზი)** — tool bar (Select / Hand),
+  status bar, pan state, keybindings.
+- [x] **`__init__.py`** — thin re-export so
+  `from app.ui.workspace import Workspace` keeps working.
+
+Net: core.py shrank 48% (2372 → 1234). Every sibling module owns
+its own domain; Workspace holds the refs and exposes thin delegators
+where the old private API surface is still reached from other call
+sites.
+
+---
+
+## Phase 6.3 — Layout managers split + icons (2026-04-16) ✅
 
 Preparatory refactor before the real WYSIWYG arranger (stage 3). The tk
 `pack` geometry manager is split into two distinct layout types, matching

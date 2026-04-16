@@ -52,6 +52,18 @@ class WidgetEntry:
     type_name: str
     display_name: str
     icon: str
+    # Preset property overrides — tuple of (key, value) pairs merged
+    # on top of ``descriptor.default_properties`` when this palette
+    # item creates a new node. Used to expose Qt Designer-style
+    # ready-made layout containers (Vertical / Horizontal / Grid /
+    # Group) as distinct palette entries backed by the same CTkFrame
+    # descriptor but with different default layout_type / border.
+    preset_overrides: tuple[tuple[str, object], ...] = ()
+    # Auto-assigned ``node.name`` on creation. None falls back to
+    # the project's widget-type counter naming. Used so a dropped
+    # ``Vertical Layout`` shows up in the Object Tree as
+    # "Vertical Layout 1" instead of "Frame 4".
+    default_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -61,6 +73,48 @@ class WidgetGroup:
 
 
 CATALOG: tuple[WidgetGroup, ...] = (
+    WidgetGroup("Layouts", (
+        WidgetEntry(
+            "CTkFrame", "Vertical Layout", "rows-3",
+            preset_overrides=(
+                ("layout_type", "vbox"),
+                ("fg_color", "transparent"),
+                ("width", 240),
+                ("height", 180),
+            ),
+            default_name="Vertical Layout",
+        ),
+        WidgetEntry(
+            "CTkFrame", "Horizontal Layout", "columns-3",
+            preset_overrides=(
+                ("layout_type", "hbox"),
+                ("fg_color", "transparent"),
+                ("width", 320),
+                ("height", 60),
+            ),
+            default_name="Horizontal Layout",
+        ),
+        WidgetEntry(
+            "CTkFrame", "Grid Layout", "grid-3x3",
+            preset_overrides=(
+                ("layout_type", "grid"),
+                ("fg_color", "transparent"),
+                ("width", 320),
+                ("height", 240),
+            ),
+            default_name="Grid Layout",
+        ),
+        WidgetEntry(
+            "CTkFrame", "Group", "frame",
+            preset_overrides=(
+                ("border_enabled", True),
+                ("border_width", 1),
+                ("width", 240),
+                ("height", 180),
+            ),
+            default_name="Group",
+        ),
+    )),
     WidgetGroup("Buttons", (
         WidgetEntry("CTkButton", "Button", "square"),
         WidgetEntry("CTkCheckBox", "Check Box", "square-check"),
@@ -298,7 +352,7 @@ class Palette(ctk.CTkFrame):
         for w in bind_targets:
             w.bind("<Enter>", on_enter, add="+")
             w.bind("<Leave>", on_leave, add="+")
-            self._bind_drag(w, descriptor)
+            self._bind_drag(w, entry, descriptor)
 
     def _toggle_group(self, title: str) -> None:
         self._group_expanded[title] = not self._group_expanded.get(title, True)
@@ -311,16 +365,18 @@ class Palette(ctk.CTkFrame):
     # ------------------------------------------------------------------
     # Drag / click-to-add (unchanged from previous palette)
     # ------------------------------------------------------------------
-    def _bind_drag(self, widget, descriptor) -> None:
+    def _bind_drag(self, widget, entry: WidgetEntry, descriptor) -> None:
         widget.bind(
             "<ButtonPress-1>",
-            lambda e, d=descriptor: self._on_press(e, d), add="+",
+            lambda e, en=entry, d=descriptor: self._on_press(e, en, d),
+            add="+",
         )
         widget.bind("<B1-Motion>", self._on_motion, add="+")
         widget.bind("<ButtonRelease-1>", self._on_release, add="+")
 
-    def _on_press(self, event, descriptor) -> None:
+    def _on_press(self, event, entry: WidgetEntry, descriptor) -> None:
         self._drag = {
+            "entry": entry,
             "descriptor": descriptor,
             "press_x": event.x_root,
             "press_y": event.y_root,
@@ -336,7 +392,7 @@ class Palette(ctk.CTkFrame):
             if dx < DRAG_THRESHOLD and dy < DRAG_THRESHOLD:
                 return
             self._drag["dragging"] = True
-            self._create_ghost(self._drag["descriptor"])
+            self._create_ghost(self._drag["entry"])
         if self._ghost is not None:
             self._ghost.geometry(f"+{event.x_root + 12}+{event.y_root + 12}")
 
@@ -344,17 +400,19 @@ class Palette(ctk.CTkFrame):
         if self._drag is None:
             return
         was_dragging = self._drag["dragging"]
+        entry = self._drag["entry"]
         descriptor = self._drag["descriptor"]
         self._destroy_ghost()
         self._drag = None
         if not was_dragging:
-            self._add_widget_default(descriptor)
+            self._add_widget_default(entry, descriptor)
             return
         self.project.event_bus.publish(
-            "palette_drop_request", descriptor, event.x_root, event.y_root,
+            "palette_drop_request", entry, descriptor,
+            event.x_root, event.y_root,
         )
 
-    def _create_ghost(self, descriptor) -> None:
+    def _create_ghost(self, entry: WidgetEntry) -> None:
         self._destroy_ghost()
         ghost = tk.Toplevel(self)
         ghost.overrideredirect(True)
@@ -369,7 +427,7 @@ class Palette(ctk.CTkFrame):
         )
         frame.pack()
         tk.Label(
-            frame, text=f"+ {descriptor.display_name}",
+            frame, text=f"+ {entry.display_name}",
             bg="#1f6aa5", fg="white",
             font=("Segoe UI", 10, "bold"), padx=10, pady=4,
         ).pack()
@@ -384,13 +442,20 @@ class Palette(ctk.CTkFrame):
                 pass
             self._ghost = None
 
-    def _add_widget_default(self, descriptor) -> None:
+    def _add_widget_default(
+        self, entry: WidgetEntry, descriptor,
+    ) -> None:
         from app.core.commands import AddWidgetCommand
 
+        properties = dict(descriptor.default_properties)
+        for key, value in entry.preset_overrides:
+            properties[key] = value
         node = WidgetNode(
             widget_type=descriptor.type_name,
-            properties=dict(descriptor.default_properties),
+            properties=properties,
         )
+        if entry.default_name:
+            node.name = entry.default_name
         self.project.add_widget(node)
         self.project.select_widget(node.id)
         self.project.history.push(

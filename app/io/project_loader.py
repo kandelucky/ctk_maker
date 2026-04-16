@@ -187,8 +187,34 @@ def _migrate_node_layout(node: WidgetNode) -> None:
     if props.get("layout_type") == "pack":
         props["layout_type"] = _infer_pack_direction(node.children)
     props.pop("pack_side", None)
+    # v0.0.11 → v0.0.12: the per-child pack_fill / pack_expand /
+    # pack_padx / pack_pady fan-out collapses into a single
+    # ``stretch`` hint on the child and a ``layout_spacing`` on the
+    # parent. Legacy keys are dropped after translation.
+    _migrate_child_pack_to_stretch(props)
     for child in node.children:
         _migrate_node_layout(child)
+
+
+def _migrate_child_pack_to_stretch(props: dict) -> None:
+    has_legacy = any(
+        k in props for k in (
+            "pack_fill", "pack_expand", "pack_padx", "pack_pady",
+        )
+    )
+    if not has_legacy:
+        return
+    expand = bool(props.get("pack_expand"))
+    fill = props.get("pack_fill") or "none"
+    if "stretch" not in props:
+        if expand:
+            props["stretch"] = "grow"
+        elif fill != "none":
+            props["stretch"] = "fill"
+        else:
+            props["stretch"] = "fixed"
+    for key in ("pack_fill", "pack_expand", "pack_padx", "pack_pady"):
+        props.pop(key, None)
 
 
 def _infer_pack_direction(children: list[WidgetNode]) -> str:

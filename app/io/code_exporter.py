@@ -31,6 +31,7 @@ from app.core.project import Project
 from app.core.widget_node import WidgetNode
 from app.widgets.layout_schema import (
     DEFAULT_LAYOUT_TYPE,
+    LAYOUT_CONTAINER_DEFAULTS,
     LAYOUT_DEFAULTS,
     LAYOUT_NODE_ONLY_KEYS,
     normalise_layout_type,
@@ -128,9 +129,17 @@ def _emit_class(doc: Document, class_name: str) -> list[str]:
     if not doc.root_widgets:
         body_lines.append("pass")
     else:
-        doc_layout = normalise_layout_type(
-            (doc.window_properties or {}).get("layout_type"),
-        )
+        doc_props = doc.window_properties or {}
+        doc_layout = normalise_layout_type(doc_props.get("layout_type"))
+        try:
+            doc_spacing = int(
+                doc_props.get(
+                    "layout_spacing",
+                    LAYOUT_CONTAINER_DEFAULTS["layout_spacing"],
+                ) or 0,
+            )
+        except (TypeError, ValueError):
+            doc_spacing = 0
         for node in doc.root_widgets:
             _emit_subtree(
                 node,
@@ -139,6 +148,7 @@ def _emit_class(doc: Document, class_name: str) -> list[str]:
                 counts=counts,
                 instance_prefix="self.",
                 parent_layout=doc_layout,
+                parent_spacing=doc_spacing,
             )
     for line in body_lines:
         lines.append(f"{INDENT}{INDENT}{line}" if line else "")
@@ -152,11 +162,13 @@ def _emit_subtree(
     counts: dict[str, int],
     instance_prefix: str = "",
     parent_layout: str = DEFAULT_LAYOUT_TYPE,
+    parent_spacing: int = 0,
 ) -> None:
     var_name = _make_var_name(node, counts)
     lines.extend(
         _emit_widget(
-            node, var_name, master_var, instance_prefix, parent_layout,
+            node, var_name, master_var, instance_prefix,
+            parent_layout, parent_spacing,
         ),
     )
     lines.append("")
@@ -164,6 +176,15 @@ def _emit_subtree(
     child_layout = normalise_layout_type(
         node.properties.get("layout_type", DEFAULT_LAYOUT_TYPE),
     )
+    try:
+        child_spacing = int(
+            node.properties.get(
+                "layout_spacing",
+                LAYOUT_CONTAINER_DEFAULTS["layout_spacing"],
+            ) or 0,
+        )
+    except (TypeError, ValueError):
+        child_spacing = 0
     for child in node.children:
         _emit_subtree(
             child,
@@ -172,6 +193,7 @@ def _emit_subtree(
             counts=counts,
             instance_prefix=instance_prefix,
             parent_layout=child_layout,
+            parent_spacing=child_spacing,
         )
 
 
@@ -187,6 +209,7 @@ def _emit_widget(
     master_var: str,
     instance_prefix: str = "",
     parent_layout: str = DEFAULT_LAYOUT_TYPE,
+    parent_spacing: int = 0,
 ) -> list[str]:
     descriptor = get_descriptor(node.widget_type)
     if descriptor is None:
@@ -255,34 +278,34 @@ def _emit_widget(
         lines.append(f"    {key}={src},")
     lines.append(")")
 
-    lines.append(_geometry_call(full_name, props, parent_layout))
+    lines.append(
+        _geometry_call(full_name, props, parent_layout, parent_spacing),
+    )
     lines.extend(descriptor.export_state(full_name, props))
     return lines
 
 
 def _geometry_call(
     full_name: str, props: dict, parent_layout: str,
+    parent_spacing: int = 0,
 ) -> str:
     layout = normalise_layout_type(parent_layout)
     side = pack_side_for(layout)
     if side is not None:
         parts: list[str] = [f'side="{side}"']
-        fill = props.get("pack_fill", LAYOUT_DEFAULTS["pack_fill"])
-        if fill and fill != LAYOUT_DEFAULTS["pack_fill"]:
-            parts.append(f'fill="{fill}"')
-        expand = props.get("pack_expand", LAYOUT_DEFAULTS["pack_expand"])
-        if expand:
+        stretch = str(props.get("stretch", LAYOUT_DEFAULTS["stretch"]))
+        if stretch == "fill":
+            cross = "y" if layout == "hbox" else "x"
+            parts.append(f'fill="{cross}"')
+        elif stretch == "grow":
+            parts.append('fill="both"')
             parts.append("expand=True")
-        padx = _safe_int(
-            props.get("pack_padx", LAYOUT_DEFAULTS["pack_padx"]), 0,
-        )
-        if padx:
-            parts.append(f"padx={padx}")
-        pady = _safe_int(
-            props.get("pack_pady", LAYOUT_DEFAULTS["pack_pady"]), 0,
-        )
-        if pady:
-            parts.append(f"pady={pady}")
+        half = parent_spacing // 2
+        if half > 0:
+            if layout == "hbox":
+                parts.append(f"padx={half}")
+            else:
+                parts.append(f"pady={half}")
         return f"{full_name}.pack({', '.join(parts)})"
     if layout == "grid":
         row = _safe_int(

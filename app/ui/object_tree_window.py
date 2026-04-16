@@ -247,33 +247,25 @@ class ObjectTreePanel(ctk.CTkFrame):
 
         accent = self.project.get_accent_color()
 
-        # Accent-coloured border wrap. The 1px border is the active
-        # document's theme colour, so the user can see at a glance
-        # which form this panel tracks. The title overlaps the top
-        # border line (see below), which visually breaks it the way
-        # a Qt Designer dock title does.
+        # Centered bold title — matches the Properties panel.
+        self._title = tk.Label(
+            self, text="Object Tree",
+            bg=BG, fg="#cccccc",
+            font=("Segoe UI", 11, "bold"),
+        )
+        self._title.pack(side="top", pady=(2, 1))
+
+        # Accent-coloured border wrap — 1px of the active document's
+        # theme colour. Starts below the title.
         wrap = tk.Frame(
             self, bg=BG,
             highlightbackground=accent,
             highlightcolor=accent,
             highlightthickness=1,
         )
-        # Top pady leaves room for the title to sit on the top border.
-        wrap.pack(fill="both", expand=True, padx=4, pady=(10, 4))
+        wrap.pack(fill="both", expand=True, padx=4, pady=(0, 4))
         wrap.pack_propagate(False)
         self._accent_wrap = wrap
-
-        # Title — NOT inside wrap. Placed on the panel with an
-        # anchor=n at the top, so it sits half above and half on the
-        # wrap's top border. bg=BG (same as panel) "cuts out" the
-        # border segment under the title text, producing the classic
-        # fieldset / group-box look.
-        self._title = tk.Label(
-            self, text="Object Tree",
-            bg=BG, fg=accent,
-            font=("Segoe UI", 10),
-        )
-        self._title.place(relx=0.5, y=0, anchor="n")
 
         container = tk.Frame(wrap, bg=BG, highlightthickness=0)
         container.pack(fill="both", expand=True, padx=6, pady=(8, 6))
@@ -281,9 +273,8 @@ class ObjectTreePanel(ctk.CTkFrame):
         self._tree_container = container
 
         # Active-document status strip — pinned to the BOTTOM of the
-        # container. Shows which form is currently being edited; click
-        # to open its Window settings. Accent fg matches the border so
-        # it reads as "this is the form this panel is bound to".
+        # container. Shows which form is currently being edited.
+        # Accent fg matches the border.
         doc_header = tk.Frame(
             container, bg=BG, highlightthickness=0, height=20,
         )
@@ -646,17 +637,12 @@ class ObjectTreePanel(ctk.CTkFrame):
         self.refresh()
 
     def _refresh_accent(self) -> None:
-        """Re-tint border / title / doc-header using the active
-        document's accent color. Called on init and whenever the
-        active document changes."""
         accent = self.project.get_accent_color()
         if hasattr(self, "_accent_wrap"):
             self._accent_wrap.configure(
                 highlightbackground=accent,
                 highlightcolor=accent,
             )
-        if hasattr(self, "_title"):
-            self._title.configure(fg=accent)
         if hasattr(self, "_doc_header_label"):
             self._doc_header_label.configure(fg=accent)
         if hasattr(self, "_doc_header_icon_label"):

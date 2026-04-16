@@ -13,7 +13,10 @@ import customtkinter as ctk
 
 from app.widgets.base import WidgetDescriptor
 from app.widgets.layout_schema import (
-    DEFAULT_LAYOUT_TYPE, LAYOUT_TYPE_ROW,
+    DEFAULT_LAYOUT_TYPE,
+    LAYOUT_CONTAINER_DEFAULTS,
+    LAYOUT_SPACING_ROW,
+    LAYOUT_TYPE_ROW,
 )
 
 
@@ -36,9 +39,11 @@ class CTkFrameDescriptor(WidgetDescriptor):
         # Main colors
         "fg_color": "#2b2b2b",
         # Layout — geometry manager used for THIS frame's children
-        # at export time. The canvas always uses absolute placement
-        # in the editor; this only affects the generated .py file.
+        # at export time. ``place`` leaves absolute x/y untouched;
+        # ``vbox`` / ``hbox`` / ``grid`` also drive canvas rendering
+        # in the editor (Stage 3.1 onward).
         "layout_type": DEFAULT_LAYOUT_TYPE,
+        **LAYOUT_CONTAINER_DEFAULTS,
     }
 
     property_schema = [
@@ -84,9 +89,13 @@ class CTkFrameDescriptor(WidgetDescriptor):
 
         # --- Layout (children manager) -----------------------------------
         LAYOUT_TYPE_ROW,
+        LAYOUT_SPACING_ROW,
     ]
 
-    _NODE_ONLY_KEYS = {"x", "y", "border_enabled", "layout_type"}
+    _NODE_ONLY_KEYS = {
+        "x", "y", "border_enabled",
+        "layout_type", "layout_spacing",
+    }
 
     @classmethod
     def transform_properties(cls, properties: dict) -> dict:

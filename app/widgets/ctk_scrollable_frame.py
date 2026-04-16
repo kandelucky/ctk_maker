@@ -16,7 +16,10 @@ import customtkinter as ctk
 
 from app.widgets.base import WidgetDescriptor
 from app.widgets.layout_schema import (
-    DEFAULT_LAYOUT_TYPE, LAYOUT_TYPE_ROW,
+    DEFAULT_LAYOUT_TYPE,
+    LAYOUT_CONTAINER_DEFAULTS,
+    LAYOUT_SPACING_ROW,
+    LAYOUT_TYPE_ROW,
 )
 
 
@@ -53,8 +56,10 @@ class CTkScrollableFrameDescriptor(WidgetDescriptor):
         # Main colors
         "fg_color": "#2b2b2b",
         # Layout — geometry manager used for THIS frame's children
-        # at export time. Editor canvas always uses absolute placement.
+        # at export time. ``place`` keeps absolute x/y; vbox/hbox/grid
+        # also drive canvas rendering (Stage 3.1 onward).
         "layout_type": DEFAULT_LAYOUT_TYPE,
+        **LAYOUT_CONTAINER_DEFAULTS,
     }
 
     property_schema = [
@@ -116,10 +121,12 @@ class CTkScrollableFrameDescriptor(WidgetDescriptor):
 
         # --- Layout (children manager) -----------------------------------
         LAYOUT_TYPE_ROW,
+        LAYOUT_SPACING_ROW,
     ]
 
     _NODE_ONLY_KEYS = {
-        "x", "y", "border_enabled", "label_text_align", "layout_type",
+        "x", "y", "border_enabled", "label_text_align",
+        "layout_type", "layout_spacing",
     }
     init_only_keys = {"orientation"}
     recreate_triggers = frozenset({"orientation"})

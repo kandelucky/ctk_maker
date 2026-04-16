@@ -12,7 +12,7 @@ from app.widgets.layout_schema import (
     GRID_STICKY_OPTIONS,
     LAYOUT_DISPLAY_NAMES,
     LAYOUT_TYPE_OPTIONS,
-    PACK_FILL_OPTIONS,
+    STRETCH_OPTIONS,
 )
 
 from .constants import (
@@ -25,7 +25,7 @@ from .constants import (
 
 GRID_STYLE_OPTIONS = ("none", "dots", "lines")
 LAYOUT_ENUM_TYPES = frozenset({
-    "layout_type", "pack_fill", "grid_sticky",
+    "layout_type", "stretch", "grid_sticky",
 })
 
 
@@ -102,8 +102,8 @@ def enum_options_for(ptype: str):
         return GRID_STYLE_OPTIONS
     if ptype == "layout_type":
         return LAYOUT_TYPE_OPTIONS
-    if ptype == "pack_fill":
-        return PACK_FILL_OPTIONS
+    if ptype == "stretch":
+        return STRETCH_OPTIONS
     if ptype == "grid_sticky":
         return GRID_STICKY_OPTIONS
     return []

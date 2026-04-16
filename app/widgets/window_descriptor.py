@@ -8,7 +8,11 @@ from __future__ import annotations
 
 from app.core.project import WINDOW_ID, DEFAULT_WINDOW_PROPERTIES
 from app.widgets.base import WidgetDescriptor
-from app.widgets.layout_schema import LAYOUT_TYPE_ROW
+from app.widgets.layout_schema import (
+    LAYOUT_CONTAINER_DEFAULTS,
+    LAYOUT_SPACING_ROW,
+    LAYOUT_TYPE_ROW,
+)
 
 
 class WindowDescriptor(WidgetDescriptor):
@@ -19,6 +23,7 @@ class WindowDescriptor(WidgetDescriptor):
 
     default_properties = {
         **DEFAULT_WINDOW_PROPERTIES,
+        **LAYOUT_CONTAINER_DEFAULTS,
         "width": 800,
         "height": 600,
     }
@@ -39,6 +44,7 @@ class WindowDescriptor(WidgetDescriptor):
          "group": "Behaviour", "row_label": "Frameless"},
 
         LAYOUT_TYPE_ROW,
+        LAYOUT_SPACING_ROW,
 
         {"name": "grid_style", "type": "grid_style", "label": "",
          "group": "Builder Grid", "row_label": "Style"},
