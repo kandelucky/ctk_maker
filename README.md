@@ -2,9 +2,9 @@
 
 A desktop visual designer for **CustomTkinter** — drag and drop widgets onto a canvas, edit their properties live, and export the result as clean runnable Python.
 
-> **Status:** v0.0.13 — active development. Phase 6.5 ships WYSIWYG grid rendering with drag-to-cell UX (cursor-cell snap + palette-drop targeting + auto-next-free-cell on widget add), plus runtime parity (`grid_rowconfigure` + `grid_columnconfigure` + `pack_propagate(False)` + `grid_propagate(False)` in the exporter). Phase 6.6 (post-6.5 polish) fixes grid centring via hand-computed `.place()` coords (CTkFrame's internal canvas was breaking tk's grid math) + `uniform="col"/"row"` in the export so empty cells stay equal-sized. The 1342-line `workspace/core.py` was further reduced to 998 lines by extracting `widget_lifecycle.py`.
+> **Status:** v0.0.14 — active development. Phase 6.5 shipped WYSIWYG grid rendering with drag-to-cell UX (cursor-cell snap + palette-drop targeting + auto-next-free-cell on widget add) plus runtime parity (`grid_rowconfigure` + `grid_columnconfigure` + `pack_propagate(False)` + `grid_propagate(False)` in the exporter). Phase 6.6 fixes grid centring via hand-computed `.place()` coords (CTkFrame's internal canvas was breaking tk's grid math) + `uniform="col"/"row"` in the export so empty cells stay equal-sized. The 1342-line `workspace/core.py` was further reduced to 998 lines by extracting `widget_lifecycle.py`.
 
-[![v0.0.9](docs/history/v0.0.9.png)](docs/history/v0.0.9.png)
+[![v0.0.14](docs/history/v0.0.14.png)](docs/history/v0.0.14.png)
 
 ## Features
 
