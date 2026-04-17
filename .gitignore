@@ -35,6 +35,9 @@ docs/architecture_graph.svg
 tools/_test_alpha.png
 test_grid_drag.py
 
+# Personal task list — kept local only
+TODO.md
+
 # External reference material — run tools/fetch_ctk_reference.py to get it
 reference/ctk_official/
 

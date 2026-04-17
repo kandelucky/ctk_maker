@@ -232,9 +232,7 @@ def grid_effective_dims(
 ) -> tuple[int, int]:
     """Effective grid dimensions. The user's ``grid_rows`` /
     ``grid_cols`` are authoritative — no auto-growth for capacity.
-    Children whose index exceeds ``rows*cols`` wrap around and
-    overlap existing cells (see ``grid_cell_for_index``). The
-    ``child_count`` argument is kept in the signature for API
+    The ``child_count`` argument is kept in the signature for API
     stability / future use.
     """
     _ = child_count

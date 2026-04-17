@@ -7,13 +7,14 @@
       its parent's ``layout_type``.
     - ``_stretch_to_pack_kwargs`` — translate ``fixed/fill/grow`` to
       tk pack fill/expand kwargs.
-    - ``_child_grid_kwargs``    — translate a child's grid_* props to
-      tk grid() kwargs.
+    - ``_grid_child_place_kwargs`` — compute place() coords that
+      centre a grid child in its cell (CTkFrame's internal canvas
+      breaks tk's native grid centring, so canvas preview uses
+      place instead; runtime export still emits real ``.grid()``).
     - ``_forget_current_manager`` — cross-manager safe forget.
 
 2. **``LayoutOverlayManager``** (owns Workspace ref):
     - Re-applies child managers when ``layout_type`` changes.
-    - Configures grid row/column weights so sticky children stretch.
     - Reserved overlay hook — currently draws nothing (see the
       docstring on ``draw_overlays_for_doc`` for why).
 
@@ -29,7 +30,6 @@ import tkinter as tk
 from app.widgets.layout_schema import (
     LAYOUT_DEFAULTS,
     LAYOUT_NODE_ONLY_KEYS,
-    grid_effective_dims,
     normalise_layout_type,
     pack_side_for,
 )
@@ -75,41 +75,6 @@ def _stretch_to_pack_kwargs(stretch: str, layout: str) -> dict:
     if stretch == "grow":
         return {"fill": "both", "expand": True}
     return {}
-
-
-def _child_grid_kwargs(
-    child_props: dict, parent_node, zoom: float = 1.0,
-) -> dict:
-    """Pick tk ``grid()`` kwargs for a grid child. Row/column come
-    directly from the child's own ``grid_row`` / ``grid_column``
-    props so the user's cursor-based drop sticks — empty cells are
-    targetable and siblings can overlap. Parent ``layout_spacing``
-    turns into padx/pady (half per side so adjacent cells end up
-    one full spacing apart).
-    """
-    if parent_node is None:
-        parent_props: dict = {}
-    else:
-        parent_props = parent_node.properties
-    row = _safe_int(
-        child_props.get("grid_row", LAYOUT_DEFAULTS["grid_row"]), 0,
-    )
-    col = _safe_int(
-        child_props.get("grid_column", LAYOUT_DEFAULTS["grid_column"]), 0,
-    )
-    kwargs: dict = {"row": row, "column": col}
-    sticky = child_props.get("grid_sticky", LAYOUT_DEFAULTS["grid_sticky"])
-    sticky = sticky or ""
-    if sticky:
-        kwargs["sticky"] = sticky
-    spacing = _safe_int(parent_props.get("layout_spacing", 0) or 0, 0)
-    half = spacing // 2
-    if half:
-        pad = max(0, int(half * zoom))
-        if pad:
-            kwargs["padx"] = pad
-            kwargs["pady"] = pad
-    return kwargs
 
 
 def _grid_child_place_kwargs(
@@ -173,21 +138,13 @@ def _grid_child_place_kwargs(
 
 def _child_manager_kwargs(
     parent_node, child_props: dict, zoom: float = 1.0,
-    child_index: int | None = None,
 ) -> tuple[str, dict]:
     """Pick the tk geometry manager + its kwargs for a child whose
     parent is ``parent_node``. Returns ``(manager_name, kwargs)``
-    with manager ∈ ``place`` / ``pack`` / ``grid``.
-
-    vbox / hbox direction comes from the parent; per-child padx/pady
-    are derived from the parent's ``layout_spacing``. The child's
-    only layout knob is ``stretch`` (fixed / fill / grow).
-    Grid parents emit ``.grid()`` with the child's own row/col so
-    the user's cursor-based drop lands at the target cell. Empty
-    cells are targetable and siblings can share a cell. The
-    ``child_index`` argument is kept for API stability but unused.
+    with manager ∈ ``place`` / ``pack`` / ``grid``. Grid kwargs are
+    empty — callers call ``_grid_child_place_kwargs`` directly since
+    canvas preview uses place()-based centring.
     """
-    _ = child_index
     parent_layout = "place"
     parent_props: dict = {}
     if parent_node is not None:
@@ -218,7 +175,7 @@ def _child_manager_kwargs(
                     kwargs["pady"] = pad
         return "pack", kwargs
     if layout == "grid":
-        return "grid", _child_grid_kwargs(child_props, parent_node, zoom)
+        return "grid", {}
     return "place", {}
 
 
@@ -305,15 +262,6 @@ class LayoutOverlayManager:
         # Parameters retained in signature for future overlay work.
         _ = (doc, dx1, dy1, dx2, dy2)
 
-    def iter_containers(self, nodes):
-        for n in nodes:
-            descriptor = get_descriptor(n.widget_type)
-            if descriptor is not None and getattr(
-                descriptor, "is_container", False,
-            ):
-                yield n
-            yield from self.iter_containers(n.children)
-
     # ------------------------------------------------------------------
     # Child-geometry manager switching
     # ------------------------------------------------------------------
@@ -330,16 +278,6 @@ class LayoutOverlayManager:
         container = self.project.get_widget(container_id)
         if container is None:
             return
-        layout = normalise_layout_type(
-            container.properties.get("layout_type", "place"),
-        )
-        if layout == "grid":
-            parent_entry = self.widget_views.get(container_id)
-            if parent_entry is not None:
-                self._configure_grid_weights(
-                    parent_entry[0], container.children,
-                    container_props=container.properties,
-                )
         anchor_widgets: list[tuple[object, object]] = []
         for child in container.children:
             entry = self.widget_views.get(child.id)
@@ -383,30 +321,6 @@ class LayoutOverlayManager:
                 if descriptor is not None else widget
             )
         return None
-
-    def _configure_grid_weights(
-        self, parent_widget, children, container_props: dict | None = None,
-    ) -> None:
-        """Set weight=1 on every row/column in the container's
-        declared grid so sticky children stretch evenly. Dimensions
-        come from ``grid_effective_dims(len(children),
-        container_props)`` — the same formula used at export time,
-        so canvas + runtime agree. Idempotent.
-        """
-        from app.widgets.layout_schema import grid_effective_dims
-        rows, cols = grid_effective_dims(
-            len(children), container_props or {},
-        )
-        for rr in range(rows):
-            try:
-                parent_widget.grid_rowconfigure(rr, weight=1)
-            except tk.TclError:
-                pass
-        for cc in range(cols):
-            try:
-                parent_widget.grid_columnconfigure(cc, weight=1)
-            except tk.TclError:
-                pass
 
     def apply_child_manager(
         self, anchor_widget, parent_node, child_node,

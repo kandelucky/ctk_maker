@@ -2,7 +2,7 @@
 
 A desktop visual designer for **CustomTkinter** — drag and drop widgets onto a canvas, edit their properties live, and export the result as clean runnable Python.
 
-> **Status:** v0.0.12 — active development. Phase 6.4 ships real WYSIWYG pack for vbox / hbox Frames (canvas matches the exported `.py` for the first time), Qt Designer-style Layout presets in the palette (`Vertical Layout` / `Horizontal Layout` / `Grid Layout` / `Group`), a 4 → 1 child-properties collapse (`stretch: fixed / fill / grow` replaces `pack_fill` / `pack_expand` / `pack_padx` / `pack_pady`), and a per-parent `layout_spacing`. The 2372-line `workspace.py` was also split into a 6-file package.
+> **Status:** v0.0.13 — active development. Phase 6.5 ships WYSIWYG grid rendering with drag-to-cell UX (cursor-cell snap + palette-drop targeting + auto-next-free-cell on widget add), plus runtime parity (`grid_rowconfigure` + `grid_columnconfigure` + `pack_propagate(False)` + `grid_propagate(False)` in the exporter). Phase 6.6 (post-6.5 polish) fixes grid centring via hand-computed `.place()` coords (CTkFrame's internal canvas was breaking tk's grid math) + `uniform="col"/"row"` in the export so empty cells stay equal-sized. The 1342-line `workspace/core.py` was further reduced to 998 lines by extracting `widget_lifecycle.py`.
 
 [![v0.0.9](docs/history/v0.0.9.png)](docs/history/v0.0.9.png)
 
@@ -99,7 +99,13 @@ ctk_visual_builder/
         ├── main_window.py            # menubar + three-panel layout
         ├── toolbar.py                # icon-only top toolbar
         ├── palette.py                # left — widget palette
-        ├── workspace.py              # center — canvas + drag/resize/events
+        ├── workspace/                # center — canvas + drag/resize/events (6-file package)
+        │   ├── core.py               # Workspace facade + property-change router
+        │   ├── widget_lifecycle.py   # widget_added / removed / reparented handlers
+        │   ├── drag.py               # drag / drop / grid-cell snap
+        │   ├── layout_overlay.py     # geometry manager wiring for nested children
+        │   ├── render.py             # canvas redraw (document rects + chrome)
+        │   └── __init__.py           # re-exports
         ├── selection_controller.py   # selection chrome + resize handles
         ├── zoom_controller.py        # zoom math + status-bar controls
         ├── properties_panel_v2/      # right — Treeview-based property editor
@@ -160,11 +166,13 @@ python main.py
 - [x] **Window Settings** — title, size, `fg_color` live preview, resizable, frameless, builder grid (style / colour / spacing)
 - [x] **Multi-document canvas** — main window + N dialogs in one project, per-form chrome, drag-to-move, active highlight, smart mask for overlapping forms, AddDialog preset picker, cross-document widget drag, `AddDocument` / `DeleteDocument` / `MoveDocument` undo entries
 - [x] **Layout managers (stage 1 + 2 + 6.3 split)** — every container (Window, Frame, ScrollableFrame) carries `layout_type` ∈ `place / vbox / hbox / grid` (Qt Designer style — `pack` was split into Vertical / Horizontal for cleaner UX); child widgets gain parent-driven `pack_*` / `grid_*` rows in Properties; code exporter emits the matching `.place()` / `.pack(side="top"/"left")` / `.grid()` call; Properties panel dropdown renders each option with its Lucide icon (`crosshair` / `rows-3` / `columns-3` / `grid-3x3`); canvas shows chrome title suffix, container badges and dashed grid-cell overlays; Object Tree marks containers with `[vbox]` / `[hbox]` / `[grid]`; legacy `pack` projects auto-migrate to `vbox` / `hbox` on load
-- [x] **Phase 6.4 — Stage 3.1 WYSIWYG + Layout presets** — vbox / hbox Frames now render children with real `pack()` on canvas (no more place-vs-export gap); Palette gains a `Layouts` category with `Vertical Layout` / `Horizontal Layout` / `Grid Layout` / `Group` presets; child layout rows collapse to a single `stretch` enum (`fixed` / `fill` / `grow`); container gains `layout_spacing`; `pack_propagate(False)` applied to every container so Frames keep their size
+- [x] **Phase 6.4 — Stage 3.1 WYSIWYG + Layout presets** — vbox / hbox Frames now render children with real `pack()` on canvas (no more place-vs-export gap); Palette gains a `Layouts` category with `Vertical Layout` / `Horizontal Layout` / `Grid Layout` presets; child layout rows collapse to a single `stretch` enum (`fixed` / `fill` / `grow`); container gains `layout_spacing`; `pack_propagate(False)` applied to every container so Frames keep their size
+- [x] **Phase 6.5 — Grid WYSIWYG + drag-to-cell + runtime parity** — grid Frames render children into real cells on canvas; user pins grid size via `grid_rows` / `grid_cols` (default 2×2, no auto-grow); drag snaps to the cell under the cursor (light-blue outline during drag); palette drops land at the cursor cell; fresh widgets auto-assign to the next free cell; `grid_rowconfigure(weight=1)` + `grid_columnconfigure(weight=1)` + `pack_propagate(False)` + `grid_propagate(False)` emitted at export
+- [x] **Phase 6.6 — Grid place-based centring + workspace refactor** — canvas preview for grid children switches from tk `.grid()` to hand-computed `.place()` coords (CTkFrame's internal canvas broke native grid centring); exporter adds `uniform="col"/"row"` so empty cells stay the same size as occupied ones; `Window` drops `layout_type` (absolute positioning only); `WidgetLifecycle` extracted from `workspace/core.py` (-26%)
 
 ### Next
 - [ ] Remaining widget — `CTkScrollableFrame` + `CTkTabview` nested-children path (composite widget integration)
-- [ ] Layout managers (stage 3.2) — real `.grid()` on canvas for grid containers; grid drag reorders rather than repositions
+- [ ] Alignment tools — align left/right/center + distribute (Phase 7)
 - [ ] Polish — marquee selection, snap-to-grid, alignment guides, asset manager
 - [ ] Advanced — custom user widgets, variables panel, event handlers, templates, plugin system
 
