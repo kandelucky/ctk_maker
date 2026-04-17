@@ -51,10 +51,12 @@ class AddWidgetCommand(Command):
         snapshot: dict,
         parent_id: str | None,
         index: int | None = None,
+        document_id: str | None = None,
     ):
         self._snapshot = snapshot
         self._parent_id = parent_id
         self._index = index
+        self._document_id = document_id
         self.description = f"Add {snapshot.get('widget_type', 'widget')}"
 
     def undo(self, project: "Project") -> None:
@@ -62,7 +64,9 @@ class AddWidgetCommand(Command):
 
     def redo(self, project: "Project") -> None:
         node = WidgetNode.from_dict(self._snapshot)
-        project.add_widget(node, parent_id=self._parent_id)
+        project.add_widget(
+            node, parent_id=self._parent_id, document_id=self._document_id,
+        )
         if self._index is not None:
             project.reparent(node.id, self._parent_id, index=self._index)
         project.select_widget(node.id)
@@ -74,16 +78,20 @@ class DeleteWidgetCommand(Command):
         snapshot: dict,
         parent_id: str | None,
         index: int,
+        document_id: str | None = None,
     ):
         self._snapshot = snapshot
         self._parent_id = parent_id
         self._index = index
+        self._document_id = document_id
         label = snapshot.get("name") or snapshot.get("widget_type", "widget")
         self.description = f"Delete {label}"
 
     def undo(self, project: "Project") -> None:
         node = WidgetNode.from_dict(self._snapshot)
-        project.add_widget(node, parent_id=self._parent_id)
+        project.add_widget(
+            node, parent_id=self._parent_id, document_id=self._document_id,
+        )
         project.reparent(node.id, self._parent_id, index=self._index)
         project.select_widget(node.id)
 
@@ -95,17 +103,27 @@ class DeleteMultipleCommand(Command):
     """Multi-delete bundled into one undo step. Snapshots are stored
     top-down in pre-deletion tree order; undo replays them in the
     same order so each sibling lands back at its original index.
+
+    Each entry also carries the owning document id so cross-document
+    deletes restore each widget into the doc it came from — without
+    it, every top-level widget would pile back into whichever doc
+    happened to be active at undo time.
     """
 
-    def __init__(self, entries: list[tuple[dict, str | None, int]]):
+    def __init__(
+        self,
+        entries: list[tuple[dict, str | None, int, str | None]],
+    ):
         self._entries = entries
         self.description = f"Delete {len(entries)} widgets"
 
     def undo(self, project: "Project") -> None:
         restored_ids: list[str] = []
-        for snapshot, parent_id, index in self._entries:
+        for snapshot, parent_id, index, document_id in self._entries:
             node = WidgetNode.from_dict(snapshot)
-            project.add_widget(node, parent_id=parent_id)
+            project.add_widget(
+                node, parent_id=parent_id, document_id=document_id,
+            )
             project.reparent(node.id, parent_id, index=index)
             restored_ids.append(node.id)
         if restored_ids:
@@ -114,7 +132,7 @@ class DeleteMultipleCommand(Command):
             )
 
     def redo(self, project: "Project") -> None:
-        for snapshot, _parent_id, _index in self._entries:
+        for snapshot, _parent_id, _index, _doc_id in self._entries:
             project.remove_widget(snapshot["id"])
 
 
@@ -254,8 +272,9 @@ class ResizeCommand(MoveCommand):
 
 class ReparentCommand(Command):
     """Move a widget between containers via drag. Captures old and
-    new parent, sibling index, and coordinates so undo puts the
-    widget back exactly where it was.
+    new parent, sibling index, coordinates, AND owning document so
+    undo puts the widget back exactly where it was — including cross-
+    document moves, where the target doc isn't the active one.
     """
 
     def __init__(
@@ -269,6 +288,8 @@ class ReparentCommand(Command):
         new_index: int,
         new_x: int,
         new_y: int,
+        old_document_id: str | None = None,
+        new_document_id: str | None = None,
     ):
         self.widget_id = widget_id
         self.old_parent_id = old_parent_id
@@ -279,6 +300,8 @@ class ReparentCommand(Command):
         self.new_index = new_index
         self.new_x = new_x
         self.new_y = new_y
+        self.old_document_id = old_document_id
+        self.new_document_id = new_document_id
         self.description = "Reparent widget"
 
     def _move(
@@ -288,6 +311,7 @@ class ReparentCommand(Command):
         index: int,
         x: int,
         y: int,
+        document_id: str | None,
     ) -> None:
         node = project.get_widget(self.widget_id)
         if node is None:
@@ -296,19 +320,22 @@ class ReparentCommand(Command):
         # reparent triggers picks up the restored x/y.
         node.properties["x"] = x
         node.properties["y"] = y
-        project.reparent(self.widget_id, parent_id, index=index)
+        project.reparent(
+            self.widget_id, parent_id,
+            index=index, document_id=document_id,
+        )
         project.select_widget(self.widget_id)
 
     def undo(self, project: "Project") -> None:
         self._move(
             project, self.old_parent_id, self.old_index,
-            self.old_x, self.old_y,
+            self.old_x, self.old_y, self.old_document_id,
         )
 
     def redo(self, project: "Project") -> None:
         self._move(
             project, self.new_parent_id, self.new_index,
-            self.new_x, self.new_y,
+            self.new_x, self.new_y, self.new_document_id,
         )
 
 
@@ -352,13 +379,16 @@ class RenameCommand(Command):
 
 class BulkAddCommand(Command):
     """Paste / duplicate — restores multiple widget subtrees from
-    snapshots. Each entry carries its own (snapshot, parent_id, index)
-    so z-order survives undo + redo round trips.
+    snapshots. Each entry carries its own
+    ``(snapshot, parent_id, index, document_id)`` so z-order and the
+    owning document both survive undo + redo round trips. ``document_id``
+    only matters for top-level entries (``parent_id`` is None); nested
+    entries inherit their doc from the parent that already exists.
     """
 
     def __init__(
         self,
-        entries: list[tuple[dict, str | None, int]],
+        entries: list[tuple[dict, str | None, int, str | None]],
         label: str = "Paste",
     ):
         self._entries = entries
@@ -368,14 +398,16 @@ class BulkAddCommand(Command):
         )
 
     def undo(self, project: "Project") -> None:
-        for snapshot, _parent_id, _index in self._entries:
+        for snapshot, _parent_id, _index, _doc_id in self._entries:
             project.remove_widget(snapshot["id"])
 
     def redo(self, project: "Project") -> None:
         restored_ids: list[str] = []
-        for snapshot, parent_id, index in self._entries:
+        for snapshot, parent_id, index, document_id in self._entries:
             node = WidgetNode.from_dict(snapshot)
-            project.add_widget(node, parent_id=parent_id)
+            project.add_widget(
+                node, parent_id=parent_id, document_id=document_id,
+            )
             project.reparent(node.id, parent_id, index=index)
             restored_ids.append(node.id)
         if len(restored_ids) == 1:
@@ -476,8 +508,14 @@ class MoveDocumentCommand(Command):
         if doc is None:
             return
         doc.canvas_x, doc.canvas_y = int(xy[0]), int(xy[1])
+        # Widgets are rendered via ``canvas.create_window`` at
+        # ``logical_to_canvas(x, y, document=doc)`` — mutating the doc's
+        # canvas_x/canvas_y alone doesn't move them. The live drag path
+        # fires zoom.apply_all() + selection.update() alongside the
+        # redraw; the undo/redo path publishes this event so the
+        # workspace replays the same three steps.
         project.event_bus.publish(
-            "active_document_changed", project.active_document_id,
+            "document_position_changed", self.document_id,
         )
 
     def undo(self, project: "Project") -> None:

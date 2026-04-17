@@ -41,22 +41,22 @@ Canvas drag / drop / resize / select / keyboard / delete — the core interactio
 - [x] Locked widget: selectable but drag/resize/delete rejected (dialog, not silent)
 
 ### Delete
-- [ ] Delete key on selected → removes widget + subtree
-- [ ] Right-click → Delete menu entry works
-- [ ] Delete multi-selection
-- [ ] Undo restores entire subtree + children preserve IDs
+- [x] Delete key on selected → removes widget + subtree
+- [x] Right-click → Delete menu entry works
+- [x] Delete multi-selection
+- [x] Undo restores entire subtree + children preserve IDs
 
 ### Zoom + pan
-- [ ] Status-bar slider / +/- / reset button
-- [ ] `Ctrl + mouse wheel` zooms toward cursor
-- [ ] Hand tool (H) → canvas drag pans
-- [ ] Middle-mouse pan without tool change
-- [ ] Widgets stay visually correct at 10% / 100% / 500%
+- [x] Status-bar slider / +/- / reset button
+- [x] `Ctrl + mouse wheel` zooms toward cursor
+- [x] Hand tool (H) → canvas drag pans
+- [x] Middle-mouse pan without tool change
+- [x] Widgets stay visually correct at 10% / 100% / 500%
 
 ### Edge cases
-- [ ] 100+ widget project stays responsive during drag
-- [ ] Rapid palette drops in succession (no lost widgets)
-- [ ] Drag a widget, then release over Object Tree / Properties panel — rejected cleanly
+- [x] 100+ widget project stays responsive during drag
+- [x] Rapid palette drops in succession (no lost widgets)
+- [x] Drag a widget, then release over Object Tree / Properties panel — rejected cleanly
 
 ## Refactor candidates
 
@@ -148,3 +148,39 @@ Canvas drag / drop / resize / select / keyboard / delete — the core interactio
   *Expected:* A + A's chrome move, C + C's chrome stay
   *Observed:* A and C's chrome both followed the cursor while C itself stayed put — chrome snapped back on release
   *Fix:* every chrome item also gets a per-widget tag (``chrome_wid_<id>``); drag motion calls ``canvas.move`` only for tags of widgets actually in ``group_starts``, so locked / layout-managed siblings keep their chrome pinned
+
+- **[WS-13]** Tree drag reparent dropped widget at a strange position
+  *Fix:* `_reset_position_for_tree_reparent` in `ObjectTreePanel` — cascade offset (10, 10 +20 per occupied slot) when the new parent is place-layout; pack/grid parents leave x/y untouched
+
+- **[WS-14]** Tree drag reparent wasn't undoable
+  *Fix:* `_on_drag_release` now captures old/new parent, index, x/y, document_id and pushes a `ReparentCommand`
+
+- **[WS-15]** Multi-select Delete worked only for one widget
+  *Fix:* `workspace._on_delete` walks `selected_ids`, skips descendants of a selected ancestor, bundles into a `DeleteMultipleCommand`; canvas right-click menu preserves multi when the clicked widget is in the selection
+
+- **[WS-16]** Undo of cross-doc delete piled every restored widget back into the active doc
+  *Fix:* `DeleteWidgetCommand` + `DeleteMultipleCommand` carry per-entry `document_id`; `project.add_widget` takes a `document_id` for top-level placement
+
+- **[WS-17]** Redo of cross-doc add (palette drop / paste / duplicate) piled widgets into the active doc
+  *Fix:* `AddWidgetCommand` + `BulkAddCommand` carry `document_id`; same `project.add_widget(document_id=...)` path
+
+- **[WS-18]** Cross-doc drag move couldn't be undone
+  *Fix:* `project.reparent(document_id=...)` for top-level targets; `ReparentCommand` gains `old_document_id` + `new_document_id`
+
+- **[WS-19]** Document accent colors collided visually between forms
+  *Fix:* hue now `doc_index * golden_ratio_conjugate` — guaranteed max separation for small N, instead of per-UUID hash which could land two docs on near-same hue
+
+- **[WS-20]** Left-click on empty area of a non-active document didn't activate it
+  *Fix:* `_on_canvas_click` detects the doc under the cursor and sets it active before the deselect
+
+- **[WS-21]** Window Settings couldn't be opened from the chrome gear icon in Select tool
+  *Steps:* switch to Select tool, click the settings icon on a form's title chrome
+  *Expected:* Window Settings opens in the Properties panel — they describe the whole form, not a single widget, so tool mode shouldn't matter
+  *Observed:* Properties panel stayed collapsed to chrome-only (the Select-mode skip path didn't carve out WINDOW_ID)
+  *Fix:* `PropertiesPanel._rebuild` allows the full panel rebuild when `tool == "select"` AND `node.id == WINDOW_ID`. Hand tool stays strict — pure canvas panner, does nothing else
+
+- **[WS-22]** Dragging a document to a new canvas position, then undo — doc returned, widgets stayed at the moved offset
+  *Steps:* move a form's chrome to another spot on the canvas, press Ctrl+Z
+  *Expected:* both form rectangle and every widget inside return to the original position
+  *Observed:* doc rectangle returned, but widgets stayed at the dragged offset — they use `canvas.create_window` at `logical_to_canvas(x, y, document=doc)` and needed re-placement
+  *Fix:* `MoveDocumentCommand._apply` publishes a new `document_position_changed(doc_id)` event; workspace subscribes and replays the live-drag sequence (redraw + `zoom.apply_all()` + selection update)

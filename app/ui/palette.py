@@ -507,6 +507,9 @@ class Palette(ctk.CTkFrame):
             node.name = entry.default_name
         self.project.add_widget(node)
         self.project.select_widget(node.id)
+        doc_id = doc.id if doc is not None else None
         self.project.history.push(
-            AddWidgetCommand(node.to_dict(), parent_id=None),
+            AddWidgetCommand(
+                node.to_dict(), parent_id=None, document_id=doc_id,
+            ),
         )

@@ -200,15 +200,14 @@ class Project:
         """Return a document's theme/accent colour.
 
         Priority: user-picked ``doc.color`` (Window Settings) →
-        hue derived from the UUID via the golden-ratio conjugate. A
-        small fixed palette would collide often (8 colours, 34%
-        chance among 3 docs); golden-ratio stepping over HSL hue
-        produces a unique, evenly spread colour for every UUID while
-        still looking deterministic — the same document always gets
-        the same colour across sessions.
+        hue derived from the doc's index in ``self.documents`` via
+        the golden-ratio conjugate. Index-based stepping guarantees
+        every doc in a project gets a visibly distinct hue — UUID
+        hashing (the previous approach) could land two docs on
+        perceptually-close hues (same "green-ish"), which defeats the
+        purpose of the colour code.
         """
         import colorsys
-        import hashlib
 
         from app.core.colors import DOCUMENT_PALETTE
 
@@ -220,11 +219,11 @@ class Project:
             return DOCUMENT_PALETTE[0]
         if doc.color:
             return doc.color
-        # 32-bit hash of the UUID string — stable across runs, evenly
-        # distributed, compact enough to fit an int.
-        digest = hashlib.md5(doc.id.encode("utf-8")).hexdigest()[:8]
-        seed = int(digest, 16)
-        hue = (seed * 0.6180339887498949) % 1.0
+        try:
+            idx = self.documents.index(doc)
+        except ValueError:
+            idx = 0
+        hue = (idx * 0.6180339887498949) % 1.0
         # Fixed S/L tuned for the dark builder theme: saturated
         # enough to be vivid, light enough to read on a #2d2d30 bar.
         r, g, b = colorsys.hls_to_rgb(hue, 0.65, 0.55)
@@ -415,12 +414,19 @@ class Project:
     # ------------------------------------------------------------------
     def add_widget(
         self, node: WidgetNode, parent_id: str | None = None,
+        document_id: str | None = None,
     ) -> None:
         if not node.name:
             node.name = self._generate_unique_name(node.widget_type)
         if parent_id is None:
+            # Top-level: honour document_id when given so undo/paste
+            # can restore widgets into the doc they came from instead
+            # of defaulting to whichever doc happens to be active.
+            target_doc = (
+                self.get_document(document_id) if document_id else None
+            ) or self.active_document
             node.parent = None
-            self.root_widgets.append(node)
+            target_doc.root_widgets.append(node)
         else:
             parent = self.get_widget(parent_id)
             if parent is None:
@@ -455,12 +461,16 @@ class Project:
         widget_id: str,
         new_parent_id: str | None,
         index: int | None = None,
+        document_id: str | None = None,
     ) -> None:
         """Move a node between parents and/or to a new sibling position.
 
         - ``new_parent_id=None`` → top-level
         - ``index=None`` → append to the end of the target sibling list
         - ``index=N`` → insert at position N (clamped)
+        - ``document_id`` → target doc for top-level moves; without it
+          top-level falls back to the currently active document, which
+          is wrong for cross-doc undo/redo replay.
 
         Publishes ``widget_reparented`` when the parent actually changes,
         or ``widget_z_changed(direction="reorder")`` when only the
@@ -479,6 +489,19 @@ class Project:
         old_parent = node.parent
         old_parent_id = old_parent.id if old_parent is not None else None
         parent_changed = old_parent_id != new_parent_id
+        old_doc = self.find_document_for_widget(widget_id)
+        target_doc = (
+            self.get_document(document_id)
+            if (new_parent is None and document_id) else None
+        )
+        if target_doc is None and new_parent is None:
+            target_doc = self.active_document
+        doc_changed = (
+            new_parent is None
+            and old_doc is not None
+            and target_doc is not None
+            and old_doc.id != target_doc.id
+        )
 
         old_siblings = self._sibling_list(node)
         try:
@@ -486,17 +509,18 @@ class Project:
         except ValueError:
             old_index = None
 
-        # Early-out: same parent and either no index or same index.
-        if not parent_changed and (index is None or index == old_index):
+        # Early-out: same parent, same doc, same index.
+        if (not parent_changed and not doc_changed
+                and (index is None or index == old_index)):
             return
 
         if old_index is not None:
             old_siblings.pop(old_index)
 
-        target_siblings = (
-            new_parent.children if new_parent is not None
-            else self.root_widgets
-        )
+        if new_parent is not None:
+            target_siblings = new_parent.children
+        else:
+            target_siblings = target_doc.root_widgets
 
         # If staying in the same sibling list and the original slot
         # was before the target slot, removing the node shifted
@@ -514,7 +538,7 @@ class Project:
             clamped = max(0, min(index, len(target_siblings)))
             target_siblings.insert(clamped, node)
 
-        if parent_changed:
+        if parent_changed or doc_changed:
             self.event_bus.publish(
                 "widget_reparented", widget_id,
                 old_parent_id, new_parent_id,
@@ -708,22 +732,37 @@ class Project:
 
     def paste_from_clipboard(
         self, parent_id: str | None = None,
+        base_position: tuple[int, int] | None = None,
     ) -> list[str]:
         """Recreate the clipboard snapshots under `parent_id` with
         fresh UUIDs + auto-generated names. Each top-level paste is
         offset by (+20, +20) so it doesn't land exactly on top of the
         original. Pasted widgets become the new selection.
 
+        When ``base_position`` is given (logical x, y), every top-level
+        clone lands at that position plus a per-item cascade offset —
+        overrides the default "nudge from original coords" so canvas
+        right-click paste can place the widget where the cursor is.
+
         Returns the list of new top-level widget ids.
         """
         if not self.clipboard:
             return []
         new_top_ids: list[str] = []
-        for data in self.clipboard:
+        for idx, data in enumerate(self.clipboard):
             root = self._clone_with_fresh_ids(data)
             try:
-                root.properties["x"] = int(root.properties.get("x", 0)) + 20
-                root.properties["y"] = int(root.properties.get("y", 0)) + 20
+                if base_position is not None:
+                    bx, by = base_position
+                    root.properties["x"] = max(0, int(bx) + idx * 20)
+                    root.properties["y"] = max(0, int(by) + idx * 20)
+                else:
+                    root.properties["x"] = (
+                        int(root.properties.get("x", 0)) + 20
+                    )
+                    root.properties["y"] = (
+                        int(root.properties.get("y", 0)) + 20
+                    )
             except (TypeError, ValueError):
                 pass
             self._paste_recursive(root, parent_id)

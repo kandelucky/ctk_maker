@@ -22,6 +22,7 @@ from app.core.commands import (
     DeleteMultipleCommand,
     DeleteWidgetCommand,
     RenameCommand,
+    ReparentCommand,
     ToggleFlagCommand,
     ZOrderCommand,
 )
@@ -943,7 +944,103 @@ class ObjectTreePanel(ctk.CTkFrame):
             return
         parent_id = drop_info.get("parent_id")
         index = drop_info.get("index")
+        node = self.project.get_widget(source_id)
+        if node is None:
+            return
+        old_parent_id = node.parent.id if node.parent is not None else None
+        old_siblings = (
+            node.parent.children if node.parent is not None
+            else self.project.root_widgets
+        )
+        try:
+            old_index = old_siblings.index(node)
+        except ValueError:
+            old_index = len(old_siblings)
+        try:
+            old_x = int(node.properties.get("x", 0))
+            old_y = int(node.properties.get("y", 0))
+        except (TypeError, ValueError):
+            old_x = old_y = 0
+        old_doc = self.project.find_document_for_widget(source_id)
+        old_doc_id = old_doc.id if old_doc is not None else None
+        # Tree drag has no cursor position — without a reset the widget
+        # would keep its old absolute x/y (valid for the old parent's
+        # space) and land off-screen or overlapping inside the new one.
+        self._reset_position_for_tree_reparent(source_id, parent_id)
+        try:
+            new_x = int(node.properties.get("x", 0))
+            new_y = int(node.properties.get("y", 0))
+        except (TypeError, ValueError):
+            new_x = new_y = 0
         self.project.reparent(source_id, parent_id, index=index)
+        post_node = self.project.get_widget(source_id)
+        if post_node is None:
+            return
+        new_siblings = (
+            post_node.parent.children if post_node.parent is not None
+            else self.project.root_widgets
+        )
+        try:
+            new_index = new_siblings.index(post_node)
+        except ValueError:
+            new_index = len(new_siblings) - 1
+        new_doc = self.project.find_document_for_widget(source_id)
+        new_doc_id = new_doc.id if new_doc is not None else old_doc_id
+        if (old_parent_id == parent_id and old_index == new_index
+                and old_x == new_x and old_y == new_y
+                and old_doc_id == new_doc_id):
+            return
+        self.project.history.push(
+            ReparentCommand(
+                source_id,
+                old_parent_id=old_parent_id,
+                old_index=old_index,
+                old_x=old_x,
+                old_y=old_y,
+                new_parent_id=parent_id,
+                new_index=new_index,
+                new_x=new_x,
+                new_y=new_y,
+                old_document_id=old_doc_id,
+                new_document_id=new_doc_id,
+            ),
+        )
+
+    def _reset_position_for_tree_reparent(
+        self, source_id: str, new_parent_id: str | None,
+    ) -> None:
+        node = self.project.get_widget(source_id)
+        if node is None:
+            return
+        old_parent_id = node.parent.id if node.parent is not None else None
+        if old_parent_id == new_parent_id:
+            return
+        new_parent = (
+            self.project.get_widget(new_parent_id)
+            if new_parent_id else None
+        )
+        # Non-place parents ignore x/y — leave stored values intact so
+        # a later move back to a place context preserves them.
+        if new_parent is not None:
+            layout = normalise_layout_type(
+                new_parent.properties.get("layout_type", "place"),
+            )
+            if layout != "place":
+                return
+        siblings = (
+            new_parent.children if new_parent is not None
+            else self.project.root_widgets
+        )
+        occupied = {
+            (s.properties.get("x", 0), s.properties.get("y", 0))
+            for s in siblings if s is not node
+        }
+        x, y = 10, 10
+        while (x, y) in occupied:
+            x += 20
+            y += 20
+        node.properties["x"] = x
+        node.properties["y"] = y
 
     # ---- drop-zone computation + visual feedback ---------------------
     def _compute_drop_info(self, event_y: int) -> dict:
@@ -1192,7 +1289,7 @@ class ObjectTreePanel(ctk.CTkFrame):
     def _push_paste_history(self, new_ids: list[str]) -> None:
         if not new_ids:
             return
-        entries: list[tuple[dict, str | None, int]] = []
+        entries: list[tuple[dict, str | None, int, str | None]] = []
         for nid in new_ids:
             node = self.project.get_widget(nid)
             if node is None:
@@ -1208,7 +1305,11 @@ class ObjectTreePanel(ctk.CTkFrame):
                 index = siblings.index(node)
             except ValueError:
                 index = len(siblings) - 1
-            entries.append((node.to_dict(), parent_id, index))
+            owning_doc = self.project.find_document_for_widget(nid)
+            document_id = (
+                owning_doc.id if owning_doc is not None else None
+            )
+            entries.append((node.to_dict(), parent_id, index, document_id))
         if entries:
             self.project.history.push(BulkAddCommand(entries, label="Paste"))
 
@@ -1228,9 +1329,11 @@ class ObjectTreePanel(ctk.CTkFrame):
             index = siblings.index(clone)
         except ValueError:
             index = len(siblings) - 1
+        owning_doc = self.project.find_document_for_widget(new_id)
+        document_id = owning_doc.id if owning_doc is not None else None
         self.project.history.push(
             BulkAddCommand(
-                [(clone.to_dict(), parent_id, index)],
+                [(clone.to_dict(), parent_id, index, document_id)],
                 label="Duplicate",
             ),
         )
@@ -1312,7 +1415,7 @@ class ObjectTreePanel(ctk.CTkFrame):
             # removal shifts the sibling lists. Skip descendants
             # whose ancestor is also selected — a parent deletion
             # already covers them.
-            entries: list[tuple[dict, str | None, int]] = []
+            entries: list[tuple[dict, str | None, int, str | None]] = []
             for node in self.project.iter_all_widgets():
                 if node.id not in selected:
                     continue
@@ -1336,8 +1439,14 @@ class ObjectTreePanel(ctk.CTkFrame):
                     index = siblings.index(node)
                 except ValueError:
                     index = len(siblings)
-                entries.append((node.to_dict(), parent_id, index))
-            for snapshot, _parent_id, _index in entries:
+                owning_doc = self.project.find_document_for_widget(node.id)
+                document_id = (
+                    owning_doc.id if owning_doc is not None else None
+                )
+                entries.append(
+                    (node.to_dict(), parent_id, index, document_id),
+                )
+            for snapshot, _parent_id, _index, _doc_id in entries:
                 self.project.remove_widget(snapshot["id"])
             if entries:
                 self.project.history.push(DeleteMultipleCommand(entries))
@@ -1367,9 +1476,11 @@ class ObjectTreePanel(ctk.CTkFrame):
             index = siblings.index(node)
         except ValueError:
             index = len(siblings)
+        owning_doc = self.project.find_document_for_widget(widget_id)
+        document_id = owning_doc.id if owning_doc is not None else None
         self.project.remove_widget(widget_id)
         self.project.history.push(
-            DeleteWidgetCommand(snapshot, parent_id, index),
+            DeleteWidgetCommand(snapshot, parent_id, index, document_id),
         )
 
     def destroy(self) -> None:

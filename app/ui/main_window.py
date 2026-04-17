@@ -953,7 +953,7 @@ class MainWindow(ctk.CTk):
         if not new_ids:
             return
         from app.core.commands import BulkAddCommand
-        entries: list[tuple[dict, str | None, int]] = []
+        entries: list[tuple[dict, str | None, int, str | None]] = []
         for nid in new_ids:
             node = self.project.get_widget(nid)
             if node is None:
@@ -969,7 +969,11 @@ class MainWindow(ctk.CTk):
                 index = siblings.index(node)
             except ValueError:
                 index = len(siblings) - 1
-            entries.append((node.to_dict(), parent_id, index))
+            owning_doc = self.project.find_document_for_widget(nid)
+            document_id = (
+                owning_doc.id if owning_doc is not None else None
+            )
+            entries.append((node.to_dict(), parent_id, index, document_id))
         if entries:
             self.project.history.push(BulkAddCommand(entries, label="Paste"))
 
@@ -1004,9 +1008,11 @@ class MainWindow(ctk.CTk):
             index = siblings.index(node)
         except ValueError:
             index = len(siblings)
+        owning_doc = self.project.find_document_for_widget(sid)
+        document_id = owning_doc.id if owning_doc is not None else None
         self.project.remove_widget(sid)
         self.project.history.push(
-            DeleteWidgetCommand(snapshot, parent_id, index),
+            DeleteWidgetCommand(snapshot, parent_id, index, document_id),
         )
 
     def _on_menu_select_all(self) -> None:

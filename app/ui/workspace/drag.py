@@ -576,6 +576,7 @@ class WidgetDragController:
         self.project.event_bus.publish(
             "widget_reparented", nid, old_parent_id, None,
         )
+        same_doc_id = old_doc.id if old_doc is not None else None
         self.project.history.push(
             ReparentCommand(
                 nid,
@@ -587,6 +588,8 @@ class WidgetDragController:
                 new_index=len(old_doc.root_widgets) - 1,
                 new_x=nx,
                 new_y=ny,
+                old_document_id=same_doc_id,
+                new_document_id=same_doc_id,
             ),
         )
         return True
@@ -739,6 +742,8 @@ class WidgetDragController:
                 new_index = len(new_siblings) - 1
         else:
             new_index = 0
+        old_doc_id = old_doc.id if old_doc is not None else None
+        new_doc_id = new_doc.id if new_doc is not None else old_doc_id
         self.project.history.push(
             ReparentCommand(
                 nid,
@@ -750,6 +755,8 @@ class WidgetDragController:
                 new_index=new_index,
                 new_x=new_x,
                 new_y=new_y,
+                old_document_id=old_doc_id,
+                new_document_id=new_doc_id,
             ),
         )
         return True

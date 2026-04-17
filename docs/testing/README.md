@@ -10,11 +10,11 @@ Work one area top-to-bottom before moving on. Commit at the end of each area's c
 
 ## Progress
 
-Overall: **26 / 416** tests passed (6%)
+Overall: **38 / 409** tests passed (9%)
 
 | # | Area | File | Focus | Progress |
 |---|------|------|-------|----------|
-| 1 | Workspace core | [workspace.md](workspace.md) | palette drop, drag, resize, select, nudge | 26 / 45 |
+| 1 | Workspace core | [workspace.md](workspace.md) | palette drop, drag, resize, select, nudge | 38 / 38 ✅ |
 | 2 | Layout managers | [layout.md](layout.md) | place / vbox / hbox / grid + nested + reparent | 0 / 44 |
 | 3 | Properties panel | [properties.md](properties.md) | editors, disabled/hidden_when, drag-scrub | 0 / 42 |
 | 4 | Commands (undo/redo) | [commands.md](commands.md) | every mutation reversible, coalescing | 0 / 43 |
@@ -23,8 +23,8 @@ Overall: **26 / 416** tests passed (6%)
 | 7 | Widgets | [widgets.md](widgets.md) | 14+1 descriptors, per-widget sanity | 0 / 41 |
 | 8 | Inspectors & Dialogs | [inspectors_dialogs.md](inspectors_dialogs.md) | Object Tree, History, menubar / toolbar / shortcuts, modals, Window Settings | 0 / 103 |
 
-**Current area:** Area 1 — Workspace core (Blocks 1.1–1.5 done — 26/45)
-**Bugs found:** 12 (WS-1 outside-drop, WS-2 click-stack, WS-3 snap-back, WS-4 container extract-only, WS-5 active-doc follow, WS-6 drag ghost, WS-7 drill-down select, WS-8 grid-cell handle follow, WS-9 chrome ghost, WS-10 locked delete silent, WS-11 tree bypassed lock, WS-12 locked chrome tracked drag)
+**Current area:** Area 1 complete ✅ — all 38 tests passed. Next: Area 2 — Layout managers.
+**Bugs found:** 22 (WS-1 outside-drop, WS-2 click-stack, WS-3 snap-back, WS-4 container extract-only, WS-5 active-doc follow, WS-6 drag ghost, WS-7 drill-down select, WS-8 grid-cell handle follow, WS-9 chrome ghost, WS-10 locked delete silent, WS-11 tree bypassed lock, WS-12 locked chrome tracked drag, WS-13 tree reparent strange position, WS-14 tree reparent undo missing, WS-15 multi-delete single-only, WS-16 cross-doc delete undo, WS-17 cross-doc add redo, WS-18 cross-doc drag undo, WS-19 accent color collision, WS-20 left-click empty doc, WS-21 window settings in select mode, WS-22 document move undo left widgets behind)
 **Refactors done:** 0
 **Optimizations applied:** 0
 

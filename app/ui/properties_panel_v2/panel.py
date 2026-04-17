@@ -520,8 +520,18 @@ class PropertiesPanelV2(ctk.CTkFrame):
             return
 
         # Select tool: skip the full schema rebuild so click-to-pick
-        # stays cheap. Name / type / id chrome still updates.
-        if self._tool_provider() != "edit":
+        # stays cheap. Name / type / id chrome still updates. Window
+        # settings are the Select-mode exception — they describe the
+        # whole form, not a single widget, so clicking the settings
+        # chrome in Select mode should still open them. Hand mode
+        # stays strict: it's a pure canvas panner, opening anything
+        # there would contradict its "does nothing else" contract.
+        tool = self._tool_provider()
+        allow_full_rebuild = (
+            tool == "edit"
+            or (tool == "select" and node.id == WINDOW_ID)
+        )
+        if not allow_full_rebuild:
             self._clear_tree()
             self._update_chrome(node, descriptor)
             return

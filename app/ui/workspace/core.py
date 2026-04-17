@@ -24,6 +24,7 @@ from app.core.commands import (
     AddWidgetCommand,
     BulkAddCommand,
     ChangePropertyCommand,
+    DeleteMultipleCommand,
     DeleteWidgetCommand,
     RenameCommand,
     ZOrderCommand,
@@ -203,6 +204,7 @@ class Workspace(ctk.CTkFrame):
         )
         self.canvas.bind("<Configure>", self._on_canvas_configure)
         self.canvas.bind("<Control-MouseWheel>", self.zoom.handle_ctrl_wheel)
+        self.canvas.bind("<Button-3>", self._on_canvas_right_click)
 
     def _after_zoom_changed(self) -> None:
         """Callback invoked by ZoomController after a zoom update +
@@ -227,6 +229,10 @@ class Workspace(ctk.CTkFrame):
             self._on_active_document_changed,
         )
         bus.subscribe("documents_reordered", self._on_documents_reordered)
+        bus.subscribe(
+            "document_position_changed",
+            self._on_document_position_changed,
+        )
 
     def _on_active_document_changed(self, *_args, **_kwargs) -> None:
         # Add / remove / active-switch of a document changes which
@@ -238,6 +244,15 @@ class Workspace(ctk.CTkFrame):
         # Send-to-Back / Bring-to-Front swap the drawing order; a
         # full redraw rebuilds the canvas stack in the new order.
         self._redraw_document()
+
+    def _on_document_position_changed(self, *_args, **_kwargs) -> None:
+        # MoveDocumentCommand undo/redo path — mirror the live drag:
+        # redraw background/chrome, re-place every widget against the
+        # new canvas offset, refresh selection chrome if any.
+        self._redraw_document()
+        self.zoom.apply_all()
+        if self.project.selected_id:
+            self.selection.update()
 
     def _on_any_widget_renamed(
         self, widget_id: str, _new_name: str,
@@ -505,9 +520,14 @@ class Workspace(ctk.CTkFrame):
         return "break"
 
     def _on_delete(self, _event=None) -> str | None:
-        sid = self.project.selected_id
-        if sid is None or self._input_focused():
+        if self._input_focused():
             return None
+        selected = set(self.project.selected_ids)
+        if not selected:
+            return None
+        if len(selected) > 1:
+            return self._delete_multi(selected)
+        sid = next(iter(selected))
         if self._effective_locked(sid):
             messagebox.showinfo(
                 title="Widget locked",
@@ -541,10 +561,73 @@ class Workspace(ctk.CTkFrame):
             index = siblings.index(node)
         except ValueError:
             index = len(siblings)
+        owning_doc = self.project.find_document_for_widget(sid)
+        document_id = owning_doc.id if owning_doc is not None else None
         self.project.remove_widget(sid)
         self.project.history.push(
-            DeleteWidgetCommand(snapshot, parent_id, index),
+            DeleteWidgetCommand(snapshot, parent_id, index, document_id),
         )
+        return "break"
+
+    def _delete_multi(self, selected: set[str]) -> str:
+        # Any locked widget in the set blocks the whole delete so the
+        # user doesn't half-succeed and wonder which ones stayed.
+        locked_ids = [
+            nid for nid in selected if self._effective_locked(nid)
+        ]
+        if locked_ids:
+            messagebox.showinfo(
+                title="Widgets locked",
+                message=(
+                    f"{len(locked_ids)} of the selected widgets are locked. "
+                    "Unlock them from the Object Tree before deleting."
+                ),
+                parent=self.winfo_toplevel(),
+            )
+            return "break"
+        count = len(selected)
+        confirmed = messagebox.askyesno(
+            title="Delete widgets",
+            message=f"Delete {count} selected widgets?",
+            icon="warning",
+            parent=self.winfo_toplevel(),
+        )
+        if not confirmed:
+            return "break"
+        # Walk top-down so per-id parent + sibling index snapshots
+        # reflect the pre-removal state; skip descendants whose
+        # ancestor is also selected (the parent delete covers them).
+        entries: list[tuple[dict, str | None, int, str | None]] = []
+        for node in self.project.iter_all_widgets():
+            if node.id not in selected:
+                continue
+            ancestor = node.parent
+            covered = False
+            while ancestor is not None:
+                if ancestor.id in selected:
+                    covered = True
+                    break
+                ancestor = ancestor.parent
+            if covered:
+                continue
+            parent_id = (
+                node.parent.id if node.parent is not None else None
+            )
+            siblings = (
+                node.parent.children if node.parent is not None
+                else self.project.root_widgets
+            )
+            try:
+                index = siblings.index(node)
+            except ValueError:
+                index = len(siblings)
+            owning_doc = self.project.find_document_for_widget(node.id)
+            document_id = owning_doc.id if owning_doc is not None else None
+            entries.append((node.to_dict(), parent_id, index, document_id))
+        for snapshot, _parent_id, _index, _doc_id in entries:
+            self.project.remove_widget(snapshot["id"])
+        if entries:
+            self.project.history.push(DeleteMultipleCommand(entries))
         return "break"
 
     def _on_escape(self, _event=None) -> str | None:
@@ -855,8 +938,12 @@ class Workspace(ctk.CTkFrame):
             node.name = entry.default_name
         self.project.add_widget(node, parent_id=parent_id)
         self.project.select_widget(node.id)
+        owning_doc = self.project.find_document_for_widget(node.id)
+        document_id = owning_doc.id if owning_doc is not None else None
         self.project.history.push(
-            AddWidgetCommand(node.to_dict(), parent_id),
+            AddWidgetCommand(
+                node.to_dict(), parent_id, document_id=document_id,
+            ),
         )
 
     def _on_selection_changed(self, _widget_id: str | None) -> None:
@@ -911,32 +998,237 @@ class Workspace(ctk.CTkFrame):
     # Widget drag / reparent logic lives in ``drag.py`` —
     # ``self.drag_controller`` owns the gesture state.
 
-    def _on_widget_right_click(self, event, nid: str) -> str:
-        self.project.select_widget(nid)
+    def _on_canvas_right_click(self, event) -> str:
+        # Find the doc under the cursor — paste + Select All only make
+        # sense when anchored to one. Empty workspace area shows no menu.
+        cx, cy = self._screen_to_canvas(event.x_root, event.y_root)
+        doc = self._find_document_at_canvas(cx, cy)
+        if doc is None:
+            return "break"
+        if doc.id != self.project.active_document_id:
+            self.project.set_active_document(doc.id)
+        lx, ly = self.zoom.canvas_to_logical(cx, cy, document=doc)
         menu = tk.Menu(self.winfo_toplevel(), tearoff=0)
+        paste_state = "normal" if self.project.clipboard else "disabled"
         menu.add_command(
-            label="Rename",
-            command=lambda: self._prompt_rename_widget(nid),
+            label="Paste",
+            command=lambda d=doc, x=lx, y=ly: self._paste_at_canvas(d, x, y),
+            state=paste_state,
         )
-        menu.add_command(
-            label="Duplicate",
-            command=lambda: self._duplicate_with_history(nid),
-        )
-        menu.add_command(label="Delete", command=self._on_delete)
         menu.add_separator()
+        top_ids = {n.id for n in doc.root_widgets}
+        select_state = "normal" if top_ids else "disabled"
         menu.add_command(
-            label="Bring to Front",
-            command=lambda: self._z_order_with_history(nid, "front"),
+            label="Select All",
+            command=lambda d=doc: self._select_all_in_doc(d),
+            state=select_state,
+        )
+        deselect_state = (
+            "normal" if self.project.selected_ids else "disabled"
         )
         menu.add_command(
-            label="Send to Back",
-            command=lambda: self._z_order_with_history(nid, "back"),
+            label="Deselect All",
+            command=lambda: self.project.select_widget(None),
+            state=deselect_state,
         )
         try:
             menu.tk_popup(event.x_root, event.y_root)
         finally:
             menu.grab_release()
         return "break"
+
+    def _paste_at_canvas(self, doc, logical_x: int, logical_y: int) -> None:
+        if not self.project.clipboard:
+            return
+        new_ids = self.project.paste_from_clipboard(
+            parent_id=None,
+            base_position=(logical_x, logical_y),
+        )
+        if not new_ids:
+            return
+        entries: list[tuple[dict, str | None, int, str | None]] = []
+        for new_id in new_ids:
+            clone = self.project.get_widget(new_id)
+            if clone is None:
+                continue
+            parent_id = clone.parent.id if clone.parent is not None else None
+            siblings = (
+                clone.parent.children if clone.parent is not None
+                else self.project.root_widgets
+            )
+            try:
+                index = siblings.index(clone)
+            except ValueError:
+                index = len(siblings) - 1
+            owning_doc = self.project.find_document_for_widget(new_id)
+            document_id = owning_doc.id if owning_doc is not None else None
+            entries.append(
+                (clone.to_dict(), parent_id, index, document_id),
+            )
+        if entries:
+            self.project.history.push(
+                BulkAddCommand(entries, label="Paste"),
+            )
+        _ = doc  # active doc was set above; paste went there
+
+    def _select_all_in_doc(self, doc) -> None:
+        ids = {node.id for node in self._iter_doc_widgets(doc)}
+        if not ids:
+            return
+        primary = next(iter(ids))
+        self.project.set_multi_selection(ids, primary=primary)
+        # Multi-select in Edit mode is ambiguous (resize handles, single-
+        # widget property edits) — mirror the Ctrl+click auto-switch so
+        # the tool reflects the selection state.
+        from app.ui.workspace.controls import TOOL_EDIT, TOOL_SELECT
+        if len(ids) > 1 and self.controls.tool == TOOL_EDIT:
+            self.controls.set_tool(TOOL_SELECT)
+
+    def _iter_doc_widgets(self, doc):
+        stack = list(doc.root_widgets)
+        while stack:
+            node = stack.pop()
+            yield node
+            stack.extend(node.children)
+
+    def _on_widget_right_click(self, event, nid: str) -> str:
+        # Preserve multi-selection when right-clicking one of its members
+        # — calling select_widget here would collapse the set to a single
+        # primary and make group Delete impossible from the context menu.
+        multi_active = (
+            len(self.project.selected_ids) > 1
+            and nid in self.project.selected_ids
+        )
+        menu = tk.Menu(self.winfo_toplevel(), tearoff=0)
+        if multi_active:
+            count = len(self.project.selected_ids)
+            menu.add_command(
+                label=f"Copy {count} widgets",
+                command=self._copy_selection,
+            )
+            menu.add_command(
+                label=f"Duplicate {count} widgets",
+                command=self._duplicate_selection,
+            )
+            menu.add_separator()
+            menu.add_command(
+                label=f"Delete {count} widgets",
+                command=self._on_delete,
+            )
+        else:
+            self.project.select_widget(nid)
+            menu.add_command(
+                label="Copy",
+                command=lambda: self._copy_single(nid),
+            )
+            paste_state = "normal" if self.project.clipboard else "disabled"
+            menu.add_command(
+                label="Paste",
+                command=lambda: self._paste_at_widget(nid),
+                state=paste_state,
+            )
+            menu.add_command(
+                label="Duplicate",
+                command=lambda: self._duplicate_with_history(nid),
+            )
+            menu.add_separator()
+            menu.add_command(
+                label="Rename",
+                command=lambda: self._prompt_rename_widget(nid),
+            )
+            menu.add_command(label="Delete", command=self._on_delete)
+            menu.add_separator()
+            menu.add_command(
+                label="Bring to Front",
+                command=lambda: self._z_order_with_history(nid, "front"),
+            )
+            menu.add_command(
+                label="Send to Back",
+                command=lambda: self._z_order_with_history(nid, "back"),
+            )
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+        return "break"
+
+    def _copy_selection(self) -> None:
+        ids = self.project.selected_ids
+        if not ids:
+            return
+        self.project.copy_to_clipboard(ids)
+
+    def _copy_single(self, nid: str) -> None:
+        self.project.copy_to_clipboard({nid})
+
+    def _paste_at_widget(self, nid: str) -> None:
+        if not self.project.clipboard:
+            return
+        node = self.project.get_widget(nid)
+        if node is None:
+            return
+        descriptor = get_descriptor(node.widget_type)
+        if descriptor is not None and getattr(
+            descriptor, "is_container", False,
+        ):
+            parent_id: str | None = nid
+        else:
+            parent_id = node.parent.id if node.parent is not None else None
+        new_ids = self.project.paste_from_clipboard(parent_id=parent_id)
+        if not new_ids:
+            return
+        entries: list[tuple[dict, str | None, int, str | None]] = []
+        for new_id in new_ids:
+            clone = self.project.get_widget(new_id)
+            if clone is None:
+                continue
+            p_id = clone.parent.id if clone.parent is not None else None
+            siblings = (
+                clone.parent.children if clone.parent is not None
+                else self.project.root_widgets
+            )
+            try:
+                index = siblings.index(clone)
+            except ValueError:
+                index = len(siblings) - 1
+            owning_doc = self.project.find_document_for_widget(new_id)
+            document_id = owning_doc.id if owning_doc is not None else None
+            entries.append((clone.to_dict(), p_id, index, document_id))
+        if entries:
+            self.project.history.push(
+                BulkAddCommand(entries, label="Paste"),
+            )
+
+    def _duplicate_selection(self) -> None:
+        ids = list(self.project.selected_ids)
+        if not ids:
+            return
+        entries: list[tuple[dict, str | None, int, str | None]] = []
+        for nid in ids:
+            new_id = self.project.duplicate_widget(nid)
+            if new_id is None:
+                continue
+            clone = self.project.get_widget(new_id)
+            if clone is None:
+                continue
+            parent_id = clone.parent.id if clone.parent is not None else None
+            siblings = (
+                clone.parent.children if clone.parent is not None
+                else self.project.root_widgets
+            )
+            try:
+                index = siblings.index(clone)
+            except ValueError:
+                index = len(siblings) - 1
+            owning_doc = self.project.find_document_for_widget(new_id)
+            document_id = owning_doc.id if owning_doc is not None else None
+            entries.append(
+                (clone.to_dict(), parent_id, index, document_id),
+            )
+        if entries:
+            self.project.history.push(
+                BulkAddCommand(entries, label="Duplicate"),
+            )
 
     def _duplicate_with_history(self, nid: str) -> None:
         new_id = self.project.duplicate_widget(nid)
@@ -954,9 +1246,11 @@ class Workspace(ctk.CTkFrame):
             index = siblings.index(clone)
         except ValueError:
             index = len(siblings) - 1
+        owning_doc = self.project.find_document_for_widget(new_id)
+        document_id = owning_doc.id if owning_doc is not None else None
         self.project.history.push(
             BulkAddCommand(
-                [(clone.to_dict(), parent_id, index)],
+                [(clone.to_dict(), parent_id, index, document_id)],
                 label="Duplicate",
             ),
         )
@@ -1020,6 +1314,14 @@ class Workspace(ctk.CTkFrame):
             return "break"
         # Selection handles are now embedded widgets that capture
         # Button-1 directly, so canvas clicks can't land on them.
+        # If the click landed on empty area of a non-active document,
+        # switch to that doc before deselecting — otherwise clicking
+        # into a background form does nothing and the user has to
+        # tap the title bar to change focus.
+        cx, cy = self._screen_to_canvas(event.x_root, event.y_root)
+        doc = self._find_document_at_canvas(cx, cy)
+        if doc is not None and doc.id != self.project.active_document_id:
+            self.project.set_active_document(doc.id)
         self.project.select_widget(None)
         return None
 
