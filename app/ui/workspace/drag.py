@@ -50,6 +50,18 @@ class WidgetDragController:
     def __init__(self, workspace) -> None:
         self.workspace = workspace
         self._drag: dict | None = None
+        # Drag ghost — a small Toplevel showing the widget's label
+        # while the cursor follows. Used only for layout-managed
+        # children (pack / grid) because place children already move
+        # under the cursor via x/y updates; a ghost on top of that
+        # would just duplicate the motion.
+        self._ghost: tk.Toplevel | None = None
+        # De-dup ButtonPress firings by tk event serial. Composite
+        # widgets can fire the same press through a parent + child
+        # binding both carrying different nids — running drill-down
+        # twice in one event loop pass skips past the intended
+        # container on the very first click.
+        self._last_press_serial: int | None = None
 
     # ------------------------------------------------------------------
     # Convenience accessors — keep call sites terse.
@@ -76,21 +88,43 @@ class WidgetDragController:
     # ------------------------------------------------------------------
     # Bound handlers
     # ------------------------------------------------------------------
-    def on_press(self, event, nid: str) -> None:
+    def on_press(self, event, nid: str) -> str | None:
         ws = self.workspace
         if ws._tool == "hand":
             ws._begin_pan(event)
-            return
+            return "break"
         # Clear any stale drag state from a prior interaction whose
         # ButtonRelease was lost (widget destroyed mid-drag, focus
         # switch to another toplevel, etc).
         self._drag = None
-        self.project.select_widget(nid)
-        if ws._effective_locked(nid):
+        # Suppress duplicate ButtonPress firings within a single tk
+        # event loop pass — some composite widgets route the press
+        # through both their own binding and an internal child's,
+        # which would otherwise run drill-down twice and descend past
+        # the intended container on the very first click.
+        serial = getattr(event, "serial", None)
+        if serial is not None and self._last_press_serial == serial:
+            return "break"
+        self._last_press_serial = serial
+        # Switch active document to the one owning this widget so
+        # drag / resize coords are computed against the right form's
+        # offset instead of the previously-active form's.
+        owning_doc = self.project.find_document_for_widget(nid)
+        if owning_doc is not None and (
+            self.project.active_document is not owning_doc
+        ):
+            self.project.set_active_document(owning_doc.id)
+        # Unity-style drill-down selection: first click on a hierarchy
+        # selects the outermost ancestor; subsequent clicks descend
+        # one level at a time. Ensures you can reach a container even
+        # when it's fully covered by its children.
+        resolved_nid = self._resolve_click_target(nid)
+        self.project.select_widget(resolved_nid)
+        if ws._effective_locked(resolved_nid):
             # Locked widgets are selectable (for property editing)
             # but not draggable.
-            return
-        node = self.project.get_widget(nid)
+            return "break"
+        node = self.project.get_widget(resolved_nid)
         if node is None:
             return
         try:
@@ -102,14 +136,73 @@ class WidgetDragController:
         # children alike because we only care about the mouse delta
         # from the press point and apply it (zoom-adjusted) to the
         # logical coordinate stored in properties.
+        # ``click_nid`` is the widget that received the tk event;
+        # ``nid`` is the one we're actually dragging (after
+        # drill-down resolution). Motion events come through the
+        # clicked widget's binding so we match against click_nid.
         self._drag = {
-            "nid": nid,
+            "nid": resolved_nid,
+            "click_nid": nid,
             "start_x": start_x,
             "start_y": start_y,
             "press_mx": event.x_root,
             "press_my": event.y_root,
             "moved": False,
         }
+        return "break"
+
+    def _resolve_click_target(self, clicked_nid: str) -> str:
+        """Drill-down selection with shared-context shortcut.
+
+        Three cases, in order of precedence:
+
+        1. Current selection is an ancestor of the clicked widget →
+           descend one level toward the click.
+        2. Current selection shares a common ancestor with the clicked
+           widget (i.e. they're already in the same Frame / parent
+           scope) → select the clicked widget directly; no drill-up.
+           Lets the user switch between siblings inside a Frame once
+           the Frame has been "entered".
+        3. No overlap (different branch, or nothing selected) →
+           select the outermost ancestor so the user has to descend
+           explicitly.
+        """
+        clicked_node = self.project.get_widget(clicked_nid)
+        if clicked_node is None:
+            return clicked_nid
+        chain: list = []
+        cur = clicked_node
+        while cur is not None:
+            chain.append(cur)
+            cur = cur.parent
+        chain.reverse()  # [outermost ancestor, ..., clicked]
+        if not chain:
+            return clicked_nid
+        current_id = self.project.selected_id
+        if current_id is None:
+            return chain[0].id
+        # Case 1 — current is an ancestor of clicked (or clicked itself).
+        for idx, node in enumerate(chain):
+            if node.id == current_id:
+                if idx + 1 < len(chain):
+                    return chain[idx + 1].id
+                return chain[idx].id
+        # Case 2 — shared scope. Collect current's ancestor ids (incl.
+        # itself) and see if any clicked ancestor (excluding clicked
+        # itself) is among them; if so, we're already "inside" that
+        # scope.
+        current_node = self.project.get_widget(current_id)
+        if current_node is not None:
+            current_ancestor_ids: set = set()
+            c = current_node
+            while c is not None:
+                current_ancestor_ids.add(c.id)
+                c = c.parent
+            for node in chain[:-1]:
+                if node.id in current_ancestor_ids:
+                    return clicked_nid
+        # Case 3 — start at outermost.
+        return chain[0].id
 
     def on_motion(self, event, nid: str) -> None:
         ws = self.workspace
@@ -122,9 +215,11 @@ class WidgetDragController:
         if not (event.state & 0x0100):
             self._drag = None
             self._clear_grid_highlight()
+            self._destroy_ghost()
             return
-        if self._drag is None or self._drag["nid"] != nid:
+        if self._drag is None or self._drag.get("click_nid", self._drag["nid"]) != nid:
             return
+        nid = self._drag["nid"]
         dx_root = event.x_root - self._drag["press_mx"]
         dy_root = event.y_root - self._drag["press_my"]
         if not self._drag["moved"]:
@@ -147,12 +242,19 @@ class WidgetDragController:
             ) == "grid"
         )
         node = self.project.get_widget(nid)
-        src_grid = (
-            node is not None and node.parent is not None
-            and normalise_layout_type(
+        src_layout = (
+            normalise_layout_type(
                 node.parent.properties.get("layout_type", "place"),
-            ) == "grid"
+            ) if node is not None and node.parent is not None else "place"
         )
+        src_grid = src_layout == "grid"
+        src_managed = src_layout in ("vbox", "hbox", "grid")
+        # Ghost: pack/grid children can't move via x/y updates, so we
+        # surface drag feedback as a small Toplevel following the
+        # cursor. place children already slide under the cursor — no
+        # ghost needed there.
+        if src_managed:
+            self._update_ghost(node, event.x_root, event.y_root)
         if target_grid:
             row, col = self._grid_cell_at(target, cx, cy)
             self._draw_grid_highlight(target, row, col)
@@ -163,6 +265,9 @@ class WidgetDragController:
             # Grid-parented widget dragged outside any grid — still
             # skip x/y updates so the model stays clean; we'll either
             # reparent on release or snap back to its current cell.
+            return
+        if src_managed:
+            # pack (vbox/hbox) parent — same story: skip x/y updates.
             return
         zoom = self.zoom.value or 1.0
         new_x = self._drag["start_x"] + int(dx_root / zoom)
@@ -184,7 +289,40 @@ class WidgetDragController:
         # lingering at the pre-drop spot until the next UI event.
         self._drag = None
         self._clear_grid_highlight()
+        self._destroy_ghost()
         if drag is not None and drag.get("moved"):
+            node = self.project.get_widget(drag["nid"])
+            cx_r, cy_r = ws._screen_to_canvas(event.x_root, event.y_root)
+            started_in_container = (
+                node is not None and node.parent is not None
+            )
+            # Container children follow extract-only semantics: dropped
+            # anywhere except the source container → hop to the source
+            # document's root at a default position. Blocks the "drag
+            # straight from one container to another" shortcut because
+            # mid-layout moves were getting confusing in practice.
+            if started_in_container:
+                if self._maybe_extract_from_container(event, drag):
+                    ws._update_widget_visibility_across_docs()
+                    return
+                # Dropped inside source container — fall through to
+                # normal move / grid cell-snap paths.
+            else:
+                # Top-level widget dropped on empty canvas → snap back.
+                if (
+                    ws._find_container_at(
+                        cx_r, cy_r, exclude_id=drag["nid"],
+                    ) is None
+                    and ws._find_document_at_canvas(cx_r, cy_r) is None
+                ):
+                    self.project.update_property(
+                        drag["nid"], "x", drag["start_x"],
+                    )
+                    self.project.update_property(
+                        drag["nid"], "y", drag["start_y"],
+                    )
+                    ws._update_widget_visibility_across_docs()
+                    return
             grid_handled = self._maybe_grid_drop(event, drag)
             if not grid_handled:
                 reparented = self._maybe_reparent_dragged(event, drag)
@@ -217,6 +355,146 @@ class WidgetDragController:
         # just slid into / out of another document's area picks up
         # the right hidden state.
         ws._update_widget_visibility_across_docs()
+        # Grid / pack moves change position without mutating x/y, so
+        # the property-change-driven selection redraw fires before
+        # the tk geometry manager has settled. Force another redraw
+        # once the event loop is idle so the handles follow the cell
+        # move visually.
+        if self.project.selected_id is not None:
+            self.workspace.after_idle(ws.selection.draw)
+
+    # ------------------------------------------------------------------
+    # Drag ghost for layout-managed children
+    # ------------------------------------------------------------------
+    def _update_ghost(self, node, x_root: int, y_root: int) -> None:
+        """Create (or move) a small Toplevel showing the widget's
+        display label near the cursor. Needed for pack/grid children
+        because their real widgets can't follow the mouse visually.
+        """
+        if node is None:
+            return
+        if self._ghost is None:
+            label_text = node.name or node.widget_type
+            ghost = tk.Toplevel(self.workspace)
+            ghost.overrideredirect(True)
+            ghost.attributes("-topmost", True)
+            try:
+                ghost.attributes("-alpha", 0.85)
+            except tk.TclError:
+                pass
+            frame = tk.Frame(
+                ghost, bg="#1f6aa5", bd=1, relief="solid",
+                highlightthickness=1, highlightbackground="#3b8ed0",
+            )
+            frame.pack()
+            tk.Label(
+                frame, text=label_text,
+                bg="#1f6aa5", fg="white",
+                font=("Segoe UI", 10, "bold"), padx=10, pady=4,
+            ).pack()
+            ghost.update_idletasks()
+            self._ghost = ghost
+        try:
+            self._ghost.geometry(f"+{x_root + 12}+{y_root + 12}")
+        except tk.TclError:
+            pass
+
+    def _destroy_ghost(self) -> None:
+        if self._ghost is not None:
+            try:
+                self._ghost.destroy()
+            except tk.TclError:
+                pass
+            self._ghost = None
+
+    # ------------------------------------------------------------------
+    # Container extraction (two-step reparent)
+    # ------------------------------------------------------------------
+    def _maybe_extract_from_container(self, event, drag: dict) -> bool:
+        """Extract a child out of its container to the source document's
+        root at a cascade-offset default position. Fires only when the
+        widget started inside a container and wasn't dropped inside
+        that same container. Returns True when extraction happened —
+        callers skip grid / reparent fallbacks after.
+        """
+        ws = self.workspace
+        nid = drag["nid"]
+        node = self.project.get_widget(nid)
+        if node is None or node.parent is None:
+            return False
+        self.canvas.update_idletasks()
+        cx, cy = ws._screen_to_canvas(event.x_root, event.y_root)
+        target = ws._find_container_at(cx, cy, exclude_id=nid)
+        if target is not None and target.id == node.parent.id:
+            return False
+        old_parent_id = node.parent.id
+        old_doc = (
+            self.project.find_document_for_widget(nid)
+            or self.project.active_document
+        )
+        if old_doc is None:
+            return False
+        # Land at the cursor's position translated into the source
+        # document's logical coords — that's where the user aimed.
+        # If the cursor is outside the source document (dropped over
+        # another form or empty canvas), fall back to a cascade
+        # default so the widget doesn't vanish off-form.
+        cursor_doc = ws._find_document_at_canvas(cx, cy)
+        if cursor_doc is old_doc:
+            lx, ly = self.zoom.canvas_to_logical(cx, cy, document=old_doc)
+            try:
+                w = int(node.properties.get("width", 0) or 0)
+                h = int(node.properties.get("height", 0) or 0)
+            except (TypeError, ValueError):
+                w = h = 0
+            # Centre-ish on cursor so the release point lines up
+            # visually with the drop location.
+            nx = max(0, min(lx - w // 2, max(0, old_doc.width - w)))
+            ny = max(0, min(ly - h // 2, max(0, old_doc.height - h)))
+        else:
+            taken = {
+                (
+                    int(w.properties.get("x", 0) or 0),
+                    int(w.properties.get("y", 0) or 0),
+                )
+                for w in old_doc.root_widgets if w is not node
+            }
+            nx, ny = 20, 20
+            while (nx, ny) in taken:
+                nx += 20
+                ny += 20
+        # Undo snapshot
+        old_siblings = node.parent.children
+        try:
+            old_index = old_siblings.index(node)
+        except ValueError:
+            old_index = len(old_siblings)
+        old_x = drag["start_x"]
+        old_y = drag["start_y"]
+        # Mutate: remove from container, append to doc root, reset x/y
+        node.properties["x"] = nx
+        node.properties["y"] = ny
+        if node in old_siblings:
+            old_siblings.remove(node)
+        node.parent = None
+        old_doc.root_widgets.append(node)
+        self.project.event_bus.publish(
+            "widget_reparented", nid, old_parent_id, None,
+        )
+        self.project.history.push(
+            ReparentCommand(
+                nid,
+                old_parent_id=old_parent_id,
+                old_index=old_index,
+                old_x=old_x,
+                old_y=old_y,
+                new_parent_id=None,
+                new_index=len(old_doc.root_widgets) - 1,
+                new_x=nx,
+                new_y=ny,
+            ),
+        )
+        return True
 
     # ------------------------------------------------------------------
     # Reparent detection

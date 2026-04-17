@@ -49,9 +49,14 @@ class Document:
         canvas_y: int = 0,
         window_properties: dict | None = None,
         is_toplevel: bool = False,
+        color: str | None = None,
     ):
         self.id: str = str(uuid.uuid4())
         self.name: str = name
+        # User-picked accent colour. ``None`` means use the palette
+        # cycle (see ``Project.get_accent_color``). Set via the
+        # Window Settings dialog.
+        self.color: str | None = color
         self.width: int = int(width)
         self.height: int = int(height)
         # Canvas offset — where the document's top-left sits inside
@@ -77,6 +82,7 @@ class Document:
         return {
             "id": self.id,
             "name": self.name,
+            "color": self.color,
             "width": self.width,
             "height": self.height,
             "canvas_x": self.canvas_x,
@@ -88,6 +94,7 @@ class Document:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Document":
+        raw_color = data.get("color")
         doc = cls(
             name=str(data.get("name") or "Main Window"),
             width=int(data.get("width", DEFAULT_DOCUMENT_WIDTH)),
@@ -96,6 +103,7 @@ class Document:
             canvas_y=int(data.get("canvas_y", 0)),
             window_properties=data.get("window_properties"),
             is_toplevel=bool(data.get("is_toplevel", False)),
+            color=raw_color if isinstance(raw_color, str) else None,
         )
         raw_id = data.get("id")
         if isinstance(raw_id, str) and raw_id:

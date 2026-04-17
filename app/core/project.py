@@ -113,6 +113,12 @@ class _WindowProxy:
         }
         for key, default in DEFAULT_WINDOW_PROPERTIES.items():
             result[key] = wp.get(key, default)
+        # accent_color — user override or derived palette pick. Always
+        # resolves to a concrete hex string so the properties panel's
+        # colour swatch has something to render.
+        doc = project.active_document
+        if doc is not None:
+            result["accent_color"] = doc.color or project.get_accent_color(doc.id)
         return result
 
     def to_dict(self) -> dict:
@@ -193,13 +199,38 @@ class Project:
     def get_accent_color(self, document_id: str | None = None) -> str:
         """Return a document's theme/accent colour.
 
-        Placeholder until per-document accent colours ship — for now
-        every document gets the same cyan. Object Tree / Properties
-        panels tint their border + title with whatever this returns
-        so the UI already tracks the "colour per form" concept the
-        user is designing against.
+        Priority: user-picked ``doc.color`` (Window Settings) →
+        hue derived from the UUID via the golden-ratio conjugate. A
+        small fixed palette would collide often (8 colours, 34%
+        chance among 3 docs); golden-ratio stepping over HSL hue
+        produces a unique, evenly spread colour for every UUID while
+        still looking deterministic — the same document always gets
+        the same colour across sessions.
         """
-        return "#4fc3d5"
+        import colorsys
+        import hashlib
+
+        from app.core.colors import DOCUMENT_PALETTE
+
+        doc = (
+            self.get_document(document_id)
+            if document_id else self.active_document
+        )
+        if doc is None:
+            return DOCUMENT_PALETTE[0]
+        if doc.color:
+            return doc.color
+        # 32-bit hash of the UUID string — stable across runs, evenly
+        # distributed, compact enough to fit an int.
+        digest = hashlib.md5(doc.id.encode("utf-8")).hexdigest()[:8]
+        seed = int(digest, 16)
+        hue = (seed * 0.6180339887498949) % 1.0
+        # Fixed S/L tuned for the dark builder theme: saturated
+        # enough to be vivid, light enough to read on a #2d2d30 bar.
+        r, g, b = colorsys.hls_to_rgb(hue, 0.65, 0.55)
+        return "#{:02x}{:02x}{:02x}".format(
+            int(r * 255), int(g * 255), int(b * 255),
+        )
 
     def set_active_document(self, document_id: str) -> None:
         if document_id == self.active_document_id:
@@ -208,6 +239,41 @@ class Project:
             return
         self.active_document_id = document_id
         self.event_bus.publish("active_document_changed", document_id)
+
+    def bring_document_to_front(self, document_id: str) -> None:
+        """Make the document the topmost visible one. The active=top
+        render sort (see Workspace.iter_render_order) already draws
+        the active document last, so activating is enough — no list
+        reorder required."""
+        if self.active_document_id == document_id:
+            return
+        if self.get_document(document_id) is None:
+            return
+        self.active_document_id = document_id
+        self.event_bus.publish("active_document_changed", document_id)
+
+    def send_document_to_back(self, document_id: str) -> None:
+        """Push the document behind every other — moves it to the
+        front of ``self.documents`` so the render pass draws it
+        first. If the doc being demoted is the active one, promote
+        the next topmost to active so the user isn't stuck editing
+        an invisible form."""
+        doc = self.get_document(document_id)
+        if doc is None:
+            return
+        idx = self.documents.index(doc)
+        if idx == 0:
+            return
+        self.documents.pop(idx)
+        self.documents.insert(0, doc)
+        if (
+            self.active_document_id == document_id
+            and len(self.documents) > 1
+        ):
+            new_active = self.documents[-1].id
+            self.active_document_id = new_active
+            self.event_bus.publish("active_document_changed", new_active)
+        self.event_bus.publish("documents_reordered")
 
     @property
     def root_widgets(self) -> list[WidgetNode]:
@@ -560,6 +626,16 @@ class Project:
             self.event_bus.publish(
                 "property_changed", WINDOW_ID, prop_name, h,
             )
+            return
+        if prop_name == "accent_color":
+            doc = self.active_document
+            if doc is not None:
+                # Empty / falsy value resets to the auto palette pick;
+                # any hex string wins as a user override.
+                doc.color = value if value else None
+                self.event_bus.publish(
+                    "property_changed", WINDOW_ID, prop_name, value,
+                )
             return
         self.window_properties[prop_name] = value
         self.event_bus.publish(

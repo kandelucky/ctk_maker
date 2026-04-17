@@ -16,6 +16,7 @@ ENV/
 
 .vscode/
 .idea/
+.obsidian/
 *.swp
 *.swo
 .DS_Store

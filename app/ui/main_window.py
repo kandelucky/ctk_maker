@@ -143,6 +143,7 @@ class MainWindow(ctk.CTk):
             on_collapse_changed=self._on_palette_collapsed,
         )
         self.workspace = Workspace(self.paned, self.project)
+        self.palette.drop_validator = self.workspace.is_cursor_over_document
 
         # Right sidebar: Object Tree docked above the Properties panel
         # in a nested vertical PanedWindow. A slightly-wider horizontal

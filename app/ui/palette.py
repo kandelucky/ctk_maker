@@ -148,6 +148,13 @@ class Palette(ctk.CTkFrame):
 
         self._drag: dict | None = None
         self._ghost: tk.Toplevel | None = None
+        # Optional predicate (set by MainWindow) that returns True when
+        # the cursor is over a valid drop target. When set, the drag
+        # ghost tints red outside target to signal "drop will reject".
+        self.drop_validator: Callable[[int, int], bool] | None = None
+        self._ghost_frame: tk.Frame | None = None
+        self._ghost_label: tk.Label | None = None
+        self._ghost_valid: bool | None = None
         self._filter_text: str = ""
         self._group_expanded: dict[str, bool] = {g.title: True for g in CATALOG}
         self._chevron_down = load_icon("chevron-down", size=12)
@@ -385,6 +392,7 @@ class Palette(ctk.CTkFrame):
             self._create_ghost(self._drag["entry"])
         if self._ghost is not None:
             self._ghost.geometry(f"+{event.x_root + 12}+{event.y_root + 12}")
+            self._update_ghost_state(event.x_root, event.y_root)
 
     def _on_release(self, event) -> None:
         if self._drag is None:
@@ -416,13 +424,17 @@ class Palette(ctk.CTkFrame):
             highlightthickness=1, highlightbackground="#3b8ed0",
         )
         frame.pack()
-        tk.Label(
+        label = tk.Label(
             frame, text=f"+ {entry.display_name}",
             bg="#1f6aa5", fg="white",
             font=("Segoe UI", 10, "bold"), padx=10, pady=4,
-        ).pack()
+        )
+        label.pack()
         ghost.update_idletasks()
         self._ghost = ghost
+        self._ghost_frame = frame
+        self._ghost_label = label
+        self._ghost_valid = True
 
     def _destroy_ghost(self) -> None:
         if self._ghost is not None:
@@ -431,6 +443,33 @@ class Palette(ctk.CTkFrame):
             except tk.TclError:
                 pass
             self._ghost = None
+        self._ghost_frame = None
+        self._ghost_label = None
+        self._ghost_valid = None
+
+    def _update_ghost_state(self, x_root: int, y_root: int) -> None:
+        """Tint the drag ghost green-ish when over a valid drop target,
+        red when outside all documents. No-op if no validator is wired.
+        """
+        if self.drop_validator is None or self._ghost_frame is None:
+            return
+        try:
+            valid = bool(self.drop_validator(x_root, y_root))
+        except Exception:
+            valid = True
+        if valid == self._ghost_valid:
+            return
+        self._ghost_valid = valid
+        bg = "#1f6aa5" if valid else "#8b2a2a"
+        border = "#3b8ed0" if valid else "#c44343"
+        try:
+            self._ghost_frame.configure(
+                bg=bg, highlightbackground=border,
+            )
+            if self._ghost_label is not None:
+                self._ghost_label.configure(bg=bg)
+        except tk.TclError:
+            pass
 
     def _add_widget_default(
         self, entry: WidgetEntry, descriptor,
@@ -440,6 +479,26 @@ class Palette(ctk.CTkFrame):
         properties = dict(descriptor.default_properties)
         for key, value in entry.preset_overrides:
             properties[key] = value
+        # Cascade offset: repeated clicks on the same palette entry
+        # would otherwise stack widgets at the exact default x/y,
+        # hiding everything under the topmost one. Bump +20/+20 until
+        # the slot is free among this document's root widgets.
+        doc = self.project.active_document
+        if doc is not None:
+            x = int(properties.get("x", 0) or 0)
+            y = int(properties.get("y", 0) or 0)
+            taken = {
+                (
+                    int(w.properties.get("x", 0) or 0),
+                    int(w.properties.get("y", 0) or 0),
+                )
+                for w in doc.root_widgets
+            }
+            while (x, y) in taken:
+                x += 20
+                y += 20
+            properties["x"] = x
+            properties["y"] = y
         node = WidgetNode(
             widget_type=descriptor.type_name,
             properties=properties,

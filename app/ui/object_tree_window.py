@@ -676,10 +676,13 @@ class ObjectTreePanel(ctk.CTkFrame):
     def _on_property_changed(
         self, widget_id: str, prop_name: str, _value,
     ) -> None:
-        """Container's ``layout_type`` is the only property that
-        affects the tree's name cell. Refresh just that row when it
-        changes; ignore everything else to keep prop edits cheap.
-        """
+        """Container's ``layout_type`` affects the tree name cell,
+        and the virtual Window's ``accent_color`` affects our border
+        + doc-header tint. Everything else is a no-op so prop edits
+        stay cheap."""
+        if prop_name == "accent_color":
+            self._refresh_accent()
+            return
         if prop_name != "layout_type":
             return
         if not self.tree.exists(widget_id):

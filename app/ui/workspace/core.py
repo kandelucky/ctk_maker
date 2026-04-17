@@ -224,11 +224,17 @@ class Workspace(ctk.CTkFrame):
             "active_document_changed",
             self._on_active_document_changed,
         )
+        bus.subscribe("documents_reordered", self._on_documents_reordered)
 
     def _on_active_document_changed(self, *_args, **_kwargs) -> None:
         # Add / remove / active-switch of a document changes which
         # chrome strip is highlighted and, on add/remove, the total
         # scroll region. A full redraw covers both cheaply.
+        self._redraw_document()
+
+    def _on_documents_reordered(self, *_args, **_kwargs) -> None:
+        # Send-to-Back / Bring-to-Front swap the drawing order; a
+        # full redraw rebuilds the canvas stack in the new order.
         self._redraw_document()
 
     def _on_any_widget_renamed(
@@ -329,6 +335,23 @@ class Workspace(ctk.CTkFrame):
         cx1 = int(self.canvas.canvasx(rx))
         cy1 = int(self.canvas.canvasy(ry))
         return cx1, cy1, cx1 + w, cy1 + h
+
+    def is_cursor_over_document(self, x_root: int, y_root: int) -> bool:
+        """Return True when the screen point is inside any document's
+        rectangle on the canvas. Used by the palette to colour its
+        drag ghost so the user sees before release whether the drop
+        will land.
+        """
+        canvas_rx = self.canvas.winfo_rootx()
+        canvas_ry = self.canvas.winfo_rooty()
+        canvas_w = self.canvas.winfo_width()
+        canvas_h = self.canvas.winfo_height()
+        local_x = x_root - canvas_rx
+        local_y = y_root - canvas_ry
+        if not (0 <= local_x < canvas_w and 0 <= local_y < canvas_h):
+            return False
+        cx, cy = self._screen_to_canvas(x_root, y_root)
+        return self._find_document_at_canvas(cx, cy) is not None
 
     def _find_document_at_canvas(self, canvas_x: float, canvas_y: float):
         """Return the Document whose rectangle contains the canvas
@@ -617,6 +640,10 @@ class Workspace(ctk.CTkFrame):
                 "layout_type",
             ):
                 self._redraw_document()
+            elif prop_name == "accent_color":
+                # Only the chrome title uses the accent — no need to
+                # repaint the document body.
+                self._draw_window_chrome()
             return
         if prop_name in (
             "layout_type", "layout_spacing", "grid_rows", "grid_cols",
@@ -768,14 +795,13 @@ class Workspace(ctk.CTkFrame):
         if container_node is None:
             # Top-level drop: figure out which document the cursor
             # is over and add the widget to that doc's tree. Drops
-            # that land outside every document fall through to the
-            # active one (default), which matches single-document
-            # behaviour.
+            # that land outside every document are rejected — with
+            # multi-document canvases, silently falling through to
+            # the active form lands widgets on the wrong surface.
             target_doc = self._find_document_at_canvas(cx, cy)
-            if target_doc is not None:
-                self.project.set_active_document(target_doc.id)
-            else:
-                target_doc = self.project.active_document
+            if target_doc is None:
+                return
+            self.project.set_active_document(target_doc.id)
             lx, ly = self.zoom.canvas_to_logical(
                 cx, cy, document=target_doc,
             )

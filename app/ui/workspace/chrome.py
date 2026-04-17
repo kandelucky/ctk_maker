@@ -35,6 +35,10 @@ CHROME_BG_TAG = "window_chrome_bg"
 CHROME_TITLE_TAG = "window_chrome_title"
 CHROME_SETTINGS_TAG = "window_chrome_settings"
 CHROME_SETTINGS_IMG_TAG = "window_chrome_settings_img"
+CHROME_TOFRONT_TAG = "window_chrome_tofront"
+CHROME_TOFRONT_IMG_TAG = "window_chrome_tofront_img"
+CHROME_TOBACK_TAG = "window_chrome_toback"
+CHROME_TOBACK_IMG_TAG = "window_chrome_toback_img"
 CHROME_MIN_TAG = "window_chrome_min"
 CHROME_CLOSE_TAG = "window_chrome_close"
 CHROME_HEIGHT = 28
@@ -66,6 +70,20 @@ class ChromeManager:
         )
         self._settings_icon_hover = load_tk_icon(
             "settings", size=14, color="#ffffff",
+        )
+        # Z-order icons (Bring to Front / Send to Back). Double
+        # chevrons read as "all the way" vs a single step.
+        self._tofront_icon = load_tk_icon(
+            "chevrons-up", size=14, color=CHROME_FG_DIM,
+        )
+        self._tofront_icon_hover = load_tk_icon(
+            "chevrons-up", size=14, color="#ffffff",
+        )
+        self._toback_icon = load_tk_icon(
+            "chevrons-down", size=14, color=CHROME_FG_DIM,
+        )
+        self._toback_icon_hover = load_tk_icon(
+            "chevrons-down", size=14, color="#ffffff",
         )
         self._drag: dict | None = None
 
@@ -130,10 +148,18 @@ class ChromeManager:
         doc_title_tag = f"chrome_title:{doc.id}"
         doc_settings_tag = f"chrome_settings:{doc.id}"
         doc_settings_img_tag = f"chrome_settings_img:{doc.id}"
+        doc_tofront_tag = f"chrome_tofront:{doc.id}"
+        doc_tofront_img_tag = f"chrome_tofront_img:{doc.id}"
+        doc_toback_tag = f"chrome_toback:{doc.id}"
+        doc_toback_img_tag = f"chrome_toback_img:{doc.id}"
         doc_close_tag = f"chrome_close:{doc.id}"
 
         bg_fill = CHROME_BG_COLOR if is_active else "#222222"
-        title_fg = CHROME_FG_COLOR if is_active else CHROME_FG_DIM
+        # Every document wears its own accent colour — active or not.
+        # The active form is still distinguished by the chrome bg and
+        # the trailing '*', so the colour just tells you which is
+        # which, not which one is focused.
+        title_fg = self.project.get_accent_color(doc.id)
 
         self.canvas.create_rectangle(
             left, top, right, doc_top,
@@ -165,6 +191,50 @@ class ChromeManager:
                     doc_settings_tag, doc_settings_img_tag,
                 ),
             )
+
+        # Z-order buttons — conditional visibility.
+        # Bring to Front (↑): hidden when this doc is already active
+        # (the active=top sort already puts it on top). Send to Back
+        # (↓): hidden when the doc is the first in the list (already
+        # at the back).
+        docs = self.project.documents
+        doc_idx = docs.index(doc) if doc in docs else 0
+        can_to_front = not is_active
+        can_to_back = doc_idx > 0
+        if self._tofront_icon is not None and can_to_front:
+            fx = right - 108
+            self.canvas.create_rectangle(
+                fx - 10, top + 2, fx + 10, doc_top - 2,
+                fill=bg_fill, outline="",
+                tags=(CHROME_TAG, CHROME_TOFRONT_TAG, doc_tofront_tag),
+            )
+            self.canvas.create_image(
+                fx, mid,
+                image=self._tofront_icon,
+                anchor="center",
+                tags=(
+                    CHROME_TAG, CHROME_TOFRONT_TAG,
+                    CHROME_TOFRONT_IMG_TAG,
+                    doc_tofront_tag, doc_tofront_img_tag,
+                ),
+            )
+        if self._toback_icon is not None and can_to_back:
+            bx = right - 138
+            self.canvas.create_rectangle(
+                bx - 10, top + 2, bx + 10, doc_top - 2,
+                fill=bg_fill, outline="",
+                tags=(CHROME_TAG, CHROME_TOBACK_TAG, doc_toback_tag),
+            )
+            self.canvas.create_image(
+                bx, mid,
+                image=self._toback_icon,
+                anchor="center",
+                tags=(
+                    CHROME_TAG, CHROME_TOBACK_TAG,
+                    CHROME_TOBACK_IMG_TAG,
+                    doc_toback_tag, doc_toback_img_tag,
+                ),
+            )
         self.canvas.create_text(
             right - 48, mid,
             text="−",
@@ -185,10 +255,13 @@ class ChromeManager:
             doc,
             doc_bg_tag, doc_title_tag,
             doc_settings_tag, doc_close_tag,
+            doc_tofront_tag, doc_tofront_img_tag,
+            doc_toback_tag, doc_toback_img_tag,
         )
 
     def _bind_for_document(
         self, doc, bg_tag, title_tag, settings_tag, close_tag,
+        tofront_tag, tofront_img_tag, toback_tag, toback_img_tag,
     ) -> None:
         """Wire the click / drag / hover bindings for a single
         document's chrome strip. Each document gets its own tag
@@ -244,6 +317,59 @@ class ChromeManager:
                 t, fill=CHROME_FG_COLOR,
             ),
         )
+
+        # Bring to Front
+        self.canvas.tag_bind(
+            tofront_tag, "<Button-1>",
+            lambda _e, d=doc_id: self._on_tofront_click(d),
+        )
+        self.canvas.tag_bind(
+            tofront_tag, "<Enter>",
+            lambda _e, t=tofront_img_tag: self._set_icon_hover(
+                t, self._tofront_icon_hover,
+            ),
+        )
+        self.canvas.tag_bind(
+            tofront_tag, "<Leave>",
+            lambda _e, t=tofront_img_tag: self._set_icon_hover(
+                t, self._tofront_icon,
+            ),
+        )
+
+        # Send to Back
+        self.canvas.tag_bind(
+            toback_tag, "<Button-1>",
+            lambda _e, d=doc_id: self._on_toback_click(d),
+        )
+        self.canvas.tag_bind(
+            toback_tag, "<Enter>",
+            lambda _e, t=toback_img_tag: self._set_icon_hover(
+                t, self._toback_icon_hover,
+            ),
+        )
+        self.canvas.tag_bind(
+            toback_tag, "<Leave>",
+            lambda _e, t=toback_img_tag: self._set_icon_hover(
+                t, self._toback_icon,
+            ),
+        )
+
+    def _set_icon_hover(self, tag: str, icon) -> None:
+        if icon is None:
+            return
+        try:
+            self.canvas.itemconfigure(tag, image=icon)
+            self.canvas.configure(cursor="hand2")
+        except tk.TclError:
+            pass
+
+    def _on_tofront_click(self, doc_id: str) -> str:
+        self.project.bring_document_to_front(doc_id)
+        return "break"
+
+    def _on_toback_click(self, doc_id: str) -> str:
+        self.project.send_document_to_back(doc_id)
+        return "break"
 
     # ------------------------------------------------------------------
     # Selection + settings

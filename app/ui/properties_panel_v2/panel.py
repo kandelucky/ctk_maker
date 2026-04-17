@@ -571,7 +571,14 @@ class PropertiesPanelV2(ctk.CTkFrame):
 
     def _update_chrome(self, node, descriptor) -> None:
         self._type_label.configure(text=descriptor.type_name)
-        self._id_label.configure(text=f"ID: {node.id[:8]}")
+        # For the Window node we show the active document's UUID
+        # instead of the sentinel WINDOW_ID — otherwise every window
+        # reads as the same "__window_" prefix in the header.
+        if node.id == WINDOW_ID:
+            id_text = self.project.active_document.id[:8]
+        else:
+            id_text = node.id[:8]
+        self._id_label.configure(text=f"ID: {id_text}")
 
         # Widget-type icon (mirrors palette's icon name convention).
         icon_name = icon_for_type(descriptor.type_name)

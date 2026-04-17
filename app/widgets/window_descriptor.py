@@ -53,6 +53,9 @@ class WindowDescriptor(WidgetDescriptor):
 
         {"name": "fg_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Background"},
+
+        {"name": "accent_color", "type": "color", "label": "",
+         "group": "Marker", "row_label": "Color"},
     ]
 
     @classmethod
