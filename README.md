@@ -105,6 +105,10 @@ python main.py
 - [x] Multi-document canvas — Main Window + N Dialogs per project
 - [x] Layout managers — `place` / `vbox` / `hbox` / `grid` with WYSIWYG canvas rendering
 - [x] Grid drag-to-cell + cursor-cell snap + auto-next-free-cell assignment
+- [x] **Select / Edit tool split** — Edit mode shows resize handles and rebuilds the Properties panel on every selection; Select mode stays lightweight (chrome only) for fast pick-and-move work
+- [x] **Multi-select** — `Ctrl`+click toggles a widget in / out of the selection; click-and-drag any selected widget moves the whole group (same delta for every place-managed widget, including across documents)
+- [x] **Unity-style drill-down selection** — the first click on a nested hierarchy lands on the outermost container, subsequent clicks descend one level; sibling clicks inside an already-entered container select directly
+- [x] **Drag safety** — drops outside a document are rejected with red-tinted ghost feedback; container children extract-only (dropping one elsewhere hops to the source document's root at the cursor, not to another container)
 
 ### Next
 - [ ] `CTkScrollableFrame` + `CTkTabview` nested-children path
