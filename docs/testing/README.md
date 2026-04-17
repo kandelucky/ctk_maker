@@ -10,7 +10,7 @@ Work one area top-to-bottom before moving on. Commit at the end of each area's c
 
 ## Progress
 
-Overall: **12 / 313** tests passed (4%)
+Overall: **12 / 416** tests passed (3%)
 
 | # | Area | File | Focus | Progress |
 |---|------|------|-------|----------|
@@ -21,6 +21,7 @@ Overall: **12 / 313** tests passed (4%)
 | 5 | Project lifecycle | [project.md](project.md) | save / load / export round-trip | 0 / 44 |
 | 6 | Multi-document | [multi_document.md](multi_document.md) | dialogs, chrome, cross-doc drag, accent color, z-order | 0 / 54 |
 | 7 | Widgets | [widgets.md](widgets.md) | 14+1 descriptors, per-widget sanity | 0 / 41 |
+| 8 | Inspectors & Dialogs | [inspectors_dialogs.md](inspectors_dialogs.md) | Object Tree, History, menubar / toolbar / shortcuts, modals, Window Settings | 0 / 103 |
 
 **Current area:** Area 1 — Workspace core (Blocks 1.1 + 1.2 done — 12/45)
 **Bugs found:** 8 (WS-1 outside-drop, WS-2 click-stack, WS-3 snap-back, WS-4 container extract-only, WS-5 active-doc follow, WS-6 drag ghost, WS-7 drill-down select, WS-8 grid-cell handle follow)
