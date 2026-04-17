@@ -24,9 +24,17 @@ from app.ui.icons import load_icon
 
 # Tool identifiers — also used by ``chrome.py`` (via the workspace
 # delegator) and ``drag.py`` (via the literal ``"hand"`` string).
+# ``edit`` is the original arrow — click to select, drag to move,
+# resize handles visible, properties panel rebuilds on every click.
+# ``select`` is the lighter-weight mode — click selects, drag moves,
+# no resize handles, properties panel stays minimal. Useful for
+# layout work where accidental property mutations hurt more than
+# they help.
+TOOL_EDIT = "edit"
 TOOL_SELECT = "select"
 TOOL_HAND = "hand"
 TOOL_CURSORS: dict[str, str] = {
+    TOOL_EDIT: "",
     TOOL_SELECT: "",
     TOOL_HAND: "hand2",
 }
@@ -51,7 +59,7 @@ class WorkspaceControls:
 
     def __init__(self, workspace) -> None:
         self.workspace = workspace
-        self._tool: str = TOOL_SELECT
+        self._tool: str = TOOL_EDIT
         self._tool_buttons: dict[str, ctk.CTkButton] = {}
         self._pan_state: dict | None = None
 
@@ -95,8 +103,9 @@ class WorkspaceControls:
         bar.pack_propagate(False)
 
         tools = [
-            (TOOL_SELECT, "mouse-pointer-2", "Select (V)"),
-            (TOOL_HAND,   "hand",            "Hand (H)"),
+            (TOOL_EDIT,   "vector-square",        "Edit (V)"),
+            (TOOL_SELECT, "square-mouse-pointer", "Select"),
+            (TOOL_HAND,   "hand",                 "Hand (H)"),
         ]
         for tool_id, icon_name, _tooltip in tools:
             icon = load_icon(icon_name, size=16)
@@ -109,7 +118,7 @@ class WorkspaceControls:
             )
             btn.pack(
                 side="left",
-                padx=(4 if tool_id == TOOL_SELECT else 2, 0),
+                padx=(4 if tool_id == TOOL_EDIT else 2, 0),
                 pady=3,
             )
             self._tool_buttons[tool_id] = btn
@@ -166,6 +175,20 @@ class WorkspaceControls:
         try:
             self.canvas.configure(cursor=TOOL_CURSORS.get(tool, ""))
         except tk.TclError:
+            pass
+        # Selection handles are tool-dependent — Select mode hides them,
+        # Edit mode shows them. Redraw so the change takes effect
+        # without waiting for the next interaction.
+        if self.workspace.project.selected_id is not None:
+            self.workspace.selection.draw()
+        # Properties panel also depends on tool (Select tool skips the
+        # full schema rebuild). Notify listeners so the panel can
+        # refresh without needing a click-through.
+        try:
+            self.workspace.project.event_bus.publish(
+                "tool_changed", tool,
+            )
+        except Exception:
             pass
 
     # ------------------------------------------------------------------
@@ -234,11 +257,11 @@ class WorkspaceControls:
         top.bind("<Control-Key-0>", lambda e: self._zoom_reset())
         top.bind(
             "<KeyPress-v>",
-            lambda e: self._tool_shortcut(TOOL_SELECT),
+            lambda e: self._tool_shortcut(TOOL_EDIT),
         )
         top.bind(
             "<KeyPress-V>",
-            lambda e: self._tool_shortcut(TOOL_SELECT),
+            lambda e: self._tool_shortcut(TOOL_EDIT),
         )
         top.bind(
             "<KeyPress-h>",

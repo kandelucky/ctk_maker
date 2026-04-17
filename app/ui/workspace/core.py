@@ -173,10 +173,12 @@ class Workspace(ctk.CTkFrame):
             on_zoom_changed=self._after_zoom_changed,
         )
 
+        from app.ui.workspace.controls import TOOL_EDIT
         self.selection = SelectionController(
             self.canvas, self.project, self.widget_views,
             zoom_provider=lambda: self.zoom.value,
             anchor_views=self._anchor_views,
+            handles_enabled=lambda: self._tool == TOOL_EDIT,
         )
         # Layout manager switching + weight / manager-kwargs helpers.
         self.layout_overlay = LayoutOverlayManager(self)

@@ -114,12 +114,31 @@ class WidgetDragController:
             self.project.active_document is not owning_doc
         ):
             self.project.set_active_document(owning_doc.id)
-        # Unity-style drill-down selection: first click on a hierarchy
-        # selects the outermost ancestor; subsequent clicks descend
-        # one level at a time. Ensures you can reach a container even
-        # when it's fully covered by its children.
-        resolved_nid = self._resolve_click_target(nid)
-        self.project.select_widget(resolved_nid)
+        # Shift / Ctrl click — multi-select mode. Bypass drill-down
+        # and use the clicked widget verbatim so the user stays in
+        # control of exactly what gets added / toggled.
+        shift = bool(event.state & 0x0001)
+        ctrl = bool(event.state & 0x0004)
+        if shift or ctrl:
+            current_ids = set(
+                getattr(self.project, "selected_ids", set()) or set(),
+            )
+            if ctrl and nid in current_ids:
+                current_ids.discard(nid)
+                new_primary = next(iter(current_ids), None)
+            else:
+                current_ids.add(nid)
+                new_primary = nid
+            self.project.set_multi_selection(current_ids, new_primary)
+            resolved_nid = new_primary or nid
+        else:
+            # Unity-style drill-down selection: first click on a
+            # hierarchy selects the outermost ancestor; subsequent
+            # clicks descend one level at a time. Ensures you can
+            # reach a container even when it's fully covered by its
+            # children.
+            resolved_nid = self._resolve_click_target(nid)
+            self.project.select_widget(resolved_nid)
         if ws._effective_locked(resolved_nid):
             # Locked widgets are selectable (for property editing)
             # but not draggable.
@@ -147,6 +166,11 @@ class WidgetDragController:
             "start_y": start_y,
             "press_mx": event.x_root,
             "press_my": event.y_root,
+            # Last seen screen coords — used to canvas.move() the
+            # selection chrome by the per-tick delta so the rect +
+            # handles track the cursor as a single tagged group.
+            "last_mx": event.x_root,
+            "last_my": event.y_root,
             "moved": False,
         }
         return "break"
@@ -274,7 +298,20 @@ class WidgetDragController:
         new_y = self._drag["start_y"] + int(dy_root / zoom)
         self.project.update_property(nid, "x", new_x)
         self.project.update_property(nid, "y", new_y)
-        ws.selection.update()
+        # Tag-based canvas.move on the selection chrome: one call
+        # shifts every tagged item (edges + handles, plus any
+        # multi-select outlines) by the per-tick cursor delta, so
+        # chrome tracks the cursor without needing to touch each
+        # frame individually.
+        dx_tick = event.x_root - self._drag["last_mx"]
+        dy_tick = event.y_root - self._drag["last_my"]
+        if dx_tick or dy_tick:
+            try:
+                self.canvas.move("selection_chrome", dx_tick, dy_tick)
+            except tk.TclError:
+                pass
+        self._drag["last_mx"] = event.x_root
+        self._drag["last_my"] = event.y_root
 
     def on_release(self, event, _nid: str) -> None:
         ws = self.workspace
@@ -357,10 +394,12 @@ class WidgetDragController:
         ws._update_widget_visibility_across_docs()
         # Grid / pack moves change position without mutating x/y, so
         # the property-change-driven selection redraw fires before
-        # the tk geometry manager has settled. Force another redraw
-        # once the event loop is idle so the handles follow the cell
-        # move visually.
+        # the tk geometry manager has settled. Clear first so the
+        # stale edge frames are torn down, then redraw once the
+        # event loop is idle — the new bbox reflects the committed
+        # position.
         if self.project.selected_id is not None:
+            ws.selection.clear()
             self.workspace.after_idle(ws.selection.draw)
 
     # ------------------------------------------------------------------

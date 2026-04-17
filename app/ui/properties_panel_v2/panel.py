@@ -88,10 +88,17 @@ from .type_icons import icon_for_type
 class PropertiesPanelV2(ctk.CTkFrame):
     """ttk.Treeview-based Properties panel. API-compatible with v1."""
 
-    def __init__(self, master, project: Project):
+    def __init__(self, master, project: Project, tool_provider=None):
         super().__init__(master, fg_color=PANEL_BG)
         self.project = project
         self.current_id: str | None = None
+        # Called with no args, returns the current workspace tool
+        # name ("edit" / "select" / "hand"). When set to something
+        # other than "edit", `_rebuild` skips the full schema build
+        # and only refreshes the name / type / id chrome so picking a
+        # widget in Select mode doesn't pay for a 30-row panel
+        # rebuild + disabled_when lambda pass.
+        self._tool_provider = tool_provider or (lambda: "edit")
 
         # Prop name → tree iid (for property_changed updates)
         self._prop_iids: dict[str, str] = {}
@@ -133,6 +140,7 @@ class PropertiesPanelV2(ctk.CTkFrame):
 
         bus = self.project.event_bus
         bus.subscribe("selection_changed", self._on_selection)
+        bus.subscribe("tool_changed", self._on_tool_changed)
         bus.subscribe("property_changed", self._on_property_changed)
         bus.subscribe("widget_renamed", self._on_widget_renamed)
 
@@ -370,6 +378,12 @@ class PropertiesPanelV2(ctk.CTkFrame):
     # ==================================================================
     # Event bus handlers
     # ==================================================================
+    def _on_tool_changed(self, _tool: str) -> None:
+        # Rebuild so the schema appears / disappears to match the new
+        # tool. Cheap when nothing is selected (early return in
+        # ``_rebuild``).
+        self._rebuild()
+
     def _on_selection(self, widget_id: str | None) -> None:
         self.current_id = widget_id
         self._rebuild()
@@ -503,6 +517,13 @@ class PropertiesPanelV2(ctk.CTkFrame):
         )
         if node is None or descriptor is None:
             self._show_empty()
+            return
+
+        # Select tool: skip the full schema rebuild so click-to-pick
+        # stays cheap. Name / type / id chrome still updates.
+        if self._tool_provider() != "edit":
+            self._clear_tree()
+            self._update_chrome(node, descriptor)
             return
 
         # Backfill any default properties missing from the node — e.g.

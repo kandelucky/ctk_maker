@@ -53,6 +53,7 @@ class SelectionController:
         widget_views: dict,
         zoom_provider: Callable[[], float] = lambda: 1.0,
         anchor_views: dict | None = None,
+        handles_enabled: Callable[[], bool] = lambda: True,
     ):
         self.canvas = canvas
         self.project = project
@@ -62,11 +63,21 @@ class SelectionController:
         # measure that container, not the inner widget.
         self.anchor_views = anchor_views if anchor_views is not None else {}
         self._zoom_provider = zoom_provider
+        # Called before drawing handles — lets the workspace suppress
+        # them (e.g. Select tool hides them so the user can't resize
+        # by accident while doing selection work).
+        self._handles_enabled = handles_enabled
 
         # name → (canvas_window_id, tk.Frame)
         self._handles: dict[str, tuple[int, tk.Frame]] = {}
         # side → (canvas_window_id, tk.Frame)  where side ∈ {top,right,bottom,left}
         self._edges: dict[str, tuple[int, tk.Frame]] = {}
+        # Multi-select outlines — one dict of 4 edge frames per
+        # additional selected widget. Primary keeps the full chrome
+        # above (``self._edges`` + ``self._handles``); everything
+        # else just gets a thin rectangle so the user sees what's in
+        # the group.
+        self._multi_outlines: list[dict[str, tuple[int, tk.Frame]]] = []
 
         self._resize: dict | None = None
 
@@ -86,12 +97,26 @@ class SelectionController:
     # Public drawing API
     # ------------------------------------------------------------------
     def draw(self) -> None:
-        bbox = self._selected_bbox()
-        if bbox is None:
-            self.clear()
-            return
         self.clear()
-        self._create(*bbox)
+        ids = list(getattr(self.project, "selected_ids", set()) or [])
+        if not ids:
+            return
+        primary = self.project.selected_id
+        # Primary gets the full chrome (rect + optionally handles).
+        if primary and primary in ids:
+            bbox = self._bbox_for(primary)
+            if bbox is not None:
+                self._create(*bbox)
+        # Every other selected widget gets a thin outline only.
+        for wid in ids:
+            if wid == primary:
+                continue
+            bbox = self._bbox_for(wid)
+            if bbox is None:
+                continue
+            self._multi_outlines.append(
+                self._create_outline_frames(*bbox),
+            )
 
     def update(self) -> None:
         if not self._handles:
@@ -103,26 +128,32 @@ class SelectionController:
         self._update_coords(*bbox)
 
     def clear(self) -> None:
+        # Destroy every tracked Frame first so tk reclaims the widget
+        # memory, then sweep the canvas by tag to wipe any stray
+        # window items we might have lost references to.
         for window_id, frame in self._handles.values():
             try:
-                self.canvas.delete(window_id)
-            except tk.TclError:
-                pass
-            try:
                 frame.destroy()
             except tk.TclError:
                 pass
-        self._handles = {}
         for window_id, frame in self._edges.values():
             try:
-                self.canvas.delete(window_id)
-            except tk.TclError:
-                pass
-            try:
                 frame.destroy()
             except tk.TclError:
                 pass
+        for outline in self._multi_outlines:
+            for window_id, frame in outline.values():
+                try:
+                    frame.destroy()
+                except tk.TclError:
+                    pass
+        self._handles = {}
         self._edges = {}
+        self._multi_outlines = []
+        try:
+            self.canvas.delete("selection_chrome")
+        except tk.TclError:
+            pass
 
     # ------------------------------------------------------------------
     # Resize flow — driven by handle widget bindings
@@ -210,22 +241,24 @@ class SelectionController:
     # Internal rendering
     # ------------------------------------------------------------------
     def _selected_bbox(self) -> tuple[int, int, int, int] | None:
-        """Canvas-coord bbox of the selected widget.
-
-        Works for both canvas children (created via create_window) and
-        nested children (placed inside a parent widget). We compute the
-        bbox from the widget's actual screen position so the parent
-        chain doesn't matter. Returns None for multi-selection so the
-        workspace stays clean of selection handles when the Object
-        Tree has 2+ rows highlighted.
+        """Canvas-coord bbox of the primary selected widget.
+        Legacy wrapper around ``_bbox_for`` — kept so ``update()`` and
+        any other single-select callers still work.
         """
-        if len(getattr(self.project, "selected_ids", set())) > 1:
+        return self._bbox_for(self.project.selected_id)
+
+    def _bbox_for(
+        self, widget_id: str | None,
+    ) -> tuple[int, int, int, int] | None:
+        """Canvas-coord bbox of a given widget. Works for both canvas
+        children (created via ``create_window``) and nested children
+        (placed inside a parent widget) — we read the widget's actual
+        screen position so the parent chain doesn't matter.
+        """
+        if widget_id is None or widget_id not in self.widget_views:
             return None
-        sid = self.project.selected_id
-        if sid is None or sid not in self.widget_views:
-            return None
-        inner, _window_id = self.widget_views[sid]
-        widget = self.anchor_views.get(sid, inner)
+        inner, _window_id = self.widget_views[widget_id]
+        widget = self.anchor_views.get(widget_id, inner)
         self.canvas.update_idletasks()
         try:
             rx = widget.winfo_rootx() - self.canvas.winfo_rootx()
@@ -240,12 +273,39 @@ class SelectionController:
         cy1 = int(self.canvas.canvasy(ry))
         return cx1, cy1, cx1 + w, cy1 + h
 
+    def _create_outline_frames(
+        self, x1: int, y1: int, x2: int, y2: int,
+    ) -> dict[str, tuple[int, tk.Frame]]:
+        """Draw a thin rectangular outline (4 edges) around the given
+        bbox and return the 4 frames so ``clear`` can tear them down.
+        Used for every non-primary widget in a multi-selection.
+        """
+        ox1, oy1 = x1 - SELECTION_PAD, y1 - SELECTION_PAD
+        ox2, oy2 = x2 + SELECTION_PAD, y2 + SELECTION_PAD
+        out: dict[str, tuple[int, tk.Frame]] = {}
+        out["top"] = self._make_edge_frame(
+            ox1, oy1, ox2 - ox1, RECT_THICKNESS,
+        )
+        out["bottom"] = self._make_edge_frame(
+            ox1, oy2 - RECT_THICKNESS, ox2 - ox1, RECT_THICKNESS,
+        )
+        out["left"] = self._make_edge_frame(
+            ox1, oy1, RECT_THICKNESS, oy2 - oy1,
+        )
+        out["right"] = self._make_edge_frame(
+            ox2 - RECT_THICKNESS, oy1, RECT_THICKNESS, oy2 - oy1,
+        )
+        return out
+
     def _create(self, x1: int, y1: int, x2: int, y2: int) -> None:
         self._create_rect_edges(x1, y1, x2, y2)
-        # Suppress resize handles on locked widgets — rectangle is
+        # Suppress resize handles on locked widgets or when the
+        # current tool turns them off (Select mode) — rectangle is
         # still drawn so the user sees what's selected.
         node = self.project.get_widget(self.project.selected_id)
         if node is not None and self._is_locked(node):
+            return
+        if not self._handles_enabled():
             return
         self._create_handles(x1, y1, x2, y2)
 
@@ -275,6 +335,7 @@ class SelectionController:
         window_id = self.canvas.create_window(
             x, y, window=frame, anchor="nw",
             width=max(1, w), height=max(1, h),
+            tags=("selection_chrome",),
         )
         frame.lift()
         return window_id, frame
@@ -293,6 +354,7 @@ class SelectionController:
             window_id = self.canvas.create_window(
                 hx, hy, window=frame, anchor="center",
                 width=HANDLE_SIZE, height=HANDLE_SIZE,
+                tags=("selection_chrome",),
             )
             frame.bind(
                 "<ButtonPress-1>",
