@@ -10,11 +10,11 @@ Work one area top-to-bottom before moving on. Commit at the end of each area's c
 
 ## Progress
 
-Overall: **19 / 416** tests passed (5%)
+Overall: **26 / 416** tests passed (6%)
 
 | # | Area | File | Focus | Progress |
 |---|------|------|-------|----------|
-| 1 | Workspace core | [workspace.md](workspace.md) | palette drop, drag, resize, select, nudge | 19 / 45 |
+| 1 | Workspace core | [workspace.md](workspace.md) | palette drop, drag, resize, select, nudge | 26 / 45 |
 | 2 | Layout managers | [layout.md](layout.md) | place / vbox / hbox / grid + nested + reparent | 0 / 44 |
 | 3 | Properties panel | [properties.md](properties.md) | editors, disabled/hidden_when, drag-scrub | 0 / 42 |
 | 4 | Commands (undo/redo) | [commands.md](commands.md) | every mutation reversible, coalescing | 0 / 43 |
@@ -23,8 +23,8 @@ Overall: **19 / 416** tests passed (5%)
 | 7 | Widgets | [widgets.md](widgets.md) | 14+1 descriptors, per-widget sanity | 0 / 41 |
 | 8 | Inspectors & Dialogs | [inspectors_dialogs.md](inspectors_dialogs.md) | Object Tree, History, menubar / toolbar / shortcuts, modals, Window Settings | 0 / 103 |
 
-**Current area:** Area 1 — Workspace core (Blocks 1.1–1.4 done — 19/45)
-**Bugs found:** 8 (WS-1 outside-drop, WS-2 click-stack, WS-3 snap-back, WS-4 container extract-only, WS-5 active-doc follow, WS-6 drag ghost, WS-7 drill-down select, WS-8 grid-cell handle follow)
+**Current area:** Area 1 — Workspace core (Blocks 1.1–1.5 done — 26/45)
+**Bugs found:** 12 (WS-1 outside-drop, WS-2 click-stack, WS-3 snap-back, WS-4 container extract-only, WS-5 active-doc follow, WS-6 drag ghost, WS-7 drill-down select, WS-8 grid-cell handle follow, WS-9 chrome ghost, WS-10 locked delete silent, WS-11 tree bypassed lock, WS-12 locked chrome tracked drag)
 **Refactors done:** 0
 **Optimizations applied:** 0
 

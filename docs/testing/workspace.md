@@ -32,11 +32,13 @@ Canvas drag / drop / resize / select / keyboard / delete — the core interactio
 - [x] Nudge respects locked widgets (no-op)
 
 ### Select
-- [ ] Click widget → selection highlight + property panel updates
-- [ ] Click empty canvas → deselects
-- [ ] Click chrome of non-active document → switches active doc + deselects
-- [ ] Multi-select via Object Tree Ctrl+click — workspace mirrors highlight
-- [ ] Locked widget: selectable but drag/resize/delete rejected
+- [x] Click widget → selection highlight + property panel updates
+- [x] Click empty canvas → deselects
+- [x] Click chrome of non-active document → switches active doc + deselects
+- [x] Ctrl+click toggles widget in / out of the selection set
+- [x] Group drag — dragging any selected widget moves the whole group by the same delta
+- [x] Multi-select via Object Tree Ctrl+click — workspace mirrors highlight
+- [x] Locked widget: selectable but drag/resize/delete rejected (dialog, not silent)
 
 ### Delete
 - [ ] Delete key on selected → removes widget + subtree
@@ -122,3 +124,27 @@ Canvas drag / drop / resize / select / keyboard / delete — the core interactio
   *Expected:* handles follow to (1,1)
   *Observed:* widget jumped but handles stayed at (0,0) until the next interaction
   *Fix:* `after_idle(selection.draw)` at the end of `on_release` — grid / pack moves don't mutate x/y so the property-change redraw path fired before tk settled the geometry
+
+- **[WS-9]** Ghost selection chrome lingered at pre-drag position
+  *Steps:* select a widget, drag it
+  *Expected:* chrome follows the widget
+  *Observed:* chrome appeared at the new position but a second outline remained at the old spot for the duration of the drag
+  *Fix:* every chrome canvas item now carries a shared ``selection_chrome`` tag; ``clear`` sweeps the tag in one call and drag motion uses ``canvas.move`` against per-widget tags so stale items can't be left behind
+
+- **[WS-10]** Delete key on a locked widget was silent
+  *Steps:* lock a widget, select it on canvas, press Delete
+  *Expected:* visible reason
+  *Observed:* bell sound only, easy to miss
+  *Fix:* show ``messagebox.showinfo`` explaining the widget is locked and how to unlock
+
+- **[WS-11]** Object Tree bypassed the lock
+  *Steps:* lock a widget, right-click → Delete in the Object Tree, or drag its row onto another parent
+  *Expected:* tree honours the same lock as canvas
+  *Observed:* both operations went through
+  *Fix:* ``_delete_widget`` and ``_on_drag_start`` in ``ObjectTreePanel`` now early-return / dialog for locked widgets
+
+- **[WS-12]** Locked widget's chrome tracked the drag in a multi-selection
+  *Steps:* Ctrl+click an unlocked widget A and a locked widget C, drag A
+  *Expected:* A + A's chrome move, C + C's chrome stay
+  *Observed:* A and C's chrome both followed the cursor while C itself stayed put — chrome snapped back on release
+  *Fix:* every chrome item also gets a per-widget tag (``chrome_wid_<id>``); drag motion calls ``canvas.move`` only for tags of widgets actually in ``group_starts``, so locked / layout-managed siblings keep their chrome pinned

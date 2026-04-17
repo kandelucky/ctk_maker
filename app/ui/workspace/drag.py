@@ -189,6 +189,10 @@ class WidgetDragController:
             w_node = self.project.get_widget(wid)
             if w_node is None:
                 continue
+            # Locked widgets stay put on group drag — otherwise the
+            # lock only means "can't delete", which is half a feature.
+            if ws._effective_locked(wid):
+                continue
             parent_layout = (
                 normalise_layout_type(
                     w_node.parent.properties.get("layout_type", "place"),
@@ -349,18 +353,18 @@ class WidgetDragController:
         for wid, (sx, sy) in self._drag["group_starts"].items():
             self.project.update_property(wid, "x", sx + dx_logical)
             self.project.update_property(wid, "y", sy + dy_logical)
-        # Tag-based canvas.move on the selection chrome: one call
-        # shifts every tagged item (edges + handles, plus any
-        # multi-select outlines) by the per-tick cursor delta, so
-        # chrome tracks the cursor without needing to touch each
-        # frame individually.
+        # Per-widget canvas.move — shifts chrome for the exact set of
+        # widgets actually moving (``group_starts``) so locked /
+        # layout-managed siblings keep their chrome pinned even when
+        # their widget belongs to the selection.
         dx_tick = event.x_root - self._drag["last_mx"]
         dy_tick = event.y_root - self._drag["last_my"]
         if dx_tick or dy_tick:
-            try:
-                self.canvas.move("selection_chrome", dx_tick, dy_tick)
-            except tk.TclError:
-                pass
+            for wid in self._drag["group_starts"].keys():
+                try:
+                    self.canvas.move(f"chrome_wid_{wid}", dx_tick, dy_tick)
+                except tk.TclError:
+                    pass
         self._drag["last_mx"] = event.x_root
         self._drag["last_my"] = event.y_root
 

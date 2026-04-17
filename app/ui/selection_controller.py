@@ -78,6 +78,12 @@ class SelectionController:
         # else just gets a thin rectangle so the user sees what's in
         # the group.
         self._multi_outlines: list[dict[str, tuple[int, tk.Frame]]] = []
+        # Per-widget tag applied to every canvas item spawned by
+        # ``_create_rect_edges`` / ``_create_handles`` /
+        # ``_create_outline_frames`` during the current draw pass.
+        # Drag uses it to move only the chrome tied to widgets that
+        # actually shift (locked widgets in the group stay put).
+        self._current_chrome_tag: str | None = None
 
         self._resize: dict | None = None
 
@@ -106,7 +112,9 @@ class SelectionController:
         if primary and primary in ids:
             bbox = self._bbox_for(primary)
             if bbox is not None:
+                self._current_chrome_tag = f"chrome_wid_{primary}"
                 self._create(*bbox)
+                self._current_chrome_tag = None
         # Every other selected widget gets a thin outline only.
         for wid in ids:
             if wid == primary:
@@ -114,9 +122,11 @@ class SelectionController:
             bbox = self._bbox_for(wid)
             if bbox is None:
                 continue
+            self._current_chrome_tag = f"chrome_wid_{wid}"
             self._multi_outlines.append(
                 self._create_outline_frames(*bbox),
             )
+            self._current_chrome_tag = None
 
     def update(self) -> None:
         if not self._handles:
@@ -332,10 +342,13 @@ class SelectionController:
             self.canvas, bg=RECT_COLOR, highlightthickness=0,
             width=max(1, w), height=max(1, h),
         )
+        tags = ["selection_chrome"]
+        if self._current_chrome_tag is not None:
+            tags.append(self._current_chrome_tag)
         window_id = self.canvas.create_window(
             x, y, window=frame, anchor="nw",
             width=max(1, w), height=max(1, h),
-            tags=("selection_chrome",),
+            tags=tuple(tags),
         )
         frame.lift()
         return window_id, frame
@@ -351,10 +364,13 @@ class SelectionController:
                 width=HANDLE_SIZE, height=HANDLE_SIZE,
                 cursor=HANDLE_CURSORS[name],
             )
+            tags = ["selection_chrome"]
+            if self._current_chrome_tag is not None:
+                tags.append(self._current_chrome_tag)
             window_id = self.canvas.create_window(
                 hx, hy, window=frame, anchor="center",
                 width=HANDLE_SIZE, height=HANDLE_SIZE,
-                tags=("selection_chrome",),
+                tags=tuple(tags),
             )
             frame.bind(
                 "<ButtonPress-1>",

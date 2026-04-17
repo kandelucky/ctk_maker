@@ -862,6 +862,12 @@ class ObjectTreePanel(ctk.CTkFrame):
                 self.refresh()
             self._drag_source_id = None
             return "break"
+        # Locked widgets refuse tree-drag reparenting the same way
+        # canvas drag refuses locked move — lock means "stay put".
+        node = self.project.get_widget(iid)
+        if node is not None and self._effective_locked(node):
+            self._drag_source_id = None
+            return
         self._drag_source_id = iid
         self._drag_press_y = event.y
         self._drag_active = False
@@ -1275,6 +1281,19 @@ class ObjectTreePanel(ctk.CTkFrame):
         return primary_node.parent.id if primary_node.parent is not None else None
 
     def _delete_widget(self, widget_id: str) -> None:
+        # Locked widgets reject canvas-side delete; the tree should
+        # match so lock is meaningful from every surface.
+        node_check = self.project.get_widget(widget_id)
+        if node_check is not None and self._effective_locked(node_check):
+            messagebox.showinfo(
+                title="Widget locked",
+                message=(
+                    "This widget is locked. Unlock it "
+                    "(padlock icon) before deleting."
+                ),
+                parent=self,
+            )
+            return
         # If the clicked row is part of a multi-selection, delete all
         # selected widgets in one confirmation.
         selected = set(self.project.selected_ids)

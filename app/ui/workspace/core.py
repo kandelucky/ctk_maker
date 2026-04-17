@@ -509,10 +509,14 @@ class Workspace(ctk.CTkFrame):
         if sid is None or self._input_focused():
             return None
         if self._effective_locked(sid):
-            try:
-                self.bell()
-            except tk.TclError:
-                pass
+            messagebox.showinfo(
+                title="Widget locked",
+                message=(
+                    "This widget is locked. Unlock it from the Object "
+                    "Tree (padlock icon) before deleting."
+                ),
+                parent=self.winfo_toplevel(),
+            )
             return "break"
         node = self.project.get_widget(sid)
         if node is None:
