@@ -217,6 +217,33 @@ class MoveCommand(Command):
         self._apply(project, self.after)
 
 
+class BulkMoveCommand(Command):
+    """Multi-widget drag — apply the same delta to every selected
+    widget so undo / redo rewinds the whole group as a single step.
+    ``moves`` is a list of ``(widget_id, before, after)`` tuples.
+    """
+
+    def __init__(self, moves: list):
+        self.moves = list(moves)
+        label = (
+            f"Move {len(self.moves)} widgets" if len(self.moves) != 1
+            else "Move widget"
+        )
+        self.description = label
+
+    def _apply(self, project: "Project", take_before: bool) -> None:
+        for widget_id, before, after in self.moves:
+            values = before if take_before else after
+            for key, val in values.items():
+                project.update_property(widget_id, key, val)
+
+    def undo(self, project: "Project") -> None:
+        self._apply(project, take_before=True)
+
+    def redo(self, project: "Project") -> None:
+        self._apply(project, take_before=False)
+
+
 class ResizeCommand(MoveCommand):
     """Resize covers x, y, width, height. Shape-identical to Move."""
 

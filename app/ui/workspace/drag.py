@@ -25,6 +25,7 @@ from __future__ import annotations
 import tkinter as tk
 
 from app.core.commands import (
+    BulkMoveCommand,
     MoveCommand,
     MultiChangePropertyCommand,
     ReparentCommand,
@@ -114,16 +115,17 @@ class WidgetDragController:
             self.project.active_document is not owning_doc
         ):
             self.project.set_active_document(owning_doc.id)
-        # Shift / Ctrl click — multi-select mode. Bypass drill-down
-        # and use the clicked widget verbatim so the user stays in
-        # control of exactly what gets added / toggled.
-        shift = bool(event.state & 0x0001)
-        ctrl = bool(event.state & 0x0004)
-        if shift or ctrl:
-            current_ids = set(
-                getattr(self.project, "selected_ids", set()) or set(),
-            )
-            if ctrl and nid in current_ids:
+        # Ctrl+click — multi-select toggle. Adds the widget if not
+        # already in the selection set, removes it otherwise. Drill-
+        # down is bypassed so the user stays in control of exactly
+        # which widget gets flipped.
+        multi = bool(event.state & 0x0004)
+        existing_ids = set(
+            getattr(self.project, "selected_ids", set()) or set(),
+        )
+        if multi:
+            current_ids = set(existing_ids)
+            if nid in current_ids:
                 current_ids.discard(nid)
                 new_primary = next(iter(current_ids), None)
             else:
@@ -131,6 +133,19 @@ class WidgetDragController:
                 new_primary = nid
             self.project.set_multi_selection(current_ids, new_primary)
             resolved_nid = new_primary or nid
+            # Entering multi-select while in Edit mode flips the tool
+            # to Select — resize handles don't make sense for a group,
+            # and property edits on multi are ambiguous. The user can
+            # flip back to Edit manually when they want to tweak a
+            # single widget's properties again.
+            if len(current_ids) > 1 and ws.controls.tool == "edit":
+                ws.controls.set_tool("select")
+        elif len(existing_ids) > 1 and nid in existing_ids:
+            # Clicking one widget in an existing multi-selection
+            # (no modifier) should not collapse the group — Photoshop
+            # / Figma convention. Keep the selection as-is so the
+            # drag below moves every selected widget together.
+            resolved_nid = nid
         else:
             # Unity-style drill-down selection: first click on a
             # hierarchy selects the outermost ancestor; subsequent
@@ -159,6 +174,34 @@ class WidgetDragController:
         # ``nid`` is the one we're actually dragging (after
         # drill-down resolution). Motion events come through the
         # clicked widget's binding so we match against click_nid.
+        # Group drag: if multiple widgets are selected, snapshot every
+        # place-managed widget's starting x/y so on_motion can shift
+        # the whole group by the same delta. Layout-managed children
+        # (pack / grid) are excluded — their position is owned by the
+        # parent and x/y writes would be stale values only.
+        selected_ids = set(
+            getattr(self.project, "selected_ids", set()) or set(),
+        )
+        if resolved_nid not in selected_ids:
+            selected_ids = {resolved_nid}
+        group_starts: dict = {}
+        for wid in selected_ids:
+            w_node = self.project.get_widget(wid)
+            if w_node is None:
+                continue
+            parent_layout = (
+                normalise_layout_type(
+                    w_node.parent.properties.get("layout_type", "place"),
+                ) if w_node.parent is not None else "place"
+            )
+            if parent_layout != "place":
+                continue
+            try:
+                sx = int(w_node.properties.get("x", 0))
+                sy = int(w_node.properties.get("y", 0))
+            except (ValueError, TypeError):
+                sx, sy = 0, 0
+            group_starts[wid] = (sx, sy)
         self._drag = {
             "nid": resolved_nid,
             "click_nid": nid,
@@ -172,6 +215,10 @@ class WidgetDragController:
             "last_mx": event.x_root,
             "last_my": event.y_root,
             "moved": False,
+            # Per-widget starting position for group drag — iterated
+            # on every motion event so all selected place widgets
+            # shift by the same delta.
+            "group_starts": group_starts,
         }
         return "break"
 
@@ -294,10 +341,14 @@ class WidgetDragController:
             # pack (vbox/hbox) parent — same story: skip x/y updates.
             return
         zoom = self.zoom.value or 1.0
-        new_x = self._drag["start_x"] + int(dx_root / zoom)
-        new_y = self._drag["start_y"] + int(dy_root / zoom)
-        self.project.update_property(nid, "x", new_x)
-        self.project.update_property(nid, "y", new_y)
+        dx_logical = int(dx_root / zoom)
+        dy_logical = int(dy_root / zoom)
+        # Apply the same logical delta to every widget snapshotted
+        # into ``group_starts`` — primary + any co-selected siblings
+        # move together.
+        for wid, (sx, sy) in self._drag["group_starts"].items():
+            self.project.update_property(wid, "x", sx + dx_logical)
+            self.project.update_property(wid, "y", sy + dy_logical)
         # Tag-based canvas.move on the selection chrome: one call
         # shifts every tagged item (edges + handles, plus any
         # multi-select outlines) by the per-tick cursor delta, so
@@ -352,12 +403,11 @@ class WidgetDragController:
                     ) is None
                     and ws._find_document_at_canvas(cx_r, cy_r) is None
                 ):
-                    self.project.update_property(
-                        drag["nid"], "x", drag["start_x"],
-                    )
-                    self.project.update_property(
-                        drag["nid"], "y", drag["start_y"],
-                    )
+                    # Snap back every widget in the group to its
+                    # pre-drag position, not just the primary.
+                    for wid, (sx, sy) in drag["group_starts"].items():
+                        self.project.update_property(wid, "x", sx)
+                        self.project.update_property(wid, "y", sy)
                     ws._update_widget_visibility_across_docs()
                     return
             grid_handled = self._maybe_grid_drop(event, drag)
@@ -367,27 +417,29 @@ class WidgetDragController:
                 # proper ReparentCommand captures the full before/after,
                 # Move would duplicate part of that record.
                 if not reparented:
-                    node = self.project.get_widget(drag["nid"])
-                    if node is not None:
+                    # Group move: one BulkMoveCommand covers every
+                    # widget shifted by this drag so a single undo
+                    # rewinds the whole gesture. Single-widget drags
+                    # still go through this path — BulkMoveCommand
+                    # degrades cleanly to one entry.
+                    moves: list = []
+                    for wid, (sx, sy) in drag["group_starts"].items():
+                        g_node = self.project.get_widget(wid)
+                        if g_node is None:
+                            continue
                         try:
-                            end_x = int(node.properties.get("x", 0))
-                            end_y = int(node.properties.get("y", 0))
+                            ex = int(g_node.properties.get("x", 0))
+                            ey = int(g_node.properties.get("y", 0))
                         except (TypeError, ValueError):
-                            end_x, end_y = drag["start_x"], drag["start_y"]
-                        if (
-                            (end_x, end_y)
-                            != (drag["start_x"], drag["start_y"])
-                        ):
-                            self.project.history.push(
-                                MoveCommand(
-                                    drag["nid"],
-                                    {
-                                        "x": drag["start_x"],
-                                        "y": drag["start_y"],
-                                    },
-                                    {"x": end_x, "y": end_y},
-                                ),
-                            )
+                            ex, ey = sx, sy
+                        if (ex, ey) != (sx, sy):
+                            moves.append((
+                                wid,
+                                {"x": sx, "y": sy},
+                                {"x": ex, "y": ey},
+                            ))
+                    if moves:
+                        self.project.history.push(BulkMoveCommand(moves))
         # Refresh cover-mask after a drag release so a widget that
         # just slid into / out of another document's area picks up
         # the right hidden state.
@@ -637,6 +689,37 @@ class WidgetDragController:
                 "widget_reparented", nid,
                 old_parent_id, new_parent_id,
             )
+            # Group cross-doc drag — every other top-level widget
+            # the user had selected moved in lockstep visually. The
+            # primary just changed document tree; without the loop
+            # below the group would end up split (primary in new_doc,
+            # others still listed under old_doc). Translate each
+            # other widget's x/y from old_doc to new_doc by the
+            # difference in canvas offsets so its on-canvas position
+            # stays put.
+            group_starts = drag.get("group_starts", {})
+            for wid in list(group_starts.keys()):
+                if wid == nid:
+                    continue
+                other = self.project.get_widget(wid)
+                if other is None or other.parent is not None:
+                    continue
+                try:
+                    ox = int(other.properties.get("x", 0))
+                    oy = int(other.properties.get("y", 0))
+                except (TypeError, ValueError):
+                    ox = oy = 0
+                # old_doc.x_canvas + ox == new_doc.x_canvas + new_ox
+                new_ox = int(ox + (old_doc.canvas_x - new_doc.canvas_x))
+                new_oy = int(oy + (old_doc.canvas_y - new_doc.canvas_y))
+                other.properties["x"] = max(0, new_ox)
+                other.properties["y"] = max(0, new_oy)
+                if other in old_doc.root_widgets:
+                    old_doc.root_widgets.remove(other)
+                new_doc.root_widgets.append(other)
+                self.project.event_bus.publish(
+                    "widget_reparented", wid, None, None,
+                )
         else:
             self.project.reparent(nid, new_parent_id)
         # Capture post-reparent index so redo can restore z-order.

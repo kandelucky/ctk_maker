@@ -21,15 +21,15 @@ Canvas drag / drop / resize / select / keyboard / delete — the core interactio
 - [x] Drag into nested Frame — reparents (top-level widgets only; container children extract instead)
 
 ### Resize
-- [ ] 8 handles (N/S/E/W + NE/NW/SE/SW) all work
-- [ ] Min size enforced (can't resize below widget's min dimensions)
-- [ ] Resize container with children — children re-layout (grid), stay place-anchored (place), pack re-flows
-- [ ] Resize during drag-scrub on W/H property — single undo entry on release
+- [x] 8 handles (N/S/E/W + NE/NW/SE/SW) all work
+- [x] Min size enforced (can't resize below widget's min dimensions)
+- [x] Resize container with children — children re-layout (grid), stay place-anchored (place), pack re-flows
+- [x] Resize during drag-scrub on W/H property — single undo entry on release
 
 ### Arrow-key nudge
-- [ ] Selected widget → arrow = 1px, Shift+arrow = 10px
-- [ ] Rapid bursts coalesce into single undo step (≤0.6s window)
-- [ ] Nudge respects locked widgets (no-op)
+- [x] Selected widget → arrow = 1px, Shift+arrow = 10px
+- [x] Rapid bursts coalesce into single undo step (≤0.6s window)
+- [x] Nudge respects locked widgets (no-op)
 
 ### Select
 - [ ] Click widget → selection highlight + property panel updates
