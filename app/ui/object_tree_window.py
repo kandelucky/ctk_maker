@@ -25,6 +25,7 @@ from app.core.commands import (
     ReparentCommand,
     ToggleFlagCommand,
     ZOrderCommand,
+    build_bulk_add_entries,
 )
 from app.ui.dialogs import RenameDialog
 from app.ui.icons import load_icon, load_tk_icon
@@ -1210,19 +1211,36 @@ class ObjectTreePanel(ctk.CTkFrame):
 
         menu = tk.Menu(self, tearoff=0, **CTX_MENU_STYLE)
         if multi_active:
+            count = len(self.project.selected_ids)
             menu.add_command(
-                label=f"Delete {len(self.project.selected_ids)} widgets",
+                label=f"Copy {count} widgets",
+                command=self._copy_selection_to_clipboard,
+            )
+            menu.add_separator()
+            menu.add_command(
+                label=f"Delete {count} widgets",
                 command=lambda nid=iid: self._delete_widget(nid),
             )
         else:
             self.project.select_widget(iid)
             menu.add_command(
-                label="Rename",
-                command=lambda nid=iid: self._prompt_rename(nid),
+                label="Copy",
+                command=lambda nid=iid: self._copy_single_to_clipboard(nid),
+            )
+            paste_state = "normal" if self.project.clipboard else "disabled"
+            menu.add_command(
+                label="Paste",
+                command=lambda nid=iid: self._paste_at_tree_row(nid),
+                state=paste_state,
             )
             menu.add_command(
                 label="Duplicate",
                 command=lambda nid=iid: self._duplicate_with_history(nid),
+            )
+            menu.add_separator()
+            menu.add_command(
+                label="Rename",
+                command=lambda nid=iid: self._prompt_rename(nid),
             )
             menu.add_command(
                 label="Delete",
@@ -1246,6 +1264,30 @@ class ObjectTreePanel(ctk.CTkFrame):
         finally:
             menu.grab_release()
         return "break"
+
+    def _copy_single_to_clipboard(self, widget_id: str) -> None:
+        self.project.copy_to_clipboard({widget_id})
+
+    def _copy_selection_to_clipboard(self) -> None:
+        ids = self.project.selected_ids
+        if ids:
+            self.project.copy_to_clipboard(ids)
+
+    def _paste_at_tree_row(self, widget_id: str) -> None:
+        if not self.project.clipboard:
+            return
+        node = self.project.get_widget(widget_id)
+        if node is None:
+            return
+        descriptor = get_descriptor(node.widget_type)
+        if descriptor is not None and getattr(
+            descriptor, "is_container", False,
+        ):
+            parent_id: str | None = widget_id
+        else:
+            parent_id = node.parent.id if node.parent is not None else None
+        new_ids = self.project.paste_from_clipboard(parent_id=parent_id)
+        self._push_paste_history(new_ids)
 
     def _prompt_rename(self, widget_id: str) -> None:
         node = self.project.get_widget(widget_id)
@@ -1289,27 +1331,7 @@ class ObjectTreePanel(ctk.CTkFrame):
     def _push_paste_history(self, new_ids: list[str]) -> None:
         if not new_ids:
             return
-        entries: list[tuple[dict, str | None, int, str | None]] = []
-        for nid in new_ids:
-            node = self.project.get_widget(nid)
-            if node is None:
-                continue
-            parent_id = (
-                node.parent.id if node.parent is not None else None
-            )
-            siblings = (
-                node.parent.children if node.parent is not None
-                else self.project.root_widgets
-            )
-            try:
-                index = siblings.index(node)
-            except ValueError:
-                index = len(siblings) - 1
-            owning_doc = self.project.find_document_for_widget(nid)
-            document_id = (
-                owning_doc.id if owning_doc is not None else None
-            )
-            entries.append((node.to_dict(), parent_id, index, document_id))
+        entries = build_bulk_add_entries(self.project, new_ids)
         if entries:
             self.project.history.push(BulkAddCommand(entries, label="Paste"))
 
@@ -1317,26 +1339,11 @@ class ObjectTreePanel(ctk.CTkFrame):
         new_id = self.project.duplicate_widget(nid)
         if new_id is None:
             return
-        clone = self.project.get_widget(new_id)
-        if clone is None:
-            return
-        parent_id = clone.parent.id if clone.parent is not None else None
-        siblings = (
-            clone.parent.children if clone.parent is not None
-            else self.project.root_widgets
-        )
-        try:
-            index = siblings.index(clone)
-        except ValueError:
-            index = len(siblings) - 1
-        owning_doc = self.project.find_document_for_widget(new_id)
-        document_id = owning_doc.id if owning_doc is not None else None
-        self.project.history.push(
-            BulkAddCommand(
-                [(clone.to_dict(), parent_id, index, document_id)],
-                label="Duplicate",
-            ),
-        )
+        entries = build_bulk_add_entries(self.project, [new_id])
+        if entries:
+            self.project.history.push(
+                BulkAddCommand(entries, label="Duplicate"),
+            )
 
     def _z_order_with_history(self, nid: str, direction: str) -> None:
         node = self.project.get_widget(nid)

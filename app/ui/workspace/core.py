@@ -28,6 +28,7 @@ from app.core.commands import (
     DeleteWidgetCommand,
     RenameCommand,
     ZOrderCommand,
+    build_bulk_add_entries,
 )
 from app.core.logger import log_error
 from app.core.project import Project
@@ -1046,25 +1047,7 @@ class Workspace(ctk.CTkFrame):
         )
         if not new_ids:
             return
-        entries: list[tuple[dict, str | None, int, str | None]] = []
-        for new_id in new_ids:
-            clone = self.project.get_widget(new_id)
-            if clone is None:
-                continue
-            parent_id = clone.parent.id if clone.parent is not None else None
-            siblings = (
-                clone.parent.children if clone.parent is not None
-                else self.project.root_widgets
-            )
-            try:
-                index = siblings.index(clone)
-            except ValueError:
-                index = len(siblings) - 1
-            owning_doc = self.project.find_document_for_widget(new_id)
-            document_id = owning_doc.id if owning_doc is not None else None
-            entries.append(
-                (clone.to_dict(), parent_id, index, document_id),
-            )
+        entries = build_bulk_add_entries(self.project, new_ids)
         if entries:
             self.project.history.push(
                 BulkAddCommand(entries, label="Paste"),
@@ -1177,23 +1160,7 @@ class Workspace(ctk.CTkFrame):
         new_ids = self.project.paste_from_clipboard(parent_id=parent_id)
         if not new_ids:
             return
-        entries: list[tuple[dict, str | None, int, str | None]] = []
-        for new_id in new_ids:
-            clone = self.project.get_widget(new_id)
-            if clone is None:
-                continue
-            p_id = clone.parent.id if clone.parent is not None else None
-            siblings = (
-                clone.parent.children if clone.parent is not None
-                else self.project.root_widgets
-            )
-            try:
-                index = siblings.index(clone)
-            except ValueError:
-                index = len(siblings) - 1
-            owning_doc = self.project.find_document_for_widget(new_id)
-            document_id = owning_doc.id if owning_doc is not None else None
-            entries.append((clone.to_dict(), p_id, index, document_id))
+        entries = build_bulk_add_entries(self.project, new_ids)
         if entries:
             self.project.history.push(
                 BulkAddCommand(entries, label="Paste"),
@@ -1203,28 +1170,12 @@ class Workspace(ctk.CTkFrame):
         ids = list(self.project.selected_ids)
         if not ids:
             return
-        entries: list[tuple[dict, str | None, int, str | None]] = []
+        new_ids: list[str] = []
         for nid in ids:
             new_id = self.project.duplicate_widget(nid)
-            if new_id is None:
-                continue
-            clone = self.project.get_widget(new_id)
-            if clone is None:
-                continue
-            parent_id = clone.parent.id if clone.parent is not None else None
-            siblings = (
-                clone.parent.children if clone.parent is not None
-                else self.project.root_widgets
-            )
-            try:
-                index = siblings.index(clone)
-            except ValueError:
-                index = len(siblings) - 1
-            owning_doc = self.project.find_document_for_widget(new_id)
-            document_id = owning_doc.id if owning_doc is not None else None
-            entries.append(
-                (clone.to_dict(), parent_id, index, document_id),
-            )
+            if new_id is not None:
+                new_ids.append(new_id)
+        entries = build_bulk_add_entries(self.project, new_ids)
         if entries:
             self.project.history.push(
                 BulkAddCommand(entries, label="Duplicate"),
@@ -1234,26 +1185,11 @@ class Workspace(ctk.CTkFrame):
         new_id = self.project.duplicate_widget(nid)
         if new_id is None:
             return
-        clone = self.project.get_widget(new_id)
-        if clone is None:
-            return
-        parent_id = clone.parent.id if clone.parent is not None else None
-        siblings = (
-            clone.parent.children if clone.parent is not None
-            else self.project.root_widgets
-        )
-        try:
-            index = siblings.index(clone)
-        except ValueError:
-            index = len(siblings) - 1
-        owning_doc = self.project.find_document_for_widget(new_id)
-        document_id = owning_doc.id if owning_doc is not None else None
-        self.project.history.push(
-            BulkAddCommand(
-                [(clone.to_dict(), parent_id, index, document_id)],
-                label="Duplicate",
-            ),
-        )
+        entries = build_bulk_add_entries(self.project, [new_id])
+        if entries:
+            self.project.history.push(
+                BulkAddCommand(entries, label="Duplicate"),
+            )
 
     def _z_order_with_history(self, nid: str, direction: str) -> None:
         node = self.project.get_widget(nid)

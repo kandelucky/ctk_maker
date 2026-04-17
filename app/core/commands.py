@@ -25,6 +25,61 @@ if TYPE_CHECKING:
 COALESCE_WINDOW_SEC = 0.6
 
 
+def build_bulk_add_entries(
+    project: "Project", widget_ids,
+) -> list[tuple[dict, str | None, int, str | None]]:
+    """Snapshot a batch of already-added widgets into the 4-tuple
+    shape ``BulkAddCommand`` expects. Used by every paste / duplicate
+    path across the UI — the call site passes the fresh ids just
+    returned by ``paste_from_clipboard`` / ``duplicate_widget``, and
+    this helper walks each one to capture its parent, sibling index,
+    and owning document so undo/redo can restore it in place.
+
+    Entries for ids that don't resolve (a deleted widget mid-flight)
+    are skipped rather than raising, matching the old per-site loops.
+    """
+    entries: list[tuple[dict, str | None, int, str | None]] = []
+    for nid in widget_ids:
+        node = project.get_widget(nid)
+        if node is None:
+            continue
+        parent_id = node.parent.id if node.parent is not None else None
+        siblings = (
+            node.parent.children if node.parent is not None
+            else project.root_widgets
+        )
+        try:
+            index = siblings.index(node)
+        except ValueError:
+            index = len(siblings) - 1
+        owning_doc = project.find_document_for_widget(nid)
+        document_id = owning_doc.id if owning_doc is not None else None
+        entries.append((node.to_dict(), parent_id, index, document_id))
+    return entries
+
+
+def _restore_widget(
+    project: "Project",
+    snapshot: dict,
+    parent_id: str | None,
+    index: int | None,
+    document_id: str | None,
+) -> WidgetNode:
+    """Shared body for every command that recreates a widget from a
+    snapshot (Add.redo, Delete.undo, DeleteMultiple.undo, BulkAdd.redo).
+
+    Resolving the doc + re-inserting at the original index used to be
+    open-coded in four places; any drift (a missing ``document_id``
+    pass-through, for instance) breaks cross-document undo. Funnel
+    through here so the contract stays one line wide.
+    """
+    node = WidgetNode.from_dict(snapshot)
+    project.add_widget(node, parent_id=parent_id, document_id=document_id)
+    if index is not None:
+        project.reparent(node.id, parent_id, index=index)
+    return node
+
+
 class Command:
     description: str = ""
 
@@ -63,12 +118,10 @@ class AddWidgetCommand(Command):
         project.remove_widget(self._snapshot["id"])
 
     def redo(self, project: "Project") -> None:
-        node = WidgetNode.from_dict(self._snapshot)
-        project.add_widget(
-            node, parent_id=self._parent_id, document_id=self._document_id,
+        node = _restore_widget(
+            project, self._snapshot, self._parent_id,
+            self._index, self._document_id,
         )
-        if self._index is not None:
-            project.reparent(node.id, self._parent_id, index=self._index)
         project.select_widget(node.id)
 
 
@@ -88,11 +141,10 @@ class DeleteWidgetCommand(Command):
         self.description = f"Delete {label}"
 
     def undo(self, project: "Project") -> None:
-        node = WidgetNode.from_dict(self._snapshot)
-        project.add_widget(
-            node, parent_id=self._parent_id, document_id=self._document_id,
+        node = _restore_widget(
+            project, self._snapshot, self._parent_id,
+            self._index, self._document_id,
         )
-        project.reparent(node.id, self._parent_id, index=self._index)
         project.select_widget(node.id)
 
     def redo(self, project: "Project") -> None:
@@ -120,11 +172,9 @@ class DeleteMultipleCommand(Command):
     def undo(self, project: "Project") -> None:
         restored_ids: list[str] = []
         for snapshot, parent_id, index, document_id in self._entries:
-            node = WidgetNode.from_dict(snapshot)
-            project.add_widget(
-                node, parent_id=parent_id, document_id=document_id,
+            node = _restore_widget(
+                project, snapshot, parent_id, index, document_id,
             )
-            project.reparent(node.id, parent_id, index=index)
             restored_ids.append(node.id)
         if restored_ids:
             project.set_multi_selection(
@@ -404,11 +454,9 @@ class BulkAddCommand(Command):
     def redo(self, project: "Project") -> None:
         restored_ids: list[str] = []
         for snapshot, parent_id, index, document_id in self._entries:
-            node = WidgetNode.from_dict(snapshot)
-            project.add_widget(
-                node, parent_id=parent_id, document_id=document_id,
+            node = _restore_widget(
+                project, snapshot, parent_id, index, document_id,
             )
-            project.reparent(node.id, parent_id, index=index)
             restored_ids.append(node.id)
         if len(restored_ids) == 1:
             project.select_widget(restored_ids[0])

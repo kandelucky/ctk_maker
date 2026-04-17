@@ -325,14 +325,8 @@ class Project:
     # ------------------------------------------------------------------
     def iter_all_widgets(self) -> Iterator[WidgetNode]:
         """Yield every widget in every document, depth-first top-down."""
-        def walk(node: WidgetNode):
-            yield node
-            for child in node.children:
-                yield from walk(child)
-
         for doc in self.documents:
-            for root in doc.root_widgets:
-                yield from walk(root)
+            yield from _walk_tree(doc.root_widgets)
 
     def find_document_for_widget(
         self, widget_id: str,
@@ -412,6 +406,20 @@ class Project:
     # ------------------------------------------------------------------
     # Add / remove / reparent
     # ------------------------------------------------------------------
+    def _resolve_target_document(self, document_id: str | None):
+        """Return the Document that a top-level op should target.
+
+        ``document_id`` wins when given and it matches an existing doc
+        (used by undo/redo + paste to restore into the original doc);
+        otherwise fall back to the currently active document so callers
+        without a specific doc in mind get today's behaviour.
+        """
+        if document_id:
+            doc = self.get_document(document_id)
+            if doc is not None:
+                return doc
+        return self.active_document
+
     def add_widget(
         self, node: WidgetNode, parent_id: str | None = None,
         document_id: str | None = None,
@@ -419,12 +427,7 @@ class Project:
         if not node.name:
             node.name = self._generate_unique_name(node.widget_type)
         if parent_id is None:
-            # Top-level: honour document_id when given so undo/paste
-            # can restore widgets into the doc they came from instead
-            # of defaulting to whichever doc happens to be active.
-            target_doc = (
-                self.get_document(document_id) if document_id else None
-            ) or self.active_document
+            target_doc = self._resolve_target_document(document_id)
             node.parent = None
             target_doc.root_widgets.append(node)
         else:
@@ -491,11 +494,9 @@ class Project:
         parent_changed = old_parent_id != new_parent_id
         old_doc = self.find_document_for_widget(widget_id)
         target_doc = (
-            self.get_document(document_id)
-            if (new_parent is None and document_id) else None
+            self._resolve_target_document(document_id)
+            if new_parent is None else None
         )
-        if target_doc is None and new_parent is None:
-            target_doc = self.active_document
         doc_changed = (
             new_parent is None
             and old_doc is not None
@@ -748,6 +749,25 @@ class Project:
         """
         if not self.clipboard:
             return []
+        # Build sibling occupancy so the cascade drops each clone into
+        # a free slot in the destination parent — same algorithm for
+        # top-level (doc.root_widgets) and for container pastes
+        # (parent.children). Without it, pasting into a Frame reuses
+        # the clone's original top-level coords and lands out of view.
+        sibling_occupancy: set[tuple[int, int]] | None = None
+        if base_position is None:
+            if parent_id is None:
+                siblings = self.active_document.root_widgets
+            else:
+                parent = self.get_widget(parent_id)
+                siblings = parent.children if parent is not None else []
+            sibling_occupancy = {
+                (
+                    int(w.properties.get("x", 0) or 0),
+                    int(w.properties.get("y", 0) or 0),
+                )
+                for w in siblings
+            }
         new_top_ids: list[str] = []
         for idx, data in enumerate(self.clipboard):
             root = self._clone_with_fresh_ids(data)
@@ -756,6 +776,19 @@ class Project:
                     bx, by = base_position
                     root.properties["x"] = max(0, int(bx) + idx * 20)
                     root.properties["y"] = max(0, int(by) + idx * 20)
+                elif sibling_occupancy is not None:
+                    # Start at (10, 10) in container pastes so the clone
+                    # sits near the Frame's top-left regardless of the
+                    # source's original coord space. Top-level keeps the
+                    # same starting rule — empty docs bootstrap at (10,10)
+                    # anyway through the palette cascade.
+                    nx, ny = 10, 10
+                    while (nx, ny) in sibling_occupancy:
+                        nx += 20
+                        ny += 20
+                    root.properties["x"] = max(0, nx)
+                    root.properties["y"] = max(0, ny)
+                    sibling_occupancy.add((nx, ny))
                 else:
                     root.properties["x"] = (
                         int(root.properties.get("x", 0)) + 20
@@ -830,6 +863,38 @@ class Project:
         self.select_widget(clone.id)
         return clone.id
 
+    def _reorder_to(
+        self, widget_id: str,
+        final_index: int | None, direction: str,
+    ) -> None:
+        """Shared body for every sibling-order mutation.
+
+        ``final_index=None`` means "end of the list" (used by
+        bring_to_front); an explicit integer is clamped to the valid
+        range. ``direction`` rides on the ``widget_z_changed`` event
+        so listeners can distinguish front / back / reorder for
+        animation or history labelling.
+        """
+        node = self.get_widget(widget_id)
+        if node is None:
+            return
+        siblings = self._sibling_list(node)
+        if not siblings:
+            return
+        try:
+            old_index = siblings.index(node)
+        except ValueError:
+            return
+        if final_index is None:
+            final_index = len(siblings) - 1
+        else:
+            final_index = max(0, min(len(siblings) - 1, final_index))
+        if final_index == old_index:
+            return
+        siblings.pop(old_index)
+        siblings.insert(final_index, node)
+        self.event_bus.publish("widget_z_changed", widget_id, direction)
+
     def reorder_child_at(
         self, widget_id: str, final_index: int,
     ) -> None:
@@ -840,39 +905,10 @@ class Project:
         can pass the cursor-derived index directly without the
         compensation arithmetic ``reparent`` does.
         """
-        node = self.get_widget(widget_id)
-        if node is None:
-            return
-        siblings = self._sibling_list(node)
-        try:
-            old_index = siblings.index(node)
-        except ValueError:
-            return
-        final_index = max(0, min(len(siblings) - 1, final_index))
-        if final_index == old_index:
-            return
-        siblings.pop(old_index)
-        siblings.insert(final_index, node)
-        self.event_bus.publish("widget_z_changed", widget_id, "reorder")
+        self._reorder_to(widget_id, final_index, "reorder")
 
     def bring_to_front(self, widget_id: str) -> None:
-        node = self.get_widget(widget_id)
-        if node is None:
-            return
-        siblings = self._sibling_list(node)
-        if not siblings or siblings[-1] is node:
-            return
-        siblings.remove(node)
-        siblings.append(node)
-        self.event_bus.publish("widget_z_changed", widget_id, "front")
+        self._reorder_to(widget_id, None, "front")
 
     def send_to_back(self, widget_id: str) -> None:
-        node = self.get_widget(widget_id)
-        if node is None:
-            return
-        siblings = self._sibling_list(node)
-        if not siblings or siblings[0] is node:
-            return
-        siblings.remove(node)
-        siblings.insert(0, node)
-        self.event_bus.publish("widget_z_changed", widget_id, "back")
+        self._reorder_to(widget_id, 0, "back")

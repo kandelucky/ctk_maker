@@ -500,6 +500,22 @@ class MainWindow(ctk.CTk):
         self.bind_all("<Control-z>", lambda e: self._on_undo())
         self.bind_all("<Control-y>", lambda e: self._on_redo())
         self.bind_all("<Control-Shift-Z>", lambda e: self._on_redo())
+        # Copy / Paste at the main-window level so they work regardless
+        # of which panel has focus. Widget bindings fire first in tk's
+        # dispatch order, so Object Tree's own handlers still win when
+        # the tree is focused; these are the fallback for everything
+        # else (canvas, palette, empty focus). Entry / Text widgets
+        # short-circuit so native text copy/paste keeps working there.
+        self.bind("<Control-c>", self._on_copy_shortcut)
+        self.bind("<Control-C>", self._on_copy_shortcut)
+        self.bind("<Control-v>", self._on_paste_shortcut)
+        self.bind("<Control-V>", self._on_paste_shortcut)
+        # Non-Latin layout fallback: _on_control_keypress (bind_all)
+        # translates the hardware keycode into these virtual events.
+        # Without binding them at the main-window level they'd fire
+        # into the void when focus is outside the Object Tree.
+        self.bind("<<Copy>>", self._on_copy_shortcut)
+        self.bind("<<Paste>>", self._on_paste_shortcut)
 
     def _rebuild_recent_menu(self) -> None:
         self._recent_menu.delete(0, "end")
@@ -928,6 +944,20 @@ class MainWindow(ctk.CTk):
         if ids:
             self.project.copy_to_clipboard(ids)
 
+    def _on_copy_shortcut(self, _event=None) -> str | None:
+        # Let Entry / Text widgets handle their native Ctrl+C. Our
+        # fallback only fires when focus isn't on an editable field.
+        if isinstance(self.focus_get(), (tk.Entry, tk.Text)):
+            return None
+        self._on_menu_copy()
+        return "break"
+
+    def _on_paste_shortcut(self, _event=None) -> str | None:
+        if isinstance(self.focus_get(), (tk.Entry, tk.Text)):
+            return None
+        self._on_menu_paste()
+        return "break"
+
     def _on_menu_paste(self) -> None:
         if not self.project.clipboard:
             return
@@ -952,28 +982,8 @@ class MainWindow(ctk.CTk):
     def _push_paste_history(self, new_ids: list[str]) -> None:
         if not new_ids:
             return
-        from app.core.commands import BulkAddCommand
-        entries: list[tuple[dict, str | None, int, str | None]] = []
-        for nid in new_ids:
-            node = self.project.get_widget(nid)
-            if node is None:
-                continue
-            parent_id = (
-                node.parent.id if node.parent is not None else None
-            )
-            siblings = (
-                node.parent.children if node.parent is not None
-                else self.project.root_widgets
-            )
-            try:
-                index = siblings.index(node)
-            except ValueError:
-                index = len(siblings) - 1
-            owning_doc = self.project.find_document_for_widget(nid)
-            document_id = (
-                owning_doc.id if owning_doc is not None else None
-            )
-            entries.append((node.to_dict(), parent_id, index, document_id))
+        from app.core.commands import BulkAddCommand, build_bulk_add_entries
+        entries = build_bulk_add_entries(self.project, new_ids)
         if entries:
             self.project.history.push(BulkAddCommand(entries, label="Paste"))
 

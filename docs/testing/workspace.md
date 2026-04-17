@@ -58,21 +58,45 @@ Canvas drag / drop / resize / select / keyboard / delete — the core interactio
 - [x] Rapid palette drops in succession (no lost widgets)
 - [x] Drag a widget, then release over Object Tree / Properties panel — rejected cleanly
 
-## Refactor candidates
+## Refactor + Optimize — files in scope
 
-- [ ] `core.py` (998 lines) — `_on_property_changed` routing switch is long, could extract into handler map
-- [ ] `drag.py` size audit — is the `_maybe_grid_drop` / `_maybe_reparent_dragged` split clean or overlapping?
-- [ ] `_build_canvas` assembles 5+ sidecar managers — could reduce to a single `_wire_managers` helper
-- [ ] `WorkspaceControls` vs `ChromeManager` vs `ZoomController` — boundaries clear or blurry?
-- [ ] Re-export block (`_child_manager_kwargs`, `_forget_current_manager` as `# noqa: F401`) — still needed by tests?
+Every file touched during Area 1 testing. Refactor / optimize passes
+walk this list top-to-bottom; decide what each needs when we get to it.
 
-## Optimize candidates
+- [x] `app/core/project.py` — refactor: walker unify, `_resolve_target_document`, `_reorder_to` dedup. Optimize (ID cache) **deferred** — 160-widget benefit too small vs. complexity.
+- [x] `app/core/commands.py` — refactor: `_restore_widget` helper dedups 4 snapshot-restore call sites (Add.redo / Delete.undo / DeleteMultiple.undo / BulkAdd.redo). Optimize: none — command paths are one-shot user actions, not hot.
+- [x] `app/ui/main_window.py` — refactor: `build_bulk_add_entries` helper in commands.py replaces 6 duplicated snapshot-capture blocks across main_window / object_tree_window / workspace/core (~100 line dedup; document_id drift now impossible). Optimize: none — Edit-menu dispatchers aren't on a hot path.
+- [ ] `app/ui/object_tree_window.py`
+- [ ] `app/ui/palette.py`
+- [ ] `app/ui/properties_panel_v2/panel.py`
+- [ ] `app/ui/workspace/core.py`
+- [ ] `app/ui/workspace/drag.py`
+- [ ] `app/ui/workspace/chrome.py` — **O5 queued**: `drive_drag` coalesce. See note below.
+- [ ] `app/ui/workspace/controls.py`
+- [ ] `app/ui/workspace/widget_lifecycle.py`
+- [ ] `app/ui/workspace/render.py`
+- [ ] `app/ui/selection_controller.py`
+- [ ] `app/ui/zoom_controller.py`
 
-- [ ] Selection redraw fires on every motion event during drag — debounce to next-frame
-- [ ] `_schedule_selection_redraw` already exists — check if all call sites use it vs direct `selection.draw()`
-- [ ] Zoom rerender: `apply_to_widget` runs per-widget; could batch per document
-- [ ] Canvas `create_window` + `widget.configure(width, height)` — measure which dominates during palette drop
-- [ ] Drag with 50+ siblings — profile motion handler
+### O5 note — `chrome.drive_drag` coalesce via `after_idle`
+
+Real-world evidence: 160 widgets on a form → dragging the doc chrome
+"got a bit heavy". Current `chrome.drive_drag` ([chrome.py:504](../../app/ui/workspace/chrome.py#L504))
+runs `_redraw_document()` + `zoom.apply_all()` + `selection.update()`
+per motion event. At ~100 motions/sec × 160 widgets = 16,000
+`place_configure()` Tk calls/sec.
+
+**Fix plan when we get to `chrome.py`:**
+- Keep `doc.canvas_x` / `canvas_y` updates synchronous (coord state
+  stays accurate for every motion).
+- Defer render via `after_idle(_flush_drag_render)`; guard with a
+  `drag["pending"]` flag so multiple motions coalesce into one render.
+- `end_drag` runs a final flush so the release frame is always
+  up-to-date.
+
+**Verify:** chrome-drag smoothness at 1 / 10 / 100 / 160 widgets;
+widget positions correct on release; regular (non-chrome) widget
+drag unchanged.
 
 ## Findings
 
@@ -184,3 +208,27 @@ Canvas drag / drop / resize / select / keyboard / delete — the core interactio
   *Expected:* both form rectangle and every widget inside return to the original position
   *Observed:* doc rectangle returned, but widgets stayed at the dragged offset — they use `canvas.create_window` at `logical_to_canvas(x, y, document=doc)` and needed re-placement
   *Fix:* `MoveDocumentCommand._apply` publishes a new `document_position_changed(doc_id)` event; workspace subscribes and replays the live-drag sequence (redraw + `zoom.apply_all()` + selection update)
+
+- **[WS-23]** Ctrl+C / Ctrl+V didn't work on the canvas, only inside the Object Tree
+  *Steps:* select a widget on the canvas, press Ctrl+C → nothing happens
+  *Expected:* widget copies regardless of which panel has focus
+  *Observed:* `Control-c` / `Control-v` were only bound at the Object Tree level; canvas had no handler, so the shortcut silently did nothing
+  *Fix:* added `self.bind("<Control-c>"/"<Control-v>"/"<<Copy>>"/"<<Paste>>")` on `MainWindow` with an Entry/Text focus skip so native text copy/paste still runs when the user is typing in a property editor
+
+- **[WS-24]** Georgian / non-Latin keyboard layouts broke the clipboard shortcuts
+  *Steps:* switch keyboard to Georgian, press Ctrl+C on a selected widget
+  *Expected:* widget copies — the fallback path exists (`_on_control_keypress` detects VK 67 / 86 and emits `<<Copy>>` / `<<Paste>>`)
+  *Observed:* the virtual events fired but no-one was listening at the main-window level, so they disappeared
+  *Fix:* same bindings as WS-23 cover `<<Copy>>` / `<<Paste>>` — the non-Latin path now lands in the project-level handlers
+
+- **[WS-25]** Paste cascade stacked clones on top of the last paste
+  *Steps:* Ctrl+V five times in a row
+  *Expected:* five visible copies, each in its own slot
+  *Observed:* every clone landed at `original_xy + 20` — after the second paste they all overlapped at the same slot
+  *Fix:* `Project.paste_from_clipboard` now builds a `sibling_occupancy` set from the target's children and steps through `(nx, ny) += (20, 20)` until a free slot is found, matching the palette-drop cascade
+
+- **[WS-26]** Pasting into a Frame (container) landed the clone in a "strange" position
+  *Steps:* copy a top-level widget sitting at e.g. (200, 300), paste it into a 300 × 200 Frame
+  *Expected:* clone visible inside the Frame near its top-left
+  *Observed:* clone preserved its original top-level coords, ending up partially or fully outside the Frame's bounds
+  *Fix:* container pastes now start cascade from `(10, 10)` inside the parent and fill sibling_occupancy from `parent.children`, so the original source coord space is discarded at paste time
