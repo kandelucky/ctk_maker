@@ -155,11 +155,11 @@ def _emit_class(doc: Document, class_name: str) -> list[str]:
             if doc_layout == "grid":
                 for rr in range(doc_rows):
                     body_lines.append(
-                        f"self.grid_rowconfigure({rr}, weight=1)",
+                        f'self.grid_rowconfigure({rr}, weight=1, uniform="row")',
                     )
                 for cc in range(doc_cols):
                     body_lines.append(
-                        f"self.grid_columnconfigure({cc}, weight=1)",
+                        f'self.grid_columnconfigure({cc}, weight=1, uniform="col")',
                     )
             body_lines.append("")
         for idx, node in enumerate(doc.root_widgets):
@@ -224,11 +224,11 @@ def _emit_subtree(
         if child_layout == "grid":
             for rr in range(child_rows):
                 lines.append(
-                    f"{child_master}.grid_rowconfigure({rr}, weight=1)",
+                    f'{child_master}.grid_rowconfigure({rr}, weight=1, uniform="row")',
                 )
             for cc in range(child_cols):
                 lines.append(
-                    f"{child_master}.grid_columnconfigure({cc}, weight=1)",
+                    f'{child_master}.grid_columnconfigure({cc}, weight=1, uniform="col")',
                 )
         lines.append("")
     try:

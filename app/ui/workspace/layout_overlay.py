@@ -1,4 +1,4 @@
-"""Layout-manager helpers for the Stage 3 WYSIWYG pipeline.
+"""Layout-manager helpers for the WYSIWYG pipeline.
 
 1. **Module-level functions** (no workspace needed):
     - ``_strip_layout_keys``    — filter out node-only layout keys
@@ -17,9 +17,9 @@
     - Reserved overlay hook — currently draws nothing (see the
       docstring on ``draw_overlays_for_doc`` for why).
 
-Split out of the old monolithic ``workspace.py`` to keep Stage 3
-logic in one focused module. Core ``Workspace`` holds a single
-instance on ``self.layout_overlay`` and delegates to it.
+Split out of the old monolithic ``workspace.py`` to keep layout
+manager logic in one focused module. Core ``Workspace`` holds a
+single instance on ``self.layout_overlay`` and delegates to it.
 """
 
 from __future__ import annotations
@@ -82,9 +82,10 @@ def _child_grid_kwargs(
 ) -> dict:
     """Pick tk ``grid()`` kwargs for a grid child. Row/column come
     directly from the child's own ``grid_row`` / ``grid_column``
-    props so the user's cursor-based drop sticks. Spacing on the
-    parent turns into padx/pady on each cell (half per side so
-    adjacent cells end up one full spacing apart).
+    props so the user's cursor-based drop sticks — empty cells are
+    targetable and siblings can overlap. Parent ``layout_spacing``
+    turns into padx/pady (half per side so adjacent cells end up
+    one full spacing apart).
     """
     if parent_node is None:
         parent_props: dict = {}
@@ -111,6 +112,65 @@ def _child_grid_kwargs(
     return kwargs
 
 
+def _grid_child_place_kwargs(
+    parent_props: dict, child_props: dict, zoom: float = 1.0,
+) -> dict:
+    """Calculate place() kwargs for a grid child centered in its cell."""
+    container_w = _safe_int(parent_props.get("width", 0), 0)
+    container_h = _safe_int(parent_props.get("height", 0), 0)
+    if container_w <= 0 or container_h <= 0:
+        return {"x": 0, "y": 0}
+    rows = max(1, _safe_int(parent_props.get("grid_rows", 2), 2))
+    cols = max(1, _safe_int(parent_props.get("grid_cols", 2), 2))
+    spacing = _safe_int(parent_props.get("layout_spacing", 0), 0)
+    half_sp = spacing / 2
+
+    cell_w = container_w / cols
+    cell_h = container_h / rows
+
+    row = _safe_int(child_props.get("grid_row", 0), 0)
+    col = _safe_int(child_props.get("grid_column", 0), 0)
+    sticky = (child_props.get("grid_sticky", "") or "").lower()
+
+    child_w = _safe_int(child_props.get("width", 0), 0)
+    child_h = _safe_int(child_props.get("height", 0), 0)
+
+    avail_x = col * cell_w + half_sp
+    avail_y = row * cell_h + half_sp
+    avail_w = cell_w - spacing
+    avail_h = cell_h - spacing
+
+    has_n, has_s = "n" in sticky, "s" in sticky
+    has_e, has_w = "e" in sticky, "w" in sticky
+
+    if has_w and has_e:
+        x, w = avail_x, avail_w
+    elif has_w:
+        x, w = avail_x, child_w
+    elif has_e:
+        x, w = avail_x + avail_w - child_w, child_w
+    else:
+        x, w = avail_x + (avail_w - child_w) / 2, child_w
+
+    if has_n and has_s:
+        y, h = avail_y, avail_h
+    elif has_n:
+        y, h = avail_y, child_h
+    elif has_s:
+        y, h = avail_y + avail_h - child_h, child_h
+    else:
+        y, h = avail_y + (avail_h - child_h) / 2, child_h
+
+    result: dict = {
+        "x": max(0, int(x * zoom)),
+        "y": max(0, int(y * zoom)),
+    }
+    if w > 0 and h > 0:
+        result["_cfg_width"] = max(1, int(w * zoom))
+        result["_cfg_height"] = max(1, int(h * zoom))
+    return result
+
+
 def _child_manager_kwargs(
     parent_node, child_props: dict, zoom: float = 1.0,
     child_index: int | None = None,
@@ -123,9 +183,9 @@ def _child_manager_kwargs(
     are derived from the parent's ``layout_spacing``. The child's
     only layout knob is ``stretch`` (fixed / fill / grow).
     Grid parents emit ``.grid()`` with the child's own row/col so
-    the user's cursor-based drop lands at the target cell (no
-    auto-flow — empty cells are targetable and allowed).
-    ``child_index`` is kept for API compatibility but unused.
+    the user's cursor-based drop lands at the target cell. Empty
+    cells are targetable and siblings can share a cell. The
+    ``child_index`` argument is kept for API stability but unused.
     """
     _ = child_index
     parent_layout = "place"
@@ -191,7 +251,7 @@ def _forget_current_manager(widget) -> None:
 # LayoutOverlayManager — stateful, holds a Workspace ref
 # ----------------------------------------------------------------------
 class LayoutOverlayManager:
-    """Per-workspace manager for Stage 3 WYSIWYG pack / grid wiring
+    """Per-workspace manager for WYSIWYG pack / grid wiring
     + semantic overlay rendering.
 
     All state lives on the parent Workspace (canvas, zoom, project,
@@ -255,7 +315,7 @@ class LayoutOverlayManager:
             yield from self.iter_containers(n.children)
 
     # ------------------------------------------------------------------
-    # Child-geometry manager switching (Stage 3.1)
+    # Child-geometry manager switching
     # ------------------------------------------------------------------
     def rearrange_container_children(self, container_id: str) -> None:
         """Re-apply each direct child's geometry manager against the
@@ -328,8 +388,8 @@ class LayoutOverlayManager:
         self, parent_widget, children, container_props: dict | None = None,
     ) -> None:
         """Set weight=1 on every row/column in the container's
-        effective auto-flow grid so sticky children stretch evenly.
-        Dimensions come from ``grid_effective_dims(len(children),
+        declared grid so sticky children stretch evenly. Dimensions
+        come from ``grid_effective_dims(len(children),
         container_props)`` — the same formula used at export time,
         so canvas + runtime agree. Idempotent.
         """
@@ -401,29 +461,22 @@ class LayoutOverlayManager:
                 pass
             return
         if manager == "grid":
-            if is_composite and lw > 0 and lh > 0:
+            place_kw = _grid_child_place_kwargs(
+                parent_node.properties if parent_node else {},
+                child_node.properties,
+                zoom=self.zoom.value,
+            )
+            cfg_w = place_kw.pop("_cfg_width", None)
+            cfg_h = place_kw.pop("_cfg_height", None)
+            if cfg_w and cfg_h:
                 try:
-                    anchor_widget.configure(
-                        width=max(1, int(lw * self.zoom.value)),
-                        height=max(1, int(lh * self.zoom.value)),
-                    )
-                except tk.TclError:
+                    anchor_widget.configure(width=cfg_w, height=cfg_h)
+                except (tk.TclError, ValueError):
                     pass
             try:
-                anchor_widget.grid(**mgr_kwargs)
+                anchor_widget.place(**place_kw)
             except tk.TclError:
                 pass
-            # Re-sync row/column weights: the caller may be this child
-            # joining the grid for the first time, or changing its
-            # span — either way the set of occupied rows/cols may
-            # have grown.
-            if parent_node is not None:
-                parent_entry = self.widget_views.get(parent_node.id)
-                if parent_entry is not None:
-                    self._configure_grid_weights(
-                        parent_entry[0], parent_node.children,
-                        container_props=parent_node.properties,
-                    )
             return
         # ``place`` (default).
         try:

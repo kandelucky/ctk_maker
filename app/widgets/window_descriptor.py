@@ -8,13 +8,6 @@ from __future__ import annotations
 
 from app.core.project import WINDOW_ID, DEFAULT_WINDOW_PROPERTIES
 from app.widgets.base import WidgetDescriptor
-from app.widgets.layout_schema import (
-    LAYOUT_CONTAINER_DEFAULTS,
-    LAYOUT_GRID_COLS_ROW,
-    LAYOUT_GRID_ROWS_ROW,
-    LAYOUT_SPACING_ROW,
-    LAYOUT_TYPE_ROW,
-)
 
 
 class WindowDescriptor(WidgetDescriptor):
@@ -23,9 +16,12 @@ class WindowDescriptor(WidgetDescriptor):
     display_name = "Window"
     is_container = False
 
+    # Window is a pure absolute-positioning surface — Qt Designer
+    # applies layouts to inner containers (QWidget / QGroupBox),
+    # never to the top-level window, and we follow the same rule.
+    # Users get alignment tools on the canvas (Phase 7) instead.
     default_properties = {
         **DEFAULT_WINDOW_PROPERTIES,
-        **LAYOUT_CONTAINER_DEFAULTS,
         "width": 800,
         "height": 600,
     }
@@ -44,11 +40,6 @@ class WindowDescriptor(WidgetDescriptor):
          "group": "Behaviour", "row_label": "Resizable Y"},
         {"name": "frameless", "type": "boolean", "label": "",
          "group": "Behaviour", "row_label": "Frameless"},
-
-        LAYOUT_TYPE_ROW,
-        LAYOUT_SPACING_ROW,
-        LAYOUT_GRID_ROWS_ROW,
-        LAYOUT_GRID_COLS_ROW,
 
         {"name": "grid_style", "type": "grid_style", "label": "",
          "group": "Builder Grid", "row_label": "Style"},

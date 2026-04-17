@@ -187,7 +187,7 @@ class WidgetDragController:
         if drag is not None and drag.get("moved"):
             grid_handled = self._maybe_grid_drop(event, drag)
             if not grid_handled:
-                reparented = self._maybe_reparent_dragged(event)
+                reparented = self._maybe_reparent_dragged(event, drag)
                 # Skip the Move record if the widget jumped parents — a
                 # proper ReparentCommand captures the full before/after,
                 # Move would duplicate part of that record.
@@ -221,18 +221,21 @@ class WidgetDragController:
     # ------------------------------------------------------------------
     # Reparent detection
     # ------------------------------------------------------------------
-    def _maybe_reparent_dragged(self, event) -> bool:
+    def _maybe_reparent_dragged(self, event, drag: dict) -> bool:
         """On drag release, check if the widget was dropped into a
         different container OR a different document. Either case
         reparents (containers via ``project.reparent``, cross-doc via
         a manual move between document root lists) so undo + rendering
         stay consistent. Returns True when a reparent happened so the
         caller skips the per-widget Move history record.
+
+        ``drag`` is the captured gesture snapshot — ``self._drag`` has
+        already been cleared by ``on_release`` (so the selection
+        redraw guard sees ``is_dragging() == False``), hence the
+        explicit parameter.
         """
         ws = self.workspace
-        if self._drag is None:
-            return False
-        nid = self._drag["nid"]
+        nid = drag["nid"]
         node = self.project.get_widget(nid)
         if node is None:
             return False
@@ -267,8 +270,8 @@ class WidgetDragController:
             old_index = old_siblings.index(node)
         except ValueError:
             old_index = len(old_siblings)
-        old_x = self._drag["start_x"]
-        old_y = self._drag["start_y"]
+        old_x = drag["start_x"]
+        old_y = drag["start_y"]
         # Compute the widget's new logical x/y in the target's
         # coordinate space.
         widget, _ = self.widget_views[nid]
@@ -290,6 +293,15 @@ class WidgetDragController:
             rel_y = widget.winfo_rooty() - target_widget.winfo_rooty()
             new_x = int(rel_x / zoom)
             new_y = int(rel_y / zoom)
+        # Non-place containers (vbox / hbox / grid) ignore child x/y
+        # entirely, so the drag-time coord mutations above would just
+        # leave stale values in the Inspector. Zero them out so the
+        # panel reads 0/0 after the drop instead of the old canvas
+        # position.
+        if target is not None and normalise_layout_type(
+            target.properties.get("layout_type", "place"),
+        ) != "place":
+            new_x = new_y = 0
         # Write the new coords directly; reparent will trigger a
         # widget rebuild that picks them up.
         node.properties["x"] = max(0, new_x)
@@ -392,7 +404,7 @@ class WidgetDragController:
         # recreate + history push.
         node.properties["grid_row"] = row
         node.properties["grid_column"] = col
-        self._maybe_reparent_dragged(event)
+        self._maybe_reparent_dragged(event, drag)
         return True
 
     def _grid_dimensions(
