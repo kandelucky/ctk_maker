@@ -66,11 +66,11 @@ walk this list top-to-bottom; decide what each needs when we get to it.
 - [x] `app/core/project.py` — refactor: walker unify, `_resolve_target_document`, `_reorder_to` dedup. Optimize (ID cache) **deferred** — 160-widget benefit too small vs. complexity.
 - [x] `app/core/commands.py` — refactor: `_restore_widget` helper dedups 4 snapshot-restore call sites (Add.redo / Delete.undo / DeleteMultiple.undo / BulkAdd.redo). Optimize: none — command paths are one-shot user actions, not hot.
 - [x] `app/ui/main_window.py` — refactor: `build_bulk_add_entries` helper in commands.py replaces 6 duplicated snapshot-capture blocks across main_window / object_tree_window / workspace/core (~100 line dedup; document_id drift now impossible). Optimize: none — Edit-menu dispatchers aren't on a hot path.
-- [ ] `app/ui/object_tree_window.py`
-- [ ] `app/ui/palette.py`
-- [ ] `app/ui/properties_panel_v2/panel.py`
-- [ ] `app/ui/workspace/core.py`
-- [ ] `app/ui/workspace/drag.py`
+- [x] `app/ui/object_tree_window.py` — refactor: `push_zorder_history` + `paste_target_parent_id` helpers extracted to commands.py (3 call sites each → 1-line wrappers; ~60 line dedup). Optimize: tree `refresh()` full-rebuild profiling deferred (not a regression yet).
+- [x] `app/ui/palette.py` — refactor: `find_free_cascade_slot` extracted to project.py, dedups the "next free (x, y) slot" cascade logic across palette / paste / drag-extract / tree-drag reset (~25 line dedup, 4 call sites). Optimize: none — palette actions are user-initiated.
+- [x] `app/ui/properties_panel_v2/panel.py` — no refactor needed for Area 1 scope. Package already splits editors / overlays / drag_scrub / format_utils / constants; panel.py is coherent orchestration. This session touched only the `_rebuild` tool-gating (~5 line change). No cross-file dedup, no hot-path optimize.
+- [x] `app/ui/workspace/core.py` — refactor: `_on_property_changed` (146 line 7-branch if/elif) split into a 35-line dispatcher + 6 focused handlers (`_handle_window_property`, `_handle_container_layout_prop`, `_handle_child_layout_prop`, `_handle_coord_prop`, `_handle_recreate_prop`, `_apply_derived_props`, `_apply_generic_configure`). Prop-set constants `_CONTAINER_LAYOUT_PROPS` / `_CHILD_LAYOUT_PROPS` replace inline tuples. Optimize: `find_document_for_widget` scatters (ID cache deferred — see project.py note).
+- [x] `app/ui/workspace/drag.py` — no refactor. Three `_maybe_*` handlers (extract / grid_drop / reparent) have distinct concerns, well-named, well-commented. Minor cleanup opportunity (ReparentCommand kwargs bundle) skipped — savings too small to justify churn. Optimize: none in Area 1 scope.
 - [ ] `app/ui/workspace/chrome.py` — **O5 queued**: `drive_drag` coalesce. See note below.
 - [ ] `app/ui/workspace/controls.py`
 - [ ] `app/ui/workspace/widget_lifecycle.py`
@@ -232,3 +232,29 @@ drag unchanged.
   *Expected:* clone visible inside the Frame near its top-left
   *Observed:* clone preserved its original top-level coords, ending up partially or fully outside the Frame's bounds
   *Fix:* container pastes now start cascade from `(10, 10)` inside the parent and fill sibling_occupancy from `parent.children`, so the original source coord space is discarded at paste time
+
+- **[WS-27]** Object Tree drag-to-reorder: undo works, redo silently keeps the widget where undo left it
+  *Steps:* add Button + Image, tree-drag Image below Button to reorder siblings; Ctrl+Z (Image goes back up — correct); Ctrl+Shift+Z (nothing happens)
+  *Expected:* redo replays the reorder — Image below Button again
+  *Observed:* tree captures the post-move index (final slot) and stores it on `ReparentCommand`; redo calls `project.reparent(index=...)` which interprets the index as pre-pop and applies compensate arithmetic, landing the widget back at its original slot
+  *Fix:* `ReparentCommand._move` detects same-parent + same-doc moves and routes through `project.reorder_child_at` (final-index semantics) instead; cross-parent and cross-doc moves still use `reparent` which is correct for the pre-pop contract it documents
+
+- **[WS-28]** Canvas widgets show dark "frames" around themselves that don't appear in preview (DEFERRED — not a refactor-generated regression)
+  *Steps:* drop an Image widget (or Slider) onto a form with a non-default `fg_color` (e.g. rose/pink); the builder canvas shows the widget inside a large dark rectangle that isn't present when you hit Preview
+  *Expected:* transparent widget areas should read the form's `fg_color` like they do in the real runtime window
+  *Observed:* top-level widgets use `tk.Canvas` as their master. CTk's `fg_color="transparent"` samples the master's bg — in the builder that's `CANVAS_OUTSIDE_BG` (dark gray / black), not the form rectangle painted on top of the canvas via `create_rectangle`. The form rectangle is just a canvas item; the widget's CTk paint path never consults it.
+  *Fix options:* (1) wrap top-level widgets in a per-form `CTkFrame(fg_color=form.fg_color)` and anchor the frame via `canvas.create_window` — invasive; touches `widget_lifecycle` broadly. (2) substitute `"transparent"` → `form.fg_color` in the builder's `transform_properties` path only (keep exporter clean) — hacky but localized. (3) make `tk.Canvas.bg` follow the active doc's `fg_color` — breaks once a project has 2 forms with different fg_colors.
+  *Status:* deferred — needs a dedicated rendering session, not a sub-bullet under a refactor pass.
+
+- **[WS-29]** Related symptom of WS-28 — Image widget appears as a small inner square inside a large dark frame, because the CTkImage size can be smaller than the CTkLabel bounding box and the "transparent" fallback shows through. Same root cause as WS-28; fix falls out once the transparent-master path is corrected.
+
+- **[WS-30]** Doc drag hide-mode got un-hidden on every motion
+  *Steps:* add a document with 10+ widgets, grab the chrome title bar, drag — with the 10+ hide-mode optimization in place the widgets should disappear during drag (only the doc outline + title bar follows the cursor), but they stayed visible and the drag was still laggy
+  *Fix:* `renderer.update_visibility_across_docs` ran at the end of every `redraw` (i.e. every motion) and flipped `state="hidden"` back to `state="normal"`. Added a `workspace._doc_drag_hide_active` flag that the visibility pass respects — set it in `chrome._enter_hidden_mode`, clear it in `chrome.end_drag` before the release-time apply_all
+  *Files:* `render.py` (early-return on flag), `chrome.py` (set/clear around hidden_mode)
+
+- **[WS-31]** Cross-document widget drag snap-back regression
+  *Steps:* grab any widget in document A, drag it over document B, release — the widget teleports back to its original position instead of reparenting into B
+  *Expected:* cursor lands inside another doc → reparent flow should take over (`_maybe_reparent_dragged`)
+  *Observed:* `on_release` snap-back guard was comparing `ex / ey` against the *source* doc's `width` / `height`. A valid cross-doc drop necessarily puts the widget past the source doc's bounds (even though it's inside another doc's bounds in absolute canvas space), so every cross-doc drag tripped the "off-form" guard and snapped back
+  *Fix:* translate the widget's logical x/y to absolute canvas coords (`doc.canvas_x + x`) and check whether the point falls inside *any* document's rect — only if it lands outside every doc does the drop count as off-form and snap back

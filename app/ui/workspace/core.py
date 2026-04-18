@@ -27,8 +27,9 @@ from app.core.commands import (
     DeleteMultipleCommand,
     DeleteWidgetCommand,
     RenameCommand,
-    ZOrderCommand,
     build_bulk_add_entries,
+    paste_target_parent_id,
+    push_zorder_history,
 )
 from app.core.logger import log_error
 from app.core.project import Project
@@ -718,105 +719,165 @@ class Workspace(ctk.CTkFrame):
     # property-change path below delegates the destroy-and-rebuild
     # recreate flow through it.
 
-    def _on_property_changed(self, widget_id: str, prop_name: str, value) -> None:
+    # Property-change dispatch: prop_name → handler. Groups capture
+    # structural kinships (container vs child layout, coords vs
+    # arbitrary configure) so ``_on_property_changed`` reads as a flat
+    # router instead of the 140-line if/elif tower it used to be.
+    _CONTAINER_LAYOUT_PROPS = frozenset({
+        "layout_type", "layout_spacing", "grid_rows", "grid_cols",
+    })
+    _CHILD_LAYOUT_PROPS = frozenset({
+        "grid_sticky", "grid_row", "grid_column", "stretch",
+    })
+
+    def _on_property_changed(
+        self, widget_id: str, prop_name: str, value,
+    ) -> None:
         from app.core.project import WINDOW_ID
         if widget_id == WINDOW_ID:
-            # Window properties don't feed a real CTk widget — the
-            # canvas shows the form through its rectangle, chrome
-            # and grid. These keys trigger a redraw of the document
-            # surface; everything else is window metadata only.
-            if prop_name in (
-                "fg_color", "grid_style", "grid_color", "grid_spacing",
-                "layout_type",
-            ):
-                self._redraw_document()
-            elif prop_name == "accent_color":
-                # Only the chrome title uses the accent — no need to
-                # repaint the document body.
-                self._draw_window_chrome()
+            self._handle_window_property(prop_name)
             return
-        if prop_name in (
-            "layout_type", "layout_spacing", "grid_rows", "grid_cols",
-        ):
-            # Container-level layout changes — manager swap, spacing
-            # tweak, or grid dimensions — re-pack / re-place every
-            # child through the new config, then redraw overlays.
-            self.layout_overlay.rearrange_container_children(widget_id)
-            self._redraw_document()
-            if self.project.selected_id is not None:
-                self._schedule_selection_redraw()
+        if prop_name in self._CONTAINER_LAYOUT_PROPS:
+            self._handle_container_layout_prop(widget_id)
             return
-        if prop_name in ("grid_sticky", "grid_row", "grid_column", "stretch"):
-            # Per-child layout tweak — re-apply the child's geometry
-            # manager in place. ``grid_*`` moves the child in its
-            # parent grid; ``stretch`` just swaps pack fill/expand
-            # kwargs. Either way no sibling shift is needed.
-            self._reapply_child_manager(widget_id)
-            if widget_id == self.project.selected_id:
-                self._schedule_selection_redraw()
+        if prop_name in self._CHILD_LAYOUT_PROPS:
+            self._handle_child_layout_prop(widget_id)
             return
         if widget_id not in self.widget_views:
             return
         widget, window_id = self.widget_views[widget_id]
         node = self.project.get_widget(widget_id)
-
         if prop_name in ("x", "y") and node is not None:
-            try:
-                x = int(node.properties.get("x", 0))
-                y = int(node.properties.get("y", 0))
-                if window_id is not None:
-                    owning_doc = self.project.find_document_for_widget(
-                        widget_id,
-                    )
-                    cx, cy = self.zoom.logical_to_canvas(
-                        x, y, document=owning_doc,
-                    )
-                    self.canvas.coords(window_id, cx, cy)
-                elif widget.winfo_manager() == "place":
-                    widget.place_configure(
-                        x=int(x * self.zoom.value),
-                        y=int(y * self.zoom.value),
-                    )
-            except Exception:
-                log_error("workspace._on_property_changed x/y coords")
-            if widget_id == self.project.selected_id:
-                self._schedule_selection_redraw()
+            self._handle_coord_prop(widget_id, widget, window_id, node)
             return
-
         descriptor = get_descriptor(node.widget_type) if node else None
+        if self._handle_recreate_prop(
+            widget_id, prop_name, node, descriptor,
+        ):
+            return
+        self._apply_derived_props(widget_id, prop_name, node, descriptor)
+        self._apply_generic_configure(
+            widget_id, prop_name, value, node, descriptor,
+            widget, window_id,
+        )
 
-        # Init-only kwargs (e.g. CTkProgressBar.orientation) can't be
-        # reconfigured live — destroy and recreate the widget subtree.
+    def _handle_window_property(self, prop_name: str) -> None:
+        """Window (virtual) node props don't touch a real CTk widget —
+        the canvas rectangle + chrome + grid visualise the form. Most
+        keys trigger a redraw; ``accent_color`` only touches chrome.
+        """
+        if prop_name in (
+            "fg_color", "grid_style", "grid_color", "grid_spacing",
+            "layout_type",
+        ):
+            self._redraw_document()
+        elif prop_name == "accent_color":
+            self._draw_window_chrome()
+
+    def _handle_container_layout_prop(self, widget_id: str) -> None:
+        """Container-level layout mutation (manager swap, spacing,
+        grid dims) — re-pack / re-place every child, redraw overlays.
+        """
+        self.layout_overlay.rearrange_container_children(widget_id)
+        self._redraw_document()
+        if self.project.selected_id is not None:
+            self._schedule_selection_redraw()
+
+    def _handle_child_layout_prop(self, widget_id: str) -> None:
+        """Per-child layout tweak — re-apply the child's geometry
+        manager in place. ``grid_*`` moves within the parent grid;
+        ``stretch`` just swaps pack fill / expand kwargs.
+        """
+        self._reapply_child_manager(widget_id)
+        if widget_id == self.project.selected_id:
+            self._schedule_selection_redraw()
+
+    def _handle_coord_prop(
+        self, widget_id: str, widget, window_id, node,
+    ) -> None:
+        """x / y live update — drag motion, scrub, undo / redo all
+        hit this path. Canvas items use ``canvas.coords``; placed
+        widgets (non-canvas-hosted) use ``place_configure``.
+        """
+        try:
+            x = int(node.properties.get("x", 0))
+            y = int(node.properties.get("y", 0))
+            if window_id is not None:
+                owning_doc = self.project.find_document_for_widget(
+                    widget_id,
+                )
+                cx, cy = self.zoom.logical_to_canvas(
+                    x, y, document=owning_doc,
+                )
+                self.canvas.coords(window_id, cx, cy)
+            elif widget.winfo_manager() == "place":
+                widget.place_configure(
+                    x=int(x * self.zoom.value),
+                    y=int(y * self.zoom.value),
+                )
+        except Exception:
+            log_error("workspace._on_property_changed x/y coords")
+        if widget_id == self.project.selected_id:
+            self._schedule_selection_redraw()
+
+    def _handle_recreate_prop(
+        self, widget_id: str, prop_name: str, node, descriptor,
+    ) -> bool:
+        """Init-only kwargs (e.g. ``CTkProgressBar.orientation``)
+        can't be reconfigured live — destroy and rebuild the subtree.
+        Returns True when the prop was a recreate trigger and the
+        rebuild was done, so the caller can short-circuit.
+        """
         recreate = (
             getattr(descriptor, "recreate_triggers", None)
             if descriptor else None
         )
-        if recreate and prop_name in recreate:
-            # Pre-recreate hook — e.g. swap w/h when orientation flips.
-            updates = descriptor.on_prop_recreate(prop_name, node.properties)
-            for k, v in updates.items():
-                if node.properties.get(k) != v:
-                    self.project.update_property(widget_id, k, v)
-            self.lifecycle.on_widget_removed(widget_id)
-            self.lifecycle.create_widget_subtree(node)
-            if widget_id == self.project.selected_id:
-                self._schedule_selection_redraw()
+        if not recreate or prop_name not in recreate:
+            return False
+        updates = descriptor.on_prop_recreate(prop_name, node.properties)
+        for k, v in updates.items():
+            if node.properties.get(k) != v:
+                self.project.update_property(widget_id, k, v)
+        self.lifecycle.on_widget_removed(widget_id)
+        self.lifecycle.create_widget_subtree(node)
+        if widget_id == self.project.selected_id:
+            self._schedule_selection_redraw()
+        return True
+
+    def _apply_derived_props(
+        self, widget_id: str, prop_name: str, node, descriptor,
+    ) -> None:
+        """Descriptors can declare ``derived_triggers`` — props whose
+        change should fan out into computed sibling props via
+        ``compute_derived`` (e.g. Image width → height when
+        ``preserve_aspect`` is on). Runs BEFORE the generic configure
+        path so the derived updates land in the same widget pass.
+        """
+        if descriptor is None:
             return
-
-        triggers = (
-            getattr(descriptor, "derived_triggers", None) if descriptor else None
-        )
-        if (descriptor and triggers and prop_name in triggers
+        triggers = getattr(descriptor, "derived_triggers", None)
+        if not (triggers and prop_name in triggers
                 and hasattr(descriptor, "compute_derived")):
-            try:
-                derived = descriptor.compute_derived(node.properties)
-            except Exception:
-                log_error(f"{node.widget_type}.compute_derived")
-                derived = {}
-            for k, v in derived.items():
-                if node.properties.get(k) != v:
-                    self.project.update_property(widget_id, k, v)
+            return
+        try:
+            derived = descriptor.compute_derived(node.properties)
+        except Exception:
+            log_error(f"{node.widget_type}.compute_derived")
+            derived = {}
+        for k, v in derived.items():
+            if node.properties.get(k) != v:
+                self.project.update_property(widget_id, k, v)
 
+    def _apply_generic_configure(
+        self, widget_id: str, prop_name: str, value,
+        node, descriptor, widget, window_id,
+    ) -> None:
+        """Fallback path for every prop that isn't special-cased above:
+        run the descriptor's ``transform_properties`` + ``apply_state``,
+        refresh zoom placement, resize composite wrappers, and re-lift
+        CTkButton's text label (which can slip behind its background
+        when corner_radius approaches half the widget height).
+        """
         try:
             if descriptor is not None:
                 transformed = descriptor.transform_properties(
@@ -825,19 +886,14 @@ class Workspace(ctk.CTkFrame):
                 if transformed:
                     widget.configure(**transformed)
                 descriptor.apply_state(widget, node.properties)
-                # Radio group: reflect `initially_checked` changes on
-                # the shared IntVar — `group` changes themselves trip
-                # recreate_triggers above, not here.
                 self._sync_radio_initial(widget, node)
-                owning_doc = self.project.find_document_for_widget(widget_id)
+                owning_doc = self.project.find_document_for_widget(
+                    widget_id,
+                )
                 self.zoom.apply_to_widget(
                     widget, window_id, node.properties,
                     document=owning_doc,
                 )
-                # Composite widgets (CTkScrollableFrame) need the
-                # canvas item / place size updated separately because
-                # their inner widget's configure doesn't reach the
-                # outer container.
                 if widget_id in self._anchor_views:
                     self._sync_composite_size(widget_id, node)
             else:
@@ -846,9 +902,6 @@ class Workspace(ctk.CTkFrame):
             log_error(
                 f"workspace._on_property_changed widget.configure {prop_name}",
             )
-        # CTkButton's text label occasionally slips behind its rounded
-        # background when corner_radius approaches half the widget
-        # height; lift it back so the text stays visible.
         text_label = getattr(widget, "_text_label", None)
         if text_label is not None:
             try:
@@ -1147,16 +1200,7 @@ class Workspace(ctk.CTkFrame):
     def _paste_at_widget(self, nid: str) -> None:
         if not self.project.clipboard:
             return
-        node = self.project.get_widget(nid)
-        if node is None:
-            return
-        descriptor = get_descriptor(node.widget_type)
-        if descriptor is not None and getattr(
-            descriptor, "is_container", False,
-        ):
-            parent_id: str | None = nid
-        else:
-            parent_id = node.parent.id if node.parent is not None else None
+        parent_id = paste_target_parent_id(self.project, nid)
         new_ids = self.project.paste_from_clipboard(parent_id=parent_id)
         if not new_ids:
             return
@@ -1192,31 +1236,7 @@ class Workspace(ctk.CTkFrame):
             )
 
     def _z_order_with_history(self, nid: str, direction: str) -> None:
-        node = self.project.get_widget(nid)
-        if node is None:
-            return
-        siblings = (
-            node.parent.children if node.parent is not None
-            else self.project.root_widgets
-        )
-        try:
-            old_index = siblings.index(node)
-        except ValueError:
-            return
-        if direction == "front":
-            self.project.bring_to_front(nid)
-        else:
-            self.project.send_to_back(nid)
-        try:
-            new_index = siblings.index(node)
-        except ValueError:
-            return
-        if old_index == new_index:
-            return
-        parent_id = node.parent.id if node.parent is not None else None
-        self.project.history.push(
-            ZOrderCommand(nid, parent_id, old_index, new_index, direction),
-        )
+        push_zorder_history(self.project, nid, direction)
 
     def _prompt_rename_widget(self, nid: str) -> None:
         node = self.project.get_widget(nid)

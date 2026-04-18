@@ -24,8 +24,9 @@ from app.core.commands import (
     RenameCommand,
     ReparentCommand,
     ToggleFlagCommand,
-    ZOrderCommand,
     build_bulk_add_entries,
+    paste_target_parent_id,
+    push_zorder_history,
 )
 from app.ui.dialogs import RenameDialog
 from app.ui.icons import load_icon, load_tk_icon
@@ -1028,18 +1029,12 @@ class ObjectTreePanel(ctk.CTkFrame):
             )
             if layout != "place":
                 return
+        from app.core.project import find_free_cascade_slot
         siblings = (
             new_parent.children if new_parent is not None
             else self.project.root_widgets
         )
-        occupied = {
-            (s.properties.get("x", 0), s.properties.get("y", 0))
-            for s in siblings if s is not node
-        }
-        x, y = 10, 10
-        while (x, y) in occupied:
-            x += 20
-            y += 20
+        x, y = find_free_cascade_slot(siblings, exclude=node)
         node.properties["x"] = x
         node.properties["y"] = y
 
@@ -1346,49 +1341,10 @@ class ObjectTreePanel(ctk.CTkFrame):
             )
 
     def _z_order_with_history(self, nid: str, direction: str) -> None:
-        node = self.project.get_widget(nid)
-        if node is None:
-            return
-        siblings = (
-            node.parent.children if node.parent is not None
-            else self.project.root_widgets
-        )
-        try:
-            old_index = siblings.index(node)
-        except ValueError:
-            return
-        if direction == "front":
-            self.project.bring_to_front(nid)
-        else:
-            self.project.send_to_back(nid)
-        try:
-            new_index = siblings.index(node)
-        except ValueError:
-            return
-        if old_index == new_index:
-            return
-        parent_id = node.parent.id if node.parent is not None else None
-        self.project.history.push(
-            ZOrderCommand(nid, parent_id, old_index, new_index, direction),
-        )
+        push_zorder_history(self.project, nid, direction)
 
     def _paste_target_parent_id(self) -> str | None:
-        """Where should the pasted widgets land?
-
-        - If a container widget is currently selected → inside it
-        - If a leaf widget is selected → as a sibling (same parent)
-        - If nothing is selected → top level
-        """
-        primary = self.project.selected_id
-        if primary is None:
-            return None
-        primary_node = self.project.get_widget(primary)
-        if primary_node is None:
-            return None
-        descriptor = get_descriptor(primary_node.widget_type)
-        if descriptor is not None and getattr(descriptor, "is_container", False):
-            return primary
-        return primary_node.parent.id if primary_node.parent is not None else None
+        return paste_target_parent_id(self.project, self.project.selected_id)
 
     def _delete_widget(self, widget_id: str) -> None:
         # Locked widgets reject canvas-side delete; the tree should

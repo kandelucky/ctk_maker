@@ -25,6 +25,76 @@ if TYPE_CHECKING:
 COALESCE_WINDOW_SEC = 0.6
 
 
+def paste_target_parent_id(
+    project: "Project", widget_id: str | None,
+) -> str | None:
+    """Where should a paste land given ``widget_id`` as the anchor?
+
+    - widget is a container → inside it
+    - widget is a leaf      → as its sibling (same parent)
+    - widget is None or missing → top level
+
+    The three UI call sites (Edit menu paste, tree Ctrl+V, canvas
+    right-click paste) were open-coding this three times — with the
+    usual drift risk when a new widget kind shows up. Funnel through
+    here so container semantics stay in one place.
+    """
+    if widget_id is None:
+        return None
+    from app.widgets.registry import get_descriptor
+    node = project.get_widget(widget_id)
+    if node is None:
+        return None
+    descriptor = get_descriptor(node.widget_type)
+    if descriptor is not None and getattr(
+        descriptor, "is_container", False,
+    ):
+        return widget_id
+    return node.parent.id if node.parent is not None else None
+
+
+def push_zorder_history(
+    project: "Project", widget_id: str, direction: str,
+) -> None:
+    """Apply a z-order move (bring to front / send to back) AND push
+    a ``ZOrderCommand`` to history in one shot.
+
+    Shared by every UI entry point (Edit menu, canvas right-click,
+    Object Tree right-click). Each had been capturing old_index /
+    calling the project helper / capturing new_index / pushing the
+    command in ~20 duplicated lines. One call site = one source of
+    truth; a new direction (e.g. "one step up") only needs Project
+    + a new branch here.
+    """
+    node = project.get_widget(widget_id)
+    if node is None:
+        return
+    siblings = (
+        node.parent.children if node.parent is not None
+        else project.root_widgets
+    )
+    try:
+        old_index = siblings.index(node)
+    except ValueError:
+        return
+    if direction == "front":
+        project.bring_to_front(widget_id)
+    elif direction == "back":
+        project.send_to_back(widget_id)
+    else:
+        return
+    try:
+        new_index = siblings.index(node)
+    except ValueError:
+        return
+    if old_index == new_index:
+        return
+    parent_id = node.parent.id if node.parent is not None else None
+    project.history.push(
+        ZOrderCommand(widget_id, parent_id, old_index, new_index, direction),
+    )
+
+
 def build_bulk_add_entries(
     project: "Project", widget_ids,
 ) -> list[tuple[dict, str | None, int, str | None]]:
@@ -370,6 +440,29 @@ class ReparentCommand(Command):
         # reparent triggers picks up the restored x/y.
         node.properties["x"] = x
         node.properties["y"] = y
+        # Same-parent + same-doc moves are sibling reorders. The
+        # captured ``index`` is post-move (final slot), which doesn't
+        # match ``project.reparent``'s pre-pop semantics — running
+        # through ``reparent`` here applies the compensate arithmetic
+        # and the redo lands at the wrong position. ``reorder_child_at``
+        # uses final-index semantics, so route sibling reorders there.
+        current_parent_id = (
+            node.parent.id if node.parent is not None else None
+        )
+        same_parent = current_parent_id == parent_id
+        if same_parent:
+            if parent_id is not None:
+                # Nested reorder — parent pins the doc, can't cross.
+                project.reorder_child_at(self.widget_id, index)
+                project.select_widget(self.widget_id)
+                return
+            # Top-level: only a reorder when the doc didn't change too.
+            current_doc = project.find_document_for_widget(self.widget_id)
+            current_doc_id = current_doc.id if current_doc else None
+            if document_id in (None, current_doc_id):
+                project.reorder_child_at(self.widget_id, index)
+                project.select_widget(self.widget_id)
+                return
         project.reparent(
             self.widget_id, parent_id,
             index=index, document_id=document_id,

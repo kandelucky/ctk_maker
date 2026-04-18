@@ -475,28 +475,20 @@ class Palette(ctk.CTkFrame):
         self, entry: WidgetEntry, descriptor,
     ) -> None:
         from app.core.commands import AddWidgetCommand
+        from app.core.project import find_free_cascade_slot
 
         properties = dict(descriptor.default_properties)
         for key, value in entry.preset_overrides:
             properties[key] = value
         # Cascade offset: repeated clicks on the same palette entry
-        # would otherwise stack widgets at the exact default x/y,
-        # hiding everything under the topmost one. Bump +20/+20 until
-        # the slot is free among this document's root widgets.
+        # would otherwise stack widgets at the exact default x/y.
         doc = self.project.active_document
         if doc is not None:
-            x = int(properties.get("x", 0) or 0)
-            y = int(properties.get("y", 0) or 0)
-            taken = {
-                (
-                    int(w.properties.get("x", 0) or 0),
-                    int(w.properties.get("y", 0) or 0),
-                )
-                for w in doc.root_widgets
-            }
-            while (x, y) in taken:
-                x += 20
-                y += 20
+            start_x = int(properties.get("x", 0) or 0)
+            start_y = int(properties.get("y", 0) or 0)
+            x, y = find_free_cascade_slot(
+                doc.root_widgets, start_xy=(start_x, start_y),
+            )
             properties["x"] = x
             properties["y"] = y
         node = WidgetNode(

@@ -39,6 +39,13 @@ DRAG_THRESHOLD = 5
 GRID_HIGHLIGHT_TAG = "grid_drop_highlight"
 GRID_HIGHLIGHT_COLOR = "#6fb4f0"
 
+# Past this group size the per-motion canvas/place updates add up — at
+# 10+ widgets the drag visibly stutters. Switch to "ghost mode": hide
+# every widget + chrome in the group, show a single dashed bounding
+# rect that tracks the cursor, and resync positions once on release.
+HIDE_THRESHOLD = 10
+HIDE_OUTLINE_COLOR = "#3b8ed0"
+
 
 class WidgetDragController:
     """Per-workspace widget drag handler.
@@ -224,7 +231,88 @@ class WidgetDragController:
             # shift by the same delta.
             "group_starts": group_starts,
         }
+        # Shared canvas tag across every top-level widget in the drag
+        # group. During motion we issue a single ``canvas.move`` on
+        # this tag — one Tk round-trip per frame instead of N — and a
+        # matching move for their chrome items so selection outlines
+        # track with the widgets. Nested (place-managed) children in
+        # the group can't be moved by canvas tag; they fall through to
+        # the per-widget place_configure path in on_motion.
+        for wid in group_starts.keys():
+            entry = self.widget_views.get(wid)
+            if entry is None:
+                continue
+            _, window_id = entry
+            if window_id is not None:
+                try:
+                    self.canvas.addtag_withtag("drag_group", window_id)
+                except tk.TclError:
+                    pass
+            try:
+                self.canvas.addtag_withtag(
+                    "drag_chrome_group", f"chrome_wid_{wid}",
+                )
+            except tk.TclError:
+                pass
+        # Ghost mode for large groups — hide every tagged widget +
+        # chrome and draw a dashed outline rect the size of the group's
+        # bounding box. Motion just translates the rect; release runs
+        # apply_all once to put widgets at their final positions.
+        if len(group_starts) >= HIDE_THRESHOLD:
+            self._enter_hidden_mode(group_starts)
         return "break"
+
+    def _enter_hidden_mode(self, group_starts: dict) -> None:
+        """Swap from live widget dragging to a single dashed-rect
+        placeholder. Stores the placeholder item id + unhide state on
+        ``self._drag`` so release can tear down the ghost cleanly.
+        """
+        min_x = min_y = float("inf")
+        max_x = max_y = float("-inf")
+        for wid in group_starts.keys():
+            entry = self.widget_views.get(wid)
+            if entry is None:
+                continue
+            _, window_id = entry
+            if window_id is None:
+                continue
+            try:
+                bbox = self.canvas.bbox(window_id)
+            except tk.TclError:
+                bbox = None
+            if not bbox:
+                continue
+            x1, y1, x2, y2 = bbox
+            if x1 < min_x:
+                min_x = x1
+            if y1 < min_y:
+                min_y = y1
+            if x2 > max_x:
+                max_x = x2
+            if y2 > max_y:
+                max_y = y2
+        if min_x == float("inf"):
+            return  # no canvas-hosted widgets in the group — skip
+        try:
+            placeholder_id = self.canvas.create_rectangle(
+                min_x, min_y, max_x, max_y,
+                outline=HIDE_OUTLINE_COLOR, dash=(4, 4),
+                width=2, fill="",
+            )
+        except tk.TclError:
+            return
+        try:
+            self.canvas.itemconfigure("drag_group", state="hidden")
+        except tk.TclError:
+            pass
+        try:
+            self.canvas.itemconfigure(
+                "drag_chrome_group", state="hidden",
+            )
+        except tk.TclError:
+            pass
+        self._drag["hidden_mode"] = True
+        self._drag["placeholder_id"] = placeholder_id
 
     def _resolve_click_target(self, clicked_nid: str) -> str:
         """Drill-down selection with shared-context shortcut.
@@ -347,22 +435,65 @@ class WidgetDragController:
         zoom = self.zoom.value or 1.0
         dx_logical = int(dx_root / zoom)
         dy_logical = int(dy_root / zoom)
-        # Apply the same logical delta to every widget snapshotted
-        # into ``group_starts`` — primary + any co-selected siblings
-        # move together.
-        for wid, (sx, sy) in self._drag["group_starts"].items():
-            self.project.update_property(wid, "x", sx + dx_logical)
-            self.project.update_property(wid, "y", sy + dy_logical)
-        # Per-widget canvas.move — shifts chrome for the exact set of
-        # widgets actually moving (``group_starts``) so locked /
-        # layout-managed siblings keep their chrome pinned even when
-        # their widget belongs to the selection.
         dx_tick = event.x_root - self._drag["last_mx"]
         dy_tick = event.y_root - self._drag["last_my"]
+        hidden_mode = self._drag.get("hidden_mode", False)
+        # Visual move — one Tk call shifts every canvas-hosted widget
+        # in the group via the shared ``drag_group`` tag, and another
+        # shifts their chrome items via ``drag_chrome_group``. This
+        # was N canvas.coords + N canvas.move calls per motion before;
+        # now 2 calls regardless of group size. Nested place-managed
+        # children aren't tagged (they live inside a parent Frame, not
+        # on the canvas) — their loop below handles them individually.
+        # Ghost mode: widgets + chromes are hidden; we only translate
+        # the dashed placeholder rect.
         if dx_tick or dy_tick:
-            for wid in self._drag["group_starts"].keys():
+            if hidden_mode:
+                pid = self._drag.get("placeholder_id")
+                if pid is not None:
+                    try:
+                        self.canvas.move(pid, dx_tick, dy_tick)
+                    except tk.TclError:
+                        pass
+            else:
                 try:
-                    self.canvas.move(f"chrome_wid_{wid}", dx_tick, dy_tick)
+                    self.canvas.move("drag_group", dx_tick, dy_tick)
+                except tk.TclError:
+                    pass
+                try:
+                    self.canvas.move(
+                        "drag_chrome_group", dx_tick, dy_tick,
+                    )
+                except tk.TclError:
+                    pass
+        # Model update: write x / y to the nodes directly (bypasses
+        # project.update_property's event bus for the duration of the
+        # gesture so Inspector / Object Tree aren't re-rendered on
+        # every motion). Release fires one property_changed pair per
+        # moved widget to resync downstream panels.
+        for wid, (sx, sy) in self._drag["group_starts"].items():
+            new_x = sx + dx_logical
+            new_y = sy + dy_logical
+            w_node = self.project.get_widget(wid)
+            if w_node is None:
+                continue
+            w_node.properties["x"] = new_x
+            w_node.properties["y"] = new_y
+            if hidden_mode:
+                continue  # widgets are invisible — skip tk calls
+            entry = self.widget_views.get(wid)
+            if entry is None:
+                continue
+            w_widget, w_window_id = entry
+            if w_window_id is None:
+                # Nested place child — ``drag_group`` can't reach it;
+                # keep it in sync via place_configure.
+                try:
+                    if w_widget.winfo_manager() == "place":
+                        w_widget.place_configure(
+                            x=int(new_x * zoom),
+                            y=int(new_y * zoom),
+                        )
                 except tk.TclError:
                     pass
         self._drag["last_mx"] = event.x_root
@@ -382,6 +513,39 @@ class WidgetDragController:
         self._drag = None
         self._clear_grid_highlight()
         self._destroy_ghost()
+        # Ghost-mode teardown — delete the placeholder rect and unhide
+        # every widget + chrome we hid on press. Must happen BEFORE
+        # dtag so the itemconfigure has something to match.
+        if drag is not None and drag.get("hidden_mode"):
+            pid = drag.get("placeholder_id")
+            if pid is not None:
+                try:
+                    self.canvas.delete(pid)
+                except tk.TclError:
+                    pass
+            try:
+                self.canvas.itemconfigure(
+                    "drag_group", state="normal",
+                )
+            except tk.TclError:
+                pass
+            try:
+                self.canvas.itemconfigure(
+                    "drag_chrome_group", state="normal",
+                )
+            except tk.TclError:
+                pass
+            # Widgets were frozen at their press-time canvas positions
+            # during motion — run apply_all once to slide them to the
+            # drag's final logical x/y.
+            self.zoom.apply_all()
+        # Remove the shared drag tags — leaving them around would
+        # accidentally re-tag the same items on the next drag start.
+        for tag in ("drag_group", "drag_chrome_group"):
+            try:
+                self.canvas.dtag(tag, tag)
+            except tk.TclError:
+                pass
         if drag is not None and drag.get("moved"):
             node = self.project.get_widget(drag["nid"])
             cx_r, cy_r = ws._screen_to_canvas(event.x_root, event.y_root)
@@ -400,15 +564,54 @@ class WidgetDragController:
                 # Dropped inside source container — fall through to
                 # normal move / grid cell-snap paths.
             else:
-                # Top-level widget dropped on empty canvas → snap back.
-                if (
+                # Top-level drop — two snap-back triggers:
+                #   1. Cursor landed in the void (no container, no doc).
+                #   2. Any widget in the group ended up off its owning
+                #      doc's rectangle (peripheral widgets can be
+                #      pushed off-form by a group delta even when the
+                #      primary / cursor stays inside).
+                # Either trigger → snap the whole group back so users
+                # don't end up with silent off-screen widgets.
+                cursor_target = (
                     ws._find_container_at(
                         cx_r, cy_r, exclude_id=drag["nid"],
-                    ) is None
-                    and ws._find_document_at_canvas(cx_r, cy_r) is None
-                ):
-                    # Snap back every widget in the group to its
-                    # pre-drag position, not just the primary.
+                    ) is not None
+                    or ws._find_document_at_canvas(cx_r, cy_r)
+                    is not None
+                )
+                should_snap = not cursor_target
+                if not should_snap:
+                    all_docs = list(self.project.documents)
+                    for wid in drag["group_starts"].keys():
+                        g_node = self.project.get_widget(wid)
+                        if g_node is None:
+                            continue
+                        doc = self.project.find_document_for_widget(wid)
+                        if doc is None:
+                            continue
+                        try:
+                            ex = int(g_node.properties.get("x", 0))
+                            ey = int(g_node.properties.get("y", 0))
+                        except (TypeError, ValueError):
+                            continue
+                        # The widget's logical x/y is stored in its
+                        # current (source) document's space. Translate
+                        # it to absolute canvas logical coords and
+                        # check whether the drop lands inside *any*
+                        # document — cross-doc drops are valid even
+                        # though they look off-form from the source
+                        # doc's perspective.
+                        abs_x = doc.canvas_x + ex
+                        abs_y = doc.canvas_y + ey
+                        inside_any = any(
+                            d.canvas_x <= abs_x < d.canvas_x + d.width
+                            and d.canvas_y <= abs_y < d.canvas_y + d.height
+                            for d in all_docs
+                        )
+                        if not inside_any:
+                            should_snap = True
+                            break
+                if should_snap:
                     for wid, (sx, sy) in drag["group_starts"].items():
                         self.project.update_property(wid, "x", sx)
                         self.project.update_property(wid, "y", sy)
@@ -444,6 +647,18 @@ class WidgetDragController:
                             ))
                     if moves:
                         self.project.history.push(BulkMoveCommand(moves))
+                        # Motion path bypassed the event bus for perf;
+                        # fire one pair of property_changed events per
+                        # widget now so Inspector + Object Tree pick up
+                        # the final x / y. Cheap (≤ 2 × N events, once
+                        # per gesture) vs. the per-motion event storm
+                        # it would otherwise have to handle.
+                        bus = self.project.event_bus
+                        for wid, _before, after in moves:
+                            for key, val in after.items():
+                                bus.publish(
+                                    "property_changed", wid, key, val,
+                                )
         # Refresh cover-mask after a drag release so a widget that
         # just slid into / out of another document's area picks up
         # the right hidden state.
@@ -547,17 +762,10 @@ class WidgetDragController:
             nx = max(0, min(lx - w // 2, max(0, old_doc.width - w)))
             ny = max(0, min(ly - h // 2, max(0, old_doc.height - h)))
         else:
-            taken = {
-                (
-                    int(w.properties.get("x", 0) or 0),
-                    int(w.properties.get("y", 0) or 0),
-                )
-                for w in old_doc.root_widgets if w is not node
-            }
-            nx, ny = 20, 20
-            while (nx, ny) in taken:
-                nx += 20
-                ny += 20
+            from app.core.project import find_free_cascade_slot
+            nx, ny = find_free_cascade_slot(
+                old_doc.root_widgets, start_xy=(20, 20), exclude=node,
+            )
         # Undo snapshot
         old_siblings = node.parent.children
         try:
@@ -692,6 +900,9 @@ class WidgetDragController:
                 old_doc.root_widgets.remove(node)
             node.parent = None
             new_doc.root_widgets.append(node)
+            # Manual move bypasses project.reparent, so refresh the
+            # widget's doc-index entry (and its subtree's) directly.
+            self.project._index_subtree(node, new_doc)
             self.project.event_bus.publish(
                 "widget_reparented", nid,
                 old_parent_id, new_parent_id,
@@ -724,6 +935,7 @@ class WidgetDragController:
                 if other in old_doc.root_widgets:
                     old_doc.root_widgets.remove(other)
                 new_doc.root_widgets.append(other)
+                self.project._index_subtree(other, new_doc)
                 self.project.event_bus.publish(
                     "widget_reparented", wid, None, None,
                 )

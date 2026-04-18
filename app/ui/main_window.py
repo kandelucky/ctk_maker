@@ -961,21 +961,10 @@ class MainWindow(ctk.CTk):
     def _on_menu_paste(self) -> None:
         if not self.project.clipboard:
             return
-        # Paste into the currently selected container if one is, else
-        # as a sibling of the selected leaf, else top level.
-        parent_id: str | None = None
-        primary = self.project.selected_id
-        if primary is not None:
-            from app.widgets.registry import get_descriptor
-            node = self.project.get_widget(primary)
-            if node is not None:
-                descriptor = get_descriptor(node.widget_type)
-                if descriptor is not None and getattr(
-                    descriptor, "is_container", False,
-                ):
-                    parent_id = primary
-                elif node.parent is not None:
-                    parent_id = node.parent.id
+        from app.core.commands import paste_target_parent_id
+        parent_id = paste_target_parent_id(
+            self.project, self.project.selected_id,
+        )
         new_ids = self.project.paste_from_clipboard(parent_id=parent_id)
         self._push_paste_history(new_ids)
 
@@ -1043,32 +1032,8 @@ class MainWindow(ctk.CTk):
             self._z_order_with_history(sid, "back")
 
     def _z_order_with_history(self, nid: str, direction: str) -> None:
-        from app.core.commands import ZOrderCommand
-        node = self.project.get_widget(nid)
-        if node is None:
-            return
-        siblings = (
-            node.parent.children if node.parent is not None
-            else self.project.root_widgets
-        )
-        try:
-            old_index = siblings.index(node)
-        except ValueError:
-            return
-        if direction == "front":
-            self.project.bring_to_front(nid)
-        else:
-            self.project.send_to_back(nid)
-        try:
-            new_index = siblings.index(node)
-        except ValueError:
-            return
-        if old_index == new_index:
-            return
-        parent_id = node.parent.id if node.parent is not None else None
-        self.project.history.push(
-            ZOrderCommand(nid, parent_id, old_index, new_index, direction),
-        )
+        from app.core.commands import push_zorder_history
+        push_zorder_history(self.project, nid, direction)
 
     def _on_theme_toggle(self) -> None:
         current = self._appearance_var.get()

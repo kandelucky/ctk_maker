@@ -55,6 +55,35 @@ def _walk_tree(nodes):
         stack.extend(reversed(node.children))
 
 
+def find_free_cascade_slot(
+    siblings, start_xy: tuple[int, int] = (10, 10),
+    step: int = 20, exclude=None,
+) -> tuple[int, int]:
+    """Pick the first (x, y) slot among ``siblings`` that nothing
+    already occupies, stepping by ``step`` pixels diagonally from
+    ``start_xy``. ``exclude`` optionally skips a specific node (used
+    by drag paths where the moving widget's own slot shouldn't block
+    itself).
+
+    Palette click-add, paste, tree-drag reparent, and container
+    extract-to-root fallback all need the same "find next free cell"
+    logic; funnel through here so the step / sampling stays
+    consistent.
+    """
+    occupied = {
+        (
+            int(w.properties.get("x", 0) or 0),
+            int(w.properties.get("y", 0) or 0),
+        )
+        for w in siblings if w is not exclude
+    }
+    x, y = start_xy
+    while (x, y) in occupied:
+        x += step
+        y += step
+    return x, y
+
+
 class _WindowProxy:
     """Fake WidgetNode for the Window selection. Exposes the same
     surface the Object Tree + Properties panel use on real nodes —
@@ -160,6 +189,13 @@ class Project:
         # full WidgetNode.to_dict() snapshot of a copied subtree.
         # Not persisted — lost when the app quits.
         self.clipboard: list[dict] = []
+        # Widget-id indexes — maintained on add / remove / reparent so
+        # ``get_widget`` and ``find_document_for_widget`` stay O(1)
+        # instead of walking every doc's tree on every call. Group
+        # drag was spending most of its per-motion budget on these
+        # linear scans before the index existed.
+        self._id_index: dict[str, WidgetNode] = {}
+        self._doc_index: dict[str, Document] = {}
         self._window_proxy = _WindowProxy(self)
         # Undo / redo history. UI code pushes Command objects after
         # applying mutations; history replays them backward / forward.
@@ -332,20 +368,32 @@ class Project:
         self, widget_id: str,
     ) -> Document | None:
         """Return the Document whose tree contains ``widget_id``.
-        Used by add/remove/reparent paths to pick the right root
-        list regardless of which document is currently active.
+        ``_doc_index`` gives O(1) lookups for indexed widgets; the
+        fallback linear scan handles the (rare) case where the index
+        got out of sync — better to pay O(N) once than crash.
         """
+        hit = self._doc_index.get(widget_id)
+        if hit is not None:
+            return hit
         for doc in self.documents:
             for node in _walk_tree(doc.root_widgets):
                 if node.id == widget_id:
+                    # Heal: re-populate the index so the next lookup
+                    # is O(1). Happens when a consumer creates widgets
+                    # outside the add_widget path.
+                    self._doc_index[widget_id] = doc
                     return doc
         return None
 
     def get_widget(self, widget_id: str):
         if widget_id == WINDOW_ID:
             return self._window_proxy
+        hit = self._id_index.get(widget_id)
+        if hit is not None:
+            return hit
         for node in self.iter_all_widgets():
             if node.id == widget_id:
+                self._id_index[widget_id] = node
                 return node
         return None
 
@@ -420,6 +468,22 @@ class Project:
                 return doc
         return self.active_document
 
+    def _index_subtree(self, node: WidgetNode, doc: "Document") -> None:
+        """Index ``node`` + every descendant under ``doc``.
+
+        Called on add / reparent so ``get_widget`` and
+        ``find_document_for_widget`` stay O(1). Fallback linear scans
+        still work when a widget somehow isn't in the index.
+        """
+        for desc in _walk_tree([node]):
+            self._id_index[desc.id] = desc
+            self._doc_index[desc.id] = doc
+
+    def _unindex_subtree(self, node: WidgetNode) -> None:
+        for desc in _walk_tree([node]):
+            self._id_index.pop(desc.id, None)
+            self._doc_index.pop(desc.id, None)
+
     def add_widget(
         self, node: WidgetNode, parent_id: str | None = None,
         document_id: str | None = None,
@@ -430,6 +494,7 @@ class Project:
             target_doc = self._resolve_target_document(document_id)
             node.parent = None
             target_doc.root_widgets.append(node)
+            owning_doc = target_doc
         else:
             parent = self.get_widget(parent_id)
             if parent is None:
@@ -437,9 +502,15 @@ class Project:
                 # silently dropping the node
                 node.parent = None
                 self.root_widgets.append(node)
+                owning_doc = self.active_document
             else:
                 node.parent = parent
                 parent.children.append(node)
+                owning_doc = self._doc_index.get(parent_id) or (
+                    self.find_document_for_widget(parent_id)
+                    or self.active_document
+                )
+        self._index_subtree(node, owning_doc)
         self.event_bus.publish("widget_added", node)
 
     def remove_widget(self, widget_id: str) -> None:
@@ -455,6 +526,8 @@ class Project:
             siblings.remove(node)
         parent_id = node.parent.id if node.parent is not None else None
         node.parent = None
+        self._id_index.pop(widget_id, None)
+        self._doc_index.pop(widget_id, None)
         if self.selected_id == widget_id:
             self.select_widget(None)
         self.event_bus.publish("widget_removed", widget_id, parent_id)
@@ -539,6 +612,12 @@ class Project:
             clamped = max(0, min(index, len(target_siblings)))
             target_siblings.insert(clamped, node)
 
+        # Re-index the moved subtree under its new doc. Parent-only
+        # reorder within the same doc doesn't change ``_doc_index``,
+        # but doc-crossing moves would otherwise leave stale entries.
+        if doc_changed and target_doc is not None:
+            self._index_subtree(node, target_doc)
+
         if parent_changed or doc_changed:
             self.event_bus.publish(
                 "widget_reparented", widget_id,
@@ -568,6 +647,8 @@ class Project:
         for doc in list(self.documents):
             for node in list(doc.root_widgets):
                 self.remove_widget(node.id)
+        self._id_index.clear()
+        self._doc_index.clear()
         self.documents = [Document(name="Main Window")]
         self.active_document_id = self.documents[0].id
         self.history.clear()
@@ -749,25 +830,16 @@ class Project:
         """
         if not self.clipboard:
             return []
-        # Build sibling occupancy so the cascade drops each clone into
-        # a free slot in the destination parent — same algorithm for
-        # top-level (doc.root_widgets) and for container pastes
-        # (parent.children). Without it, pasting into a Frame reuses
-        # the clone's original top-level coords and lands out of view.
-        sibling_occupancy: set[tuple[int, int]] | None = None
+        # Build the target sibling list once so cascade pastes walk
+        # a live view as each new clone lands — otherwise repeated
+        # Ctrl+V would stack every clipboard entry at the same slot.
+        target_siblings: list[WidgetNode] | None = None
         if base_position is None:
             if parent_id is None:
-                siblings = self.active_document.root_widgets
+                target_siblings = self.active_document.root_widgets
             else:
                 parent = self.get_widget(parent_id)
-                siblings = parent.children if parent is not None else []
-            sibling_occupancy = {
-                (
-                    int(w.properties.get("x", 0) or 0),
-                    int(w.properties.get("y", 0) or 0),
-                )
-                for w in siblings
-            }
+                target_siblings = parent.children if parent is not None else []
         new_top_ids: list[str] = []
         for idx, data in enumerate(self.clipboard):
             root = self._clone_with_fresh_ids(data)
@@ -776,19 +848,15 @@ class Project:
                     bx, by = base_position
                     root.properties["x"] = max(0, int(bx) + idx * 20)
                     root.properties["y"] = max(0, int(by) + idx * 20)
-                elif sibling_occupancy is not None:
-                    # Start at (10, 10) in container pastes so the clone
-                    # sits near the Frame's top-left regardless of the
-                    # source's original coord space. Top-level keeps the
-                    # same starting rule — empty docs bootstrap at (10,10)
-                    # anyway through the palette cascade.
-                    nx, ny = 10, 10
-                    while (nx, ny) in sibling_occupancy:
-                        nx += 20
-                        ny += 20
+                elif target_siblings is not None:
+                    # Start at (10, 10) so container pastes sit near the
+                    # Frame's top-left regardless of the source's coord
+                    # space. find_free_cascade_slot walks the current
+                    # sibling list, so each loop iteration sees the
+                    # clones already pasted and picks the next slot.
+                    nx, ny = find_free_cascade_slot(target_siblings)
                     root.properties["x"] = max(0, nx)
                     root.properties["y"] = max(0, ny)
-                    sibling_occupancy.add((nx, ny))
                 else:
                     root.properties["x"] = (
                         int(root.properties.get("x", 0)) + 20

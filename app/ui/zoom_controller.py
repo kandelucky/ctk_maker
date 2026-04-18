@@ -134,11 +134,25 @@ class ZoomController:
     # Apply to widgets
     # ------------------------------------------------------------------
     def apply_all(self) -> None:
+        # Precompute widget_id → (node, doc) once per call. Without this,
+        # each loop iteration does ``get_widget`` + ``find_document_for_widget``
+        # which are both O(N) linear scans over every widget in every
+        # document — apply_all becomes O(N²). At 100 widgets that's
+        # 10 000 lookup ops per call, and chrome drag fires apply_all
+        # at motion rate (~100 Hz) so the hot path was burning ~1M
+        # lookups/sec in pure Python dict/attr access.
+        id_index: dict[str, tuple] = {}
+        for doc in self.project.documents:
+            stack = list(doc.root_widgets)
+            while stack:
+                node = stack.pop()
+                id_index[node.id] = (node, doc)
+                stack.extend(node.children)
         for nid, (widget, window_id) in self.widget_views.items():
-            node = self.project.get_widget(nid)
-            if node is None:
+            entry = id_index.get(nid)
+            if entry is None:
                 continue
-            document = self.project.find_document_for_widget(nid)
+            node, document = entry
             self.apply_to_widget(
                 widget, window_id, node.properties, document=document,
             )

@@ -50,6 +50,11 @@ CHROME_CLOSE_HOVER = "#c42b1c"
 # Shared drag threshold (also used by the widget drag controller).
 DRAG_THRESHOLD = 4
 
+# Past this widget count the per-motion ``apply_all`` (per-widget
+# configure + font rebuild) turns document dragging into a slide show.
+# Hide widgets while the user drags and resync once on release.
+HIDE_THRESHOLD = 10
+
 
 class ChromeManager:
     """Per-workspace chrome (title bar) renderer + drag handler.
@@ -515,6 +520,13 @@ class ChromeManager:
             if dx < DRAG_THRESHOLD and dy < DRAG_THRESHOLD:
                 return "break"
             drag["moved"] = True
+            # First real motion — decide whether to hide the doc's
+            # widgets. apply_all per motion for a 20+ widget form is
+            # the main slowdown; hiding cuts it to _redraw_document
+            # alone (doc rect + chrome only).
+            doc = self.project.get_document(drag["doc_id"])
+            if doc is not None and self._count_doc_widgets(doc) >= HIDE_THRESHOLD:
+                self._enter_hidden_mode(doc)
         zoom = self.zoom.value or 1.0
         dx_logical = int((event.x_root - drag["press_x_root"]) / zoom)
         dy_logical = int((event.y_root - drag["press_y_root"]) / zoom)
@@ -524,10 +536,61 @@ class ChromeManager:
         doc.canvas_x = max(0, drag["start_canvas_x"] + dx_logical)
         doc.canvas_y = max(0, drag["start_canvas_y"] + dy_logical)
         self.workspace._redraw_document()
-        self.zoom.apply_all()
-        if self.project.selected_id:
-            self.workspace.selection.update()
+        if not drag.get("hidden_mode"):
+            self.zoom.apply_all()
+            if self.project.selected_id:
+                self.workspace.selection.update()
         return "break"
+
+    def _count_doc_widgets(self, doc) -> int:
+        count = 0
+        stack = list(doc.root_widgets)
+        while stack:
+            node = stack.pop()
+            count += 1
+            stack.extend(node.children)
+        return count
+
+    def _enter_hidden_mode(self, doc) -> None:
+        """Hide every top-level canvas item in ``doc`` plus any
+        selection chrome bound to widgets in ``doc``. Stores the hidden
+        ids on ``self._drag`` so release can unhide exactly what it
+        hid — nested place children follow their parent Frame's hidden
+        state automatically, so we only need top-level tagging.
+        """
+        if self._drag is None:
+            return
+        hidden_window_ids: list = []
+        for node in doc.root_widgets:
+            entry = self.workspace.widget_views.get(node.id)
+            if entry is None:
+                continue
+            _, window_id = entry
+            if window_id is None:
+                continue
+            try:
+                self.canvas.itemconfigure(window_id, state="hidden")
+            except tk.TclError:
+                continue
+            hidden_window_ids.append(window_id)
+        hidden_chrome_tags: list = []
+        selected_ids = getattr(self.project, "selected_ids", set()) or set()
+        for wid in selected_ids:
+            wid_doc = self.project.find_document_for_widget(wid)
+            if wid_doc is not doc:
+                continue
+            tag = f"chrome_wid_{wid}"
+            try:
+                self.canvas.itemconfigure(tag, state="hidden")
+            except tk.TclError:
+                continue
+            hidden_chrome_tags.append(tag)
+        self._drag["hidden_mode"] = True
+        self._drag["hidden_window_ids"] = hidden_window_ids
+        self._drag["hidden_chrome_tags"] = hidden_chrome_tags
+        # Signals ``Renderer.update_visibility_across_docs`` to skip
+        # the per-motion state flip so our hidden widgets stay hidden.
+        self.workspace._doc_drag_hide_active = True
 
     def _on_release(
         self, _event=None, doc_id: str | None = None,
@@ -543,6 +606,29 @@ class ChromeManager:
         self._drag = None
         if drag is None or doc_id is None:
             return "break"
+        # Hide-mode teardown — unhide before any further redraws so
+        # the user doesn't see a frame of ghosted widgets mid-release.
+        if drag.get("hidden_mode"):
+            # Clear the flag first so the release-time visibility
+            # refresh (inside apply_all → _on_zoom_changed → render)
+            # actually runs and picks up the widgets' new positions.
+            self.workspace._doc_drag_hide_active = False
+            for window_id in drag.get("hidden_window_ids", []):
+                try:
+                    self.canvas.itemconfigure(window_id, state="normal")
+                except tk.TclError:
+                    pass
+            for tag in drag.get("hidden_chrome_tags", []):
+                try:
+                    self.canvas.itemconfigure(tag, state="normal")
+                except tk.TclError:
+                    pass
+            # apply_all was skipped during motion — run it once now so
+            # widgets jump to the doc's final offset before the chrome
+            # is redrawn and the selection handles are resynced.
+            self.zoom.apply_all()
+            if self.project.selected_id:
+                self.workspace.selection.update()
         if not drag["moved"]:
             # Click without drag → activate the document (settings
             # icon handles the "open Properties" case separately).

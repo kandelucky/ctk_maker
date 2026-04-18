@@ -204,6 +204,13 @@ class Renderer:
         on top of it. The mask is faked by flipping the widget item's
         ``state`` to ``hidden`` whenever it's covered.
         """
+        # Doc drag hide-mode intentionally hides every widget in the
+        # dragged document; flipping their state back to "normal" here
+        # would defeat the optimisation on every motion event. Skip
+        # the whole pass — the release-time apply_all + visibility
+        # refresh resyncs state once the drag ends.
+        if getattr(self.workspace, "_doc_drag_hide_active", False):
+            return
         zoom = self.zoom.value
         pad = DOCUMENT_PADDING
         render_order = self.iter_render_order()
