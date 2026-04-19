@@ -21,6 +21,7 @@ from app.widgets.base import WidgetDescriptor
 class CTkSegmentedButtonDescriptor(WidgetDescriptor):
     type_name = "CTkSegmentedButton"
     display_name = "Segmented Button"
+    prefers_fill_in_layout = True
 
     default_properties = {
         # Geometry

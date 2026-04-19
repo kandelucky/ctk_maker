@@ -26,8 +26,8 @@ from app.ui.workspace.layout_overlay import (
     _strip_layout_keys,
 )
 from app.widgets.layout_schema import (
-    next_free_grid_cell,
     normalise_layout_type,
+    resolve_grid_drop_cell,
 )
 from app.widgets.registry import get_descriptor
 
@@ -92,10 +92,15 @@ class WidgetLifecycle:
     # Widget creation
     # ------------------------------------------------------------------
     def _auto_assign_grid_cell(self, parent_node, node) -> None:
-        """If the new child would land in a grid parent at a cell
-        already taken by a sibling, bump it to the next free cell
-        via row-major scan. Respects an explicit non-default cell
-        the caller already set (e.g. palette drop under the cursor).
+        """Route every new child's grid placement through
+        ``resolve_grid_drop_cell`` — the single source of truth for
+        "pick a free cell, grow the grid if full" semantics. If the
+        caller set an explicit ``grid_row`` / ``grid_column`` (e.g.
+        palette drop under the cursor, paste with saved cell), that
+        preferred cell is honoured unless another sibling already
+        claims it; collisions bump the child to the next free cell
+        or grow the grid by one row / column when every cell is
+        taken.
         """
         if parent_node is None:
             return
@@ -105,29 +110,77 @@ class WidgetLifecycle:
             return
         props = node.properties
         try:
-            row = int(props.get("grid_row", 0) or 0)
-            col = int(props.get("grid_column", 0) or 0)
+            preferred_row = int(props.get("grid_row", 0) or 0)
+            preferred_col = int(props.get("grid_column", 0) or 0)
         except (TypeError, ValueError):
-            return
-        # Only auto-assign when the child is sitting at the default
-        # (0, 0) — explicit cursor-based drops already picked their
-        # cell, paste/load keeps saved positions.
-        if row != 0 or col != 0:
-            return
-        occupied_at_00 = any(
-            sibling is not node
-            and int(sibling.properties.get("grid_row", 0) or 0) == 0
-            and int(sibling.properties.get("grid_column", 0) or 0) == 0
-            for sibling in parent_node.children
-        )
-        if not occupied_at_00:
-            return
-        free_row, free_col = next_free_grid_cell(
+            preferred_row = preferred_col = 0
+        row, col, dim_updates = resolve_grid_drop_cell(
             [s for s in parent_node.children if s is not node],
             parent_node.properties,
+            preferred_row=preferred_row,
+            preferred_col=preferred_col,
+            exclude_node=node,
         )
-        props["grid_row"] = free_row
-        props["grid_column"] = free_col
+        props["grid_row"] = row
+        props["grid_column"] = col
+        if dim_updates:
+            # Grid grew — push the new dimensions through the bus so
+            # the Inspector readout + rearrange_container_children
+            # both pick them up. Capture before-values and stash on
+            # the node so the outer caller (palette / drop path) can
+            # bundle them into the AddWidgetCommand — otherwise undo
+            # removes the widget but leaves the parent expanded.
+            parent_before = {
+                k: parent_node.properties.get(k) for k in dim_updates
+            }
+            for key, val in dim_updates.items():
+                self.project.update_property(parent_node.id, key, val)
+            node._pending_parent_dim_changes = (
+                parent_node.id,
+                {
+                    k: (parent_before[k], dim_updates[k])
+                    for k in dim_updates
+                },
+            )
+
+    def apply_fill_defaults_to_children(self, container_node) -> None:
+        """Re-apply fill defaults to every child of ``container_node``.
+        Called from the layout_type swap path so fill-friendly widgets
+        inherit the new manager's default (``stretch="grow"`` for
+        vbox / hbox, ``grid_sticky="nsew"`` for grid) without the user
+        editing each child individually. Direct dict assignment — no
+        history push — so the layout swap itself remains a single
+        undo entry; the property readout will re-surface on next
+        Inspector rebuild.
+        """
+        for child in container_node.children:
+            descriptor = get_descriptor(child.widget_type)
+            if descriptor is None:
+                continue
+            self._apply_fill_default(descriptor, container_node, child)
+
+    def _apply_fill_default(self, descriptor, parent_node, node) -> None:
+        """Fresh drops of fill-friendly widgets (Button / Label / Entry
+        / Frame / …) into a layout container commit ``stretch="fill"``
+        (vbox / hbox) or ``grid_sticky="nsew"`` (grid) instead of the
+        schema default so form-shaped UIs land edge-to-edge without a
+        manual Inspector tweak. Only applies when the node hasn't
+        already carried the layout key in from its snapshot — paste /
+        duplicate / undo-redo preserve the source's intent. Widgets
+        with natural sizing (CheckBox, Switch, OptionMenu) leave
+        ``prefers_fill_in_layout`` at False and are unaffected.
+        """
+        if not getattr(descriptor, "prefers_fill_in_layout", False):
+            return
+        parent_layout = normalise_layout_type(
+            parent_node.properties.get("layout_type", "place"),
+        )
+        if parent_layout in ("vbox", "hbox"):
+            if "stretch" not in node.properties:
+                node.properties["stretch"] = "grow"
+        elif parent_layout == "grid":
+            if "grid_sticky" not in node.properties:
+                node.properties["grid_sticky"] = "nsew"
 
     def on_widget_added(self, node) -> None:
         ws = self.workspace
@@ -137,6 +190,7 @@ class WidgetLifecycle:
         parent_node = node.parent
         master = self._resolve_master(parent_node)
         if parent_node is not None:
+            self._apply_fill_default(descriptor, parent_node, node)
             self._auto_assign_grid_cell(parent_node, node)
         widget, anchor_widget = self._instantiate_widget(
             descriptor, node, master,

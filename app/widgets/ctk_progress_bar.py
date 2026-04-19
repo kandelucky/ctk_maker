@@ -20,6 +20,7 @@ from app.widgets.base import WidgetDescriptor
 class CTkProgressBarDescriptor(WidgetDescriptor):
     type_name = "CTkProgressBar"
     display_name = "Progress Bar"
+    prefers_fill_in_layout = True
 
     default_properties = {
         # Geometry

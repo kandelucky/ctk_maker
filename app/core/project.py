@@ -828,8 +828,25 @@ class Project:
 
         Returns the list of new top-level widget ids.
         """
+        from app.widgets.layout_schema import is_layout_container
         if not self.clipboard:
             return []
+        # Block layout-in-layout nesting on paste — drag/drop already
+        # blocks this at the source (WS-33), but copy-paste sneaks
+        # through. If the parent is a layout container AND any clipboard
+        # entry is itself a layout container, redirect the paste to
+        # top-level so the rendering stays sane.
+        if parent_id is not None:
+            parent = self.get_widget(parent_id)
+            if (
+                parent is not None
+                and is_layout_container(parent.properties)
+                and any(
+                    is_layout_container(entry.get("properties", {}))
+                    for entry in self.clipboard
+                )
+            ):
+                parent_id = None
         # Build the target sibling list once so cascade pastes walk
         # a live view as each new clone lands — otherwise repeated
         # Ctrl+V would stack every clipboard entry at the same slot.
@@ -911,23 +928,26 @@ class Project:
             child.parent = None
             self._paste_recursive(child, parent_id=node.id)
 
-    def duplicate_widget(self, widget_id: str) -> str | None:
+    def duplicate_widget(
+        self, widget_id: str, force_top_level: bool = False,
+    ) -> str | None:
         node = self.get_widget(widget_id)
         if node is None:
             return None
-        new_props = dict(node.properties)
+        # Deep-clone the entire subtree (containers carry their children)
+        # via the same fresh-id walk paste uses. Without this a Frame
+        # duplicate landed empty — only the container shell got a clone.
+        clone = self._clone_with_fresh_ids(node.to_dict())
         try:
-            new_props["x"] = int(new_props.get("x", 0)) + 20
-            new_props["y"] = int(new_props.get("y", 0)) + 20
+            clone.properties["x"] = int(clone.properties.get("x", 0)) + 20
+            clone.properties["y"] = int(clone.properties.get("y", 0)) + 20
         except (ValueError, TypeError):
             pass
-        clone = WidgetNode(
-            widget_type=node.widget_type,
-            properties=new_props,
-        )
-        # Clone gets a fresh auto-generated name via add_widget.
-        parent_id = node.parent.id if node.parent else None
-        self.add_widget(clone, parent_id=parent_id)
+        if force_top_level:
+            parent_id: str | None = None
+        else:
+            parent_id = node.parent.id if node.parent else None
+        self._paste_recursive(clone, parent_id)
         self.select_widget(clone.id)
         return clone.id
 

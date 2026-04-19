@@ -129,6 +129,17 @@ class SelectionController:
             self._position_outline(i, bbox, wid)
         for i in range(len(non_primary), len(self._outline_pool)):
             self._hide_outline(i)
+        # Chrome must stay above every widget on the canvas. Pool
+        # frames are lifted once at allocation time, but a subsequent
+        # ``render.redraw`` or widget reparent re-stacks widgets via
+        # ``canvas.tag_raise(window_id)`` and drops chrome below. A
+        # tag_raise on our shared ``selection_chrome`` tag at the end
+        # of every ``draw`` keeps primary edges + handles + multi-
+        # select outlines consistently on top.
+        try:
+            self.canvas.tag_raise("selection_chrome")
+        except tk.TclError:
+            pass
 
     def update(self) -> None:
         """Lightweight chrome refresh for the primary widget only —
@@ -344,22 +355,32 @@ class SelectionController:
     def _position_edges(self, bbox) -> None:
         x1, y1, x2, y2 = bbox
         for side, (x, y, w, h) in self._edge_geoms(x1, y1, x2, y2).items():
-            window_id, _ = self._edges[side]
+            window_id, frame = self._edges[side]
             try:
                 self.canvas.coords(window_id, x, y)
                 self.canvas.itemconfigure(
                     window_id, width=max(1, w), height=max(1, h),
                     state="normal",
                 )
+                # Tk has two stacking systems for canvas-embedded
+                # widgets: the canvas item z-order (tag_raise) and
+                # the tk widget sibling order (frame.lift). Both
+                # must be at the top — the old non-pool flow called
+                # frame.lift() on every draw as a side effect of
+                # re-creating the frame; with the pool we preserve
+                # the same lift here so the chrome stays above any
+                # widget added after its last show.
+                frame.lift()
             except tk.TclError:
                 pass
 
     def _position_handles(self, bbox) -> None:
         x1, y1, x2, y2 = bbox
-        for name, (window_id, _) in self._handles.items():
+        for name, (window_id, frame) in self._handles.items():
             hx, hy = self._handle_center(name, x1, y1, x2, y2)
             try:
                 self.canvas.coords(window_id, hx, hy)
+                frame.lift()
             except tk.TclError:
                 pass
 
@@ -395,13 +416,16 @@ class SelectionController:
         entry = self._outline_pool[index]
         x1, y1, x2, y2 = bbox
         for side, (x, y, w, h) in self._edge_geoms(x1, y1, x2, y2).items():
-            window_id, _ = entry[side]
+            window_id, frame = entry[side]
             try:
                 self.canvas.coords(window_id, x, y)
                 self.canvas.itemconfigure(
                     window_id, width=max(1, w), height=max(1, h),
                     state="normal",
                 )
+                # See ``_position_edges`` for why the widget-level
+                # lift is required on every show.
+                frame.lift()
             except tk.TclError:
                 pass
         self._retag_entry(entry, widget_id)

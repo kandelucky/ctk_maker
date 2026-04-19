@@ -30,6 +30,7 @@ class ImageDescriptor(WidgetDescriptor):
     type_name = "Image"
     ctk_class_name = "CTkLabel"
     display_name = "Image"
+    prefers_fill_in_layout = True
 
     default_properties = {
         # Geometry

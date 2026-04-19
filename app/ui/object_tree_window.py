@@ -1223,14 +1223,31 @@ class ObjectTreePanel(ctk.CTkFrame):
                 command=lambda nid=iid: self._copy_single_to_clipboard(nid),
             )
             paste_state = "normal" if self.project.clipboard else "disabled"
+            ctx_node = self.project.get_widget(iid)
+            descriptor = (
+                get_descriptor(ctx_node.widget_type)
+                if ctx_node is not None else None
+            )
+            is_container = (
+                descriptor is not None
+                and getattr(descriptor, "is_container", False)
+            )
+            paste_child_state = (
+                paste_state if is_container else "disabled"
+            )
             menu.add_command(
                 label="Paste",
-                command=lambda nid=iid: self._paste_at_tree_row(nid),
+                command=self._paste_in_window,
                 state=paste_state,
             )
             menu.add_command(
+                label="Paste as child",
+                command=lambda nid=iid: self._paste_as_child(nid),
+                state=paste_child_state,
+            )
+            menu.add_command(
                 label="Duplicate",
-                command=lambda nid=iid: self._duplicate_with_history(nid),
+                command=lambda nid=iid: self._duplicate_in_window(nid),
             )
             menu.add_separator()
             menu.add_command(
@@ -1283,6 +1300,39 @@ class ObjectTreePanel(ctk.CTkFrame):
             parent_id = node.parent.id if node.parent is not None else None
         new_ids = self.project.paste_from_clipboard(parent_id=parent_id)
         self._push_paste_history(new_ids)
+
+    def _paste_as_child(self, widget_id: str) -> None:
+        """Tree paste — drop the clipboard inside the right-clicked
+        widget. Menu disables this entry on non-container nodes so the
+        callback never lands on a leaf, but keep the no-op guard for
+        the keyboard-driven path."""
+        if not self.project.clipboard:
+            return
+        new_ids = self.project.paste_from_clipboard(parent_id=widget_id)
+        self._push_paste_history(new_ids)
+
+    def _paste_in_window(self) -> None:
+        """Tree paste — drop the clipboard at the document root,
+        regardless of where the right-click landed."""
+        if not self.project.clipboard:
+            return
+        new_ids = self.project.paste_from_clipboard(parent_id=None)
+        self._push_paste_history(new_ids)
+
+    def _duplicate_in_window(self, widget_id: str) -> None:
+        """Tree duplicate — clone the subtree to the document root
+        instead of next to the source. Tree-side variant only; the
+        canvas right-click keeps duplicating in place."""
+        new_id = self.project.duplicate_widget(
+            widget_id, force_top_level=True,
+        )
+        if new_id is None:
+            return
+        entries = build_bulk_add_entries(self.project, [new_id])
+        if entries:
+            self.project.history.push(
+                BulkAddCommand(entries, label="Duplicate"),
+            )
 
     def _prompt_rename(self, widget_id: str) -> None:
         node = self.project.get_widget(widget_id)

@@ -25,6 +25,7 @@ from app.widgets.base import WidgetDescriptor
 class CTkSliderDescriptor(WidgetDescriptor):
     type_name = "CTkSlider"
     display_name = "Slider"
+    prefers_fill_in_layout = True
 
     default_properties = {
         # Geometry

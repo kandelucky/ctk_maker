@@ -62,6 +62,7 @@ from app.ui.workspace.widget_lifecycle import WidgetLifecycle
 from app.widgets.layout_schema import (
     is_layout_container,
     normalise_layout_type,
+    resolve_grid_drop_cell,
 )
 from app.widgets.registry import get_descriptor
 
@@ -741,7 +742,7 @@ class Workspace(ctk.CTkFrame):
             self._handle_window_property(prop_name)
             return
         if prop_name in self._CONTAINER_LAYOUT_PROPS:
-            self._handle_container_layout_prop(widget_id)
+            self._handle_container_layout_prop(widget_id, prop_name)
             return
         if prop_name in self._CHILD_LAYOUT_PROPS:
             self._handle_child_layout_prop(widget_id)
@@ -777,14 +778,77 @@ class Workspace(ctk.CTkFrame):
         elif prop_name == "accent_color":
             self._draw_window_chrome()
 
-    def _handle_container_layout_prop(self, widget_id: str) -> None:
+    def _handle_container_layout_prop(
+        self, widget_id: str, prop_name: str = "",
+    ) -> None:
         """Container-level layout mutation (manager swap, spacing,
         grid dims) — re-pack / re-place every child, redraw overlays.
+        Grid-type containers additionally get a stacked-children
+        sweep so a ``place → grid`` swap distributes the existing
+        kids across free cells instead of stacking them all at (0, 0).
+        A ``layout_type`` swap also re-applies fill defaults to
+        fill-friendly children so Grid → vbox / hbox picks up
+        ``stretch="grow"`` (and vice versa for grid) without a per-
+        child manual tweak.
         """
+        node = self.project.get_widget(widget_id)
+        if node is not None and prop_name == "layout_type":
+            self.lifecycle.apply_fill_defaults_to_children(node)
+        if node is not None and normalise_layout_type(
+            node.properties.get("layout_type", "place"),
+        ) == "grid":
+            self._redistribute_stacked_grid_children(node)
         self.layout_overlay.rearrange_container_children(widget_id)
         self._redraw_document()
         if self.project.selected_id is not None:
             self._schedule_selection_redraw()
+
+    def _redistribute_stacked_grid_children(self, container_node) -> None:
+        """Detect grid children sharing a cell and relocate the
+        extras to free cells (growing the grid if needed). Triggered
+        from ``_handle_container_layout_prop`` so layout-type swaps
+        (place → grid, vbox → grid, etc.) stop leaving N children
+        stacked at the default (0, 0). Idempotent — when no stacks
+        exist this is a single dict-scan no-op, so re-entering the
+        grid layout type on an already-distributed container costs
+        nothing.
+        """
+        children = list(container_node.children)
+        if len(children) < 2:
+            return
+        # Group children by their (row, col). A cell with 2+ kids is
+        # stacked and triggers redistribution.
+        cells: dict[tuple[int, int], list] = {}
+        for child in children:
+            try:
+                r = int(child.properties.get("grid_row", 0) or 0)
+                c = int(child.properties.get("grid_column", 0) or 0)
+            except (TypeError, ValueError):
+                r, c = 0, 0
+            cells.setdefault((r, c), []).append(child)
+        stacked = {cell: kids for cell, kids in cells.items() if len(kids) > 1}
+        if not stacked:
+            return
+        # Keep the first child in each stacked cell, relocate the
+        # rest. Deterministic order for reproducibility.
+        for cell in sorted(stacked.keys()):
+            for child_to_move in stacked[cell][1:]:
+                new_r, new_c, dim_updates = resolve_grid_drop_cell(
+                    container_node.children,
+                    container_node.properties,
+                    exclude_node=child_to_move,
+                )
+                if dim_updates:
+                    for key, val in dim_updates.items():
+                        self.project.update_property(
+                            container_node.id, key, val,
+                        )
+                self.project.update_property(
+                    child_to_move.id, "grid_row", new_r,
+                )
+                self.project.update_property(
+                    child_to_move.id, "grid_column", new_c,
+                )
 
     def _handle_child_layout_prop(self, widget_id: str) -> None:
         """Per-child layout tweak — re-apply the child's geometry
@@ -992,7 +1056,7 @@ class Workspace(ctk.CTkFrame):
             if normalise_layout_type(
                 container_node.properties.get("layout_type", "place"),
             ) == "grid":
-                row, col = self.drag_controller._grid_cell_at(
+                row, col = self.drag_controller._grid_indicator.cell_at(
                     container_node, cx, cy,
                 )
                 properties["grid_row"] = row
@@ -1007,9 +1071,16 @@ class Workspace(ctk.CTkFrame):
         self.project.select_widget(node.id)
         owning_doc = self.project.find_document_for_widget(node.id)
         document_id = owning_doc.id if owning_doc is not None else None
+        dim_changes = getattr(node, "_pending_parent_dim_changes", None)
+        if hasattr(node, "_pending_parent_dim_changes"):
+            try:
+                delattr(node, "_pending_parent_dim_changes")
+            except AttributeError:
+                pass
         self.project.history.push(
             AddWidgetCommand(
                 node.to_dict(), parent_id, document_id=document_id,
+                parent_dim_changes=dim_changes,
             ),
         )
 
@@ -1141,6 +1212,15 @@ class Workspace(ctk.CTkFrame):
             stack.extend(node.children)
 
     def _on_widget_right_click(self, event, nid: str) -> str:
+        # Route through the same drill-down resolver as left-click so
+        # right-click on a container's child first targets the parent
+        # (then the child, etc., as the user repeats clicks). Without
+        # this, right-click jumped straight to the deepest widget and
+        # the context menu acted on a different layer than the user's
+        # current selection scope.
+        resolved = self.drag_controller._resolve_click_target(nid)
+        if resolved is not None:
+            nid = resolved
         # Preserve multi-selection when right-clicking one of its members
         # — calling select_widget here would collapse the set to a single
         # primary and make group Delete impossible from the context menu.

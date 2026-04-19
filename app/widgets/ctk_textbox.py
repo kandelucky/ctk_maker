@@ -23,6 +23,7 @@ from app.widgets.base import WidgetDescriptor
 class CTkTextboxDescriptor(WidgetDescriptor):
     type_name = "CTkTextbox"
     display_name = "Textbox"
+    prefers_fill_in_layout = True
 
     default_properties = {
         # Geometry

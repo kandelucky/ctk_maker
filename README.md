@@ -2,7 +2,7 @@
 
 A desktop visual designer for **CustomTkinter** — drag and drop widgets onto a canvas, edit their properties live, and export the result as clean runnable Python.
 
-> **Status:** v0.0.14 — active development. Latest: WYSIWYG grid layout with drag-to-cell. See [version history](docs/history/README.md) for per-release highlights.
+> **Status:** v0.0.15.6 — active development. Latest: workspace refactor round (chrome / widget_lifecycle / render / selection_controller) with frame-pool multi-select chrome (~45ms → ~3ms for 20 widgets) + grid auto-grow undo tracking across add / reparent / duplicate / paste. See [version history](docs/history/README.md) for per-release highlights.
 
 [![v0.0.14](docs/history/v0.0.14.png)](docs/history/v0.0.14.png)
 

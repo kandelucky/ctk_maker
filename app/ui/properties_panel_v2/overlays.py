@@ -71,6 +71,10 @@ def place_enum_button(tree: tk.Widget, widget: tk.Widget, iid: str) -> None:
     _place_value_cell_right(tree, widget, iid, width=20, pad_y=4)
 
 
+def place_number_spin(tree: tk.Widget, widget: tk.Widget, iid: str) -> None:
+    _place_value_cell_right(tree, widget, iid, width=14, pad_y=2)
+
+
 def place_text_edit_pencil(
     tree: tk.Widget, widget: tk.Widget, iid: str,
 ) -> None:
@@ -140,6 +144,7 @@ def place_style_preview(
 # =====================================================================
 SLOT_COLOR = "color"
 SLOT_ENUM_BUTTON = "enum_button"
+SLOT_NUMBER_SPIN = "number_spin"
 SLOT_TEXT_VALUE = "text_value"
 SLOT_TEXT_EDIT = "text_edit"
 SLOT_IMAGE_VALUE = "image_value"

@@ -26,6 +26,7 @@ class CTkFrameDescriptor(WidgetDescriptor):
     type_name = "CTkFrame"
     display_name = "Frame"
     is_container = True
+    prefers_fill_in_layout = True
 
     default_properties = {
         # Geometry

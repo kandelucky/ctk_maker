@@ -26,6 +26,7 @@ from app.widgets.base import WidgetDescriptor
 class CTkTabviewDescriptor(WidgetDescriptor):
     type_name = "CTkTabview"
     display_name = "Tabview"
+    prefers_fill_in_layout = True
     # Not a builder-side container yet — children can't be dropped into
     # a specific tab. Revisit when the composite-widget integration
     # story lands (see TODO.md).

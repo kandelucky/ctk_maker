@@ -341,7 +341,68 @@ class LayoutOverlayManager:
             lw = lh = 0
         is_composite = child_node.id in self.anchor_views
         if manager == "pack":
-            if is_composite and lw > 0 and lh > 0:
+            stretch = str(
+                child_node.properties.get("stretch", "fixed"),
+            )
+            parent_layout = normalise_layout_type(
+                parent_node.properties.get("layout_type", "place"),
+            ) if parent_node is not None else "place"
+            if stretch == "grow" and parent_layout in ("vbox", "hbox"):
+                # Equal-split main axis among grow siblings so a
+                # grid → vbox swap (or a fresh grow drop) divides the
+                # container height (vbox) / width (hbox) evenly instead
+                # of leaving widgets at their prior configured size.
+                # tk pack's ``expand=True`` alone won't shrink a widget
+                # below its configured natural size, so we size each
+                # grow child explicitly. Cross-axis stays on ``fill=both``.
+                grow_siblings = [
+                    c for c in parent_node.children
+                    if str(c.properties.get("stretch", "fixed")) == "grow"
+                ]
+                count = max(1, len(grow_siblings))
+                try:
+                    spacing = int(
+                        parent_node.properties.get("layout_spacing", 0)
+                        or 0,
+                    )
+                except (TypeError, ValueError):
+                    spacing = 0
+                zoom = self.zoom.value or 1.0
+                if parent_layout == "vbox":
+                    try:
+                        container_h = int(
+                            parent_node.properties.get("height", 0) or 0,
+                        )
+                    except (TypeError, ValueError):
+                        container_h = 0
+                    slot = max(
+                        1,
+                        (container_h - spacing * (count - 1)) // count,
+                    )
+                    try:
+                        anchor_widget.configure(
+                            height=max(1, int(slot * zoom)),
+                        )
+                    except tk.TclError:
+                        pass
+                else:  # hbox
+                    try:
+                        container_w = int(
+                            parent_node.properties.get("width", 0) or 0,
+                        )
+                    except (TypeError, ValueError):
+                        container_w = 0
+                    slot = max(
+                        1,
+                        (container_w - spacing * (count - 1)) // count,
+                    )
+                    try:
+                        anchor_widget.configure(
+                            width=max(1, int(slot * zoom)),
+                        )
+                    except tk.TclError:
+                        pass
+            elif is_composite and lw > 0 and lh > 0:
                 try:
                     anchor_widget.configure(
                         width=max(1, int(lw * self.zoom.value)),

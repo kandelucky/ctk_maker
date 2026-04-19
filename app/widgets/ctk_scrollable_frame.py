@@ -33,6 +33,7 @@ class CTkScrollableFrameDescriptor(WidgetDescriptor):
     type_name = "CTkScrollableFrame"
     display_name = "Scrollable Frame"
     is_container = True
+    prefers_fill_in_layout = True
 
     default_properties = {
         # Geometry

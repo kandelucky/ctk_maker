@@ -35,6 +35,7 @@ from app.ui.workspace.grid_drop_indicator import GridDropIndicator
 from app.widgets.layout_schema import (
     is_layout_container,
     normalise_layout_type,
+    resolve_grid_drop_cell,
 )
 from app.widgets.registry import get_descriptor
 
@@ -177,6 +178,24 @@ class WidgetDragController:
             ),
         }
         self._tag_drag_group(group_starts)
+        # Lift every dragged canvas-hosted widget to the top of the
+        # canvas stack for the duration of the gesture. Without this,
+        # dragging a widget "into" a Frame that was added later reads
+        # as the widget disappearing behind the Frame, because later
+        # canvas window items stack above earlier ones. Lift is
+        # transient — the next ``_redraw_document`` restores the
+        # project-tree ordering automatically.
+        for wid in group_starts.keys():
+            entry = self.widget_views.get(wid)
+            if entry is None:
+                continue
+            _, window_id = entry
+            if window_id is None:
+                continue
+            try:
+                self.canvas.tag_raise(window_id)
+            except tk.TclError:
+                pass
         # Ghost mode for large groups — hide every tagged widget +
         # chrome and draw a dashed outline rect the size of the group's
         # bounding box. Motion just translates the rect; release runs
@@ -1038,6 +1057,7 @@ class WidgetDragController:
             drag["start_x"], drag["start_y"],
             new_parent_id, new_x, new_y,
             old_doc, new_doc,
+            parent_dim_changes=drag.get("parent_dim_changes"),
         )
         return True
 
@@ -1184,6 +1204,7 @@ class WidgetDragController:
         self, nid: str, old_parent_id: str | None, old_index: int,
         old_x: int, old_y: int, new_parent_id: str | None,
         new_x: int, new_y: int, old_doc, new_doc,
+        parent_dim_changes: tuple[str, dict] | None = None,
     ) -> None:
         """Compute the widget's post-reparent sibling index and push a
         single ``ReparentCommand``. Used for in-doc reparents and for
@@ -1215,6 +1236,7 @@ class WidgetDragController:
             new_y=new_y,
             old_document_id=old_doc_id,
             new_document_id=new_doc_id,
+            parent_dim_changes=parent_dim_changes,
         ))
 
     # ------------------------------------------------------------------
@@ -1250,7 +1272,9 @@ class WidgetDragController:
         )
         if target_layout != "grid":
             return False
-        row, col = self._grid_indicator.cell_at(target, cx, cy)
+        cursor_row, cursor_col = self._grid_indicator.cell_at(
+            target, cx, cy,
+        )
         old_parent_id = node.parent.id if node.parent is not None else None
         new_parent_id = target.id
         try:
@@ -1258,26 +1282,63 @@ class WidgetDragController:
             old_col = int(node.properties.get("grid_column", 0) or 0)
         except (TypeError, ValueError):
             old_row, old_col = 0, 0
+        # Route the cursor cell through resolve_grid_drop_cell so a
+        # drop onto an occupied cell gets redirected to the next
+        # free cell (or grows the grid). Without this the user
+        # could stack two children on the exact same cell — silent
+        # overlap, invisible on canvas.
+        resolved_row, resolved_col, dim_updates = resolve_grid_drop_cell(
+            target.children,
+            target.properties,
+            preferred_row=cursor_row,
+            preferred_col=cursor_col,
+            exclude_node=node,
+        )
         if new_parent_id == old_parent_id:
-            if (row, col) == (old_row, old_col):
+            if (resolved_row, resolved_col) == (old_row, old_col):
                 return True  # same cell — no-op drop
-            self.project.update_property(nid, "grid_row", row)
-            self.project.update_property(nid, "grid_column", col)
+            parent_before = (
+                {k: target.properties.get(k) for k in dim_updates}
+                if dim_updates else None
+            )
+            if dim_updates:
+                for key, val in dim_updates.items():
+                    self.project.update_property(target.id, key, val)
+            self.project.update_property(nid, "grid_row", resolved_row)
+            self.project.update_property(nid, "grid_column", resolved_col)
             self.project.history.push(
                 MultiChangePropertyCommand(
                     nid,
                     {
-                        "grid_row": (old_row, row),
-                        "grid_column": (old_col, col),
+                        "grid_row": (old_row, resolved_row),
+                        "grid_column": (old_col, resolved_col),
                     },
+                    parent_dim_changes=(
+                        target.id,
+                        {
+                            k: (parent_before[k], dim_updates[k])
+                            for k in dim_updates
+                        },
+                    ) if dim_updates else None,
                 ),
             )
             return True
         # Different parent — pre-set the new cell so the reparent's
-        # widget rebuild lands at the user's chosen cell, then fall
+        # widget rebuild lands at the resolved cell, then fall
         # through to the standard reparent flow for the destroy /
         # recreate + history push.
-        node.properties["grid_row"] = row
-        node.properties["grid_column"] = col
+        node.properties["grid_row"] = resolved_row
+        node.properties["grid_column"] = resolved_col
+        if dim_updates:
+            parent_before = {k: target.properties.get(k) for k in dim_updates}
+            for key, val in dim_updates.items():
+                self.project.update_property(target.id, key, val)
+            drag["parent_dim_changes"] = (
+                target.id,
+                {
+                    k: (parent_before[k], dim_updates[k])
+                    for k in dim_updates
+                },
+            )
         self._maybe_reparent_dragged(event, drag)
         return True

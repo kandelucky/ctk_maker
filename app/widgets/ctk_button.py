@@ -23,6 +23,7 @@ from app.widgets.base import WidgetDescriptor
 class CTkButtonDescriptor(WidgetDescriptor):
     type_name = "CTkButton"
     display_name = "Button"
+    prefers_fill_in_layout = True
 
     default_properties = {
         # Geometry

@@ -18,6 +18,7 @@ from app.widgets.base import WidgetDescriptor
 class CTkLabelDescriptor(WidgetDescriptor):
     type_name = "CTkLabel"
     display_name = "Label"
+    prefers_fill_in_layout = True
 
     default_properties = {
         # Geometry

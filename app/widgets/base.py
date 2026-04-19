@@ -22,6 +22,15 @@ class WidgetDescriptor:
     # destroy + recreate via `recreate_triggers`. The exporter DOES emit
     # them because exported code builds the widget via `__init__`.
     init_only_keys: set[str] = set()
+    # Auto-fill hint for layout containers. When True, a fresh drop into
+    # a vbox / hbox / grid parent commits ``stretch="fill"`` (pack) or
+    # ``grid_sticky="nsew"`` instead of the schema default, so typical
+    # form widgets (Button, Entry, Label, Frame, …) land edge-to-edge
+    # without a manual Inspector tweak. Widgets with natural sizing
+    # (CheckBox, Switch, OptionMenu, …) leave this False and keep the
+    # fixed default. Reparents don't trigger this — only the initial
+    # palette-drop / paste / duplicate add path.
+    prefers_fill_in_layout: bool = False
 
     @classmethod
     def transform_properties(cls, properties: dict) -> dict:

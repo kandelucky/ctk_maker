@@ -163,7 +163,7 @@ GRID_STICKY_OPTIONS = (
 STRETCH_OPTIONS = ("fixed", "fill", "grow")
 STRETCH_TO_INT: dict[str, int] = {"fixed": 0, "fill": 1, "grow": 2}
 STRETCH_INT_TO_LABEL: dict[int, str] = {0: "fixed", 1: "fill", 2: "grow"}
-LAYOUT_TYPE_OPTIONS = LAYOUT_TYPES
+LAYOUT_TYPE_OPTIONS = ("vbox", "hbox", "grid")
 
 
 _PACK_ROWS: list[dict] = [
@@ -283,3 +283,77 @@ def next_free_grid_cell(
             if (r, c) not in occupied:
                 return r, c
     return 0, 0
+
+
+def _grid_occupancy(
+    siblings, exclude_node=None,
+) -> set[tuple[int, int]]:
+    """Return the ``{(row, col)}`` set claimed by ``siblings``,
+    optionally skipping ``exclude_node`` (useful when resolving
+    a cell for an already-placed child that's being moved)."""
+    occupied: set[tuple[int, int]] = set()
+    for sibling in siblings:
+        if exclude_node is not None and sibling is exclude_node:
+            continue
+        try:
+            r = int(sibling.properties.get("grid_row", 0) or 0)
+            c = int(sibling.properties.get("grid_column", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        occupied.add((r, c))
+    return occupied
+
+
+def resolve_grid_drop_cell(
+    siblings, container_props: dict | None,
+    preferred_row: int | None = None,
+    preferred_col: int | None = None,
+    exclude_node=None,
+) -> tuple[int, int, dict | None]:
+    """Pick a grid cell for placing a child. Returns a 3-tuple
+    ``(row, col, dim_updates)`` where:
+
+    - Preferred cell is free → ``(preferred_row, preferred_col, None)``
+    - Preferred is taken (or not supplied) but the grid has a free
+      cell → ``(next_free_row, next_free_col, None)`` via row-major
+      scan
+    - Every declared cell is taken → grow the grid by one row or
+      column (whichever keeps the dimensions squarer) and return the
+      new cell along with ``{"grid_rows": N, "grid_cols": M}`` so
+      the caller can apply the dimension update to the container.
+
+    Used as the single entry point for every place-widget-in-grid
+    path (palette drop, drag-to-cell, paste, duplicate, manual
+    property edit, layout_type swap). Blocks the "silent overlap at
+    (0, 0)" behaviour that used to kick in whenever a placement
+    request collided with a sibling or the grid was full.
+    """
+    if container_props is None:
+        container_props = {}
+    rows, cols = grid_effective_dims(len(siblings), container_props)
+    occupied = _grid_occupancy(siblings, exclude_node=exclude_node)
+    # 1. Preferred cell if supplied, in-bounds, and free.
+    if (
+        preferred_row is not None and preferred_col is not None
+        and 0 <= preferred_row < rows and 0 <= preferred_col < cols
+        and (preferred_row, preferred_col) not in occupied
+    ):
+        return preferred_row, preferred_col, None
+    # 2. Row-major scan for the next free cell.
+    for r in range(rows):
+        for c in range(cols):
+            if (r, c) not in occupied:
+                return r, c, None
+    # 3. Grid full — grow by one dimension. Pick the axis that keeps
+    #    the grid closer to square. Ties break toward more rows
+    #    (matches the typical "read top-down" flow).
+    if rows <= cols:
+        new_rows = rows + 1
+        new_cols = cols
+        new_cell = (rows, 0)
+    else:
+        new_rows = rows
+        new_cols = cols + 1
+        new_cell = (0, cols)
+    dim_updates = {"grid_rows": new_rows, "grid_cols": new_cols}
+    return new_cell[0], new_cell[1], dim_updates

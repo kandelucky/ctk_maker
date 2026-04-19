@@ -20,6 +20,7 @@ from app.widgets.base import WidgetDescriptor
 class CTkEntryDescriptor(WidgetDescriptor):
     type_name = "CTkEntry"
     display_name = "Entry"
+    prefers_fill_in_layout = True
 
     default_properties = {
         # Geometry

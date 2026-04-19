@@ -97,18 +97,19 @@ def push_zorder_history(
 
 def build_bulk_add_entries(
     project: "Project", widget_ids,
-) -> list[tuple[dict, str | None, int, str | None]]:
-    """Snapshot a batch of already-added widgets into the 4-tuple
+) -> list[tuple[dict, str | None, int, str | None, tuple | None]]:
+    """Snapshot a batch of already-added widgets into the 5-tuple
     shape ``BulkAddCommand`` expects. Used by every paste / duplicate
     path across the UI — the call site passes the fresh ids just
     returned by ``paste_from_clipboard`` / ``duplicate_widget``, and
     this helper walks each one to capture its parent, sibling index,
-    and owning document so undo/redo can restore it in place.
+    owning document, and any grid auto-grow side-effect so undo/redo
+    restore both the widget AND the parent's grid dims.
 
     Entries for ids that don't resolve (a deleted widget mid-flight)
     are skipped rather than raising, matching the old per-site loops.
     """
-    entries: list[tuple[dict, str | None, int, str | None]] = []
+    entries: list[tuple[dict, str | None, int, str | None, tuple | None]] = []
     for nid in widget_ids:
         node = project.get_widget(nid)
         if node is None:
@@ -124,7 +125,18 @@ def build_bulk_add_entries(
             index = len(siblings) - 1
         owning_doc = project.find_document_for_widget(nid)
         document_id = owning_doc.id if owning_doc is not None else None
-        entries.append((node.to_dict(), parent_id, index, document_id))
+        # Harvest the auto-grow stash left by _auto_assign_grid_cell so
+        # undo can revert the parent's grid_rows / grid_cols. Clear the
+        # attribute so re-reading doesn't double-count.
+        dim_changes = getattr(node, "_pending_parent_dim_changes", None)
+        if hasattr(node, "_pending_parent_dim_changes"):
+            try:
+                delattr(node, "_pending_parent_dim_changes")
+            except AttributeError:
+                pass
+        entries.append(
+            (node.to_dict(), parent_id, index, document_id, dim_changes),
+        )
     return entries
 
 
@@ -141,13 +153,37 @@ def _restore_widget(
     Resolving the doc + re-inserting at the original index used to be
     open-coded in four places; any drift (a missing ``document_id``
     pass-through, for instance) breaks cross-document undo. Funnel
-    through here so the contract stays one line wide.
+    through here so the contract stays one line wide. Walks the
+    snapshot subtree and adds each node individually so the
+    ``widget_added`` event fires per node — without that, only the
+    root's view gets created and a Frame's children never re-render
+    on undo.
     """
     node = WidgetNode.from_dict(snapshot)
-    project.add_widget(node, parent_id=parent_id, document_id=document_id)
+    _add_subtree_recursive(project, node, parent_id, document_id)
     if index is not None:
         project.reparent(node.id, parent_id, index=index)
     return node
+
+
+def _add_subtree_recursive(
+    project: "Project",
+    node: WidgetNode,
+    parent_id: str | None,
+    document_id: str | None = None,
+) -> None:
+    """Detach children + add root + recurse — mirrors paste's
+    ``_paste_recursive`` so every node gets its own ``widget_added``
+    event and the workspace can build a tk widget for it. Without
+    this, restoring a Frame from a Delete snapshot left every
+    descendant invisible (in the model but never rendered)."""
+    children_copy = list(node.children)
+    node.children = []
+    node.parent = None
+    project.add_widget(node, parent_id=parent_id, document_id=document_id)
+    for child in children_copy:
+        child.parent = None
+        _add_subtree_recursive(project, child, parent_id=node.id)
 
 
 class Command:
@@ -177,15 +213,28 @@ class AddWidgetCommand(Command):
         parent_id: str | None,
         index: int | None = None,
         document_id: str | None = None,
+        parent_dim_changes: tuple[str, dict] | None = None,
     ):
         self._snapshot = snapshot
         self._parent_id = parent_id
         self._index = index
         self._document_id = document_id
+        # (parent_id, {prop_name: (before, after)}) — set when the add
+        # triggered an auto-grow of the target grid container. Undo
+        # restores the before values; redo relies on the widget_added
+        # event handler to regrow the grid naturally.
+        self._parent_dim_changes = parent_dim_changes
         self.description = f"Add {snapshot.get('widget_type', 'widget')}"
 
     def undo(self, project: "Project") -> None:
         project.remove_widget(self._snapshot["id"])
+        if self._parent_dim_changes is not None:
+            parent_id, changes = self._parent_dim_changes
+            for key, (before, _after) in changes.items():
+                try:
+                    project.update_property(parent_id, key, before)
+                except Exception:
+                    pass
 
     def redo(self, project: "Project") -> None:
         node = _restore_widget(
@@ -315,18 +364,37 @@ class MultiChangePropertyCommand(Command):
         self,
         widget_id: str,
         changes: dict,
+        parent_dim_changes: tuple[str, dict] | None = None,
     ):
         # changes: {prop_name: (before, after)}
         self.widget_id = widget_id
         self.changes = dict(changes)
+        # (container_id, {prop_name: (before, after)}) — grid auto-grow
+        # side-effect on same-parent grid drops. Same pattern as
+        # AddWidgetCommand / ReparentCommand.
+        self._parent_dim_changes = parent_dim_changes
         self.description = f"Change {len(changes)} properties"
 
     def undo(self, project: "Project") -> None:
         for name, (before, _after) in self.changes.items():
             project.update_property(self.widget_id, name, before)
+        if self._parent_dim_changes is not None:
+            parent_id, changes = self._parent_dim_changes
+            for key, (before, _after) in changes.items():
+                try:
+                    project.update_property(parent_id, key, before)
+                except Exception:
+                    pass
         project.select_widget(self.widget_id)
 
     def redo(self, project: "Project") -> None:
+        if self._parent_dim_changes is not None:
+            parent_id, changes = self._parent_dim_changes
+            for key, (_before, after) in changes.items():
+                try:
+                    project.update_property(parent_id, key, after)
+                except Exception:
+                    pass
         for name, (_before, after) in self.changes.items():
             project.update_property(self.widget_id, name, after)
         project.select_widget(self.widget_id)
@@ -410,6 +478,7 @@ class ReparentCommand(Command):
         new_y: int,
         old_document_id: str | None = None,
         new_document_id: str | None = None,
+        parent_dim_changes: tuple[str, dict] | None = None,
     ):
         self.widget_id = widget_id
         self.old_parent_id = old_parent_id
@@ -422,6 +491,11 @@ class ReparentCommand(Command):
         self.new_y = new_y
         self.old_document_id = old_document_id
         self.new_document_id = new_document_id
+        # (container_id, {prop_name: (before, after)}) — set when the
+        # drop triggered an auto-grow of the target grid container.
+        # undo reverts the dims after moving the widget back; redo
+        # re-applies them so the grid grows in step with the reparent.
+        self._parent_dim_changes = parent_dim_changes
         self.description = "Reparent widget"
 
     def _move(
@@ -474,8 +548,22 @@ class ReparentCommand(Command):
             project, self.old_parent_id, self.old_index,
             self.old_x, self.old_y, self.old_document_id,
         )
+        if self._parent_dim_changes is not None:
+            parent_id, changes = self._parent_dim_changes
+            for key, (before, _after) in changes.items():
+                try:
+                    project.update_property(parent_id, key, before)
+                except Exception:
+                    pass
 
     def redo(self, project: "Project") -> None:
+        if self._parent_dim_changes is not None:
+            parent_id, changes = self._parent_dim_changes
+            for key, (_before, after) in changes.items():
+                try:
+                    project.update_property(parent_id, key, after)
+                except Exception:
+                    pass
         self._move(
             project, self.new_parent_id, self.new_index,
             self.new_x, self.new_y, self.new_document_id,
@@ -547,30 +635,60 @@ class RenameCommand(Command):
 class BulkAddCommand(Command):
     """Paste / duplicate — restores multiple widget subtrees from
     snapshots. Each entry carries its own
-    ``(snapshot, parent_id, index, document_id)`` so z-order and the
-    owning document both survive undo + redo round trips. ``document_id``
-    only matters for top-level entries (``parent_id`` is None); nested
-    entries inherit their doc from the parent that already exists.
+    ``(snapshot, parent_id, index, document_id, parent_dim_changes)``
+    so z-order, owning document, AND grid auto-grow side-effects all
+    survive undo + redo. ``document_id`` only matters for top-level
+    entries (``parent_id`` is None); nested entries inherit their doc
+    from the parent that already exists. ``parent_dim_changes`` is
+    ``(container_id, {prop: (before, after)})`` when the add grew the
+    target grid, else None.
     """
 
     def __init__(
         self,
-        entries: list[tuple[dict, str | None, int, str | None]],
+        entries: list,
         label: str = "Paste",
     ):
-        self._entries = entries
+        # Back-compat: accept legacy 4-tuples by padding with None.
+        normalised = []
+        for entry in entries:
+            if len(entry) == 4:
+                entry = (*entry, None)
+            normalised.append(entry)
+        self._entries = normalised
         self.description = (
-            f"{label} {len(entries)} widgets" if len(entries) > 1
+            f"{label} {len(normalised)} widgets" if len(normalised) > 1
             else label
         )
 
     def undo(self, project: "Project") -> None:
-        for snapshot, _parent_id, _index, _doc_id in self._entries:
+        # Reverse order so grid-dim reverts unwind in the opposite
+        # order they were applied — otherwise two duplicates into the
+        # same grid would restore dims out of sequence.
+        for snapshot, _parent_id, _index, _doc_id, dim_changes in (
+            reversed(self._entries)
+        ):
             project.remove_widget(snapshot["id"])
+            if dim_changes is not None:
+                container_id, changes = dim_changes
+                for key, (before, _after) in changes.items():
+                    try:
+                        project.update_property(container_id, key, before)
+                    except Exception:
+                        pass
 
     def redo(self, project: "Project") -> None:
         restored_ids: list[str] = []
-        for snapshot, parent_id, index, document_id in self._entries:
+        for snapshot, parent_id, index, document_id, dim_changes in (
+            self._entries
+        ):
+            if dim_changes is not None:
+                container_id, changes = dim_changes
+                for key, (_before, after) in changes.items():
+                    try:
+                        project.update_property(container_id, key, after)
+                    except Exception:
+                        pass
             node = _restore_widget(
                 project, snapshot, parent_id, index, document_id,
             )
