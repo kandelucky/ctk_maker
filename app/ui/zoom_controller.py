@@ -161,6 +161,18 @@ class ZoomController:
     def apply_to_widget(
         self, widget, window_id, properties: dict, document=None,
     ) -> None:
+        # Skip destroyed widgets up-front. ``winfo_exists()`` on a
+        # gone widget returns 0; catching ``tk.TclError`` covers the
+        # even more degenerate "interpreter already tearing down"
+        # case. Without this guard the per-call try/except blocks
+        # below all swallow the same "widget is gone" TclError and
+        # silently hide any legitimate option / geometry errors that
+        # share the same exception class — harder to debug later.
+        try:
+            if not widget.winfo_exists():
+                return
+        except tk.TclError:
+            return
         try:
             lx = int(properties.get("x", 0))
             ly = int(properties.get("y", 0))

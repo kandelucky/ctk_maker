@@ -204,70 +204,101 @@ class Renderer:
         on top of it. The mask is faked by flipping the widget item's
         ``state`` to ``hidden`` whenever it's covered.
         """
-        # Doc drag hide-mode intentionally hides every widget in the
-        # dragged document; flipping their state back to "normal" here
-        # would defeat the optimisation on every motion event. Skip
-        # the whole pass — the release-time apply_all + visibility
-        # refresh resyncs state once the drag ends.
-        if getattr(self.workspace, "_doc_drag_hide_active", False):
+        if self._is_doc_drag_active():
             return
+        doc_bboxes = self._compute_doc_bboxes()
+        render_order = self.iter_render_order()
+        # Render order is [inactive… , active]. A widget belonging
+        # to index ``i`` is "behind" every doc at index > i, so only
+        # those are candidates for covering it.
+        for i, doc in enumerate(render_order):
+            covering_bboxes = [
+                doc_bboxes[other.id]
+                for other in render_order[i + 1:]
+            ]
+            self._update_visibility_for_document(doc, covering_bboxes)
+
+    def _is_doc_drag_active(self) -> bool:
+        """Doc drag hide-mode intentionally hides every widget in the
+        dragged document; flipping their state back to ``normal``
+        here would defeat the optimisation on every motion event.
+        Skip the whole pass — the release-time ``apply_all`` +
+        visibility refresh resyncs state once the drag ends.
+        """
+        return bool(
+            getattr(self.workspace, "_doc_drag_hide_active", False),
+        )
+
+    def _compute_doc_bboxes(
+        self,
+    ) -> dict[str, tuple[int, int, int, int]]:
+        """Canvas-space rectangle for every document, keyed by doc id.
+        Used to intersect each widget against every doc that sits
+        above its owning doc in render order.
+        """
         zoom = self.zoom.value
         pad = DOCUMENT_PADDING
-        render_order = self.iter_render_order()
-        doc_bboxes: dict[str, tuple[int, int, int, int]] = {}
-        for doc in render_order:
+        bboxes: dict[str, tuple[int, int, int, int]] = {}
+        for doc in self.project.documents:
             dw = int(doc.width * zoom)
             dh = int(doc.height * zoom)
             x1 = pad + int(doc.canvas_x * zoom)
             y1 = pad + int(doc.canvas_y * zoom)
-            doc_bboxes[doc.id] = (x1, y1, x1 + dw, y1 + dh)
-        # Render order is [inactive… , active]. A widget belonging
-        # to index i is "behind" every doc at index > i, so only
-        # those are candidates for covering it.
+            bboxes[doc.id] = (x1, y1, x1 + dw, y1 + dh)
+        return bboxes
+
+    def _update_visibility_for_document(
+        self, doc, covering_bboxes: list,
+    ) -> None:
+        """Flip ``state`` for every top-level widget in ``doc``. A
+        widget hides if the user hid it OR its bbox intersects any
+        doc that sits above ``doc`` in render order.
+        """
         canvas = self.canvas
-        for i, doc in enumerate(render_order):
-            covering = [
-                doc_bboxes[other.id]
-                for other in render_order[i + 1:]
-            ]
-            if not covering:
-                # Frontmost doc — its widgets never get hidden.
-                for node in list(doc.root_widgets):
-                    entry = self.widget_views.get(node.id)
-                    if entry is None:
-                        continue
-                    _w, window_id = entry
-                    if window_id is None:
-                        continue
-                    try:
-                        canvas.itemconfigure(window_id, state="normal")
-                    except tk.TclError:
-                        pass
+        for node in list(doc.root_widgets):
+            entry = self.widget_views.get(node.id)
+            if entry is None:
                 continue
-            for node in list(doc.root_widgets):
-                entry = self.widget_views.get(node.id)
-                if entry is None:
-                    continue
-                widget, window_id = entry
-                if window_id is None:
-                    continue
-                bbox = self.workspace._widget_canvas_bbox(widget)
-                if bbox is None:
-                    continue
-                wx1, wy1, wx2, wy2 = bbox
-                # Bbox-vs-bbox intersection — a single-pixel touch
-                # with any covering document hides the widget.
-                hidden = any(
-                    wx1 < x2 and wx2 > x1 and wy1 < y2 and wy2 > y1
-                    for (x1, y1, x2, y2) in covering
+            widget, window_id = entry
+            if window_id is None:
+                continue
+            widget_bbox = (
+                self.workspace._widget_canvas_bbox(widget)
+                if covering_bboxes else None
+            )
+            # When no covering docs exist (frontmost), skip the bbox
+            # lookup entirely — ``_should_hide_widget`` only needs
+            # ``node.visible`` in that case.
+            if covering_bboxes and widget_bbox is None:
+                continue
+            hidden = self._should_hide_widget(
+                node, widget_bbox, covering_bboxes,
+            )
+            try:
+                canvas.itemconfigure(
+                    window_id,
+                    state="hidden" if hidden else "normal",
                 )
-                try:
-                    canvas.itemconfigure(
-                        window_id,
-                        state="hidden" if hidden else "normal",
-                    )
-                except tk.TclError:
-                    pass
+            except tk.TclError:
+                pass
+
+    def _should_hide_widget(
+        self, node, widget_bbox, covering_bboxes: list,
+    ) -> bool:
+        """Decide whether a widget's canvas item should be hidden.
+        User visibility wins unconditionally; otherwise a single-pixel
+        bbox overlap with any covering doc hides the widget (tk's
+        two-layer limit workaround).
+        """
+        if not node.visible:
+            return True
+        if not covering_bboxes or widget_bbox is None:
+            return False
+        wx1, wy1, wx2, wy2 = widget_bbox
+        return any(
+            wx1 < x2 and wx2 > x1 and wy1 < y2 and wy2 > y1
+            for (x1, y1, x2, y2) in covering_bboxes
+        )
 
     # ------------------------------------------------------------------
     # Event hooks

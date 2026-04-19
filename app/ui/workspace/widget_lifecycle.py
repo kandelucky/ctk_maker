@@ -135,98 +135,36 @@ class WidgetLifecycle:
         if descriptor is None:
             return
         parent_node = node.parent
-        if parent_node is None:
-            master = self.canvas
-        else:
-            parent_entry = self.widget_views.get(parent_node.id)
-            if parent_entry is None:
-                master = self.canvas
-            else:
-                master, _ = parent_entry
+        master = self._resolve_master(parent_node)
+        if parent_node is not None:
             self._auto_assign_grid_cell(parent_node, node)
-        init_kwargs = ws._get_radio_init_kwargs(node)
-        widget = descriptor.create_widget(
-            master, _strip_layout_keys(node.properties),
-            init_kwargs=init_kwargs,
+        widget, anchor_widget = self._instantiate_widget(
+            descriptor, node, master,
         )
-        ws._sync_radio_initial(widget, node)
-        anchor_widget = descriptor.canvas_anchor(widget)
-        if anchor_widget is not widget:
-            self.anchor_views[node.id] = anchor_widget
-        # Containers must keep their configured size in the designer —
-        # tk's default ``propagate(True)`` would shrink a Frame to fit
-        # its children the moment a vbox/hbox child is packed into it,
-        # hiding the Frame's outline and breaking drop-into UX. Disable
-        # on every container; ``place`` children don't trigger it
-        # anyway so non-pack modes are unaffected.
-        if getattr(descriptor, "is_container", False):
-            for forget_target in {widget, anchor_widget}:
-                try:
-                    forget_target.pack_propagate(False)
-                except tk.TclError:
-                    pass
-                try:
-                    forget_target.grid_propagate(False)
-                except tk.TclError:
-                    pass
-
-        lx = int(node.properties.get("x", 0))
-        ly = int(node.properties.get("y", 0))
-        lw = int(node.properties.get("width", 0) or 0)
-        lh = int(node.properties.get("height", 0) or 0)
+        self._disable_container_propagate(
+            widget, anchor_widget, descriptor,
+        )
+        try:
+            lx = int(node.properties.get("x", 0))
+            ly = int(node.properties.get("y", 0))
+        except (TypeError, ValueError):
+            lx = ly = 0
+        try:
+            lw = int(node.properties.get("width", 0) or 0)
+            lh = int(node.properties.get("height", 0) or 0)
+        except (TypeError, ValueError):
+            lw = lh = 0
         is_composite = anchor_widget is not widget
         owning_doc = self.project.find_document_for_widget(node.id)
         if parent_node is None:
-            # Top-level widgets sit inside a specific document; the
-            # document's canvas_x/y offset feeds into logical_to_canvas
-            # so a second document at canvas_x=900 lands its widgets
-            # at (pad + 900*zoom + x*zoom).
-            cx, cy = self.zoom.logical_to_canvas(
-                lx, ly, document=owning_doc,
+            window_id = self._place_top_level(
+                anchor_widget, owning_doc, lx, ly, lw, lh, is_composite,
             )
-            kwargs = {"anchor": "nw", "window": anchor_widget}
-            # Composite widgets (CTkScrollableFrame) don't propagate
-            # their requested size to the canvas; pin the canvas item
-            # size explicitly so the outer container doesn't grow.
-            if is_composite and lw > 0 and lh > 0:
-                kwargs["width"] = max(1, int(lw * self.zoom.value))
-                kwargs["height"] = max(1, int(lh * self.zoom.value))
-            window_id = self.canvas.create_window(cx, cy, **kwargs)
         else:
-            # Nested: the geometry manager depends on parent's
-            # ``layout_type``. ``place`` keeps absolute x/y;
-            # ``vbox`` / ``hbox`` / ``grid`` switch to real
-            # ``.pack()`` / ``.grid()`` so the canvas preview matches
-            # the exported runtime.
-            manager, mgr_kwargs = _child_manager_kwargs(
-                parent_node, node.properties, zoom=self.zoom.value,
+            self._place_nested(
+                anchor_widget, parent_node, node,
+                lx, ly, lw, lh, is_composite,
             )
-            if manager == "pack":
-                if is_composite and lw > 0 and lh > 0:
-                    # Composite widgets don't auto-size — reserve the
-                    # configured dimensions so pack has something to
-                    # work with.
-                    anchor_widget.configure(
-                        width=max(1, int(lw * self.zoom.value)),
-                        height=max(1, int(lh * self.zoom.value)),
-                    )
-                anchor_widget.pack(**mgr_kwargs)
-            elif manager == "grid":
-                # Placement deferred until after apply_to_widget — see
-                # the re-apply block below. apply_to_widget's
-                # place_configure skips widgets not currently managed
-                # by place, so leaving the widget unplaced here avoids
-                # the 0,0 override.
-                pass
-            else:
-                place_kwargs: dict = {
-                    "x": int(lx * self.zoom.value),
-                    "y": int(ly * self.zoom.value),
-                }
-                if is_composite and lw > 0 and lh > 0:
-                    place_kwargs["width"] = max(1, int(lw * self.zoom.value))
-                    place_kwargs["height"] = max(1, int(lh * self.zoom.value))
-                anchor_widget.place(**place_kwargs)
             window_id = None
         # Pass the owning document so apply_to_widget lands the
         # canvas coords against the *correct* form's offset — not the
@@ -248,6 +186,136 @@ class WidgetLifecycle:
         ws._bind_widget_events(anchor_widget, node.id)
         if not node.visible:
             self._set_widget_visibility(widget, window_id, node, False)
+
+    # ------------------------------------------------------------------
+    # on_widget_added helpers
+    # ------------------------------------------------------------------
+    def _resolve_master(self, parent_node) -> tk.Widget:
+        """Return the tk master for a new widget under ``parent_node``.
+        Top-level widgets live directly on the canvas; nested widgets
+        live inside their parent's tk widget. Falls back to the canvas
+        when a parent exists in the model but its view hasn't been
+        created yet (e.g. mid-reparent).
+        """
+        if parent_node is None:
+            return self.canvas
+        parent_entry = self.widget_views.get(parent_node.id)
+        if parent_entry is None:
+            return self.canvas
+        master, _ = parent_entry
+        return master
+
+    def _instantiate_widget(
+        self, descriptor, node, master,
+    ) -> tuple:
+        """Build the tk / CTk widget via ``descriptor`` and return
+        ``(widget, anchor_widget)``. The anchor differs from the widget
+        for composite descriptors (CTkScrollableFrame's inner canvas,
+        CTkTabview's button bar parent, etc.) where events + canvas
+        placement target the outer container, not the inner widget.
+        """
+        ws = self.workspace
+        init_kwargs = ws._get_radio_init_kwargs(node)
+        widget = descriptor.create_widget(
+            master, _strip_layout_keys(node.properties),
+            init_kwargs=init_kwargs,
+        )
+        ws._sync_radio_initial(widget, node)
+        anchor_widget = descriptor.canvas_anchor(widget)
+        if anchor_widget is not widget:
+            self.anchor_views[node.id] = anchor_widget
+        return widget, anchor_widget
+
+    def _disable_container_propagate(
+        self, widget, anchor_widget, descriptor,
+    ) -> None:
+        """Pin container size — tk's default ``propagate(True)`` would
+        shrink a Frame to fit its children the moment a vbox/hbox
+        child is packed into it, hiding the Frame's outline and
+        breaking drop-into UX. Disabled on every container; ``place``
+        children don't trigger propagate anyway so non-pack modes
+        are unaffected.
+        """
+        if not getattr(descriptor, "is_container", False):
+            return
+        for forget_target in {widget, anchor_widget}:
+            # CTkScrollableFrame overrides pack_propagate /
+            # grid_propagate to take no argument (the inner canvas
+            # it wraps can't honour "don't shrink to content"), so
+            # the call raises TypeError instead of tk.TclError.
+            # Catch both so a composite container doesn't crash the
+            # whole on_widget_added pipeline on load.
+            try:
+                forget_target.pack_propagate(False)
+            except (tk.TclError, TypeError):
+                pass
+            try:
+                forget_target.grid_propagate(False)
+            except (tk.TclError, TypeError):
+                pass
+
+    def _place_top_level(
+        self, anchor_widget, owning_doc,
+        lx: int, ly: int, lw: int, lh: int, is_composite: bool,
+    ) -> int:
+        """Canvas.create_window for a top-level widget. The owning
+        doc's ``canvas_x`` / ``canvas_y`` offset feeds into
+        ``logical_to_canvas`` so a second document at ``canvas_x=900``
+        lands its widgets at ``(pad + 900*zoom + x*zoom)`` — not the
+        active form's offset.
+        """
+        cx, cy = self.zoom.logical_to_canvas(
+            lx, ly, document=owning_doc,
+        )
+        kwargs = {"anchor": "nw", "window": anchor_widget}
+        # Composite widgets (CTkScrollableFrame) don't propagate their
+        # requested size to the canvas; pin the canvas item size
+        # explicitly so the outer container doesn't grow.
+        if is_composite and lw > 0 and lh > 0:
+            kwargs["width"] = max(1, int(lw * self.zoom.value))
+            kwargs["height"] = max(1, int(lh * self.zoom.value))
+        return self.canvas.create_window(cx, cy, **kwargs)
+
+    def _place_nested(
+        self, anchor_widget, parent_node, node,
+        lx: int, ly: int, lw: int, lh: int, is_composite: bool,
+    ) -> None:
+        """Pack / place a nested child under its parent. The geometry
+        manager depends on the parent's ``layout_type``: ``place``
+        keeps absolute x/y, ``vbox`` / ``hbox`` switch to real
+        ``.pack()`` so canvas preview matches exported runtime, and
+        ``grid`` is placement-deferred — ``apply_child_manager``
+        handles it post-``apply_to_widget`` so fresh drops and manual
+        moves share the same code path.
+        """
+        manager, mgr_kwargs = _child_manager_kwargs(
+            parent_node, node.properties, zoom=self.zoom.value,
+        )
+        if manager == "pack":
+            if is_composite and lw > 0 and lh > 0:
+                # Composite widgets don't auto-size — reserve the
+                # configured dimensions so pack has something to work
+                # with.
+                anchor_widget.configure(
+                    width=max(1, int(lw * self.zoom.value)),
+                    height=max(1, int(lh * self.zoom.value)),
+                )
+            anchor_widget.pack(**mgr_kwargs)
+        elif manager == "grid":
+            # Placement deferred — see the apply_child_manager block
+            # in ``on_widget_added`` that runs after apply_to_widget.
+            # Leaving the widget unplaced here avoids place_configure
+            # overriding the grid placement we're about to apply.
+            return
+        else:
+            place_kwargs: dict = {
+                "x": int(lx * self.zoom.value),
+                "y": int(ly * self.zoom.value),
+            }
+            if is_composite and lw > 0 and lh > 0:
+                place_kwargs["width"] = max(1, int(lw * self.zoom.value))
+                place_kwargs["height"] = max(1, int(lh * self.zoom.value))
+            anchor_widget.place(**place_kwargs)
 
     def create_widget_subtree(self, node) -> None:
         self.on_widget_added(node)
@@ -399,11 +467,14 @@ class WidgetLifecycle:
     def _set_widget_visibility(
         self, widget, window_id, node, visible: bool,
     ) -> None:
-        """Show or hide a widget in the workspace without destroying
-        it. Canvas children toggle via `canvas.itemconfigure(state=…)`,
-        nested children toggle via fresh `place()` / `place_forget()`
-        (can't use `place_configure` after a forget — no place info
-        to edit). The model is unchanged — pure rendering control."""
+        """Show or hide a widget without destroying it. Canvas
+        children toggle via ``canvas.itemconfigure(state=…)``; nested
+        children use the same geometry manager their parent dictates
+        (place / pack / grid). Earlier this path blindly called
+        ``widget.place(x, y)`` on unhide — grid children landed at
+        cell (0, 0) because their real placement key is
+        ``grid_row``/``grid_column``, not ``x/y``.
+        """
         if window_id is not None:
             try:
                 self.canvas.itemconfigure(
@@ -412,25 +483,44 @@ class WidgetLifecycle:
             except tk.TclError:
                 pass
             return
-        if visible:
-            try:
-                lx = int(node.properties.get("x", 0))
-                ly = int(node.properties.get("y", 0))
-                widget.place(
-                    x=int(lx * self.zoom.value),
-                    y=int(ly * self.zoom.value),
-                )
-                lw = int(node.properties.get("width", 0))
-                lh = int(node.properties.get("height", 0))
-                if lw > 0 and lh > 0:
-                    widget.configure(
-                        width=max(1, int(lw * self.zoom.value)),
-                        height=max(1, int(lh * self.zoom.value)),
-                    )
-            except (TypeError, ValueError, tk.TclError):
-                pass
-        else:
-            try:
-                widget.place_forget()
-            except tk.TclError:
-                pass
+        # Nested child — operate on the anchor widget if composite.
+        anchor_widget = self.anchor_views.get(node.id, widget)
+        if not visible:
+            # Unknown which manager is active (pack/grid/place) —
+            # forget all three so every path is covered.
+            for forget in ("place_forget", "pack_forget", "grid_forget"):
+                try:
+                    getattr(anchor_widget, forget)()
+                except tk.TclError:
+                    pass
+            return
+        # Re-establish placement under the parent's layout. Same
+        # dispatch as on_widget_added so grid / pack / place all
+        # flow through one codepath.
+        parent_node = node.parent
+        if parent_node is None:
+            return
+        try:
+            lx = int(node.properties.get("x", 0))
+            ly = int(node.properties.get("y", 0))
+        except (TypeError, ValueError):
+            lx = ly = 0
+        try:
+            lw = int(node.properties.get("width", 0) or 0)
+            lh = int(node.properties.get("height", 0) or 0)
+        except (TypeError, ValueError):
+            lw = lh = 0
+        is_composite = anchor_widget is not widget
+        self._place_nested(
+            anchor_widget, parent_node, node,
+            lx, ly, lw, lh, is_composite,
+        )
+        # Grid parents defer placement to apply_child_manager — run
+        # it now so the child lands in its saved grid_row / column
+        # instead of the (0, 0) fallback.
+        if normalise_layout_type(
+            parent_node.properties.get("layout_type", "place"),
+        ) == "grid":
+            self.layout_overlay.apply_child_manager(
+                anchor_widget, parent_node, node,
+            )

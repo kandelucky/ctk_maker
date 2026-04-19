@@ -55,6 +55,18 @@ DRAG_THRESHOLD = 4
 # Hide widgets while the user drags and resync once on release.
 HIDE_THRESHOLD = 10
 
+# Button x-offsets from the right edge of the document rectangle —
+# laid out right-to-left in the title bar: close (✕) → min (−) →
+# tofront (⇧) → toback (⇩) → settings (⚙).
+CLOSE_X_OFFSET = 20
+MIN_X_OFFSET = 48
+SETTINGS_X_OFFSET = 78
+TOFRONT_X_OFFSET = 108
+TOBACK_X_OFFSET = 138
+# Half-width of the invisible hit-rect that sits behind each icon
+# so clicking near the glyph (not just on its pixels) registers.
+ICON_HIT_PADDING = 10
+
 
 class ChromeManager:
     """Per-workspace chrome (title bar) renderer + drag handler.
@@ -158,6 +170,12 @@ class ChromeManager:
         doc_toback_tag = f"chrome_toback:{doc.id}"
         doc_toback_img_tag = f"chrome_toback_img:{doc.id}"
         doc_close_tag = f"chrome_close:{doc.id}"
+        # Umbrella tag covering every chrome canvas item that belongs
+        # to this document. Used by ``drive_drag`` to slide the whole
+        # strip with a single ``canvas.move`` instead of a full
+        # ``_redraw_document`` per motion tick — each motion was
+        # otherwise deleting + recreating ~8 canvas items per doc.
+        doc_tag = f"chrome_doc:{doc.id}"
 
         bg_fill = CHROME_BG_COLOR if is_active else "#222222"
         # Every document wears its own accent colour — active or not.
@@ -169,7 +187,7 @@ class ChromeManager:
         self.canvas.create_rectangle(
             left, top, right, doc_top,
             fill=bg_fill, outline=bg_fill,
-            tags=(CHROME_TAG, CHROME_BG_TAG, doc_bg_tag),
+            tags=(CHROME_TAG, CHROME_BG_TAG, doc_bg_tag, doc_tag),
         )
         self.canvas.create_text(
             left + 14, mid,
@@ -177,23 +195,20 @@ class ChromeManager:
             anchor="w",
             fill=title_fg,
             font=("Segoe UI", 10),
-            tags=(CHROME_TAG, CHROME_TITLE_TAG, doc_title_tag),
+            tags=(CHROME_TAG, CHROME_TITLE_TAG, doc_title_tag, doc_tag),
         )
         if self._settings_icon is not None:
-            sx = right - 78
-            self.canvas.create_rectangle(
-                sx - 10, top + 2, sx + 10, doc_top - 2,
-                fill=bg_fill, outline="",
-                tags=(CHROME_TAG, CHROME_SETTINGS_TAG, doc_settings_tag),
-            )
-            self.canvas.create_image(
-                sx, mid,
-                image=self._settings_icon,
-                anchor="center",
-                tags=(
+            self._draw_icon_button(
+                right - SETTINGS_X_OFFSET, top, doc_top, mid, bg_fill,
+                self._settings_icon,
+                rect_tags=(
+                    CHROME_TAG, CHROME_SETTINGS_TAG,
+                    doc_settings_tag, doc_tag,
+                ),
+                image_tags=(
                     CHROME_TAG, CHROME_SETTINGS_TAG,
                     CHROME_SETTINGS_IMG_TAG,
-                    doc_settings_tag, doc_settings_img_tag,
+                    doc_settings_tag, doc_settings_img_tag, doc_tag,
                 ),
             )
 
@@ -207,65 +222,112 @@ class ChromeManager:
         can_to_front = not is_active
         can_to_back = doc_idx > 0
         if self._tofront_icon is not None and can_to_front:
-            fx = right - 108
-            self.canvas.create_rectangle(
-                fx - 10, top + 2, fx + 10, doc_top - 2,
-                fill=bg_fill, outline="",
-                tags=(CHROME_TAG, CHROME_TOFRONT_TAG, doc_tofront_tag),
-            )
-            self.canvas.create_image(
-                fx, mid,
-                image=self._tofront_icon,
-                anchor="center",
-                tags=(
+            self._draw_icon_button(
+                right - TOFRONT_X_OFFSET, top, doc_top, mid, bg_fill,
+                self._tofront_icon,
+                rect_tags=(
+                    CHROME_TAG, CHROME_TOFRONT_TAG,
+                    doc_tofront_tag, doc_tag,
+                ),
+                image_tags=(
                     CHROME_TAG, CHROME_TOFRONT_TAG,
                     CHROME_TOFRONT_IMG_TAG,
-                    doc_tofront_tag, doc_tofront_img_tag,
+                    doc_tofront_tag, doc_tofront_img_tag, doc_tag,
                 ),
             )
         if self._toback_icon is not None and can_to_back:
-            bx = right - 138
-            self.canvas.create_rectangle(
-                bx - 10, top + 2, bx + 10, doc_top - 2,
-                fill=bg_fill, outline="",
-                tags=(CHROME_TAG, CHROME_TOBACK_TAG, doc_toback_tag),
-            )
-            self.canvas.create_image(
-                bx, mid,
-                image=self._toback_icon,
-                anchor="center",
-                tags=(
+            self._draw_icon_button(
+                right - TOBACK_X_OFFSET, top, doc_top, mid, bg_fill,
+                self._toback_icon,
+                rect_tags=(
+                    CHROME_TAG, CHROME_TOBACK_TAG,
+                    doc_toback_tag, doc_tag,
+                ),
+                image_tags=(
                     CHROME_TAG, CHROME_TOBACK_TAG,
                     CHROME_TOBACK_IMG_TAG,
-                    doc_toback_tag, doc_toback_img_tag,
+                    doc_toback_tag, doc_toback_img_tag, doc_tag,
                 ),
             )
         self.canvas.create_text(
-            right - 48, mid,
+            right - MIN_X_OFFSET, mid,
             text="−",
             anchor="center",
             fill=CHROME_FG_DIM,
             font=("Segoe UI", 16, "bold"),
-            tags=(CHROME_TAG, CHROME_MIN_TAG),
+            tags=(CHROME_TAG, CHROME_MIN_TAG, doc_tag),
         )
         self.canvas.create_text(
-            right - 20, mid,
+            right - CLOSE_X_OFFSET, mid,
             text="✕",
             anchor="center",
             fill=title_fg,
             font=("Segoe UI", 12, "bold"),
-            tags=(CHROME_TAG, CHROME_CLOSE_TAG, doc_close_tag),
+            tags=(
+                CHROME_TAG, CHROME_CLOSE_TAG,
+                doc_close_tag, doc_tag,
+            ),
         )
         self._bind_for_document(
             doc,
             doc_bg_tag, doc_title_tag,
-            doc_settings_tag, doc_close_tag,
+            doc_settings_tag, doc_settings_img_tag, doc_close_tag,
             doc_tofront_tag, doc_tofront_img_tag,
             doc_toback_tag, doc_toback_img_tag,
         )
 
+    def _draw_icon_button(
+        self, cx: int, top: int, doc_top: int, mid: int,
+        bg_fill: str, icon,
+        rect_tags: tuple, image_tags: tuple,
+    ) -> None:
+        """Paint a titlebar icon button as a hit rectangle + image.
+        ``rect_tags`` and ``image_tags`` carry the per-doc + shared
+        tags the caller needs — this helper just removes the
+        create_rectangle + create_image boilerplate that used to
+        repeat for every button (settings / tofront / toback).
+        """
+        self.canvas.create_rectangle(
+            cx - ICON_HIT_PADDING, top + 2,
+            cx + ICON_HIT_PADDING, doc_top - 2,
+            fill=bg_fill, outline="",
+            tags=rect_tags,
+        )
+        self.canvas.create_image(
+            cx, mid,
+            image=icon, anchor="center",
+            tags=image_tags,
+        )
+
+    def _bind_icon_hover(
+        self, trigger_tag: str, img_tag: str,
+        icon_normal, icon_hover, on_click,
+    ) -> None:
+        """Wire <Button-1> + <Enter>/<Leave> on a titlebar icon tag.
+        Settings / tofront / toback all share the same pattern —
+        click runs ``on_click``, hover swaps the image to
+        ``icon_hover`` + hand cursor, leave restores both.
+        """
+        self.canvas.tag_bind(
+            trigger_tag, "<Button-1>",
+            lambda _e: on_click(),
+        )
+        self.canvas.tag_bind(
+            trigger_tag, "<Enter>",
+            lambda _e, t=img_tag: self._set_icon_hover(
+                t, icon_hover, cursor="hand2",
+            ),
+        )
+        self.canvas.tag_bind(
+            trigger_tag, "<Leave>",
+            lambda _e, t=img_tag: self._set_icon_hover(
+                t, icon_normal, cursor="",
+            ),
+        )
+
     def _bind_for_document(
-        self, doc, bg_tag, title_tag, settings_tag, close_tag,
+        self, doc, bg_tag, title_tag,
+        settings_tag, settings_img_tag, close_tag,
         tofront_tag, tofront_img_tag, toback_tag, toback_img_tag,
     ) -> None:
         """Wire the click / drag / hover bindings for a single
@@ -296,16 +358,27 @@ class ChromeManager:
                 tag, "<Leave>",
                 lambda _e: self._set_cursor(""),
             )
-        self.canvas.tag_bind(
-            settings_tag, "<Button-1>",
-            lambda e, d=doc_id: self._on_settings_click(e, d),
+        # Icon click callbacks return "break" so propagation to the
+        # chrome bg / title bindings (drag start) is stopped — without
+        # it a click on the settings icon would kick off a doc drag
+        # gesture under the button.
+        self._bind_icon_hover(
+            settings_tag, settings_img_tag,
+            self._settings_icon, self._settings_icon_hover,
+            on_click=lambda d=doc_id: self._on_settings_click(None, d),
         )
-        self.canvas.tag_bind(
-            settings_tag, "<Enter>", self._on_settings_enter,
+        self._bind_icon_hover(
+            tofront_tag, tofront_img_tag,
+            self._tofront_icon, self._tofront_icon_hover,
+            on_click=lambda d=doc_id: self._on_tofront_click(d),
         )
-        self.canvas.tag_bind(
-            settings_tag, "<Leave>", self._on_settings_leave,
+        self._bind_icon_hover(
+            toback_tag, toback_img_tag,
+            self._toback_icon, self._toback_icon_hover,
+            on_click=lambda d=doc_id: self._on_toback_click(d),
         )
+        # Close button — text item, hover flips fill color instead of
+        # an image swap, so it doesn't fit ``_bind_icon_hover``.
         self.canvas.tag_bind(
             close_tag, "<Button-1>",
             lambda e, d=doc_id: self._on_close_click(e, d),
@@ -323,48 +396,20 @@ class ChromeManager:
             ),
         )
 
-        # Bring to Front
-        self.canvas.tag_bind(
-            tofront_tag, "<Button-1>",
-            lambda _e, d=doc_id: self._on_tofront_click(d),
-        )
-        self.canvas.tag_bind(
-            tofront_tag, "<Enter>",
-            lambda _e, t=tofront_img_tag: self._set_icon_hover(
-                t, self._tofront_icon_hover,
-            ),
-        )
-        self.canvas.tag_bind(
-            tofront_tag, "<Leave>",
-            lambda _e, t=tofront_img_tag: self._set_icon_hover(
-                t, self._tofront_icon,
-            ),
-        )
-
-        # Send to Back
-        self.canvas.tag_bind(
-            toback_tag, "<Button-1>",
-            lambda _e, d=doc_id: self._on_toback_click(d),
-        )
-        self.canvas.tag_bind(
-            toback_tag, "<Enter>",
-            lambda _e, t=toback_img_tag: self._set_icon_hover(
-                t, self._toback_icon_hover,
-            ),
-        )
-        self.canvas.tag_bind(
-            toback_tag, "<Leave>",
-            lambda _e, t=toback_img_tag: self._set_icon_hover(
-                t, self._toback_icon,
-            ),
-        )
-
-    def _set_icon_hover(self, tag: str, icon) -> None:
+    def _set_icon_hover(
+        self, tag: str, icon, cursor: str = "hand2",
+    ) -> None:
+        """Swap an icon canvas image + set the canvas cursor. Pass
+        ``cursor=""`` on <Leave> to restore the default cursor;
+        earlier the cursor stayed ``hand2`` after leaving tofront /
+        toback because both enter and leave called this with the
+        same implicit cursor argument.
+        """
         if icon is None:
             return
         try:
             self.canvas.itemconfigure(tag, image=icon)
-            self.canvas.configure(cursor="hand2")
+            self.canvas.configure(cursor=cursor)
         except tk.TclError:
             pass
 
@@ -390,30 +435,6 @@ class ChromeManager:
     ) -> str:
         self._select(doc_id)
         return "break"
-
-    def _on_settings_enter(self, _event=None) -> None:
-        if self._settings_icon_hover is None:
-            return
-        try:
-            self.canvas.itemconfigure(
-                CHROME_SETTINGS_IMG_TAG,
-                image=self._settings_icon_hover,
-            )
-            self.canvas.configure(cursor="hand2")
-        except tk.TclError:
-            pass
-
-    def _on_settings_leave(self, _event=None) -> None:
-        if self._settings_icon is None:
-            return
-        try:
-            self.canvas.itemconfigure(
-                CHROME_SETTINGS_IMG_TAG,
-                image=self._settings_icon,
-            )
-            self.canvas.configure(cursor="")
-        except tk.TclError:
-            pass
 
     def _set_cursor(self, cursor: str) -> None:
         # Don't fight the current tool's cursor (Hand mode owns
@@ -510,6 +531,14 @@ class ChromeManager:
         """Canvas-level motion fallback. Called from
         ``Workspace._on_canvas_motion`` so drags that slip off the
         title bar item keep tracking the cursor.
+
+        Motion avoids ``_redraw_document`` — that would delete +
+        recreate every document's chrome / outline / grid on every
+        tick. Instead we compute the per-tick pixel delta and shift
+        the dragged doc's items via three ``canvas.move`` calls on
+        per-doc tags. Widgets still ride through ``apply_all`` (or
+        stay hidden in ghost mode). ``end_drag`` runs one final full
+        redraw so the release state is clean.
         """
         drag = self._drag
         if drag is None:
@@ -522,10 +551,12 @@ class ChromeManager:
             drag["moved"] = True
             # First real motion — decide whether to hide the doc's
             # widgets. apply_all per motion for a 20+ widget form is
-            # the main slowdown; hiding cuts it to _redraw_document
-            # alone (doc rect + chrome only).
+            # the main slowdown; hiding cuts the whole loop.
             doc = self.project.get_document(drag["doc_id"])
-            if doc is not None and self._count_doc_widgets(doc) >= HIDE_THRESHOLD:
+            if (
+                doc is not None
+                and self._count_doc_widgets(doc) >= HIDE_THRESHOLD
+            ):
                 self._enter_hidden_mode(doc)
         zoom = self.zoom.value or 1.0
         dx_logical = int((event.x_root - drag["press_x_root"]) / zoom)
@@ -533,13 +564,39 @@ class ChromeManager:
         doc = self.project.get_document(drag["doc_id"])
         if doc is None:
             return "break"
-        doc.canvas_x = max(0, drag["start_canvas_x"] + dx_logical)
-        doc.canvas_y = max(0, drag["start_canvas_y"] + dy_logical)
-        self.workspace._redraw_document()
+        # Per-tick pixel delta derived from the logical model update.
+        # Going through the model (and clamping to 0) keeps canvas.move
+        # honest even when the cursor tries to push the doc off-canvas
+        # into the negative region — we stop translating exactly when
+        # the model clamps.
+        prev_canvas_x = doc.canvas_x
+        prev_canvas_y = doc.canvas_y
+        new_canvas_x = max(0, drag["start_canvas_x"] + dx_logical)
+        new_canvas_y = max(0, drag["start_canvas_y"] + dy_logical)
+        dx_pixel = int((new_canvas_x - prev_canvas_x) * zoom)
+        dy_pixel = int((new_canvas_y - prev_canvas_y) * zoom)
+        doc.canvas_x = new_canvas_x
+        doc.canvas_y = new_canvas_y
+        if dx_pixel or dy_pixel:
+            doc_id = drag["doc_id"]
+            for tag in (
+                f"chrome_doc:{doc_id}",
+                f"doc_rect:{doc_id}",
+                f"grid:{doc_id}",
+            ):
+                try:
+                    self.canvas.move(tag, dx_pixel, dy_pixel)
+                except tk.TclError:
+                    pass
         if not drag.get("hidden_mode"):
             self.zoom.apply_all()
             if self.project.selected_id:
-                self.workspace.selection.update()
+                # Full ``draw`` — not ``update`` — so multi-select
+                # outlines for non-primary widgets refresh too. A
+                # ``update`` would move only the primary chrome and
+                # leave the non-primary outlines parked at their
+                # pre-drag positions.
+                self.workspace.selection.draw()
         return "break"
 
     def _count_doc_widgets(self, doc) -> int:
@@ -628,7 +685,10 @@ class ChromeManager:
             # is redrawn and the selection handles are resynced.
             self.zoom.apply_all()
             if self.project.selected_id:
-                self.workspace.selection.update()
+                # ``draw`` (not ``update``) so multi-select outlines
+                # follow the doc to its new position; ``update`` only
+                # repositions the primary chrome.
+                self.workspace.selection.draw()
         if not drag["moved"]:
             # Click without drag → activate the document (settings
             # icon handles the "open Properties" case separately).
@@ -638,6 +698,11 @@ class ChromeManager:
         doc = self.project.get_document(doc_id)
         if doc is None:
             return "break"
+        # Full redraw on release — ``drive_drag`` skipped
+        # ``_redraw_document`` to avoid per-motion churn, so now we
+        # rebuild the doc rect / chrome / grid from scratch at the
+        # final position + run the cross-doc visibility mask.
+        self.workspace._redraw_document()
         before = (drag["start_canvas_x"], drag["start_canvas_y"])
         after = (doc.canvas_x, doc.canvas_y)
         if before != after:

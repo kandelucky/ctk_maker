@@ -71,32 +71,18 @@ walk this list top-to-bottom; decide what each needs when we get to it.
 - [x] `app/ui/properties_panel_v2/panel.py` — no refactor needed for Area 1 scope. Package already splits editors / overlays / drag_scrub / format_utils / constants; panel.py is coherent orchestration. This session touched only the `_rebuild` tool-gating (~5 line change). No cross-file dedup, no hot-path optimize.
 - [x] `app/ui/workspace/core.py` — refactor: `_on_property_changed` (146 line 7-branch if/elif) split into a 35-line dispatcher + 6 focused handlers (`_handle_window_property`, `_handle_container_layout_prop`, `_handle_child_layout_prop`, `_handle_coord_prop`, `_handle_recreate_prop`, `_apply_derived_props`, `_apply_generic_configure`). Prop-set constants `_CONTAINER_LAYOUT_PROPS` / `_CHILD_LAYOUT_PROPS` replace inline tuples. Optimize: `find_document_for_widget` scatters (ID cache deferred — see project.py note).
 - [x] `app/ui/workspace/drag.py` — no refactor. Three `_maybe_*` handlers (extract / grid_drop / reparent) have distinct concerns, well-named, well-commented. Minor cleanup opportunity (ReparentCommand kwargs bundle) skipped — savings too small to justify churn. Optimize: none in Area 1 scope.
-- [ ] `app/ui/workspace/chrome.py` — **O5 queued**: `drive_drag` coalesce. See note below.
-- [ ] `app/ui/workspace/controls.py`
-- [ ] `app/ui/workspace/widget_lifecycle.py`
-- [ ] `app/ui/workspace/render.py`
-- [ ] `app/ui/selection_controller.py`
-- [ ] `app/ui/zoom_controller.py`
+- [x] `app/ui/workspace/chrome.py` — refactor: per-button x-offset constants (`SETTINGS_X_OFFSET` / `TOFRONT_X_OFFSET` / `TOBACK_X_OFFSET` / `MIN_X_OFFSET` / `CLOSE_X_OFFSET`); `_draw_icon_button` helper consolidates hit-rect + image creation for the 3 icon buttons; `_bind_icon_hover` helper replaces the click/enter/leave tag_bind boilerplate (single call per button instead of 3). Fixed `_set_icon_hover` cursor sticking on leave (tofront/toback used to keep `hand2` after moving away). Optimize: `chrome_doc:{id}` umbrella tag on every chrome item — ``drive_drag`` now slides the whole strip with `canvas.move(tag, dx, dy)` instead of the per-motion `_redraw_document` (chrome recreate → ~8 canvas items × N docs per tick → gone). Also move `doc_rect:{id}` + `grid:{id}` in the same pass; `end_drag` does one final full redraw. **O5 superseded** by the hide-mode + canvas.move combo (hide handles widgets, canvas.move handles chrome/rect/grid). WS-30 fixed the visibility flag that re-exposed hidden widgets mid-drag. Per-doc settings hover fix — previously hovering one doc's gear icon brightened every form's gear because the handler used the shared `CHROME_SETTINGS_IMG_TAG` instead of `chrome_settings_img:{id}`.
+- [x] `app/ui/workspace/controls.py` — no changes. 291 lines, already clean: tool bar / status bar / pan / keybinding are each a short focused section, no duplicated logic worth extracting, no hot path to optimize (every handler here is user-initiated). Minor polish options (v/V + h/H paired binds as a loop, `_input_focused` decorator for zoom/tool shortcuts, merging middle-mouse-pan with hand-tool-pan) are deferred — the savings are < the churn.
+- [x] `app/ui/workspace/widget_lifecycle.py` — refactor: `on_widget_added` (120 lines, 7 concerns mixed) split into a 55-line orchestrator + 4 helpers: `_resolve_master` (top-level vs nested master), `_instantiate_widget` (descriptor → widget + composite anchor detection), `_disable_container_propagate` (pin container size), `_place_top_level` (canvas.create_window branch), `_place_nested` (pack / place / grid-deferred branch). Fixed WS-34 (ScrollableFrame TypeError on load — catch TypeError alongside TclError), WS-35 (save un-hid hidden widgets — `renderer.update_visibility_across_docs` now respects `node.visible`; lives in render.py), WS-36 (unhide landed grid children at 0,0 — `_set_widget_visibility` now dispatches on parent layout_type and runs `apply_child_manager` for grid parents, plus calls `pack_forget` / `grid_forget` on hide so all managers are covered).
+- [x] `app/ui/workspace/render.py` — refactor: `update_visibility_across_docs` (87 lines, 2 near-duplicate loops for frontmost vs covered docs) split into a 20-line orchestrator + 4 focused helpers: `_is_doc_drag_active` (drag-hide guard), `_compute_doc_bboxes` (canvas-space rects keyed by doc id), `_update_visibility_for_document` (per-doc loop), `_should_hide_widget` (pure `node.visible` + bbox-intersection decision). The frontmost and covered branches collapse into one loop — `_should_hide_widget` handles both by treating an empty `covering_bboxes` list as "never hidden unless user-hid". WS-35 fix landed here too (`node.visible` respected across both branches). Optimize: none — redraw isn't a per-frame path, grid dots remain fine for multi-doc projects.
+- [x] `app/ui/selection_controller.py` — refactor + perf: extracted `_edge_geoms(x1, y1, x2, y2) → dict` as the single source of truth for the 4 edge rectangles (previously inlined in three sites). Added `_destroy_frames(entries)` helper to consolidate `clear`'s three destroy loops. Optimize: frame pool — primary chrome (`_edges` 4 + `_handles` 8) and multi-outline entries (`_outline_pool`) are now allocated on first draw and REUSED across every `draw` / `clear` cycle by flipping `state="hidden"` / `"normal"` on their canvas window items. Pre-pool `clear` destroyed + `draw` recreated every frame (for N=20 multi-select that's 88 tk.Frame destroys + 88 creates + 88 canvas.create_window per draw ≈ 40-50ms); with the pool stable selections cost only `canvas.coords` + `canvas.itemconfigure` per edge (≈ 3-5ms). `_retag_entry` swaps the per-widget `chrome_wid_{id}` tag when a pool entry is assigned to a new widget so `drag.py`'s batch chrome move still targets the right frames. Removed dead helpers: `_make_edge_frame`, `_create`, `_create_rect_edges`, `_create_handles`, `_create_outline_frames`, `_update_coords`, `_current_chrome_tag`.
+- [x] `app/ui/zoom_controller.py` — no structural refactor. ``apply_all`` was already optimised earlier this session (O(N²) → O(N) via precomputed `id_index`). Added one correctness guard: `apply_to_widget` now short-circuits on `widget.winfo_exists() == False` at the top so the per-call `try/except tk.TclError` blocks stay focused on genuinely weird tk states instead of silently swallowing the common "widget is gone" case — that masking made real option / geometry errors hard to notice. Font cache optimization (per-zoom CTkFont cache) deferred — zoom change isn't a per-frame path.
 
-### O5 note — `chrome.drive_drag` coalesce via `after_idle`
+### O5 — `chrome.drive_drag` coalesce (superseded ✅)
 
-Real-world evidence: 160 widgets on a form → dragging the doc chrome
-"got a bit heavy". Current `chrome.drive_drag` ([chrome.py:504](../../app/ui/workspace/chrome.py#L504))
-runs `_redraw_document()` + `zoom.apply_all()` + `selection.update()`
-per motion event. At ~100 motions/sec × 160 widgets = 16,000
-`place_configure()` Tk calls/sec.
-
-**Fix plan when we get to `chrome.py`:**
-- Keep `doc.canvas_x` / `canvas_y` updates synchronous (coord state
-  stays accurate for every motion).
-- Defer render via `after_idle(_flush_drag_render)`; guard with a
-  `drag["pending"]` flag so multiple motions coalesce into one render.
-- `end_drag` runs a final flush so the release frame is always
-  up-to-date.
-
-**Verify:** chrome-drag smoothness at 1 / 10 / 100 / 160 widgets;
-widget positions correct on release; regular (non-chrome) widget
-drag unchanged.
+Original plan was to coalesce chrome drag renders via `after_idle`. Shipped two better fixes instead:
+- **v0.0.15.3 hide-mode** — docs with ≥10 widgets hide all widgets for the gesture and run `apply_all` once on release. Eliminates the 16 000 `place_configure` calls/sec problem at the source.
+- **v0.0.15.6 canvas.move chrome** — `chrome.drive_drag` slides chrome / doc rect / grid via `canvas.move("chrome_doc:{id}", dx, dy)` instead of the per-motion `_redraw_document` that was recreating ~8 chrome items × N docs per tick.
 
 ## Findings
 
@@ -252,6 +238,18 @@ drag unchanged.
   *Steps:* add a document with 10+ widgets, grab the chrome title bar, drag — with the 10+ hide-mode optimization in place the widgets should disappear during drag (only the doc outline + title bar follows the cursor), but they stayed visible and the drag was still laggy
   *Fix:* `renderer.update_visibility_across_docs` ran at the end of every `redraw` (i.e. every motion) and flipped `state="hidden"` back to `state="normal"`. Added a `workspace._doc_drag_hide_active` flag that the visibility pass respects — set it in `chrome._enter_hidden_mode`, clear it in `chrome.end_drag` before the release-time apply_all
   *Files:* `render.py` (early-return on flag), `chrome.py` (set/clear around hidden_mode)
+
+- **[WS-36]** Unhiding a grid child re-placed it at (0, 0) instead of its cell
+  *Steps:* inside a Grid Layout Frame, hide any child via Object Tree eye icon; unhide. The child comes back outside its grid cell — at the Frame's (0, 0) corner — instead of its saved row/column
+  *Fix:* `_set_widget_visibility` in `widget_lifecycle.py` called `widget.place(x=0, y=0)` unconditionally on unhide. Refactored to dispatch on the parent's `layout_type` (reuse `_place_nested` for pack/place, then `layout_overlay.apply_child_manager` for grid so `grid_row` / `grid_column` / `grid_sticky` land the child back in the right cell). Hide path now also runs `pack_forget` / `grid_forget` alongside `place_forget` so every manager is covered
+
+- **[WS-35]** Saving a project un-hid every hidden widget visually (model stayed hidden)
+  *Steps:* create two widgets, hide one via Object Tree eye icon, save with Ctrl+S. The hidden widget becomes visible on canvas again even though Object Tree still reads as hidden
+  *Fix:* `renderer.update_visibility_across_docs` was writing `state="normal"` unconditionally on every top-level widget of the frontmost document, ignoring `node.visible`. Save → `project_renamed` → `_draw_window_chrome` → `_redraw_document` → un-hide. Now both the frontmost branch and the covering-intersection branch OR `not node.visible` into the hidden flag so user-hidden widgets stay hidden through any redraw
+
+- **[WS-34]** CTkScrollableFrame on project load crashed with `grid_propagate() takes 1 positional argument but 2 were given`
+  *Steps:* create a project with a CTkScrollableFrame, save, open → crash on load; `widget_added` event for the ScrollableFrame fires `_disable_container_propagate` which calls `grid_propagate(False)`. CTk's wrapper overrides the method to take no arg
+  *Fix:* catch `TypeError` alongside `tk.TclError` in the propagate-disable loop. Pre-existing — my refactor just surfaced it earlier in the pipeline. (ScrollableFrame's canvas-render remains partially broken — separate TODO.)
 
 - **[WS-33]** Layout containers could be nested inside each other (palette drop + drag reparent)
   *Steps:* drop a Vertical Layout preset onto an existing Horizontal Layout Frame, or drag a Grid Layout into a Vertical Layout. Expected: drop lands top-level (layout-in-layout is rejected). Observed (pre-fix): layout Frame nested inside the target, rendering broke — inner grid drifted, outer `pack` stole the inner's geometry, chrome stacked wrong

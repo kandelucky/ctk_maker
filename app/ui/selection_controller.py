@@ -68,22 +68,21 @@ class SelectionController:
         # by accident while doing selection work).
         self._handles_enabled = handles_enabled
 
+        # Primary chrome — 4 edge frames + 8 resize handles. Allocated
+        # lazily on the first draw, then REUSED across every
+        # ``draw()`` / ``clear()`` cycle by flipping
+        # ``state="hidden"`` / ``"normal"`` on the canvas window
+        # items. Avoids the per-draw tk.Frame alloc+destroy storm
+        # that made multi-select + rapid redraws expensive.
+        # side → (canvas_window_id, tk.Frame)
+        self._edges: dict[str, tuple[int, tk.Frame]] = {}
         # name → (canvas_window_id, tk.Frame)
         self._handles: dict[str, tuple[int, tk.Frame]] = {}
-        # side → (canvas_window_id, tk.Frame)  where side ∈ {top,right,bottom,left}
-        self._edges: dict[str, tuple[int, tk.Frame]] = {}
-        # Multi-select outlines — one dict of 4 edge frames per
-        # additional selected widget. Primary keeps the full chrome
-        # above (``self._edges`` + ``self._handles``); everything
-        # else just gets a thin rectangle so the user sees what's in
-        # the group.
-        self._multi_outlines: list[dict[str, tuple[int, tk.Frame]]] = []
-        # Per-widget tag applied to every canvas item spawned by
-        # ``_create_rect_edges`` / ``_create_handles`` /
-        # ``_create_outline_frames`` during the current draw pass.
-        # Drag uses it to move only the chrome tied to widgets that
-        # actually shift (locked widgets in the group stay put).
-        self._current_chrome_tag: str | None = None
+        # Pool of outline entries for non-primary multi-selection
+        # widgets. Each entry is a 4-edge dict; the pool grows as
+        # needed, shrinks only by hiding surplus entries (the tk.Frame
+        # itself stays around for future reuse).
+        self._outline_pool: list[dict[str, tuple[int, tk.Frame]]] = []
 
         self._resize: dict | None = None
 
@@ -103,67 +102,65 @@ class SelectionController:
     # Public drawing API
     # ------------------------------------------------------------------
     def draw(self) -> None:
-        self.clear()
+        # Flush pending tk geometry once at the top so every
+        # ``_bbox_for`` below reads settled coords without doing
+        # its own ``update_idletasks``. For N-wide multi-selection
+        # that's N-1 redundant flushes saved per draw.
+        try:
+            self.canvas.update_idletasks()
+        except tk.TclError:
+            pass
         ids = list(getattr(self.project, "selected_ids", set()) or [])
-        if not ids:
-            return
         primary = self.project.selected_id
-        # Primary gets the full chrome (rect + optionally handles).
+        primary_bbox = None
         if primary and primary in ids:
-            bbox = self._bbox_for(primary)
-            if bbox is not None:
-                self._current_chrome_tag = f"chrome_wid_{primary}"
-                self._create(*bbox)
-                self._current_chrome_tag = None
-        # Every other selected widget gets a thin outline only.
-        for wid in ids:
-            if wid == primary:
-                continue
+            primary_bbox = self._bbox_for(primary)
+        self._show_primary_chrome(primary, primary_bbox)
+        # Non-primary multi-select outlines — one entry per widget,
+        # pool-backed so repeat draws with the same selection size
+        # run zero allocations.
+        non_primary = [wid for wid in ids if wid != primary]
+        for i, wid in enumerate(non_primary):
             bbox = self._bbox_for(wid)
             if bbox is None:
+                self._hide_outline(i)
                 continue
-            self._current_chrome_tag = f"chrome_wid_{wid}"
-            self._multi_outlines.append(
-                self._create_outline_frames(*bbox),
-            )
-            self._current_chrome_tag = None
+            self._ensure_outline_allocated(i)
+            self._position_outline(i, bbox, wid)
+        for i in range(len(non_primary), len(self._outline_pool)):
+            self._hide_outline(i)
 
     def update(self) -> None:
-        if not self._handles:
+        """Lightweight chrome refresh for the primary widget only —
+        called in the resize hot path. If chrome hasn't been
+        allocated yet, fall through to a full ``draw``. Flushes
+        pending idle tasks once before reading the widget's
+        post-configure geometry.
+        """
+        if not self._edges:
             self.draw()
             return
+        try:
+            self.canvas.update_idletasks()
+        except tk.TclError:
+            pass
         bbox = self._selected_bbox()
         if bbox is None:
             return
-        self._update_coords(*bbox)
+        self._position_edges(bbox)
+        if self._handles:
+            self._position_handles(bbox)
 
     def clear(self) -> None:
-        # Destroy every tracked Frame first so tk reclaims the widget
-        # memory, then sweep the canvas by tag to wipe any stray
-        # window items we might have lost references to.
-        for window_id, frame in self._handles.values():
-            try:
-                frame.destroy()
-            except tk.TclError:
-                pass
-        for window_id, frame in self._edges.values():
-            try:
-                frame.destroy()
-            except tk.TclError:
-                pass
-        for outline in self._multi_outlines:
-            for window_id, frame in outline.values():
-                try:
-                    frame.destroy()
-                except tk.TclError:
-                    pass
-        self._handles = {}
-        self._edges = {}
-        self._multi_outlines = []
-        try:
-            self.canvas.delete("selection_chrome")
-        except tk.TclError:
-            pass
+        """Hide every chrome item but leave the frames + pool in place
+        so the next ``draw`` can reuse them. Pre-pool this destroyed
+        + recreated the whole selection chrome on every clear+draw
+        cycle, which dominated the multi-select redraw budget.
+        """
+        self._set_edges_visible(False)
+        self._set_handles_visible(False)
+        for i in range(len(self._outline_pool)):
+            self._hide_outline(i)
 
     # ------------------------------------------------------------------
     # Resize flow — driven by handle widget bindings
@@ -264,12 +261,17 @@ class SelectionController:
         children (created via ``create_window``) and nested children
         (placed inside a parent widget) — we read the widget's actual
         screen position so the parent chain doesn't matter.
+
+        Assumes the caller already ran ``update_idletasks`` once so
+        pending geometry tasks are flushed. Public entry points
+        (``draw`` / ``update``) flush once at the top; skipping the
+        flush per-call avoids N redundant flushes when iterating N
+        selected widgets in a multi-selection.
         """
         if widget_id is None or widget_id not in self.widget_views:
             return None
         inner, _window_id = self.widget_views[widget_id]
         widget = self.anchor_views.get(widget_id, inner)
-        self.canvas.update_idletasks()
         try:
             rx = widget.winfo_rootx() - self.canvas.winfo_rootx()
             ry = widget.winfo_rooty() - self.canvas.winfo_rooty()
@@ -283,131 +285,210 @@ class SelectionController:
         cy1 = int(self.canvas.canvasy(ry))
         return cx1, cy1, cx1 + w, cy1 + h
 
-    def _create_outline_frames(
+    def _edge_geoms(
         self, x1: int, y1: int, x2: int, y2: int,
-    ) -> dict[str, tuple[int, tk.Frame]]:
-        """Draw a thin rectangular outline (4 edges) around the given
-        bbox and return the 4 frames so ``clear`` can tear them down.
-        Used for every non-primary widget in a multi-selection.
+    ) -> dict[str, tuple[int, int, int, int]]:
+        """Return the ``{side: (x, y, w, h)}`` rectangle for each of
+        the four selection-chrome edges around a widget bbox. Single
+        source of truth for every positioning path.
         """
         ox1, oy1 = x1 - SELECTION_PAD, y1 - SELECTION_PAD
         ox2, oy2 = x2 + SELECTION_PAD, y2 + SELECTION_PAD
-        out: dict[str, tuple[int, tk.Frame]] = {}
-        out["top"] = self._make_edge_frame(
-            ox1, oy1, ox2 - ox1, RECT_THICKNESS,
-        )
-        out["bottom"] = self._make_edge_frame(
-            ox1, oy2 - RECT_THICKNESS, ox2 - ox1, RECT_THICKNESS,
-        )
-        out["left"] = self._make_edge_frame(
-            ox1, oy1, RECT_THICKNESS, oy2 - oy1,
-        )
-        out["right"] = self._make_edge_frame(
-            ox2 - RECT_THICKNESS, oy1, RECT_THICKNESS, oy2 - oy1,
-        )
-        return out
+        w = ox2 - ox1
+        h = oy2 - oy1
+        t = RECT_THICKNESS
+        return {
+            "top":    (ox1, oy1, w, t),
+            "bottom": (ox1, oy2 - t, w, t),
+            "left":   (ox1, oy1, t, h),
+            "right":  (ox2 - t, oy1, t, h),
+        }
 
-    def _create(self, x1: int, y1: int, x2: int, y2: int) -> None:
-        self._create_rect_edges(x1, y1, x2, y2)
-        # Suppress resize handles on locked widgets or when the
-        # current tool turns them off (Select mode) — rectangle is
-        # still drawn so the user sees what's selected.
-        node = self.project.get_widget(self.project.selected_id)
-        if node is not None and self._is_locked(node):
+    # ------------------------------------------------------------------
+    # Primary chrome (pool-backed)
+    # ------------------------------------------------------------------
+    def _show_primary_chrome(self, widget_id, bbox) -> None:
+        if bbox is None:
+            self._set_edges_visible(False)
+            self._set_handles_visible(False)
             return
-        if not self._handles_enabled():
+        self._ensure_edges_allocated()
+        self._position_edges(bbox)
+        self._retag_entry(self._edges, widget_id)
+        node = (
+            self.project.get_widget(widget_id)
+            if widget_id is not None else None
+        )
+        locked = node is not None and self._is_locked(node)
+        show_handles = not locked and self._handles_enabled()
+        if not show_handles:
+            self._set_handles_visible(False)
             return
-        self._create_handles(x1, y1, x2, y2)
+        self._ensure_handles_allocated()
+        self._position_handles(bbox)
+        self._retag_entry(self._handles, widget_id)
+        self._set_handles_visible(True)
 
-    def _create_rect_edges(self, x1: int, y1: int, x2: int, y2: int) -> None:
-        ox1, oy1 = x1 - SELECTION_PAD, y1 - SELECTION_PAD
-        ox2, oy2 = x2 + SELECTION_PAD, y2 + SELECTION_PAD
-        self._edges["top"] = self._make_edge_frame(
-            ox1, oy1, ox2 - ox1, RECT_THICKNESS,
-        )
-        self._edges["bottom"] = self._make_edge_frame(
-            ox1, oy2 - RECT_THICKNESS, ox2 - ox1, RECT_THICKNESS,
-        )
-        self._edges["left"] = self._make_edge_frame(
-            ox1, oy1, RECT_THICKNESS, oy2 - oy1,
-        )
-        self._edges["right"] = self._make_edge_frame(
-            ox2 - RECT_THICKNESS, oy1, RECT_THICKNESS, oy2 - oy1,
-        )
+    def _ensure_edges_allocated(self) -> None:
+        if self._edges:
+            return
+        for side in ("top", "bottom", "left", "right"):
+            self._edges[side] = self._allocate_edge_frame()
 
-    def _make_edge_frame(
-        self, x: int, y: int, w: int, h: int,
-    ) -> tuple[int, tk.Frame]:
+    def _ensure_handles_allocated(self) -> None:
+        if self._handles:
+            return
+        for name in HANDLE_NAMES:
+            self._handles[name] = self._allocate_handle_frame(name)
+
+    def _position_edges(self, bbox) -> None:
+        x1, y1, x2, y2 = bbox
+        for side, (x, y, w, h) in self._edge_geoms(x1, y1, x2, y2).items():
+            window_id, _ = self._edges[side]
+            try:
+                self.canvas.coords(window_id, x, y)
+                self.canvas.itemconfigure(
+                    window_id, width=max(1, w), height=max(1, h),
+                    state="normal",
+                )
+            except tk.TclError:
+                pass
+
+    def _position_handles(self, bbox) -> None:
+        x1, y1, x2, y2 = bbox
+        for name, (window_id, _) in self._handles.items():
+            hx, hy = self._handle_center(name, x1, y1, x2, y2)
+            try:
+                self.canvas.coords(window_id, hx, hy)
+            except tk.TclError:
+                pass
+
+    def _set_edges_visible(self, visible: bool) -> None:
+        state = "normal" if visible else "hidden"
+        for window_id, _ in self._edges.values():
+            try:
+                self.canvas.itemconfigure(window_id, state=state)
+            except tk.TclError:
+                pass
+
+    def _set_handles_visible(self, visible: bool) -> None:
+        state = "normal" if visible else "hidden"
+        for window_id, _ in self._handles.values():
+            try:
+                self.canvas.itemconfigure(window_id, state=state)
+            except tk.TclError:
+                pass
+
+    # ------------------------------------------------------------------
+    # Multi-select outline pool
+    # ------------------------------------------------------------------
+    def _ensure_outline_allocated(self, index: int) -> None:
+        while len(self._outline_pool) <= index:
+            entry: dict[str, tuple[int, tk.Frame]] = {}
+            for side in ("top", "bottom", "left", "right"):
+                entry[side] = self._allocate_edge_frame()
+            self._outline_pool.append(entry)
+
+    def _position_outline(
+        self, index: int, bbox, widget_id: str,
+    ) -> None:
+        entry = self._outline_pool[index]
+        x1, y1, x2, y2 = bbox
+        for side, (x, y, w, h) in self._edge_geoms(x1, y1, x2, y2).items():
+            window_id, _ = entry[side]
+            try:
+                self.canvas.coords(window_id, x, y)
+                self.canvas.itemconfigure(
+                    window_id, width=max(1, w), height=max(1, h),
+                    state="normal",
+                )
+            except tk.TclError:
+                pass
+        self._retag_entry(entry, widget_id)
+
+    def _hide_outline(self, index: int) -> None:
+        if index >= len(self._outline_pool):
+            return
+        entry = self._outline_pool[index]
+        for window_id, _ in entry.values():
+            try:
+                self.canvas.itemconfigure(window_id, state="hidden")
+            except tk.TclError:
+                pass
+
+    # ------------------------------------------------------------------
+    # Frame allocation + per-widget tag bookkeeping
+    # ------------------------------------------------------------------
+    def _allocate_edge_frame(self) -> tuple[int, tk.Frame]:
+        """Create one edge frame + its canvas window item, hidden by
+        default. Position + state get updated by the caller.
+        """
         frame = tk.Frame(
             self.canvas, bg=RECT_COLOR, highlightthickness=0,
-            width=max(1, w), height=max(1, h),
+            width=1, height=1,
         )
-        tags = ["selection_chrome"]
-        if self._current_chrome_tag is not None:
-            tags.append(self._current_chrome_tag)
         window_id = self.canvas.create_window(
-            x, y, window=frame, anchor="nw",
-            width=max(1, w), height=max(1, h),
-            tags=tuple(tags),
+            0, 0, window=frame, anchor="nw",
+            width=1, height=1, state="hidden",
+            tags=("selection_chrome",),
         )
         frame.lift()
         return window_id, frame
 
-    def _create_handles(self, x1: int, y1: int, x2: int, y2: int) -> None:
-        for name in HANDLE_NAMES:
-            hx, hy = self._handle_center(name, x1, y1, x2, y2)
-            frame = tk.Frame(
-                self.canvas,
-                bg=HANDLE_FILL,
-                highlightthickness=1,
-                highlightbackground=HANDLE_OUTLINE,
-                width=HANDLE_SIZE, height=HANDLE_SIZE,
-                cursor=HANDLE_CURSORS[name],
-            )
-            tags = ["selection_chrome"]
-            if self._current_chrome_tag is not None:
-                tags.append(self._current_chrome_tag)
-            window_id = self.canvas.create_window(
-                hx, hy, window=frame, anchor="center",
-                width=HANDLE_SIZE, height=HANDLE_SIZE,
-                tags=tuple(tags),
-            )
-            frame.bind(
-                "<ButtonPress-1>",
-                lambda e, n=name: self.begin_resize(e, n),
-                add="+",
-            )
-            frame.bind("<B1-Motion>", self.update_resize, add="+")
-            frame.bind("<ButtonRelease-1>", self.end_resize, add="+")
-            frame.lift()
-            self._handles[name] = (window_id, frame)
+    def _allocate_handle_frame(self, name: str) -> tuple[int, tk.Frame]:
+        """Create one resize-handle frame + its canvas window item,
+        hidden by default. Bindings get wired once — the pool keeps
+        the same frame alive across every ``draw`` so the handle
+        name ↔ cursor ↔ begin_resize(name) mapping stays stable.
+        """
+        frame = tk.Frame(
+            self.canvas, bg=HANDLE_FILL,
+            highlightthickness=1, highlightbackground=HANDLE_OUTLINE,
+            width=HANDLE_SIZE, height=HANDLE_SIZE,
+            cursor=HANDLE_CURSORS[name],
+        )
+        window_id = self.canvas.create_window(
+            0, 0, window=frame, anchor="center",
+            width=HANDLE_SIZE, height=HANDLE_SIZE,
+            state="hidden",
+            tags=("selection_chrome",),
+        )
+        frame.bind(
+            "<ButtonPress-1>",
+            lambda e, n=name: self.begin_resize(e, n),
+            add="+",
+        )
+        frame.bind("<B1-Motion>", self.update_resize, add="+")
+        frame.bind("<ButtonRelease-1>", self.end_resize, add="+")
+        frame.lift()
+        return window_id, frame
 
-    def _update_coords(self, x1: int, y1: int, x2: int, y2: int) -> None:
-        ox1, oy1 = x1 - SELECTION_PAD, y1 - SELECTION_PAD
-        ox2, oy2 = x2 + SELECTION_PAD, y2 + SELECTION_PAD
-        # Move + resize the 4 edge frames in place
-        edge_geoms = {
-            "top":    (ox1, oy1, ox2 - ox1, RECT_THICKNESS),
-            "bottom": (ox1, oy2 - RECT_THICKNESS, ox2 - ox1, RECT_THICKNESS),
-            "left":   (ox1, oy1, RECT_THICKNESS, oy2 - oy1),
-            "right":  (ox2 - RECT_THICKNESS, oy1, RECT_THICKNESS, oy2 - oy1),
-        }
-        for side, (ex, ey, ew, eh) in edge_geoms.items():
-            entry = self._edges.get(side)
-            if entry is None:
-                continue
-            window_id, frame = entry
+    def _retag_entry(
+        self, entry: dict[str, tuple[int, tk.Frame]], widget_id,
+    ) -> None:
+        """Swap every ``chrome_wid_*`` tag on the entry's canvas
+        items to ``chrome_wid_{widget_id}``. Drag.py relies on this
+        per-widget tag to move only the chrome tied to widgets that
+        actually shifted.
+        """
+        if widget_id is None:
+            return
+        new_tag = f"chrome_wid_{widget_id}"
+        for window_id, _ in entry.values():
             try:
-                self.canvas.coords(window_id, ex, ey)
-                self.canvas.itemconfigure(
-                    window_id, width=max(1, ew), height=max(1, eh),
-                )
+                current = self.canvas.gettags(window_id)
             except tk.TclError:
-                pass
-        for name, (window_id, _frame) in self._handles.items():
-            hx, hy = self._handle_center(name, x1, y1, x2, y2)
+                continue
+            if new_tag in current:
+                continue
+            for t in current:
+                if t.startswith("chrome_wid_") and t != new_tag:
+                    try:
+                        self.canvas.dtag(window_id, t)
+                    except tk.TclError:
+                        pass
             try:
-                self.canvas.coords(window_id, hx, hy)
+                self.canvas.addtag_withtag(new_tag, window_id)
             except tk.TclError:
                 pass
 
