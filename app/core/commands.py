@@ -482,6 +482,30 @@ class ReparentCommand(Command):
         )
 
 
+class BulkReparentCommand(Command):
+    """Wrap N ``ReparentCommand`` instances so a cross-doc group drag
+    collapses into a single undo step. Undo walks the entries in
+    reverse (each one undoes independently); redo walks them forward.
+    Every member's full old / new snapshot is preserved so the group
+    returns to its source document with all widgets intact.
+    """
+
+    def __init__(self, commands: list):
+        self.commands = list(commands)
+        n = len(self.commands)
+        self.description = (
+            f"Reparent {n} widgets" if n != 1 else "Reparent widget"
+        )
+
+    def undo(self, project: "Project") -> None:
+        for cmd in reversed(self.commands):
+            cmd.undo(project)
+
+    def redo(self, project: "Project") -> None:
+        for cmd in self.commands:
+            cmd.redo(project)
+
+
 class RenameCommand(Command):
     def __init__(
         self,
