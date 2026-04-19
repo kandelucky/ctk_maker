@@ -57,11 +57,9 @@
 
 ## Refactor candidates
 
-- [ ] `_grid_child_place_kwargs` sticky logic — 8 combinations with repetitive if-else; could table-drive
-- [ ] `layout_overlay._stretch_to_pack_kwargs` + pack kwargs in `_child_manager_kwargs` — split or consolidate?
-- [ ] `apply_child_manager` has three large branches (pack / grid / place) — extract per-manager sub-methods?
-- [ ] Composite widget size handling duplicated across `on_widget_added` + `apply_child_manager`
-- [ ] `_forget_current_manager` + re-apply pattern — could be a context manager
+- [x] `_grid_child_place_kwargs` sticky logic — extracted `_sticky_axis(has_lo, has_hi, avail_pos, avail_size, child_size)` helper; same table for both axes, called twice
+- [x] `apply_child_manager` split into `_apply_pack_manager` / `_apply_grid_manager` / `_apply_place_manager` (+ `_apply_grow_equal_split`); top-level body is now a 25-line dispatcher instead of a 150-line if/elif tower
+- [x] Composite widget size handling — `_composite_configure(widget, lw, lh, zoom)` and `_composite_place_size(lw, lh, zoom)` helpers; 4 inline call sites in `apply_child_manager` + `_place_nested` + `_place_top_level` collapse to one-liners
 
 ## Optimize candidates
 

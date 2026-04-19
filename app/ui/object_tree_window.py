@@ -1285,22 +1285,6 @@ class ObjectTreePanel(ctk.CTkFrame):
         if ids:
             self.project.copy_to_clipboard(ids)
 
-    def _paste_at_tree_row(self, widget_id: str) -> None:
-        if not self.project.clipboard:
-            return
-        node = self.project.get_widget(widget_id)
-        if node is None:
-            return
-        descriptor = get_descriptor(node.widget_type)
-        if descriptor is not None and getattr(
-            descriptor, "is_container", False,
-        ):
-            parent_id: str | None = widget_id
-        else:
-            parent_id = node.parent.id if node.parent is not None else None
-        new_ids = self.project.paste_from_clipboard(parent_id=parent_id)
-        self._push_paste_history(new_ids)
-
     def _paste_as_child(self, widget_id: str) -> None:
         """Tree paste — drop the clipboard inside the right-clicked
         widget. Menu disables this entry on non-container nodes so the
@@ -1379,16 +1363,6 @@ class ObjectTreePanel(ctk.CTkFrame):
         entries = build_bulk_add_entries(self.project, new_ids)
         if entries:
             self.project.history.push(BulkAddCommand(entries, label="Paste"))
-
-    def _duplicate_with_history(self, nid: str) -> None:
-        new_id = self.project.duplicate_widget(nid)
-        if new_id is None:
-            return
-        entries = build_bulk_add_entries(self.project, [new_id])
-        if entries:
-            self.project.history.push(
-                BulkAddCommand(entries, label="Duplicate"),
-            )
 
     def _z_order_with_history(self, nid: str, direction: str) -> None:
         push_zorder_history(self.project, nid, direction)

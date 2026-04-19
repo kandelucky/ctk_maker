@@ -22,6 +22,8 @@ import tkinter as tk
 
 from app.ui.workspace.layout_overlay import (
     _child_manager_kwargs,
+    _composite_configure,
+    _composite_place_size,
     _grid_child_place_kwargs,
     _strip_layout_keys,
 )
@@ -325,9 +327,10 @@ class WidgetLifecycle:
         # Composite widgets (CTkScrollableFrame) don't propagate their
         # requested size to the canvas; pin the canvas item size
         # explicitly so the outer container doesn't grow.
-        if is_composite and lw > 0 and lh > 0:
-            kwargs["width"] = max(1, int(lw * self.zoom.value))
-            kwargs["height"] = max(1, int(lh * self.zoom.value))
+        if is_composite:
+            kwargs.update(
+                _composite_place_size(lw, lh, self.zoom.value),
+            )
         return self.canvas.create_window(cx, cy, **kwargs)
 
     def _place_nested(
@@ -346,13 +349,11 @@ class WidgetLifecycle:
             parent_node, node.properties, zoom=self.zoom.value,
         )
         if manager == "pack":
-            if is_composite and lw > 0 and lh > 0:
-                # Composite widgets don't auto-size — reserve the
-                # configured dimensions so pack has something to work
-                # with.
-                anchor_widget.configure(
-                    width=max(1, int(lw * self.zoom.value)),
-                    height=max(1, int(lh * self.zoom.value)),
+            # Composite widgets don't auto-size — reserve the
+            # configured dimensions so pack has something to work with.
+            if is_composite:
+                _composite_configure(
+                    anchor_widget, lw, lh, self.zoom.value,
                 )
             anchor_widget.pack(**mgr_kwargs)
         elif manager == "grid":
@@ -366,9 +367,10 @@ class WidgetLifecycle:
                 "x": int(lx * self.zoom.value),
                 "y": int(ly * self.zoom.value),
             }
-            if is_composite and lw > 0 and lh > 0:
-                place_kwargs["width"] = max(1, int(lw * self.zoom.value))
-                place_kwargs["height"] = max(1, int(lh * self.zoom.value))
+            if is_composite:
+                place_kwargs.update(
+                    _composite_place_size(lw, lh, self.zoom.value),
+                )
             anchor_widget.place(**place_kwargs)
 
     def create_widget_subtree(self, node) -> None:

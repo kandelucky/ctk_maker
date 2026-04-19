@@ -7,10 +7,15 @@
       its parent's ``layout_type``.
     - ``_stretch_to_pack_kwargs`` — translate ``fixed/fill/grow`` to
       tk pack fill/expand kwargs.
+    - ``_sticky_axis`` — single-axis position+size from sticky flags;
+      the table both grid axes share.
     - ``_grid_child_place_kwargs`` — compute place() coords that
       centre a grid child in its cell (CTkFrame's internal canvas
       breaks tk's native grid centring, so canvas preview uses
       place instead; runtime export still emits real ``.grid()``).
+    - ``_composite_configure`` / ``_composite_place_size`` — pin a
+      composite widget's size via configure() or as place/create_window
+      kwargs; shared by every layout branch.
     - ``_forget_current_manager`` — cross-manager safe forget.
 
 2. **``LayoutOverlayManager``** (owns Workspace ref):
@@ -77,6 +82,25 @@ def _stretch_to_pack_kwargs(stretch: str, layout: str) -> dict:
     return {}
 
 
+def _sticky_axis(
+    has_lo: bool, has_hi: bool,
+    avail_pos: float, avail_size: float, child_size: float,
+) -> tuple[float, float]:
+    """Resolve one axis of a grid child's position + size from its
+    sticky flags. ``has_lo`` is north / west, ``has_hi`` is south /
+    east. Both anchors → fill the cell; one anchor → align to that
+    edge at natural size; neither → centre at natural size. Same
+    table for horizontal + vertical axes — caller picks which one.
+    """
+    if has_lo and has_hi:
+        return avail_pos, avail_size
+    if has_lo:
+        return avail_pos, child_size
+    if has_hi:
+        return avail_pos + avail_size - child_size, child_size
+    return avail_pos + (avail_size - child_size) / 2, child_size
+
+
 def _grid_child_place_kwargs(
     parent_props: dict, child_props: dict, zoom: float = 1.0,
 ) -> dict:
@@ -105,26 +129,12 @@ def _grid_child_place_kwargs(
     avail_w = cell_w - spacing
     avail_h = cell_h - spacing
 
-    has_n, has_s = "n" in sticky, "s" in sticky
-    has_e, has_w = "e" in sticky, "w" in sticky
-
-    if has_w and has_e:
-        x, w = avail_x, avail_w
-    elif has_w:
-        x, w = avail_x, child_w
-    elif has_e:
-        x, w = avail_x + avail_w - child_w, child_w
-    else:
-        x, w = avail_x + (avail_w - child_w) / 2, child_w
-
-    if has_n and has_s:
-        y, h = avail_y, avail_h
-    elif has_n:
-        y, h = avail_y, child_h
-    elif has_s:
-        y, h = avail_y + avail_h - child_h, child_h
-    else:
-        y, h = avail_y + (avail_h - child_h) / 2, child_h
+    x, w = _sticky_axis(
+        "w" in sticky, "e" in sticky, avail_x, avail_w, child_w,
+    )
+    y, h = _sticky_axis(
+        "n" in sticky, "s" in sticky, avail_y, avail_h, child_h,
+    )
 
     result: dict = {
         "x": max(0, int(x * zoom)),
@@ -177,6 +187,40 @@ def _child_manager_kwargs(
     if layout == "grid":
         return "grid", {}
     return "place", {}
+
+
+def _composite_configure(widget, lw: int, lh: int, zoom: float) -> None:
+    """Apply a composite widget's configured size via ``configure``.
+    Composite widgets (CTkScrollableFrame, anything with an inner
+    container) don't auto-size from their children, so the workspace
+    has to pin them explicitly. No-op when either dimension is 0.
+    Used by the pack and grid branches that hand the widget to a
+    geometry manager via configure-then-pack/place.
+    """
+    if lw <= 0 or lh <= 0:
+        return
+    try:
+        widget.configure(
+            width=max(1, int(lw * zoom)),
+            height=max(1, int(lh * zoom)),
+        )
+    except tk.TclError:
+        pass
+
+
+def _composite_place_size(lw: int, lh: int, zoom: float) -> dict:
+    """Return ``width`` / ``height`` kwargs for a composite widget's
+    ``place()`` call, or an empty dict when either dimension is 0.
+    Sibling of ``_composite_configure`` for the place branch where
+    sizing rides on the place call itself instead of a separate
+    ``configure``.
+    """
+    if lw <= 0 or lh <= 0:
+        return {}
+    return {
+        "width": max(1, int(lw * zoom)),
+        "height": max(1, int(lh * zoom)),
+    }
 
 
 def _forget_current_manager(widget) -> None:
@@ -328,7 +372,9 @@ class LayoutOverlayManager:
         """Forget ``anchor_widget``'s current manager and re-apply the
         one that matches ``parent_node.layout_type``. Separate from
         the widget-added path so property-change reshuffles don't
-        re-run the descriptor / binding pipeline.
+        re-run the descriptor / binding pipeline. Body is just a
+        dispatch — the per-manager bodies are split into their own
+        methods for readability + testability.
         """
         manager, mgr_kwargs = _child_manager_kwargs(
             parent_node, child_node.properties, zoom=self.zoom.value,
@@ -341,119 +387,122 @@ class LayoutOverlayManager:
             lw = lh = 0
         is_composite = child_node.id in self.anchor_views
         if manager == "pack":
-            stretch = str(
-                child_node.properties.get("stretch", "fixed"),
+            self._apply_pack_manager(
+                anchor_widget, parent_node, child_node,
+                mgr_kwargs, lw, lh, is_composite,
             )
-            parent_layout = normalise_layout_type(
-                parent_node.properties.get("layout_type", "place"),
-            ) if parent_node is not None else "place"
-            if stretch == "grow" and parent_layout in ("vbox", "hbox"):
-                # Equal-split main axis among grow siblings so a
-                # grid → vbox swap (or a fresh grow drop) divides the
-                # container height (vbox) / width (hbox) evenly instead
-                # of leaving widgets at their prior configured size.
-                # tk pack's ``expand=True`` alone won't shrink a widget
-                # below its configured natural size, so we size each
-                # grow child explicitly. Cross-axis stays on ``fill=both``.
-                grow_siblings = [
-                    c for c in parent_node.children
-                    if str(c.properties.get("stretch", "fixed")) == "grow"
-                ]
-                count = max(1, len(grow_siblings))
-                try:
-                    spacing = int(
-                        parent_node.properties.get("layout_spacing", 0)
-                        or 0,
-                    )
-                except (TypeError, ValueError):
-                    spacing = 0
-                zoom = self.zoom.value or 1.0
-                if parent_layout == "vbox":
-                    try:
-                        container_h = int(
-                            parent_node.properties.get("height", 0) or 0,
-                        )
-                    except (TypeError, ValueError):
-                        container_h = 0
-                    slot = max(
-                        1,
-                        (container_h - spacing * (count - 1)) // count,
-                    )
-                    try:
-                        anchor_widget.configure(
-                            height=max(1, int(slot * zoom)),
-                        )
-                    except tk.TclError:
-                        pass
-                else:  # hbox
-                    try:
-                        container_w = int(
-                            parent_node.properties.get("width", 0) or 0,
-                        )
-                    except (TypeError, ValueError):
-                        container_w = 0
-                    slot = max(
-                        1,
-                        (container_w - spacing * (count - 1)) // count,
-                    )
-                    try:
-                        anchor_widget.configure(
-                            width=max(1, int(slot * zoom)),
-                        )
-                    except tk.TclError:
-                        pass
-            elif is_composite and lw > 0 and lh > 0:
-                try:
-                    anchor_widget.configure(
-                        width=max(1, int(lw * self.zoom.value)),
-                        height=max(1, int(lh * self.zoom.value)),
-                    )
-                except tk.TclError:
-                    pass
-            # pack()-ing a fresh widget appends it to the end of its
-            # parent's pack queue. When we re-apply a manager for a
-            # child that already has siblings (e.g. stretch changed),
-            # we must anchor it to its model position via ``before=``
-            # the next sibling's widget, otherwise the widget sinks
-            # to the bottom of the stack. The ``before=`` widget MUST
-            # currently be packed — during a full rearrange (iterating
-            # children in order after a reorder) the next sibling is
-            # already forgotten, so passing before= would land the
-            # current child at the wrong queue position. Append
-            # instead and rely on the iteration order.
-            before_widget = self._next_sibling_anchor(
-                parent_node, child_node,
+        elif manager == "grid":
+            self._apply_grid_manager(anchor_widget, parent_node, child_node)
+        else:
+            self._apply_place_manager(
+                anchor_widget, child_node, lw, lh, is_composite,
             )
-            if before_widget is not None:
-                try:
-                    if before_widget.winfo_manager() == "pack":
-                        mgr_kwargs = {**mgr_kwargs, "before": before_widget}
-                except tk.TclError:
-                    pass
+
+    def _apply_pack_manager(
+        self, anchor_widget, parent_node, child_node,
+        mgr_kwargs: dict, lw: int, lh: int, is_composite: bool,
+    ) -> None:
+        """pack() branch — equal-split sizing for grow children, then
+        ``before=`` anchoring so the visual queue tracks model order
+        even when only one sibling is being re-applied."""
+        stretch = str(child_node.properties.get("stretch", "fixed"))
+        parent_layout = normalise_layout_type(
+            parent_node.properties.get("layout_type", "place"),
+        ) if parent_node is not None else "place"
+        if stretch == "grow" and parent_layout in ("vbox", "hbox"):
+            self._apply_grow_equal_split(
+                anchor_widget, parent_node, parent_layout,
+            )
+        elif is_composite:
+            _composite_configure(anchor_widget, lw, lh, self.zoom.value)
+        # pack()-ing a fresh widget appends it to the end of its
+        # parent's pack queue. When we re-apply a manager for a child
+        # that already has siblings (e.g. stretch changed), we must
+        # anchor it to its model position via ``before=`` the next
+        # sibling's widget, otherwise the widget sinks to the bottom
+        # of the stack. The ``before=`` widget MUST currently be
+        # packed — during a full rearrange (iterating children in
+        # order after a reorder) the next sibling is already
+        # forgotten, so passing before= would land the current child
+        # at the wrong queue position. Append instead and rely on the
+        # iteration order.
+        before_widget = self._next_sibling_anchor(parent_node, child_node)
+        if before_widget is not None:
             try:
-                anchor_widget.pack(**mgr_kwargs)
+                if before_widget.winfo_manager() == "pack":
+                    mgr_kwargs = {**mgr_kwargs, "before": before_widget}
             except tk.TclError:
                 pass
-            return
-        if manager == "grid":
-            place_kw = _grid_child_place_kwargs(
-                parent_node.properties if parent_node else {},
-                child_node.properties,
-                zoom=self.zoom.value,
+        try:
+            anchor_widget.pack(**mgr_kwargs)
+        except tk.TclError:
+            pass
+
+    def _apply_grow_equal_split(
+        self, anchor_widget, parent_node, parent_layout: str,
+    ) -> None:
+        """Equal-split the parent's main axis among grow siblings.
+        tk pack's ``expand=True`` alone won't shrink a widget below
+        its configured natural size, so a Grid → vbox swap (or a
+        fresh grow drop) leaves widgets at their prior cell-sized
+        configure. We size each grow child explicitly to
+        ``(container - spacing*(N-1)) / N``; cross-axis stays on
+        ``fill=both`` from the pack kwargs.
+        """
+        grow_siblings = [
+            c for c in parent_node.children
+            if str(c.properties.get("stretch", "fixed")) == "grow"
+        ]
+        count = max(1, len(grow_siblings))
+        try:
+            spacing = int(
+                parent_node.properties.get("layout_spacing", 0) or 0,
             )
-            cfg_w = place_kw.pop("_cfg_width", None)
-            cfg_h = place_kw.pop("_cfg_height", None)
-            if cfg_w and cfg_h:
-                try:
-                    anchor_widget.configure(width=cfg_w, height=cfg_h)
-                except (tk.TclError, ValueError):
-                    pass
+        except (TypeError, ValueError):
+            spacing = 0
+        zoom = self.zoom.value or 1.0
+        axis_key = "height" if parent_layout == "vbox" else "width"
+        try:
+            container_size = int(
+                parent_node.properties.get(axis_key, 0) or 0,
+            )
+        except (TypeError, ValueError):
+            container_size = 0
+        slot = max(1, (container_size - spacing * (count - 1)) // count)
+        try:
+            anchor_widget.configure(**{axis_key: max(1, int(slot * zoom))})
+        except tk.TclError:
+            pass
+
+    def _apply_grid_manager(
+        self, anchor_widget, parent_node, child_node,
+    ) -> None:
+        """grid branch — `_grid_child_place_kwargs` does the cell
+        math; we configure the cell-sized dimensions and place the
+        widget at the computed coords."""
+        place_kw = _grid_child_place_kwargs(
+            parent_node.properties if parent_node else {},
+            child_node.properties,
+            zoom=self.zoom.value,
+        )
+        cfg_w = place_kw.pop("_cfg_width", None)
+        cfg_h = place_kw.pop("_cfg_height", None)
+        if cfg_w and cfg_h:
             try:
-                anchor_widget.place(**place_kw)
-            except tk.TclError:
+                anchor_widget.configure(width=cfg_w, height=cfg_h)
+            except (tk.TclError, ValueError):
                 pass
-            return
-        # ``place`` (default).
+        try:
+            anchor_widget.place(**place_kw)
+        except tk.TclError:
+            pass
+
+    def _apply_place_manager(
+        self, anchor_widget, child_node,
+        lw: int, lh: int, is_composite: bool,
+    ) -> None:
+        """place branch — absolute x/y from the child, optional size
+        kwargs for composites that won't auto-size."""
         try:
             lx = int(child_node.properties.get("x", 0))
             ly = int(child_node.properties.get("y", 0))
@@ -463,9 +512,10 @@ class LayoutOverlayManager:
             "x": int(lx * self.zoom.value),
             "y": int(ly * self.zoom.value),
         }
-        if is_composite and lw > 0 and lh > 0:
-            place_kwargs["width"] = max(1, int(lw * self.zoom.value))
-            place_kwargs["height"] = max(1, int(lh * self.zoom.value))
+        if is_composite:
+            place_kwargs.update(
+                _composite_place_size(lw, lh, self.zoom.value),
+            )
         try:
             anchor_widget.place(**place_kwargs)
         except tk.TclError:
