@@ -32,7 +32,11 @@ from app.core.commands import (
     ReparentCommand,
 )
 from app.ui.workspace.grid_drop_indicator import GridDropIndicator
-from app.widgets.layout_schema import normalise_layout_type
+from app.widgets.layout_schema import (
+    is_layout_container,
+    normalise_layout_type,
+)
+from app.widgets.registry import get_descriptor
 
 DRAG_THRESHOLD = 5
 
@@ -125,9 +129,15 @@ class WidgetDragController:
         ):
             self.project.set_active_document(owning_doc.id)
         resolved_nid = self._resolve_selection(event, nid)
+        if resolved_nid is None:
+            # Canvas click landed on a locked widget with no unlocked
+            # ancestor — block entirely. Locked widgets can only be
+            # interacted with from the Object Tree.
+            return "break"
         if ws._effective_locked(resolved_nid):
-            # Locked widgets are selectable (for property editing)
-            # but not draggable.
+            # Defensive: should never happen because _resolve_selection
+            # filters locked targets out, but keep the guard so a
+            # missed code path never starts a drag on a locked widget.
             return "break"
         node = self.project.get_widget(resolved_nid)
         if node is None:
@@ -158,6 +168,13 @@ class WidgetDragController:
             # on every motion event so all selected place widgets
             # shift by the same delta.
             "group_starts": group_starts,
+            # Precomputed list of grid containers so on_motion can
+            # hit-test just these instead of walking every widget in
+            # the project. Skips `_find_container_at` entirely when
+            # the project has no grid containers — the dominant case.
+            "grid_candidates": self._collect_grid_candidates(
+                exclude_id=resolved_nid,
+            ),
         }
         self._tag_drag_group(group_starts)
         # Ghost mode for large groups — hide every tagged widget +
@@ -171,7 +188,7 @@ class WidgetDragController:
     # ------------------------------------------------------------------
     # Press-time helpers
     # ------------------------------------------------------------------
-    def _resolve_selection(self, event, nid: str) -> str:
+    def _resolve_selection(self, event, nid: str) -> str | None:
         """Figure out which widget the press actually targets. Three
         branches:
 
@@ -181,12 +198,22 @@ class WidgetDragController:
           moves everyone together.
         - Otherwise → Unity-style drill-down via
           ``_resolve_click_target``; updates the single selection.
+
+        Returns ``None`` when the click should be ignored — currently
+        that's a canvas click on a locked widget (and its chain has
+        no unlocked alternative). Locked widgets are only reachable
+        via the Object Tree.
         """
         ws = self.workspace
         multi = bool(event.state & 0x0004)
         existing_ids = set(
             getattr(self.project, "selected_ids", set()) or set(),
         )
+        # Canvas clicks on locked widgets are silently ignored — all
+        # three branches below would otherwise either select or toggle
+        # the locked id, which Figma / Photoshop treat as off-limits.
+        if ws._effective_locked(nid):
+            return None
         if multi:
             current_ids = set(existing_ids)
             if nid in current_ids:
@@ -205,6 +232,8 @@ class WidgetDragController:
         if len(existing_ids) > 1 and nid in existing_ids:
             return nid
         resolved = self._resolve_click_target(nid)
+        if resolved is None:
+            return None
         self.project.select_widget(resolved)
         return resolved
 
@@ -242,6 +271,44 @@ class WidgetDragController:
                 sx, sy = 0, 0
             group_starts[wid] = (sx, sy)
         return group_starts
+
+    def _collect_grid_candidates(self, exclude_id: str) -> list:
+        """Return every grid-layout container in the project whose
+        subtree doesn't include ``exclude_id`` (skip self so a widget
+        can't drop into itself). The list is used by ``_motion_feedback``
+        to hit-test grid-cell highlights without the per-tick O(N)
+        ``_find_container_at`` tree walk — for most projects this is
+        a 0- to 2-entry list, so motion tick cost collapses.
+        """
+        candidates: list = []
+        for node in self.project.iter_all_widgets():
+            if node.id == exclude_id:
+                continue
+            descriptor = get_descriptor(node.widget_type)
+            if descriptor is None:
+                continue
+            if not getattr(descriptor, "is_container", False):
+                continue
+            layout = normalise_layout_type(
+                node.properties.get("layout_type", "place"),
+            )
+            if layout != "grid":
+                continue
+            # Skip if the dragged widget is an ancestor of this grid
+            # container — dropping into a descendant of yourself is
+            # the same "can't nest self inside self" rule that
+            # ``exclude_id`` encodes in ``_find_container_at``.
+            ancestor = node.parent
+            skip = False
+            while ancestor is not None:
+                if ancestor.id == exclude_id:
+                    skip = True
+                    break
+                ancestor = ancestor.parent
+            if skip:
+                continue
+            candidates.append(node)
+        return candidates
 
     def _tag_drag_group(self, group_starts: dict) -> None:
         """Stamp every group member with the shared ``drag_group`` +
@@ -321,7 +388,7 @@ class WidgetDragController:
         self._drag["hidden_mode"] = True
         self._drag["placeholder_id"] = placeholder_id
 
-    def _resolve_click_target(self, clicked_nid: str) -> str:
+    def _resolve_click_target(self, clicked_nid: str) -> str | None:
         """Drill-down selection with shared-context shortcut.
 
         Three cases, in order of precedence:
@@ -336,18 +403,25 @@ class WidgetDragController:
         3. No overlap (different branch, or nothing selected) →
            select the outermost ancestor so the user has to descend
            explicitly.
+
+        Returns ``None`` when every widget in the click's ancestor
+        chain is locked — the click has no valid canvas target and
+        should be ignored. Locked widgets stay reachable through the
+        Object Tree.
         """
+        ws = self.workspace
         clicked_node = self.project.get_widget(clicked_nid)
         if clicked_node is None:
             return clicked_nid
         chain: list = []
         cur = clicked_node
         while cur is not None:
-            chain.append(cur)
+            if not ws._effective_locked(cur.id):
+                chain.append(cur)
             cur = cur.parent
-        chain.reverse()  # [outermost ancestor, ..., clicked]
+        chain.reverse()  # [outermost unlocked, ..., clicked-if-unlocked]
         if not chain:
-            return clicked_nid
+            return None
         current_id = self.project.selected_id
         if current_id is None:
             return chain[0].id
@@ -358,9 +432,9 @@ class WidgetDragController:
                     return chain[idx + 1].id
                 return chain[idx].id
         # Case 2 — shared scope. Collect current's ancestor ids (incl.
-        # itself) and see if any clicked ancestor (excluding clicked
-        # itself) is among them; if so, we're already "inside" that
-        # scope.
+        # itself) and see if any clicked ancestor (excluding the leaf)
+        # is among them; if so, we're already "inside" that scope and
+        # can jump straight to the leaf (skipping drill-up).
         current_node = self.project.get_widget(current_id)
         if current_node is not None:
             current_ancestor_ids: set = set()
@@ -370,8 +444,8 @@ class WidgetDragController:
                 c = c.parent
             for node in chain[:-1]:
                 if node.id in current_ancestor_ids:
-                    return clicked_nid
-        # Case 3 — start at outermost.
+                    return chain[-1].id
+        # Case 3 — start at outermost unlocked ancestor.
         return chain[0].id
 
     def on_motion(self, event, nid: str) -> None:
@@ -431,27 +505,61 @@ class WidgetDragController:
         """Update the grid cell highlight + drag ghost. Returns True
         when the motion is fully handled (cursor sitting on a grid
         cell) so ``on_motion`` can skip the place-group path below.
+
+        Hit-tests only the grid containers cached at press time (see
+        ``_collect_grid_candidates``) rather than walking every widget
+        per tick — the common case (no grid containers) skips the
+        search entirely; the typical case (1-2 grid containers) is
+        O(1-2) instead of O(N).
         """
-        ws = self.workspace
-        target = ws._find_container_at(cx, cy, exclude_id=nid)
-        target_grid = (
-            target is not None
-            and normalise_layout_type(
-                target.properties.get("layout_type", "place"),
-            ) == "grid"
-        )
         # Ghost: pack/grid children can't move via x/y updates, so we
         # surface drag feedback as canvas items near the cursor.
         # place children already slide under the cursor — no ghost.
         if src_layout in ("vbox", "hbox", "grid"):
             self._update_ghost(node, cx, cy)
-        if target_grid:
+        candidates = self._drag.get("grid_candidates") or []
+        if not candidates:
+            self._grid_indicator.clear()
+            return False
+        target = self._grid_candidate_at(cx, cy, candidates)
+        if target is not None:
             row, col = self._grid_indicator.cell_at(target, cx, cy)
             self._grid_indicator.draw(target, row, col)
             return True
-        # Cursor left a grid container — erase any stale highlight.
+        # Cursor left every grid container — erase stale highlight.
         self._grid_indicator.clear()
         return False
+
+    def _grid_candidate_at(
+        self, cx: float, cy: float, candidates: list,
+    ) -> object:
+        """Return the deepest grid container whose canvas bbox
+        contains (cx, cy), or None. Depth is inferred from parent
+        chain length — deeper wins so a grid-inside-grid scenario
+        lands on the inner cell.
+        """
+        best = None
+        best_depth = -1
+        for cand in candidates:
+            entry = self.widget_views.get(cand.id)
+            if entry is None:
+                continue
+            widget, _ = entry
+            bbox = self.workspace._widget_canvas_bbox(widget)
+            if bbox is None:
+                continue
+            x1, y1, x2, y2 = bbox
+            if not (x1 <= cx <= x2 and y1 <= cy <= y2):
+                continue
+            depth = 0
+            anc = cand.parent
+            while anc is not None:
+                depth += 1
+                anc = anc.parent
+            if depth > best_depth:
+                best = cand
+                best_depth = depth
+        return best
 
     def _motion_place_group(
         self, event, dx_root: int, dy_root: int,
@@ -873,6 +981,15 @@ class WidgetDragController:
         self.canvas.update_idletasks()
         cx, cy = ws._screen_to_canvas(event.x_root, event.y_root)
         target = ws._find_container_at(cx, cy, exclude_id=nid)
+        # Block layout-in-layout nesting — if both the dragged widget
+        # and the target are managed-layout containers, treat the
+        # drop as a top-level move instead of reparenting.
+        if (
+            target is not None
+            and is_layout_container(node.properties)
+            and is_layout_container(target.properties)
+        ):
+            target = None
         new_parent_id = target.id if target is not None else None
         old_parent_id = node.parent.id if node.parent is not None else None
         old_doc = self.project.find_document_for_widget(nid)
@@ -1119,6 +1236,14 @@ class WidgetDragController:
         cx, cy = ws._screen_to_canvas(event.x_root, event.y_root)
         target = ws._find_container_at(cx, cy, exclude_id=nid)
         if target is None:
+            return False
+        # Layout Frame being dropped onto a grid Frame — block the
+        # grid cell-snap path so ``_maybe_reparent_dragged`` gets a
+        # chance to redirect to top-level via its own check.
+        if (
+            is_layout_container(node.properties)
+            and is_layout_container(target.properties)
+        ):
             return False
         target_layout = normalise_layout_type(
             target.properties.get("layout_type", "place"),

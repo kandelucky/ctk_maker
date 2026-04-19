@@ -208,6 +208,21 @@ def normalise_layout_type(value) -> str:
     return DEFAULT_LAYOUT_TYPE
 
 
+MANAGED_LAYOUT_TYPES = ("vbox", "hbox", "grid")
+
+
+def is_layout_container(properties: dict) -> bool:
+    """True when the widget's own ``layout_type`` is one of the
+    managed layouts (``vbox`` / ``hbox`` / ``grid``). Used to block
+    layout-in-layout nesting at drop time — Qt Designer allows it
+    but our rendering of nested grids on canvas is fragile (see
+    backlog) so we disallow it until it's worth the engineering.
+    """
+    return normalise_layout_type(
+        properties.get("layout_type", "place"),
+    ) in MANAGED_LAYOUT_TYPES
+
+
 def pack_side_for(parent_layout_type: str) -> str | None:
     """Hardcoded ``side=`` value emitted for each pack-family parent.
     Returns ``None`` for non-pack parents so the exporter can skip

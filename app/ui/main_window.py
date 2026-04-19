@@ -162,6 +162,7 @@ class MainWindow(ctk.CTk):
         self.properties = PropertiesPanel(
             self.right_pane, self.project,
             tool_provider=lambda: self.workspace.controls.tool,
+            tool_setter=lambda t: self.workspace.controls.set_tool(t),
         )
         self.right_pane.add(
             self.object_tree, minsize=160, height=280, stretch="never",

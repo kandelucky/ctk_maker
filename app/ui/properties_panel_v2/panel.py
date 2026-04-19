@@ -88,7 +88,10 @@ from .type_icons import icon_for_type
 class PropertiesPanelV2(ctk.CTkFrame):
     """ttk.Treeview-based Properties panel. API-compatible with v1."""
 
-    def __init__(self, master, project: Project, tool_provider=None):
+    def __init__(
+        self, master, project: Project,
+        tool_provider=None, tool_setter=None,
+    ):
         super().__init__(master, fg_color=PANEL_BG)
         self.project = project
         self.current_id: str | None = None
@@ -99,6 +102,10 @@ class PropertiesPanelV2(ctk.CTkFrame):
         # widget in Select mode doesn't pay for a 30-row panel
         # rebuild + disabled_when lambda pass.
         self._tool_provider = tool_provider or (lambda: "edit")
+        # Called with a tool name to flip the workspace tool. Lets
+        # the Select-mode "Edit ✏" button jump straight into editing
+        # without making the user hunt for the toolbar.
+        self._tool_setter = tool_setter
 
         # Prop name → tree iid (for property_changed updates)
         self._prop_iids: dict[str, str] = {}
@@ -200,6 +207,23 @@ class PropertiesPanelV2(ctk.CTkFrame):
             self._name_row, text="Name", bg=BG, fg=STATIC_FG,
             font=("Segoe UI", 10), anchor="w",
         ).pack(side="left", padx=(6, 8))
+
+        # Edit-tool shortcut button — only packed (i.e. visible) when
+        # Select tool is active AND the panel has a non-Window
+        # selection. Click flips the workspace tool to Edit so the
+        # user can start editing the current widget without hunting
+        # for the toolbar. ``_update_chrome`` pack/forgets it.
+        edit_icon = load_icon("pencil", size=14)
+        self._edit_btn = ctk.CTkButton(
+            self._name_row, text="" if edit_icon else "Edit",
+            image=edit_icon,
+            width=26, height=22, corner_radius=3,
+            fg_color="#2d2d2d", hover_color="#3a3a3a",
+            text_color="#cccccc",
+            font=("Segoe UI", 10, "bold"),
+            command=self._on_edit_button,
+        )
+        self._edit_btn_visible = False
 
         self._name_var = tk.StringVar()
         self._name_entry = tk.Entry(
@@ -627,6 +651,47 @@ class PropertiesPanelV2(ctk.CTkFrame):
         finally:
             self._suspend_name_trace = False
         self._name_entry.configure(state="normal")
+        self._sync_edit_button(node)
+
+    def _sync_edit_button(self, node) -> None:
+        """Show the Edit shortcut only when it makes sense: we're in
+        Select mode, there's a regular widget selected (not the
+        sentinel Window node), and a tool_setter is wired. Otherwise
+        pack_forget so the row stays clean.
+        """
+        if self._tool_setter is None:
+            return
+        tool = self._tool_provider()
+        should_show = (
+            tool == "select"
+            and node is not None
+            and node.id != WINDOW_ID
+        )
+        if should_show and not self._edit_btn_visible:
+            self._edit_btn.pack(side="right", padx=(4, 6))
+            self._edit_btn_visible = True
+        elif not should_show and self._edit_btn_visible:
+            self._edit_btn.pack_forget()
+            self._edit_btn_visible = False
+
+    def _on_edit_button(self) -> None:
+        """Narrow multi-selection to the primary widget and flip the
+        workspace tool to Edit. Matches Figma-style "open for edit"
+        where clicking Edit on a group focuses on the one you were
+        last looking at, not the whole group.
+        """
+        if self._tool_setter is None:
+            return
+        primary = self.project.selected_id
+        if primary is not None:
+            # Collapse multi-selection if any; select_widget sets a
+            # single primary without touching tool state.
+            current_ids = set(
+                getattr(self.project, "selected_ids", set()) or set(),
+            )
+            if len(current_ids) > 1:
+                self.project.select_widget(primary)
+        self._tool_setter("edit")
 
     # ==================================================================
     # Layout extras (parent-driven pack_* / grid_* rows)

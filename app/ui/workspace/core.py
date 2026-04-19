@@ -59,7 +59,10 @@ from app.ui.workspace.layout_overlay import (
     _strip_layout_keys,
 )
 from app.ui.workspace.widget_lifecycle import WidgetLifecycle
-from app.widgets.layout_schema import normalise_layout_type
+from app.widgets.layout_schema import (
+    is_layout_container,
+    normalise_layout_type,
+)
 from app.widgets.registry import get_descriptor
 
 # ---- Drag + canvas ----------------------------------------------------------
@@ -935,6 +938,16 @@ class Workspace(ctk.CTkFrame):
         properties = dict(descriptor.default_properties)
         for key, value in getattr(entry, "preset_overrides", ()) or ():
             properties[key] = value
+        # Block layout-in-layout nesting — if the palette item is a
+        # managed-layout preset (Vertical / Horizontal / Grid) and the
+        # drop target is already a layout container, fall through to
+        # a top-level drop instead.
+        if (
+            container_node is not None
+            and is_layout_container(properties)
+            and is_layout_container(container_node.properties)
+        ):
+            container_node = None
         if container_node is None:
             # Top-level drop: figure out which document the cursor
             # is over and add the widget to that doc's tree. Drops

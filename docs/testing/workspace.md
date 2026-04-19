@@ -253,6 +253,11 @@ drag unchanged.
   *Fix:* `renderer.update_visibility_across_docs` ran at the end of every `redraw` (i.e. every motion) and flipped `state="hidden"` back to `state="normal"`. Added a `workspace._doc_drag_hide_active` flag that the visibility pass respects — set it in `chrome._enter_hidden_mode`, clear it in `chrome.end_drag` before the release-time apply_all
   *Files:* `render.py` (early-return on flag), `chrome.py` (set/clear around hidden_mode)
 
+- **[WS-33]** Layout containers could be nested inside each other (palette drop + drag reparent)
+  *Steps:* drop a Vertical Layout preset onto an existing Horizontal Layout Frame, or drag a Grid Layout into a Vertical Layout. Expected: drop lands top-level (layout-in-layout is rejected). Observed (pre-fix): layout Frame nested inside the target, rendering broke — inner grid drifted, outer `pack` stole the inner's geometry, chrome stacked wrong
+  *Fix:* `layout_schema.is_layout_container(properties)` helper → both `drag.py _maybe_reparent_dragged` + `_maybe_grid_drop` + `core.py` palette drop now reroute layout-into-layout drops to top-level. True nesting is deferred (see TODO — needs a dedicated mini-phase to fix canvas rendering)
+  *Files:* `app/widgets/layout_schema.py` (helper + `MANAGED_LAYOUT_TYPES`), `app/ui/workspace/drag.py`, `app/ui/workspace/core.py`
+
 - **[WS-32]** Cross-document group drag: undo only returned the primary widget
   *Steps:* select 3+ top-level widgets in document A, drag them over to document B, release → all of them reparent to B; press Ctrl+Z → only the primary (the one under the cursor) returns to A, the other group members stay stranded in B
   *Fix:* `_maybe_reparent_dragged` was pushing a single `ReparentCommand` for the primary and mutating the rest of the group silently. Introduced `BulkReparentCommand` (wraps N `ReparentCommand` entries, undo walks them in reverse / redo forward) + snapshot every top-level member's pre-move state in the cross-doc branch so the bulk undo rewinds the entire group. Single-widget cross-doc drags degrade cleanly to a one-entry command (raw `ReparentCommand` is pushed directly, no bulk wrapping)
