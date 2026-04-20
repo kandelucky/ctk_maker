@@ -85,7 +85,11 @@ class Renderer:
         canvas.delete(GRID_TAG)
         canvas.delete(CHROME_TAG)
         canvas.delete(LAYOUT_OVERLAY_TAG)
-        zoom = self.zoom.value
+        # Canvas coords use ``canvas_scale`` (user zoom × OS DPI) so
+        # the doc rect expands to match CTk widgets' DPI-aware
+        # physical size. Without the DPI factor, a 125 % display drew
+        # the rect 20 % smaller than the widgets placed inside it.
+        zoom = self.zoom.canvas_scale
         pad = DOCUMENT_PADDING
         max_right = pad
         max_bottom = pad
@@ -234,9 +238,10 @@ class Renderer:
     ) -> dict[str, tuple[int, int, int, int]]:
         """Canvas-space rectangle for every document, keyed by doc id.
         Used to intersect each widget against every doc that sits
-        above its owning doc in render order.
+        above its owning doc in render order. Uses ``canvas_scale``
+        so the bbox tracks the DPI-scaled rect drawn in ``redraw``.
         """
-        zoom = self.zoom.value
+        zoom = self.zoom.canvas_scale
         pad = DOCUMENT_PADDING
         bboxes: dict[str, tuple[int, int, int, int]] = {}
         for doc in self.project.documents:

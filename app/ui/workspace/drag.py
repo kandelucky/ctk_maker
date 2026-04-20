@@ -594,7 +594,11 @@ class WidgetDragController:
           nested place children fall through to per-widget
           ``place_configure`` since tags can't reach them.
         """
-        zoom = self.zoom.value or 1.0
+        # Canvas-space drag: cursor delta is in physical pixels, and
+        # canvas drawings scale by canvas_scale. Dividing by the same
+        # factor keeps the widget moving in step with the cursor on
+        # high-DPI displays.
+        zoom = self.zoom.canvas_scale or 1.0
         dx_logical = int(dx_root / zoom)
         dy_logical = int(dy_root / zoom)
         dx_tick = event.x_root - self._drag["last_mx"]

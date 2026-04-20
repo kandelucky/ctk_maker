@@ -135,7 +135,10 @@ class ChromeManager:
         """
         from app.ui.workspace.render import DOCUMENT_PADDING
 
-        zoom = self.zoom.value
+        # Chrome strip sits directly above the document rectangle —
+        # mirror Renderer.redraw's canvas_scale so the title bar
+        # tracks the DPI-scaled rect.
+        zoom = self.zoom.canvas_scale
         dw = int(doc.width * zoom)
         pad = DOCUMENT_PADDING
         doc_left = pad + int(doc.canvas_x * zoom)
@@ -558,7 +561,11 @@ class ChromeManager:
                 and self._count_doc_widgets(doc) >= HIDE_THRESHOLD
             ):
                 self._enter_hidden_mode(doc)
-        zoom = self.zoom.value or 1.0
+        # Converting root-pixel delta → logical units uses
+        # canvas_scale because the cursor moves in physical pixels on
+        # a DPI-aware process — same multiplier the doc rect under it
+        # uses in Renderer.redraw.
+        zoom = self.zoom.canvas_scale or 1.0
         dx_logical = int((event.x_root - drag["press_x_root"]) / zoom)
         dy_logical = int((event.y_root - drag["press_y_root"]) / zoom)
         doc = self.project.get_document(drag["doc_id"])

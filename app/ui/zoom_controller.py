@@ -22,6 +22,30 @@ ZOOM_LEVELS = (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0)
 ZOOM_MIN = ZOOM_LEVELS[0]
 ZOOM_MAX = ZOOM_LEVELS[-1]
 
+
+def _detect_dpi_factor() -> float:
+    """System DPI factor used to size canvas-side drawing so it tracks
+    CTk's DPI-aware widget rendering. 1.0 on 96-DPI; 1.25 on 125 %;
+    1.5 on 150 %, etc. Non-Windows falls back to 1.0 since CTk's
+    ScalingTracker only reports an OS factor on Windows.
+    """
+    import sys
+    if sys.platform != "win32":
+        return 1.0
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except Exception:
+            try:
+                ctypes.windll.user32.SetProcessDPIAware()
+            except Exception:
+                pass
+        dpi = ctypes.windll.user32.GetDpiForSystem()
+        return max(1.0, dpi / 96.0)
+    except Exception:
+        return 1.0
+
 ZOOM_MENU_LABELS = [
     "25%", "50%", "75%", "100%", "125%", "150%", "200%", "300%", "400%",
     "Fit to window", "Actual size",
@@ -47,9 +71,25 @@ class ZoomController:
         self._on_zoom_changed = on_zoom_changed
 
         self.value: float = 1.0
+        # Canvas-side drawing (doc rect, grid, top-level widget
+        # placement on canvas) multiplies by ``canvas_scale`` = user
+        # zoom × OS DPI factor, while widget.configure(width=...)
+        # stays on ``value`` (CTk's ScalingTracker adds DPI itself,
+        # doubling if we also applied it here). The DPI factor is
+        # baked in as a zoom multiplier so doc rects render at their
+        # runtime physical size — fixes the "button overflows window"
+        # illusion on high-DPI displays where canvas coords are raw
+        # physical pixels but CTk widgets render at logical × DPI.
+        self._dpi_factor: float = _detect_dpi_factor()
         self._menu: ctk.CTkOptionMenu | None = None
         self._menu_var: tk.StringVar | None = None
         self._warning: ctk.CTkLabel | None = None
+
+    @property
+    def canvas_scale(self) -> float:
+        """``user zoom × OS DPI`` — for canvas drawing + canvas-item
+        coords. See ``_dpi_factor`` comment for rationale."""
+        return self.value * self._dpi_factor
 
     # ------------------------------------------------------------------
     # Coordinate helpers (zoom + padding + per-document offset)
@@ -59,17 +99,18 @@ class ZoomController:
     ) -> tuple[int, int]:
         """Return canvas coordinates for a logical point inside
         ``document`` (defaults to the project's active document).
-        Applies padding, zoom, and the document's canvas_x/canvas_y
-        offset so multi-document projects render at their own
-        positions on the shared canvas.
+        Applies padding, zoom × DPI, and the document's canvas_x /
+        canvas_y offset so multi-document projects render at their
+        own positions on the shared canvas.
         """
         if document is None:
             document = self.project.active_document
-        offset_x = int(document.canvas_x * self.value)
-        offset_y = int(document.canvas_y * self.value)
+        scale = self.canvas_scale
+        offset_x = int(document.canvas_x * scale)
+        offset_y = int(document.canvas_y * scale)
         return (
-            self.document_padding + offset_x + int(lx * self.value),
-            self.document_padding + offset_y + int(ly * self.value),
+            self.document_padding + offset_x + int(lx * scale),
+            self.document_padding + offset_y + int(ly * scale),
         )
 
     def canvas_to_logical(
@@ -77,7 +118,7 @@ class ZoomController:
     ) -> tuple[int, int]:
         if document is None:
             document = self.project.active_document
-        z = self.value or 1.0
+        z = self.canvas_scale or 1.0
         offset_x = document.canvas_x * z
         offset_y = document.canvas_y * z
         return (

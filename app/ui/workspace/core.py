@@ -379,8 +379,12 @@ class Workspace(ctk.CTkFrame):
     def _find_document_at_canvas(self, canvas_x: float, canvas_y: float):
         """Return the Document whose rectangle contains the canvas
         point, or None when the point is in empty workspace space.
+        Must use ``canvas_scale`` (zoom × DPI) so the hit-test matches
+        the DPI-scaled rect Renderer.redraw draws — otherwise drags
+        that end inside the visible rect but outside logical pixel
+        ``800`` get flagged as off-doc and snap back.
         """
-        zoom = self.zoom.value
+        zoom = self.zoom.canvas_scale
         pad = DOCUMENT_PADDING
         for doc in self.project.documents:
             dx1 = pad + int(doc.canvas_x * zoom)

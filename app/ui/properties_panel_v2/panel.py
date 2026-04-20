@@ -580,7 +580,8 @@ class PropertiesPanelV2(ctk.CTkFrame):
         self._disabled_states = self._compute_disabled_states(
             descriptor, node.properties,
         )
-        self._populate_schema(descriptor, node.properties)
+        self._apply_managed_layout_disabled(node)
+        self._populate_schema(descriptor, node.properties, node)
         self._build_style_preview(node.properties)
         # Sync overlay appearance with initial disabled state
         for prop in self._effective_schema(descriptor):
@@ -727,7 +728,7 @@ class PropertiesPanelV2(ctk.CTkFrame):
     # ==================================================================
     # Schema traversal → tree hierarchy
     # ==================================================================
-    def _populate_schema(self, descriptor, properties: dict) -> None:
+    def _populate_schema(self, descriptor, properties: dict, node=None) -> None:
         schema = [
             p for p in self._effective_schema(descriptor)
             if not self._is_hidden(p, properties)
@@ -954,6 +955,21 @@ class PropertiesPanelV2(ctk.CTkFrame):
                 except Exception:
                     result[prop["name"]] = False
         return result
+
+    def _apply_managed_layout_disabled(self, node) -> None:
+        """Disable geometry fields for managed-layout children — the
+        layout manager owns placement so x/y/width/height are read-only.
+        """
+        from app.widgets.layout_schema import normalise_layout_type
+        if node is None or node.parent is None:
+            return
+        parent_layout = normalise_layout_type(
+            node.parent.properties.get("layout_type", "place"),
+        )
+        if parent_layout == "place":
+            return
+        for field in ("x", "y", "width", "height"):
+            self._disabled_states[field] = True
 
     def _is_hidden(self, prop: dict, properties: dict) -> bool:
         """Schema rows can declare a ``hidden_when(properties)``
@@ -1245,6 +1261,12 @@ class PropertiesPanelV2(ctk.CTkFrame):
         node = self.project.get_widget(self.current_id)
         if node is None:
             return
+        # Clamp geometry writes to the container's bounds — typed values
+        # (Inspector entry, spinner, drag-scrub) used to accept anything,
+        # so it was trivial to shove a widget outside the window via
+        # Properties. Drag already snaps back at release; this closes
+        # the same gap for keyboard-driven edits.
+        value = self._clamp_to_container_bounds(node, pname, value)
         # Full-dict snapshot so `compute_derived` side-effect changes
         # (e.g. Image width→height recompute on preserve_aspect) end
         # up in the same undo entry as the primary commit. Without
@@ -1270,3 +1292,87 @@ class PropertiesPanelV2(ctk.CTkFrame):
         self.project.history.push(
             MultiChangePropertyCommand(self.current_id, changed),
         )
+
+    # ==================================================================
+    # Geometry bounds
+    # ==================================================================
+    def _clamp_to_container_bounds(self, node, pname: str, value):
+        """Clamp x / y / width / height so the widget stays inside its
+        container. Top-level widgets sit in the owning document's
+        rectangle (the Main Window / Dialog); nested widgets in a
+        ``place`` parent sit in that Frame's rectangle. Widgets under
+        a managed layout (vbox / hbox / grid) skip the clamp — the
+        layout manager owns their geometry and the x/y fields are
+        either ignored (vbox/hbox) or paired with grid_row/column.
+        """
+        if pname not in ("x", "y", "width", "height", "corner_radius"):
+            return value
+        if pname == "corner_radius":
+            try:
+                v = int(value)
+            except (TypeError, ValueError):
+                return value
+            try:
+                w = int(node.properties.get("width", 0) or 0)
+                h = int(node.properties.get("height", 0) or 0)
+            except (TypeError, ValueError):
+                w = h = 0
+            half = min(max(0, min(w, h) // 2), 35) if w > 0 and h > 0 else 35
+            return max(0, min(v, half))
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return value
+        from app.widgets.layout_schema import normalise_layout_type
+        container_w, container_h = self._resolve_container_size(node)
+        # If the node is under a managed-layout parent, skip — layout
+        # manager controls placement/size.
+        parent = node.parent
+        if parent is not None:
+            parent_layout = normalise_layout_type(
+                parent.properties.get("layout_type", "place"),
+            )
+            if parent_layout != "place":
+                return max(0, value) if pname in ("x", "y") else value
+        if container_w <= 0 or container_h <= 0:
+            return max(0, value) if pname in ("x", "y") else value
+        try:
+            node_w = int(node.properties.get("width", 0) or 0)
+            node_h = int(node.properties.get("height", 0) or 0)
+            node_x = int(node.properties.get("x", 0) or 0)
+            node_y = int(node.properties.get("y", 0) or 0)
+        except (TypeError, ValueError):
+            node_w = node_h = node_x = node_y = 0
+        if pname == "x":
+            return max(0, min(value, max(0, container_w - node_w)))
+        if pname == "y":
+            return max(0, min(value, max(0, container_h - node_h)))
+        if pname == "width":
+            return max(1, min(value, max(1, container_w - node_x)))
+        if pname == "height":
+            return max(1, min(value, max(1, container_h - node_y)))
+        return value
+
+    def _resolve_container_size(self, node) -> tuple[int, int]:
+        """Container dimensions for bound clamping. Top-level widgets
+        → owning document (Main Window / Dialog); nested widgets →
+        parent node's ``width``/``height`` properties.
+        """
+        parent = node.parent
+        if parent is None:
+            doc = self.project.find_document_for_widget(node.id)
+            if doc is None:
+                return 0, 0
+            try:
+                return int(getattr(doc, "width", 0) or 0), int(
+                    getattr(doc, "height", 0) or 0,
+                )
+            except (TypeError, ValueError):
+                return 0, 0
+        try:
+            return (
+                int(parent.properties.get("width", 0) or 0),
+                int(parent.properties.get("height", 0) or 0),
+            )
+        except (TypeError, ValueError):
+            return 0, 0
