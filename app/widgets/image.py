@@ -9,7 +9,7 @@ Groups shown in the Properties panel, in order:
 
     Geometry   — x/y, width/height (= image pixel size)
     Image      — file path, preserve aspect
-    Tint       — optional normal / disabled colour overlay
+    Tint       — optional normal colour overlay (icon-style tint)
     Main Colors — background colour (transparent by default)
 """
 from pathlib import Path
@@ -43,7 +43,6 @@ class ImageDescriptor(WidgetDescriptor):
         "preserve_aspect": True,
         # Tint
         "image_color": None,
-        "image_color_disabled": None,
         # Main colors
         "fg_color": "transparent",
         # Wrapped CTkLabel must not show its default text.
@@ -73,21 +72,24 @@ class ImageDescriptor(WidgetDescriptor):
          "disabled_when": lambda p: not p.get("image")},
 
         # --- Tint --------------------------------------------------------
+        # Only Normal tint — CTkLabel has no disabled state, so
+        # ``image_color_disabled`` from the CTkButton descriptor pattern
+        # would be dead on Image. Dropped to avoid a misleading Inspector
+        # knob that did nothing.
         {"name": "image_color", "type": "color", "label": "",
          "group": "Tint", "row_label": "Normal Color",
-         "disabled_when": lambda p: not p.get("image")},
-        {"name": "image_color_disabled", "type": "color", "label": "",
-         "group": "Tint", "row_label": "Disabled Color",
+         "clearable": True, "clear_value": None,
          "disabled_when": lambda p: not p.get("image")},
 
         # --- Main Colors -------------------------------------------------
         {"name": "fg_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Background"},
+         "group": "Main Colors", "row_label": "Background",
+         "clearable": True, "clear_value": "transparent"},
     ]
 
     _NODE_ONLY_KEYS = {
         "x", "y",
-        "image", "image_color", "image_color_disabled",
+        "image", "image_color",
         "preserve_aspect",
     }
 

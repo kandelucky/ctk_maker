@@ -1,11 +1,28 @@
-"""Color editor: persistent swatch overlay + color picker dialog."""
+"""Color editor: persistent swatch overlay + color picker dialog.
+
+Schema can mark a colour property ``clearable: True`` (or a callable
+``clearable(props) -> bool`` for context-dependent cases like CTkFrame's
+fg_color which is only clearable on Layout Frames, not plain ones)
+with an optional ``clear_value`` (defaults to ``None``). When set,
+the editor draws a small ✕ button at the right edge of the value
+cell — click resets the prop to its ``clear_value`` (typical uses:
+``image_color`` = ``None``, ``fg_color`` / ``bg_color`` =
+``"transparent"``). Covers the UX gap where once a colour was picked
+the user had to type the sentinel back in by hand to return to the
+"inactive" default.
+"""
 
 from __future__ import annotations
 
 import tkinter as tk
 
-from ..constants import VALUE_BG
-from ..overlays import SLOT_COLOR, place_color_swatch
+from ..constants import BOOL_OFF_FG, TREE_FG, VALUE_BG
+from ..overlays import (
+    SLOT_COLOR,
+    SLOT_COLOR_CLEAR,
+    place_color_clear,
+    place_color_swatch,
+)
 from .base import Editor
 
 # CTk-only sentinel values that Tk's colour parser rejects. Map them
@@ -23,6 +40,16 @@ def _swatch_bg(value) -> str:
     if text in _CTK_SENTINEL_BG:
         return _CTK_SENTINEL_BG[text]
     return text
+
+
+def _is_cleared(value, clear_value) -> bool:
+    """True when the current value matches the schema's clear sentinel
+    — either literally equal, or both empty-like (``None`` / ``""``)."""
+    if value == clear_value:
+        return True
+    if not value and not clear_value:
+        return True
+    return False
 
 
 class ColorEditor(Editor):
@@ -46,15 +73,78 @@ class ColorEditor(Editor):
             lambda _e, p=pname: panel._pick_color(p),
         )
         panel.overlays.add(iid, SLOT_COLOR, overlay, place_color_swatch)
+        if self._is_clearable(panel, prop):
+            self._add_clear_button(panel, iid, pname, prop, value)
+
+    def _is_clearable(self, panel, prop: dict) -> bool:
+        """Resolve ``clearable`` — bool literal or a callable that takes
+        the current node's properties dict. Callable form lets a schema
+        opt in only when the context matches (e.g. CTkFrame's fg_color
+        is clearable only for Layout Frames, never for plain ones)."""
+        flag = prop.get("clearable")
+        if callable(flag):
+            node = panel.project.get_widget(panel.current_id)
+            props = node.properties if node is not None else {}
+            try:
+                return bool(flag(props))
+            except Exception:
+                return False
+        return bool(flag)
+
+    def _add_clear_button(
+        self, panel, iid: str, pname: str, prop: dict, value,
+    ) -> None:
+        clear_value = prop.get("clear_value")
+        btn = tk.Label(
+            panel.tree, text="✕", bg=VALUE_BG,
+            fg=self._clear_fg(value, clear_value),
+            font=("Segoe UI", 9),
+            cursor="hand2",
+            highlightthickness=0, bd=0,
+        )
+        btn.bind(
+            "<Button-1>",
+            lambda _e, p=pname, cv=clear_value:
+                panel._commit_prop(p, cv),
+        )
+        btn.bind(
+            "<Enter>",
+            lambda _e, w=btn: w.configure(fg=TREE_FG),
+        )
+        btn.bind(
+            "<Leave>",
+            lambda _e, w=btn, p=pname, cv=clear_value:
+                w.configure(fg=self._clear_fg(
+                    self._read_value(panel, p), cv,
+                )),
+        )
+        panel.overlays.add(iid, SLOT_COLOR_CLEAR, btn, place_color_clear)
+
+    def _clear_fg(self, value, clear_value) -> str:
+        """✕ glyph dims to the bool-off grey when the colour is
+        already cleared — there's nothing to clear, but the button
+        still exists so layout stays stable."""
+        return BOOL_OFF_FG if _is_cleared(value, clear_value) else TREE_FG
+
+    def _read_value(self, panel, pname: str):
+        node = panel.project.get_widget(panel.current_id)
+        return node.properties.get(pname) if node is not None else None
 
     def refresh(self, panel, iid, pname, prop, value) -> None:
         overlay = panel.overlays.get(iid, SLOT_COLOR)
-        if overlay is None or not value:
-            return
-        try:
-            overlay.configure(bg=_swatch_bg(value))
-        except tk.TclError:
-            pass
+        if overlay is not None:
+            try:
+                overlay.configure(bg=_swatch_bg(value))
+            except tk.TclError:
+                pass
+        btn = panel.overlays.get(iid, SLOT_COLOR_CLEAR)
+        if btn is not None:
+            try:
+                btn.configure(
+                    fg=self._clear_fg(value, prop.get("clear_value")),
+                )
+            except tk.TclError:
+                pass
 
     def set_disabled(self, panel, iid, pname, prop, disabled) -> None:
         overlay = panel.overlays.get(iid, SLOT_COLOR)
@@ -69,6 +159,17 @@ class ColorEditor(Editor):
             )
         except tk.TclError:
             pass
+        btn = panel.overlays.get(iid, SLOT_COLOR_CLEAR)
+        if btn is not None:
+            try:
+                btn.configure(
+                    fg=BOOL_OFF_FG if disabled else self._clear_fg(
+                        val, prop.get("clear_value"),
+                    ),
+                    cursor="arrow" if disabled else "hand2",
+                )
+            except tk.TclError:
+                pass
 
     def on_double_click(self, panel, pname, prop, event) -> bool:
         panel._pick_color(pname)

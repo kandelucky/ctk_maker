@@ -70,12 +70,12 @@ CTX_MENU_STYLE = dict(
     fg="#cccccc",
     activebackground="#094771",
     activeforeground="#ffffff",
-    disabledforeground="#6a6a6a",
+    disabledforeground="#888888",
     bd=0,
     borderwidth=0,
     activeborderwidth=0,
     relief="flat",
-    font=("Segoe UI", 10),
+    font=("Segoe UI", 11),
 )
 
 
@@ -1204,7 +1204,9 @@ class ObjectTreePanel(ctk.CTkFrame):
             and iid in self.project.selected_ids
         )
 
-        menu = tk.Menu(self, tearoff=0, **CTX_MENU_STYLE)
+        menu = tk.Menu(
+            self.winfo_toplevel(), tearoff=0, **CTX_MENU_STYLE,
+        )
         if multi_active:
             count = len(self.project.selected_ids)
             menu.add_command(
@@ -1222,7 +1224,11 @@ class ObjectTreePanel(ctk.CTkFrame):
                 label="Copy",
                 command=lambda nid=iid: self._copy_single_to_clipboard(nid),
             )
-            paste_state = "normal" if self.project.clipboard else "disabled"
+            # tk.Menu on Windows emboss-shadows any ``state="disabled"``
+            # entry, so we keep items enabled and only swap the
+            # foreground colour to communicate unavailability — callbacks
+            # no-op when the action can't run. Same trick the top menu's
+            # Edit submenu uses (see main_window._refresh_edit_menu_state).
             ctx_node = self.project.get_widget(iid)
             descriptor = (
                 get_descriptor(ctx_node.widget_type)
@@ -1232,18 +1238,23 @@ class ObjectTreePanel(ctk.CTkFrame):
                 descriptor is not None
                 and getattr(descriptor, "is_container", False)
             )
-            paste_child_state = (
-                paste_state if is_container else "disabled"
+            disabled_fg = CTX_MENU_STYLE.get("disabledforeground", "#888888")
+            enabled_fg = CTX_MENU_STYLE.get("fg", "#cccccc")
+            paste_fg = enabled_fg if self.project.clipboard else disabled_fg
+            paste_child_fg = (
+                enabled_fg
+                if (self.project.clipboard and is_container)
+                else disabled_fg
             )
             menu.add_command(
                 label="Paste",
                 command=self._paste_in_window,
-                state=paste_state,
+                foreground=paste_fg,
             )
             menu.add_command(
                 label="Paste as child",
                 command=lambda nid=iid: self._paste_as_child(nid),
-                state=paste_child_state,
+                foreground=paste_child_fg,
             )
             menu.add_command(
                 label="Duplicate",
@@ -1287,10 +1298,19 @@ class ObjectTreePanel(ctk.CTkFrame):
 
     def _paste_as_child(self, widget_id: str) -> None:
         """Tree paste — drop the clipboard inside the right-clicked
-        widget. Menu disables this entry on non-container nodes so the
-        callback never lands on a leaf, but keep the no-op guard for
-        the keyboard-driven path."""
+        widget. Menu keeps this entry enabled at all times (Windows
+        emboss on state=disabled) so the guards here handle the
+        unavailable cases: empty clipboard and non-container target
+        are both silent no-ops."""
         if not self.project.clipboard:
+            return
+        node = self.project.get_widget(widget_id)
+        descriptor = (
+            get_descriptor(node.widget_type) if node is not None else None
+        )
+        if descriptor is None or not getattr(
+            descriptor, "is_container", False,
+        ):
             return
         new_ids = self.project.paste_from_clipboard(parent_id=widget_id)
         self._push_paste_history(new_ids)

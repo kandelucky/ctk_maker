@@ -104,8 +104,11 @@ class CTkButtonDescriptor(WidgetDescriptor):
          "group": "Button Interaction", "row_label": "Interactable"},
 
         # --- Main Colors -------------------------------------------------
+        # Clearable — icon-only buttons usually want a transparent
+        # background that picks up the parent's fill.
         {"name": "fg_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Background"},
+         "group": "Main Colors", "row_label": "Background",
+         "clearable": True, "clear_value": "transparent"},
         {"name": "hover_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Hover"},
 
@@ -141,9 +144,11 @@ class CTkButtonDescriptor(WidgetDescriptor):
          "group": "Image & Alignment", "row_label": "Image"},
         {"name": "image_color", "type": "color", "label": "",
          "group": "Image & Alignment", "row_label": "Normal Color",
+         "clearable": True, "clear_value": None,
          "disabled_when": lambda p: not p.get("image")},
         {"name": "image_color_disabled", "type": "color", "label": "",
          "group": "Image & Alignment", "row_label": "Disabled Color",
+         "clearable": True, "clear_value": None,
          "disabled_when": lambda p: not p.get("image")},
         {"name": "image_width", "type": "number", "label": "W",
          "group": "Image & Alignment",

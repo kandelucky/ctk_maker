@@ -2,7 +2,7 @@
 
 A desktop visual designer for **CustomTkinter** — drag and drop widgets onto a canvas, edit their properties live, and export the result as clean runnable Python.
 
-> **Status:** v0.0.15.6 — active development. Latest: workspace refactor round (chrome / widget_lifecycle / render / selection_controller) with frame-pool multi-select chrome (~45ms → ~3ms for 20 widgets) + grid auto-grow undo tracking across add / reparent / duplicate / paste. See [version history](docs/history/README.md) for per-release highlights.
+> **Status:** v0.0.15.9 — active development. Latest: Inspector UX polish — clearable ✕ button on nullable colour properties (Image tint / Layout Frame fg / Button image colours), "transparent" renders as "none" in the property panel, Object Tree right-click menu emboss fix, drag-scrub cursor recovers on release. Area 2 (Layout managers) QA pass complete, 44/44 tests + 7 bug fixes + layout refactor pass. See [version history](docs/history/README.md) for per-release highlights.
 
 [![v0.0.14](docs/history/v0.0.14.png)](docs/history/v0.0.14.png)
 

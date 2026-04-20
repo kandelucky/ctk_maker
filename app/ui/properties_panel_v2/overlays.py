@@ -67,6 +67,15 @@ def place_color_swatch(tree: tk.Widget, widget: tk.Widget, iid: str) -> None:
     _place_value_cell_left(tree, widget, iid, width=50, pad_y=4)
 
 
+def place_color_clear(tree: tk.Widget, widget: tk.Widget, iid: str) -> None:
+    """Small ✕ button sits at the right edge of the value cell — away
+    from the swatch + hex readout on the left so the button never
+    blends visually into the ``#ffffff`` text. Only drawn for schema
+    props marked ``clearable`` — see ColorEditor.populate.
+    """
+    _place_value_cell_right(tree, widget, iid, width=14, pad_y=4)
+
+
 def place_enum_button(tree: tk.Widget, widget: tk.Widget, iid: str) -> None:
     _place_value_cell_right(tree, widget, iid, width=20, pad_y=4)
 
@@ -143,6 +152,7 @@ def place_style_preview(
 # Slot constants — one string per overlay kind
 # =====================================================================
 SLOT_COLOR = "color"
+SLOT_COLOR_CLEAR = "color_clear"
 SLOT_ENUM_BUTTON = "enum_button"
 SLOT_NUMBER_SPIN = "number_spin"
 SLOT_TEXT_VALUE = "text_value"

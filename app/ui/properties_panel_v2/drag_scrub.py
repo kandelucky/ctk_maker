@@ -114,6 +114,10 @@ class DragScrubController:
         state = self._state
         self._state = None
         self._set_cursor("")
+        # Reset hover-mode cache too — otherwise the next <Motion> sees
+        # ``new_mode == self._cursor_mode == "drag"`` and short-circuits
+        # before restoring the <-> cursor the user still wants.
+        self._cursor_mode = ""
         self.panel._suspend_history = False
         if state is None:
             return
