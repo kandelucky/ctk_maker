@@ -511,7 +511,7 @@ class PropertiesPanelV2(ctk.CTkFrame):
         self._clear_tree()
         self._type_label.configure(text="")
         self._id_label.configure(text="")
-        self._type_icon_label.configure(image=None)
+        self._type_icon_label.configure(image="")
         self._suspend_name_trace = True
         try:
             if self._name_var is not None:
