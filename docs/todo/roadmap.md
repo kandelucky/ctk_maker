@@ -121,7 +121,18 @@ Worth a dedicated mini-phase after current refactor round.
 
 ---
 
-## Phase 5 remaining — Window Settings
+## Project file safety — backups / autosave / crash recovery
+
+Currently a `.ctkproj` save is a plain overwrite — if the write is interrupted (crash / power loss) or the file is hand-edited into corruption, the project is gone. The "try a backup" message in the damaged-file dialog is currently a polite fiction because the builder never makes one.
+
+Four layers, ordered by effort:
+
+- [ ] **`.bak` on save** (minimal viable) — before writing the new JSON, rename the existing file to `<name>.ctkproj.bak`. One generation kept; next save overwrites the `.bak`. Zero UX change; recovery is manual (user renames `.bak` → `.ctkproj`).
+- [ ] **Rotated backups** — keep `<name>.ctkproj.bak1` / `.bak2` / `.bak3` (ring buffer, newest first). Slightly more disk, survives two bad saves in a row.
+- [ ] **Autosave** — every N minutes while dirty, write `<name>.ctkproj.autosave` next to the real file. Clear on explicit Save. On startup, if an `.autosave` is newer than the matching `.ctkproj`, offer to restore.
+- [ ] **Crash-recovery session** — detect when the builder was killed without closing the project cleanly (lock file in `~/.ctk_visual_builder/`). On next launch, if a lock file is orphaned, offer the autosave as a recovery option.
+
+Start with the `.bak` layer — one function change in `project_saver.py`, no UX work, closes the promise made in the damaged-file error dialog.
 
 - [ ] `appearance_mode` (system / light / dark) — currently global Settings only
 - [ ] Window icon (`iconbitmap` / `iconphoto`) — Phase 8-adjacent

@@ -97,6 +97,16 @@ class MainWindow(ctk.CTk):
         self.project = Project()
         self._current_path: str | None = None
         self._dirty: bool = False
+        # History top at the last save — ``_recompute_dirty`` compares
+        # the current top to this marker so undo-ing back to the saved
+        # state flips dirty off automatically.
+        self._saved_history_marker = None
+        # Active ``subprocess.Popen`` handles for per-dialog previews,
+        # keyed by document id. We poll the handle before launching a
+        # new one so clicking ▶ repeatedly on the same dialog doesn't
+        # spawn duplicate preview windows.
+        self._dialog_preview_procs: dict[str, subprocess.Popen] = {}
+        self._main_preview_proc: subprocess.Popen | None = None
         self._object_tree_window: ObjectTreeWindow | None = None
         # Default: Object Tree is docked above the Properties panel —
         # the floating window only opens via the View menu toggle.
@@ -188,6 +198,9 @@ class MainWindow(ctk.CTk):
             "request_add_dialog",
             lambda *_a, **_k: self._on_add_dialog(),
         )
+        bus.subscribe(
+            "request_preview_dialog", self._on_preview_dialog,
+        )
         self._refresh_undo_redo_buttons()
 
         self.protocol("WM_DELETE_WINDOW", self._on_window_close)
@@ -277,12 +290,41 @@ class MainWindow(ctk.CTk):
     # Dirty tracking
     # ------------------------------------------------------------------
     def _on_project_modified(self, *_args, **_kwargs) -> None:
-        if not self._dirty:
-            self._dirty = True
-            self._refresh_title()
-            self.project.event_bus.publish("dirty_changed", True)
+        # Widget-level events fire on both fresh edits AND on undo/redo
+        # replays. Undo-ing back to the saved state used to leave the
+        # dirty flag on — the title still showed •, prompting a save
+        # that was not needed. Dirty now tracks the history top instead
+        # of raw event firings; ``_recompute_dirty`` does the match.
+        self._recompute_dirty()
+
+    def _on_history_changed(self, *_args, **_kwargs) -> None:
+        self._refresh_undo_redo_buttons()
+        self._recompute_dirty()
+
+    def _recompute_dirty(self) -> None:
+        """Compare the top of the undo stack to the marker captured at
+        the last save. Matching marker means the project state is
+        byte-identical to what was saved — flag is cleared. Anything
+        else sets dirty. Handles both directions (new edits + undo
+        back to saved).
+        """
+        history = self.project.history
+        current_top = history._undo[-1] if history._undo else None
+        is_dirty = current_top is not self._saved_history_marker
+        if is_dirty == self._dirty:
+            return
+        self._dirty = is_dirty
+        self._refresh_title()
+        self.project.event_bus.publish("dirty_changed", is_dirty)
 
     def _clear_dirty(self) -> None:
+        # Stamp the history top as the "saved" marker. Any subsequent
+        # push / undo / redo that changes the top flips dirty back on;
+        # returning to this exact top (e.g. via undo) clears it again.
+        history = self.project.history
+        self._saved_history_marker = (
+            history._undo[-1] if history._undo else None
+        )
         if self._dirty:
             self._dirty = False
             self._refresh_title()
@@ -544,7 +586,10 @@ class MainWindow(ctk.CTk):
 
     def _rebuild_recent_menu(self) -> None:
         self._recent_menu.delete(0, "end")
-        paths = load_recent()
+        # Filter missing files — the entry stays in recent.json so a
+        # temporarily-unmounted drive doesn't lose its history, but
+        # the menu only offers rows that would actually open.
+        paths = [p for p in load_recent() if Path(p).exists()]
         if not paths:
             self._recent_menu.add_command(label="(empty)", state="disabled")
         else:
@@ -743,6 +788,14 @@ class MainWindow(ctk.CTk):
                 len(self.project.documents) - 1,
             ),
         )
+        # Scroll the canvas onto the new dialog — stacked to the right
+        # of the last doc, the new form can easily land past the
+        # current viewport (especially on zoom > 100 %). Ran after the
+        # event bus has fired so the renderer has redrawn + updated
+        # scrollregion before we sample it.
+        self.after_idle(
+            lambda did=new_doc.id: self.workspace.focus_document(did),
+        )
 
     def _on_remove_current_document(self) -> None:
         doc = self.project.active_document
@@ -788,6 +841,12 @@ class MainWindow(ctk.CTk):
                 parent=self,
             )
             return
+        # Same dedup as per-dialog preview: at most one main preview
+        # window alive at a time. Closing it frees the slot.
+        existing = self._main_preview_proc
+        if existing is not None and existing.poll() is None:
+            return
+        self._main_preview_proc = None
         tmp_dir = Path(tempfile.mkdtemp(prefix="ctk_preview_"))
         tmp_path = tmp_dir / "preview.py"
         try:
@@ -797,10 +856,63 @@ class MainWindow(ctk.CTk):
             messagebox.showerror("Preview failed", "Could not generate preview file.", parent=self)
             return
         try:
-            subprocess.Popen([sys.executable, str(tmp_path)], cwd=str(tmp_dir))
+            proc = subprocess.Popen(
+                [sys.executable, str(tmp_path)], cwd=str(tmp_dir),
+            )
         except OSError:
             log_error("preview subprocess")
             messagebox.showerror("Preview failed", "Could not launch Python.", parent=self)
+            return
+        self._main_preview_proc = proc
+
+    def _on_preview_dialog(self, doc_id: str | None = None) -> None:
+        """Launch a dialog-only preview — the chrome ▶ button on every
+        Toplevel document routes here via ``request_preview_dialog``.
+        Exports the project with ``preview_dialog_id=doc_id`` so the
+        generated __main__ block opens just this dialog on top of a
+        withdrawn root.
+
+        One preview window per dialog: if a previous subprocess for
+        the same ``doc_id`` is still alive, the click is a no-op (the
+        user must close the existing preview first). Prevents a
+        mash-of-clicks from flooding the screen with duplicate copies.
+        """
+        if not doc_id:
+            return
+        doc = self.project.get_document(doc_id)
+        if doc is None or not doc.is_toplevel:
+            return
+        # One live preview per dialog.
+        existing = self._dialog_preview_procs.get(doc_id)
+        if existing is not None and existing.poll() is None:
+            return
+        self._dialog_preview_procs.pop(doc_id, None)
+        tmp_dir = Path(tempfile.mkdtemp(prefix="ctk_preview_dlg_"))
+        tmp_path = tmp_dir / "preview.py"
+        try:
+            export_project(
+                self.project, tmp_path, preview_dialog_id=doc_id,
+            )
+        except OSError:
+            log_error("preview dialog export")
+            messagebox.showerror(
+                "Preview failed",
+                "Could not generate preview file.",
+                parent=self,
+            )
+            return
+        try:
+            proc = subprocess.Popen(
+                [sys.executable, str(tmp_path)], cwd=str(tmp_dir),
+            )
+        except OSError:
+            log_error("preview dialog subprocess")
+            messagebox.showerror(
+                "Preview failed", "Could not launch Python.",
+                parent=self,
+            )
+            return
+        self._dialog_preview_procs[doc_id] = proc
 
     def _on_appearance_change(self) -> None:
         mode = self._appearance_var.get()
@@ -954,9 +1066,6 @@ class MainWindow(ctk.CTk):
         elif kc == 89:  # Y
             self._redo_key_held = False
         return None
-
-    def _on_history_changed(self, *_args, **_kwargs) -> None:
-        self._refresh_undo_redo_buttons()
 
     def _refresh_undo_redo_buttons(self) -> None:
         if not hasattr(self, "toolbar"):

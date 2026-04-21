@@ -39,6 +39,8 @@ CHROME_TOFRONT_TAG = "window_chrome_tofront"
 CHROME_TOFRONT_IMG_TAG = "window_chrome_tofront_img"
 CHROME_TOBACK_TAG = "window_chrome_toback"
 CHROME_TOBACK_IMG_TAG = "window_chrome_toback_img"
+CHROME_PREVIEW_TAG = "window_chrome_preview"
+CHROME_PREVIEW_IMG_TAG = "window_chrome_preview_img"
 CHROME_MIN_TAG = "window_chrome_min"
 CHROME_CLOSE_TAG = "window_chrome_close"
 CHROME_HEIGHT = 28
@@ -63,6 +65,10 @@ MIN_X_OFFSET = 48
 SETTINGS_X_OFFSET = 78
 TOFRONT_X_OFFSET = 108
 TOBACK_X_OFFSET = 138
+# Dialog-only "▶ Preview this dialog" button — launches a hidden-root
+# subprocess that opens just this Toplevel. Placed farthest from the
+# right edge so it doesn't compete with the destructive close button.
+PREVIEW_X_OFFSET = 168
 # Half-width of the invisible hit-rect that sits behind each icon
 # so clicking near the glyph (not just on its pixels) registers.
 ICON_HIT_PADDING = 10
@@ -101,6 +107,13 @@ class ChromeManager:
         )
         self._toback_icon_hover = load_tk_icon(
             "chevrons-down", size=14, color="#ffffff",
+        )
+        # Per-dialog preview icon (▶). Dim by default, brightens on hover.
+        self._preview_icon = load_tk_icon(
+            "play", size=14, color=CHROME_FG_DIM,
+        )
+        self._preview_icon_hover = load_tk_icon(
+            "play", size=14, color="#ffffff",
         )
         self._drag: dict | None = None
 
@@ -172,6 +185,8 @@ class ChromeManager:
         doc_tofront_img_tag = f"chrome_tofront_img:{doc.id}"
         doc_toback_tag = f"chrome_toback:{doc.id}"
         doc_toback_img_tag = f"chrome_toback_img:{doc.id}"
+        doc_preview_tag = f"chrome_preview:{doc.id}"
+        doc_preview_img_tag = f"chrome_preview_img:{doc.id}"
         doc_close_tag = f"chrome_close:{doc.id}"
         # Umbrella tag covering every chrome canvas item that belongs
         # to this document. Used by ``drive_drag`` to slide the whole
@@ -252,6 +267,23 @@ class ChromeManager:
                     doc_toback_tag, doc_toback_img_tag, doc_tag,
                 ),
             )
+        # "▶ Preview" — only on Toplevel dialogs. The main window has
+        # Ctrl+R for full-project preview; per-dialog preview is how
+        # the designer tests a Toplevel without wiring a real button.
+        if doc.is_toplevel and self._preview_icon is not None:
+            self._draw_icon_button(
+                right - PREVIEW_X_OFFSET, top, doc_top, mid, bg_fill,
+                self._preview_icon,
+                rect_tags=(
+                    CHROME_TAG, CHROME_PREVIEW_TAG,
+                    doc_preview_tag, doc_tag,
+                ),
+                image_tags=(
+                    CHROME_TAG, CHROME_PREVIEW_TAG,
+                    CHROME_PREVIEW_IMG_TAG,
+                    doc_preview_tag, doc_preview_img_tag, doc_tag,
+                ),
+            )
         self.canvas.create_text(
             right - MIN_X_OFFSET, mid,
             text="−",
@@ -277,6 +309,7 @@ class ChromeManager:
             doc_settings_tag, doc_settings_img_tag, doc_close_tag,
             doc_tofront_tag, doc_tofront_img_tag,
             doc_toback_tag, doc_toback_img_tag,
+            doc_preview_tag, doc_preview_img_tag,
         )
 
     def _draw_icon_button(
@@ -332,6 +365,7 @@ class ChromeManager:
         self, doc, bg_tag, title_tag,
         settings_tag, settings_img_tag, close_tag,
         tofront_tag, tofront_img_tag, toback_tag, toback_img_tag,
+        preview_tag=None, preview_img_tag=None,
     ) -> None:
         """Wire the click / drag / hover bindings for a single
         document's chrome strip. Each document gets its own tag
@@ -380,6 +414,15 @@ class ChromeManager:
             self._toback_icon, self._toback_icon_hover,
             on_click=lambda d=doc_id: self._on_toback_click(d),
         )
+        if (
+            preview_tag and preview_img_tag
+            and doc.is_toplevel and self._preview_icon is not None
+        ):
+            self._bind_icon_hover(
+                preview_tag, preview_img_tag,
+                self._preview_icon, self._preview_icon_hover,
+                on_click=lambda d=doc_id: self._on_preview_click(d),
+            )
         # Close button — text item, hover flips fill color instead of
         # an image swap, so it doesn't fit ``_bind_icon_hover``.
         self.canvas.tag_bind(
@@ -422,6 +465,17 @@ class ChromeManager:
 
     def _on_toback_click(self, doc_id: str) -> str:
         self.project.send_document_to_back(doc_id)
+        return "break"
+
+    def _on_preview_click(self, doc_id: str) -> str:
+        """Launch a dialog-only preview subprocess — hidden root host
+        + this Toplevel on top. Routes through the workspace's event
+        bus so main_window owns the subprocess lifecycle (same place
+        Ctrl+R is handled).
+        """
+        self.project.event_bus.publish(
+            "request_preview_dialog", doc_id,
+        )
         return "break"
 
     # ------------------------------------------------------------------

@@ -178,9 +178,15 @@ class Project:
         # ``active_document_id`` drives legacy ``root_widgets`` /
         # ``document_width`` / ``window_properties`` accessors for
         # code paths that haven't been ported to multi-doc yet.
-        self.documents: list[Document] = [Document(name="Main Window")]
-        self.active_document_id: str = self.documents[0].id
+        #
+        # Default doc name = project name (``Untitled`` until the New
+        # dialog overwrites both). Runtime ``self.title(...)`` in the
+        # exported .py ends up as the project name, not a generic
+        # "Main Window" that confuses users into thinking the field is
+        # just an editor label.
         self.name: str = "Untitled"
+        self.documents: list[Document] = [Document(name=self.name)]
+        self.active_document_id: str = self.documents[0].id
         # Monotonic per-widget-type counter used to auto-name new widgets
         # ("Button", "Button (1)", "Button (2)", …). Persisted with the
         # project so numbers never get reused across reloads.
@@ -649,7 +655,10 @@ class Project:
                 self.remove_widget(node.id)
         self._id_index.clear()
         self._doc_index.clear()
-        self.documents = [Document(name="Main Window")]
+        # Default doc name = project name so a clear() right after
+        # load keeps the doc name in sync with whatever the user
+        # picked for the project title.
+        self.documents = [Document(name=self.name or "Untitled")]
         self.active_document_id = self.documents[0].id
         self.history.clear()
         self.event_bus.publish(

@@ -20,6 +20,23 @@ Model: `project.assets: dict[asset_id → AssetEntry]` with `(relative_path, sha
 
 Touches: project model, exporter, palette UI, file I/O. Worth a dedicated Phase.
 
+### Dialog → reusable composite
+
+Convert an existing Dialog document into a **portable composite object** that can be dragged into another window's canvas as a single group — preserving the full widget tree, properties, layout, and relative positions.
+
+Think of it as "wrap this Dialog's contents into a re-usable Frame subtree." After the conversion:
+- The Dialog's root-level widgets become children of a new container Frame
+- The Frame can be dropped into any window / dialog / Frame
+- Optionally: the original Dialog document can be deleted (subtree promoted elsewhere) OR kept as a template
+
+**Two flavours worth comparing:**
+
+1. **One-shot "Extract contents to Frame"** — right-click a Dialog → "Extract to Frame…". Pick a target window. A new container Frame appears in that window holding every top-level widget from the dialog. Names, properties, layout all preserved. The source dialog is left empty (or deleted on confirmation). Simplest.
+
+2. **Template / composite library** — the Dialog is "saved as composite" and appears in a new palette category. Drag-drop as a whole. Closer to Figma components / Qt promoted widgets. Ties into the Prefab idea below — same storage, same UX, just sourced from a Dialog instead of a free selection.
+
+Goal is to let the user build complex sub-panels (login form, settings row, nav bar) in the spacious Dialog canvas and then snap them into the real app window once they're happy. Avoids having to lay out a deeply nested form inside the main window's cluttered canvas.
+
 ### Prefabs / reusable widget composites
 
 Today every form is built from scratch. Typical apps have dozens of form rows with same 3-widget shape (`label + entry + ✕ button`, `icon + text + chevron`).

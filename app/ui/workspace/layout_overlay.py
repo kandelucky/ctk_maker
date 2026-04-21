@@ -448,6 +448,13 @@ class LayoutOverlayManager:
         configure. We size each grow child explicitly to
         ``(container - spacing*(N-1)) / N``; cross-axis stays on
         ``fill=both`` from the pack kwargs.
+
+        Resizes EVERY grow sibling — not just the one being re-applied.
+        The previous version configured only ``anchor_widget``, which
+        left earlier grow siblings stuck at their pre-split size when
+        a new grow child joined the row (e.g. dropping a 2nd button
+        into an hbox: the 1st button kept its old width, the 2nd got
+        half the container width).
         """
         grow_siblings = [
             c for c in parent_node.children
@@ -469,10 +476,23 @@ class LayoutOverlayManager:
         except (TypeError, ValueError):
             container_size = 0
         slot = max(1, (container_size - spacing * (count - 1)) // count)
-        try:
-            anchor_widget.configure(**{axis_key: max(1, int(slot * zoom))})
-        except tk.TclError:
-            pass
+        # Resize every grow sibling, not just anchor_widget.
+        widget_views = getattr(self.workspace, "widget_views", {}) or {}
+        anchor_views = getattr(self.workspace, "_anchor_views", {}) or {}
+        for sibling in grow_siblings:
+            entry = widget_views.get(sibling.id)
+            if entry is None:
+                continue
+            widget, _ = entry
+            # Composite widgets (Image etc.) want the outer anchor
+            # frame resized, not the inner widget.
+            sib_anchor = anchor_views.get(sibling.id, widget)
+            try:
+                sib_anchor.configure(
+                    **{axis_key: max(1, int(slot * zoom))},
+                )
+            except tk.TclError:
+                pass
 
     def _apply_grid_manager(
         self, anchor_widget, parent_node, child_node,

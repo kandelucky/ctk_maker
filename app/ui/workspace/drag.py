@@ -77,6 +77,20 @@ class WidgetDragController:
         # twice in one event loop pass skips past the intended
         # container on the very first click.
         self._last_press_serial: int | None = None
+        # Drill-down is gated by a fast-click window. Each resolved
+        # click stamps the leaf widget id + timestamp; the next click
+        # only drills one level when it lands on the same leaf within
+        # ``_DRILL_WINDOW_MS``. Slow successive clicks reset to the
+        # outermost ancestor so the user can drag the parent repeatedly
+        # without clicking into children on every second press.
+        self._last_click_leaf_id: str | None = None
+        self._last_click_time_ms: int = 0
+
+    # "Quick second click = drill" window. Longer than Windows'
+    # double-click threshold (500 ms) — matches the rename-style
+    # pause Explorer / Photoshop use, so a deliberate second click
+    # feels distinct from both a double-click and a fresh session.
+    _DRILL_WINDOW_MS = 800
 
     # ------------------------------------------------------------------
     # Convenience accessors — keep call sites terse.
@@ -408,20 +422,18 @@ class WidgetDragController:
         self._drag["placeholder_id"] = placeholder_id
 
     def _resolve_click_target(self, clicked_nid: str) -> str | None:
-        """Drill-down selection with shared-context shortcut.
+        """Drill-down selection gated by a fast-click window.
 
-        Three cases, in order of precedence:
+        Revised semantics (v0.0.15.17):
 
-        1. Current selection is an ancestor of the clicked widget →
-           descend one level toward the click.
-        2. Current selection shares a common ancestor with the clicked
-           widget (i.e. they're already in the same Frame / parent
-           scope) → select the clicked widget directly; no drill-up.
-           Lets the user switch between siblings inside a Frame once
-           the Frame has been "entered".
-        3. No overlap (different branch, or nothing selected) →
-           select the outermost ancestor so the user has to descend
-           explicitly.
+        - First click on a leaf → select outermost unlocked ancestor.
+        - Second click on the SAME leaf within ``_DRILL_WINDOW_MS`` →
+          drill one level deeper (parent → child → grandchild).
+        - Slow (> window) successive clicks → reset to the outermost
+          ancestor, so the user can drag the parent repeatedly without
+          auto-descending into children on every follow-up press.
+        - Different leaf OR sibling inside an already-entered scope →
+          select the leaf directly (shared-scope shortcut preserved).
 
         Returns ``None`` when every widget in the click's ancestor
         chain is locked — the click has no valid canvas target and
@@ -441,30 +453,48 @@ class WidgetDragController:
         chain.reverse()  # [outermost unlocked, ..., clicked-if-unlocked]
         if not chain:
             return None
+        now_ms = int(self.workspace.tk.call("clock", "milliseconds"))
+        same_leaf = clicked_nid == self._last_click_leaf_id
+        within_window = (now_ms - self._last_click_time_ms) <= self._DRILL_WINDOW_MS
+        fast_follow_up = same_leaf and within_window
+        # Stamp for the next click BEFORE returning so nested returns
+        # all share the same post-condition.
+        self._last_click_leaf_id = clicked_nid
+        self._last_click_time_ms = now_ms
+
         current_id = self.project.selected_id
-        if current_id is None:
-            return chain[0].id
-        # Case 1 — current is an ancestor of clicked (or clicked itself).
-        for idx, node in enumerate(chain):
-            if node.id == current_id:
-                if idx + 1 < len(chain):
-                    return chain[idx + 1].id
-                return chain[idx].id
-        # Case 2 — shared scope. Collect current's ancestor ids (incl.
-        # itself) and see if any clicked ancestor (excluding the leaf)
-        # is among them; if so, we're already "inside" that scope and
-        # can jump straight to the leaf (skipping drill-up).
-        current_node = self.project.get_widget(current_id)
-        if current_node is not None:
-            current_ancestor_ids: set = set()
-            c = current_node
-            while c is not None:
-                current_ancestor_ids.add(c.id)
-                c = c.parent
-            for node in chain[:-1]:
-                if node.id in current_ancestor_ids:
+        # Case 1 — fast click on same leaf: drill one level deeper
+        # from the current selection toward the leaf.
+        if fast_follow_up and current_id is not None:
+            for idx, node in enumerate(chain):
+                if node.id == current_id:
+                    if idx + 1 < len(chain):
+                        return chain[idx + 1].id
+                    return chain[idx].id
+        # Case 2 — shared-scope shortcut. If the current selection is
+        # NOT an outermost ancestor (i.e. the user has already entered
+        # a child scope on this branch), keep them at child level —
+        # clicking a sibling or the same subtree selects the leaf
+        # directly. Once a child is selected we stay at child depth
+        # until selection is cleared.
+        if current_id is not None:
+            current_node = self.project.get_widget(current_id)
+            if current_node is not None:
+                ancestor_ids: set = set()
+                c = current_node
+                while c is not None:
+                    ancestor_ids.add(c.id)
+                    c = c.parent
+                on_same_branch = any(
+                    node.id in ancestor_ids for node in chain
+                )
+                outermost_id = chain[0].id
+                already_at_child_depth = current_id != outermost_id
+                if on_same_branch and already_at_child_depth:
                     return chain[-1].id
-        # Case 3 — start at outermost unlocked ancestor.
+        # Case 3 — slow fresh click OR different branch: start at the
+        # outermost unlocked ancestor so drag-the-parent flows survive
+        # repeated clicks without being kidnapped into children.
         return chain[0].id
 
     def on_motion(self, event, nid: str) -> None:

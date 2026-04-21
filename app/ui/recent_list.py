@@ -30,6 +30,12 @@ FILE_NAME_FG = "#cccccc"
 FILE_PATH_FG = "#666666"
 META_FG = "#6a6a6a"
 
+# Missing (file moved / deleted) — dimmed so the user sees the row
+# but can't open it. Right-click → Remove from Recent still works.
+MISSING_NAME_FG = "#666666"
+MISSING_PATH_FG = "#4a4a4a"
+MISSING_META_FG = "#8b4a4a"
+
 ROW_HEIGHT = 22
 PATH_MAX_LEN = 28
 
@@ -122,11 +128,13 @@ class RecentList(ctk.CTkFrame):
 
         name = Path(path).stem
 
+        missing = False
         try:
             mtime = Path(path).stat().st_mtime
             time_text = _relative_time(mtime)
         except OSError:
             time_text = "missing"
+            missing = True
 
         parent_dir = str(Path(path).parent)
         if len(parent_dir) > PATH_MAX_LEN:
@@ -134,29 +142,35 @@ class RecentList(ctk.CTkFrame):
 
         name_lbl = ctk.CTkLabel(
             row, text=name, font=("Segoe UI", 12, "bold"),
-            text_color=FILE_NAME_FG, anchor="w",
+            text_color=MISSING_NAME_FG if missing else FILE_NAME_FG,
+            anchor="w",
         )
         name_lbl.pack(side="left", padx=(8, 16))
 
         time_lbl = ctk.CTkLabel(
             row, text=time_text, font=("Segoe UI", 9),
-            text_color=META_FG, anchor="e",
+            text_color=MISSING_META_FG if missing else META_FG, anchor="e",
         )
         time_lbl.pack(side="right", padx=(0, 8))
 
         path_lbl = ctk.CTkLabel(
             row, text=parent_dir, font=("Segoe UI", 9),
-            text_color=FILE_PATH_FG, anchor="w",
+            text_color=MISSING_PATH_FG if missing else FILE_PATH_FG,
+            anchor="w",
         )
         path_lbl.pack(side="left", fill="x", expand=True)
 
         self._rows.append((row, path))
 
-        self._bind_row_events(row, path, (row, name_lbl, path_lbl, time_lbl))
+        self._bind_row_events(
+            row, path, (row, name_lbl, path_lbl, time_lbl), missing,
+        )
 
-    def _bind_row_events(self, row, path: str, widgets) -> None:
+    def _bind_row_events(
+        self, row, path: str, widgets, missing: bool = False,
+    ) -> None:
         def on_enter(_e):
-            if self._selected_path != path:
+            if self._selected_path != path and not missing:
                 row.configure(fg_color=HOVER_BG)
 
         def on_leave(_e):
@@ -164,11 +178,15 @@ class RecentList(ctk.CTkFrame):
                 row.configure(fg_color="transparent")
 
         def on_click(_e):
+            if missing:
+                return  # dimmed — clicks are a no-op; only right-click works
             self._select(path, row)
             if self._on_select is not None:
                 self._on_select(path)
 
         def on_double(_e):
+            if missing:
+                return
             self._select(path, row)
             if self._on_activate is not None:
                 self._on_activate(path)

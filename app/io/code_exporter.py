@@ -44,20 +44,43 @@ DEFAULT_APPEARANCE_MODE = "dark"
 INDENT = "    "
 
 
-def export_project(project: Project, path: str | Path) -> None:
-    source = generate_code(project)
+def export_project(
+    project: Project, path: str | Path,
+    preview_dialog_id: str | None = None,
+) -> None:
+    source = generate_code(project, preview_dialog_id=preview_dialog_id)
     Path(path).write_text(source, encoding="utf-8")
 
 
-def generate_code(project: Project) -> str:
+def generate_code(
+    project: Project, preview_dialog_id: str | None = None,
+) -> str:
+    """Generate the project's ``.py`` source.
+
+    When ``preview_dialog_id`` names one of the Toplevel documents,
+    the ``__main__`` block is rewritten to open JUST that dialog on top
+    of a withdrawn root — used by the per-dialog "▶ Preview" button in
+    the canvas chrome so the designer can test a Toplevel in isolation
+    without wiring a real event handler. All classes are still emitted
+    unchanged so dialog-to-dialog references would resolve; only the
+    ``__main__`` entry point differs.
+    """
     needs_pil = any(
         node.properties.get("image") for node in project.iter_all_widgets()
+    )
+    needs_tint = any(
+        node.properties.get("image") and node.properties.get("image_color")
+        for node in project.iter_all_widgets()
     )
 
     lines: list[str] = ["import customtkinter as ctk"]
     if needs_pil:
         lines.append("from PIL import Image")
     lines.append("")
+
+    if needs_tint:
+        lines.extend(_tint_helper_lines())
+        lines.append("")
 
     used_class_names: set[str] = set()
     class_names: list[tuple[Document, str]] = []
@@ -71,19 +94,36 @@ def generate_code(project: Project) -> str:
         lines.append("")
         lines.append("")
 
-    first_doc, first_class = class_names[0]
+    preview_match: tuple[Document, str] | None = None
+    if preview_dialog_id:
+        for doc, cls in class_names:
+            if doc.id == preview_dialog_id and doc.is_toplevel:
+                preview_match = (doc, cls)
+                break
+
     lines.append('if __name__ == "__main__":')
     lines.append(f'{INDENT}ctk.set_appearance_mode("{DEFAULT_APPEARANCE_MODE}")')
-    lines.append(f"{INDENT}app = {first_class}()")
-    # Comment out the way to open any Toplevel dialogs so the user
-    # can copy the line into an event handler when they want to.
-    for doc, cls in class_names[1:]:
-        var = _slug(doc.name) or "dialog"
-        lines.append(
-            f"{INDENT}# {var} = {cls}(app)  "
-            f"# open the '{doc.name}' dialog",
-        )
-    lines.append(f"{INDENT}app.mainloop()")
+
+    if preview_match is not None:
+        preview_doc, preview_cls = preview_match
+        var = _slug(preview_doc.name) or "dialog"
+        lines.append(f"{INDENT}# Dialog-only preview — hidden root host.")
+        lines.append(f"{INDENT}app = ctk.CTk()")
+        lines.append(f"{INDENT}app.withdraw()")
+        lines.append(f"{INDENT}{var} = {preview_cls}(app)")
+        lines.append(f"{INDENT}app.wait_window({var})")
+    else:
+        first_doc, first_class = class_names[0]
+        lines.append(f"{INDENT}app = {first_class}()")
+        # Comment out the way to open any Toplevel dialogs so the user
+        # can copy the line into an event handler when they want to.
+        for doc, cls in class_names[1:]:
+            var = _slug(doc.name) or "dialog"
+            lines.append(
+                f"{INDENT}# {var} = {cls}(app)  "
+                f"# open the '{doc.name}' dialog",
+            )
+        lines.append(f"{INDENT}app.mainloop()")
     lines.append("")
     return "\n".join(lines)
 
@@ -441,12 +481,45 @@ def _image_source(props: dict, image_path: str) -> str:
         iw = _safe_int(props.get("width"), 64)
         ih = _safe_int(props.get("height"), 64)
     path_src = _py_literal(image_path)
+    # image_color is a builder-only tint applied via PIL (CTk doesn't
+    # expose a native tint param). When set, route through the helper
+    # emitted at module top so one PNG can back many colored variants.
+    color = props.get("image_color")
+    if color:
+        return (
+            f"_tint_image({path_src}, {_py_literal(color)}, ({iw}, {ih}))"
+        )
     return (
         f"ctk.CTkImage("
         f"light_image=Image.open({path_src}), "
         f"dark_image=Image.open({path_src}), "
         f"size=({iw}, {ih}))"
     )
+
+
+def _tint_helper_lines() -> list[str]:
+    """Emit a module-level helper that tints a PNG with an RGB hex
+    color while preserving the source alpha channel. Used by every
+    widget whose ``image_color`` is set (Image + CTkButton-style
+    icon tint). Matches the builder's preview tint so the exported
+    app renders identically.
+    """
+    return [
+        "def _tint_image(path, hex_color, size):",
+        '    """Return a CTkImage whose pixels are recoloured to `hex_color`',
+        "    while keeping the source PNG's alpha. Same tint logic the CTk",
+        '    Visual Builder uses at design time."""',
+        "    src = Image.open(path).convert(\"RGBA\")",
+        "    r = int(hex_color[1:3], 16)",
+        "    g = int(hex_color[3:5], 16)",
+        "    b = int(hex_color[5:7], 16)",
+        "    alpha = src.split()[-1]",
+        "    tinted = Image.new(\"RGBA\", src.size, (r, g, b, 255))",
+        "    tinted.putalpha(alpha)",
+        "    return ctk.CTkImage(",
+        "        light_image=tinted, dark_image=tinted, size=size,",
+        "    )",
+    ]
 
 
 def _py_literal(val) -> str:

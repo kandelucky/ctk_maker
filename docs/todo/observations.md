@@ -60,6 +60,24 @@ Pending font editor implementation. Currently `font_family` is a plain string �
 
 ---
 
+## How does the user use a Dialog?
+
+**Question**: the builder lets the user Add Dialog (Form menu or workspace toolbar), edits both Main Window + Dialog side-by-side, and exports one `.py` with two classes (`MainWindow(ctk.CTk)` + `LoginDialog(ctk.CTkToplevel)`).
+
+But **the exported `.py` does not actually open the dialog** — the commented instructions at the bottom (`# dialog = LoginDialog(app)`) leave the user on their own to figure out:
+- Which button triggers which dialog?
+- Where does the "wire a button to open dialog X" pattern fit?
+- Modal (`grab_set`) vs modeless? Default?
+
+Possible answers:
+- **Docs page** — "Dialogs in CTk Builder": explains the commented pattern, shows one working example of a button opening a dialog in the exported code, notes modal / modeless
+- **Widget-side "On click → Open Dialog" property** — CTkButton + a few other command-widgets gain a `Command Target` row (see the "widget-to-widget binding" idea) with a special option "Open Dialog: <dialog_name>". Exporter emits `button.configure(command=lambda: LoginDialog(app))`.
+- **Wait** — deferring until the Variables + Event handlers phase where callbacks are first-class
+
+Worth picking one before the first real user opens a project with a Dialog and gets confused.
+
+---
+
 ## Duplicate of multi-selection only selects one result
 
 **Inconsistency:**

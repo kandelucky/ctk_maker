@@ -31,18 +31,40 @@ def load_project(project: Project, path: str | Path) -> None:
         with path.open("r", encoding="utf-8") as f:
             data = json.load(f)
     except OSError as exc:
-        raise ProjectLoadError(f"Could not read file:\n{exc}") from exc
+        raise ProjectLoadError(
+            "The project file could not be opened.\n\n"
+            f"File: {path.name}\n"
+            "It may have been moved, renamed, or is locked by another "
+            "program. Check the file exists and try again."
+        ) from exc
     except json.JSONDecodeError as exc:
-        raise ProjectLoadError(f"File is not valid JSON:\n{exc.msg}") from exc
+        raise ProjectLoadError(
+            "The project file appears to be damaged.\n\n"
+            f"File: {path.name}\n"
+            f"Detail: {exc.msg} (line {exc.lineno})\n\n"
+            "This can happen if the file was edited by hand or the save "
+            "was interrupted. If you have a backup, try opening that "
+            "instead."
+        ) from exc
 
     if not isinstance(data, dict):
-        raise ProjectLoadError("File does not contain a project object.")
+        raise ProjectLoadError(
+            "This file is not a CTk Visual Builder project.\n\n"
+            f"File: {path.name}\n"
+            "Expected a project object at the top of the file. "
+            "Pick a valid .ctkproj file to open."
+        )
 
     version = data.get("version")
     if version not in SUPPORTED_VERSIONS:
+        supported = ", ".join(str(v) for v in sorted(SUPPORTED_VERSIONS))
         raise ProjectLoadError(
-            f"Unsupported project version: {version!r}. "
-            f"Supported: {sorted(SUPPORTED_VERSIONS)}."
+            "This project was saved by a different version of the "
+            "builder.\n\n"
+            f"File version: {version!r}\n"
+            f"This build supports: {supported}\n\n"
+            "Update CTk Visual Builder to the latest release, or open "
+            "the file with the version it was saved in."
         )
 
     if version == 1:
@@ -69,6 +91,10 @@ def load_project(project: Project, path: str | Path) -> None:
     # replay every widget via add_widget so the workspace /
     # inspectors render them.
     _clear_existing_widgets(project)
+    # Drop the previous project's undo/redo stack — the commands
+    # reference widget IDs that no longer exist, so Ctrl+Z after load
+    # would either crash or resurrect ghosts from the old project.
+    project.history.clear()
     project.documents = documents
     active_id = data.get("active_document")
     if isinstance(active_id, str) and any(

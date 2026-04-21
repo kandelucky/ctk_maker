@@ -450,6 +450,41 @@ class Workspace(ctk.CTkFrame):
         if self.renderer is not None:
             self.renderer.on_document_resized(*args)
 
+    def focus_document(self, doc_id: str) -> None:
+        """Scroll the canvas so ``doc_id``'s rectangle lands roughly
+        centered in the visible viewport. Used after Add Dialog so the
+        newly-placed doc doesn't stay hidden off the current scroll
+        window — ``_add_document`` stacks new docs to the right of the
+        existing last doc, which can easily be past the current
+        viewport on zoomed-in or multi-dialog projects.
+        """
+        from app.ui.workspace.render import DOCUMENT_PADDING
+        doc = self.project.get_document(doc_id)
+        if doc is None:
+            return
+        self.update_idletasks()
+        zoom = self.zoom.canvas_scale
+        pad = DOCUMENT_PADDING
+        doc_cx = pad + int((doc.canvas_x + doc.width / 2) * zoom)
+        doc_cy = pad + int((doc.canvas_y + doc.height / 2) * zoom)
+        try:
+            scroll_l, scroll_t, scroll_r, scroll_b = (
+                int(float(v)) for v in self.canvas.cget("scrollregion").split()
+            )
+        except (ValueError, tk.TclError):
+            return
+        view_w = self.canvas.winfo_width() or 800
+        view_h = self.canvas.winfo_height() or 600
+        scroll_w = max(1, scroll_r - scroll_l)
+        scroll_h = max(1, scroll_b - scroll_t)
+        frac_x = max(0.0, min(1.0, (doc_cx - view_w / 2) / scroll_w))
+        frac_y = max(0.0, min(1.0, (doc_cy - view_h / 2) / scroll_h))
+        try:
+            self.canvas.xview_moveto(frac_x)
+            self.canvas.yview_moveto(frac_y)
+        except tk.TclError:
+            pass
+
     # ==================================================================
     # Top tool bar (Select / Hand)
     # ==================================================================
