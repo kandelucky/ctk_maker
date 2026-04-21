@@ -190,6 +190,9 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         bus.subscribe(
             "request_preview_dialog", self._on_preview_dialog,
         )
+        bus.subscribe(
+            "request_export_document", self._on_export_active_document,
+        )
         self._refresh_undo_redo_buttons()
 
         self.protocol("WM_DELETE_WINDOW", self._on_window_close)
@@ -712,6 +715,49 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             messagebox.showerror("Export failed", "Could not write the file.", parent=self)
             return
         messagebox.showinfo("Export", f"Saved to:\n{path}", parent=self)
+
+    def _on_export_active_document(
+        self, doc_id: str | None = None,
+    ) -> None:
+        """Export only ONE document (Main Window or Dialog) as a
+        standalone runnable ``.py``. The target class subclasses
+        ``ctk.CTk`` regardless of the source doc's ``is_toplevel``
+        flag, so the output file runs on its own without wiring into
+        the rest of the project.
+
+        ``doc_id`` defaults to the currently active document — the
+        File menu entry uses that default. The chrome per-dialog
+        Export button passes an explicit id through the
+        ``request_export_document`` event bus.
+        """
+        target_id = doc_id or self.project.active_document_id
+        doc = self.project.get_document(target_id)
+        if doc is None:
+            return
+        default_name = f"{doc.name or 'document'}.py"
+        path = filedialog.asksaveasfilename(
+            parent=self,
+            title=f"Export '{doc.name}' to Python",
+            defaultextension=".py",
+            initialfile=default_name,
+            filetypes=[("Python", "*.py"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            export_project(
+                self.project, path, single_document_id=target_id,
+            )
+        except OSError:
+            log_error("export_active_document")
+            messagebox.showerror(
+                "Export failed", "Could not write the file.",
+                parent=self,
+            )
+            return
+        messagebox.showinfo(
+            "Export", f"Saved to:\n{path}", parent=self,
+        )
 
     # ------------------------------------------------------------------
     # Undo / redo

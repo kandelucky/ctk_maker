@@ -109,6 +109,10 @@ class MenuMixin:
         self._add_cmd(file_menu, "Save As...", self._on_save_as, icon="save", accelerator="Ctrl+Shift+S")
         file_menu.add_separator()
         self._add_cmd(file_menu, "Export to Python...", self._on_export, icon="file-code")
+        self._add_cmd(
+            file_menu, "Export Active Document...",
+            self._on_export_active_document, icon="file-code",
+        )
         file_menu.add_separator()
         self._add_cmd(file_menu, "Close", self._on_close_project, icon="x", accelerator="Ctrl+W")
         self._add_cmd(file_menu, "Quit", self._on_quit, icon="log-out", accelerator="Ctrl+Q")

@@ -294,23 +294,32 @@ class Project:
         self.event_bus.publish("active_document_changed", document_id)
 
     def send_document_to_back(self, document_id: str) -> None:
-        """Push the document behind every other — moves it to the
-        front of ``self.documents`` so the render pass draws it
-        first. If the doc being demoted is the active one, promote
-        the next topmost to active so the user isn't stuck editing
-        an invisible form."""
+        """Push the document behind every other.
+
+        Two paths:
+        1. Doc is already at index 0 but currently ACTIVE (so render
+           order puts it on top) → deactivate, promote the next
+           topmost to active. List order unchanged.
+        2. Otherwise → move to index 0 in ``self.documents`` so the
+           render pass draws it first. If it was the active one,
+           promote the next topmost so the user isn't stuck editing
+           an invisible form.
+        """
         doc = self.get_document(document_id)
         if doc is None:
             return
-        idx = self.documents.index(doc)
-        if idx == 0:
+        if len(self.documents) < 2:
             return
-        self.documents.pop(idx)
-        self.documents.insert(0, doc)
-        if (
-            self.active_document_id == document_id
-            and len(self.documents) > 1
-        ):
+        idx = self.documents.index(doc)
+        is_active = self.active_document_id == document_id
+        if idx == 0 and not is_active:
+            return  # already at back, nothing to do
+        if idx > 0:
+            self.documents.pop(idx)
+            self.documents.insert(0, doc)
+        if is_active:
+            # Promote the next topmost (now last in docs list) to
+            # active so the form at render-top also owns selection.
             new_active = self.documents[-1].id
             self.active_document_id = new_active
             self.event_bus.publish("active_document_changed", new_active)

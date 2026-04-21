@@ -52,7 +52,8 @@ class WindowDescriptor(WidgetDescriptor):
          "disabled_when": lambda p: p.get("grid_style") == "none"},
 
         {"name": "fg_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Background"},
+         "group": "Main Colors", "row_label": "Background",
+         "clearable": True, "clear_value": "transparent"},
 
         {"name": "accent_color", "type": "color", "label": "",
          "group": "Marker", "row_label": "Color"},

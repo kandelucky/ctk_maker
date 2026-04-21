@@ -41,6 +41,8 @@ CHROME_TOBACK_TAG = "window_chrome_toback"
 CHROME_TOBACK_IMG_TAG = "window_chrome_toback_img"
 CHROME_PREVIEW_TAG = "window_chrome_preview"
 CHROME_PREVIEW_IMG_TAG = "window_chrome_preview_img"
+CHROME_EXPORT_TAG = "window_chrome_export"
+CHROME_EXPORT_IMG_TAG = "window_chrome_export_img"
 CHROME_MIN_TAG = "window_chrome_min"
 CHROME_CLOSE_TAG = "window_chrome_close"
 CHROME_HEIGHT = 28
@@ -69,6 +71,9 @@ TOBACK_X_OFFSET = 138
 # subprocess that opens just this Toplevel. Placed farthest from the
 # right edge so it doesn't compete with the destructive close button.
 PREVIEW_X_OFFSET = 168
+# Dialog-only "Export this dialog" button — single-document export
+# to standalone .py. Sits just left of the preview icon.
+EXPORT_X_OFFSET = 198
 # Half-width of the invisible hit-rect that sits behind each icon
 # so clicking near the glyph (not just on its pixels) registers.
 ICON_HIT_PADDING = 10
@@ -114,6 +119,15 @@ class ChromeManager:
         )
         self._preview_icon_hover = load_tk_icon(
             "play", size=14, color="#ffffff",
+        )
+        # Per-dialog export icon. Single-document export to standalone
+        # runnable ``.py`` — mirrors the File menu's "Export Active
+        # Document" for the currently-hovered Toplevel.
+        self._export_icon = load_tk_icon(
+            "file-code", size=14, color=CHROME_FG_DIM,
+        )
+        self._export_icon_hover = load_tk_icon(
+            "file-code", size=14, color="#ffffff",
         )
         self._drag: dict | None = None
 
@@ -187,6 +201,8 @@ class ChromeManager:
         doc_toback_img_tag = f"chrome_toback_img:{doc.id}"
         doc_preview_tag = f"chrome_preview:{doc.id}"
         doc_preview_img_tag = f"chrome_preview_img:{doc.id}"
+        doc_export_tag = f"chrome_export:{doc.id}"
+        doc_export_img_tag = f"chrome_export_img:{doc.id}"
         doc_close_tag = f"chrome_close:{doc.id}"
         # Umbrella tag covering every chrome canvas item that belongs
         # to this document. Used by ``drive_drag`` to slide the whole
@@ -238,7 +254,11 @@ class ChromeManager:
         docs = self.project.documents
         doc_idx = docs.index(doc) if doc in docs else 0
         can_to_front = not is_active
-        can_to_back = doc_idx > 0
+        # Send-to-Back also makes sense when a doc is at index 0 but
+        # currently active — ``active=top`` render sort means it's
+        # visually on top of everyone else, so the button deactivates
+        # it (promoting the next topmost).
+        can_to_back = len(docs) > 1 and (doc_idx > 0 or is_active)
         if self._tofront_icon is not None and can_to_front:
             self._draw_icon_button(
                 right - TOFRONT_X_OFFSET, top, doc_top, mid, bg_fill,
@@ -284,6 +304,22 @@ class ChromeManager:
                     doc_preview_tag, doc_preview_img_tag, doc_tag,
                 ),
             )
+        # Export — also Toplevel-only. Same standalone-export behaviour
+        # as File → Export Active Document, triggered per-form.
+        if doc.is_toplevel and self._export_icon is not None:
+            self._draw_icon_button(
+                right - EXPORT_X_OFFSET, top, doc_top, mid, bg_fill,
+                self._export_icon,
+                rect_tags=(
+                    CHROME_TAG, CHROME_EXPORT_TAG,
+                    doc_export_tag, doc_tag,
+                ),
+                image_tags=(
+                    CHROME_TAG, CHROME_EXPORT_TAG,
+                    CHROME_EXPORT_IMG_TAG,
+                    doc_export_tag, doc_export_img_tag, doc_tag,
+                ),
+            )
         self.canvas.create_text(
             right - MIN_X_OFFSET, mid,
             text="−",
@@ -310,6 +346,7 @@ class ChromeManager:
             doc_tofront_tag, doc_tofront_img_tag,
             doc_toback_tag, doc_toback_img_tag,
             doc_preview_tag, doc_preview_img_tag,
+            doc_export_tag, doc_export_img_tag,
         )
 
     def _draw_icon_button(
@@ -366,6 +403,7 @@ class ChromeManager:
         settings_tag, settings_img_tag, close_tag,
         tofront_tag, tofront_img_tag, toback_tag, toback_img_tag,
         preview_tag=None, preview_img_tag=None,
+        export_tag=None, export_img_tag=None,
     ) -> None:
         """Wire the click / drag / hover bindings for a single
         document's chrome strip. Each document gets its own tag
@@ -423,6 +461,15 @@ class ChromeManager:
                 self._preview_icon, self._preview_icon_hover,
                 on_click=lambda d=doc_id: self._on_preview_click(d),
             )
+        if (
+            export_tag and export_img_tag
+            and doc.is_toplevel and self._export_icon is not None
+        ):
+            self._bind_icon_hover(
+                export_tag, export_img_tag,
+                self._export_icon, self._export_icon_hover,
+                on_click=lambda d=doc_id: self._on_export_click(d),
+            )
         # Close button — text item, hover flips fill color instead of
         # an image swap, so it doesn't fit ``_bind_icon_hover``.
         self.canvas.tag_bind(
@@ -475,6 +522,16 @@ class ChromeManager:
         """
         self.project.event_bus.publish(
             "request_preview_dialog", doc_id,
+        )
+        return "break"
+
+    def _on_export_click(self, doc_id: str) -> str:
+        """Export just this dialog as a standalone .py — routes
+        through the event bus so main_window owns the file dialog
+        + write flow (same handler as File → Export Active Document).
+        """
+        self.project.event_bus.publish(
+            "request_export_document", doc_id,
         )
         return "break"
 

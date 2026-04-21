@@ -47,13 +47,20 @@ INDENT = "    "
 def export_project(
     project: Project, path: str | Path,
     preview_dialog_id: str | None = None,
+    single_document_id: str | None = None,
 ) -> None:
-    source = generate_code(project, preview_dialog_id=preview_dialog_id)
+    source = generate_code(
+        project,
+        preview_dialog_id=preview_dialog_id,
+        single_document_id=single_document_id,
+    )
     Path(path).write_text(source, encoding="utf-8")
 
 
 def generate_code(
-    project: Project, preview_dialog_id: str | None = None,
+    project: Project,
+    preview_dialog_id: str | None = None,
+    single_document_id: str | None = None,
 ) -> str:
     """Generate the project's ``.py`` source.
 
@@ -64,13 +71,35 @@ def generate_code(
     without wiring a real event handler. All classes are still emitted
     unchanged so dialog-to-dialog references would resolve; only the
     ``__main__`` entry point differs.
+
+    When ``single_document_id`` names any document (main window or
+    Toplevel), only THAT document is emitted, and the class subclasses
+    ``ctk.CTk`` regardless of the document's ``is_toplevel`` flag —
+    the exported file is a standalone runnable app. Useful for the
+    per-dialog Export button in the chrome, or the "Export active
+    document" File-menu entry.
     """
-    needs_pil = any(
-        node.properties.get("image") for node in project.iter_all_widgets()
-    )
+    # Single-document export narrows the widget scan + class emission
+    # to just the requested document. Image scans must also respect
+    # the filter so the PIL helper / tint import only lands when THIS
+    # doc actually uses them.
+    if single_document_id:
+        target_doc = project.get_document(single_document_id)
+        docs_to_emit = [target_doc] if target_doc is not None else []
+    else:
+        docs_to_emit = list(project.documents)
+
+    def _doc_widgets(docs):
+        for doc in docs:
+            for root in doc.root_widgets:
+                yield root
+                yield from _iter_descendants(root)
+
+    scoped_widgets = list(_doc_widgets(docs_to_emit))
+    needs_pil = any(w.properties.get("image") for w in scoped_widgets)
     needs_tint = any(
-        node.properties.get("image") and node.properties.get("image_color")
-        for node in project.iter_all_widgets()
+        w.properties.get("image") and w.properties.get("image_color")
+        for w in scoped_widgets
     )
 
     lines: list[str] = ["import customtkinter as ctk"]
@@ -84,18 +113,22 @@ def generate_code(
 
     used_class_names: set[str] = set()
     class_names: list[tuple[Document, str]] = []
-    for index, doc in enumerate(project.documents):
+    for index, doc in enumerate(docs_to_emit):
         cls_name = _class_name_for(doc, index, used_class_names)
         used_class_names.add(cls_name)
         class_names.append((doc, cls_name))
 
+    # In single-document mode, force the class to subclass ctk.CTk so
+    # the exported file is a standalone runnable app — even if the
+    # source document is a CTkToplevel in the multi-doc project.
+    force_main = bool(single_document_id)
     for doc, cls_name in class_names:
-        lines.extend(_emit_class(doc, cls_name))
+        lines.extend(_emit_class(doc, cls_name, force_main=force_main))
         lines.append("")
         lines.append("")
 
     preview_match: tuple[Document, str] | None = None
-    if preview_dialog_id:
+    if preview_dialog_id and not single_document_id:
         for doc, cls in class_names:
             if doc.id == preview_dialog_id and doc.is_toplevel:
                 preview_match = (doc, cls)
@@ -131,10 +164,28 @@ def generate_code(
 # ----------------------------------------------------------------------
 # Class + widget emission
 # ----------------------------------------------------------------------
-def _emit_class(doc: Document, class_name: str) -> list[str]:
-    base = "ctk.CTkToplevel" if doc.is_toplevel else "ctk.CTk"
+def _iter_descendants(node):
+    """DFS walk — yields every descendant of ``node`` (not ``node``
+    itself). Mirrors ``project.iter_all_widgets`` but scoped to a
+    single subtree for single-document export.
+    """
+    for child in node.children:
+        yield child
+        yield from _iter_descendants(child)
+
+
+def _emit_class(
+    doc: Document, class_name: str, force_main: bool = False,
+) -> list[str]:
+    # ``force_main`` is True for single-document export: the class
+    # subclasses ``ctk.CTk`` even when the source doc is a Toplevel,
+    # so the exported file runs as a standalone app.
+    if force_main or not doc.is_toplevel:
+        base = "ctk.CTk"
+    else:
+        base = "ctk.CTkToplevel"
     lines: list[str] = [f"class {class_name}({base}):"]
-    if doc.is_toplevel:
+    if base == "ctk.CTkToplevel":
         lines.append(f"{INDENT}def __init__(self, master=None):")
         lines.append(f"{INDENT}{INDENT}super().__init__(master)")
     else:

@@ -188,7 +188,15 @@ class AddDialogSizeDialog(ctk.CTkToplevel):
         if self._preset_var.get() != "Custom":
             self._preset_var.set("Custom")
 
+    # Match New Project clamp range — anything outside this gets
+    # bounced with a bell so the dialog can't ship absurd sizes
+    # (huge negatives crash tk; 4-digit numbers above 4000 exceed any
+    # real screen and silently break the preview launch).
+    _SIZE_MIN = 100
+    _SIZE_MAX = 4000
+
     def _on_ok(self) -> None:
+        from tkinter import messagebox
         name = self._name_var.get().strip()
         if not name:
             self.bell()
@@ -198,9 +206,24 @@ class AddDialogSizeDialog(ctk.CTkToplevel):
             h = int(self._h_var.get())
         except ValueError:
             self.bell()
+            messagebox.showwarning(
+                "Invalid size",
+                f"Width and height must be whole numbers "
+                f"between {self._SIZE_MIN} and {self._SIZE_MAX}.",
+                parent=self,
+            )
             return
-        if w < 100 or h < 100:
+        if not (
+            self._SIZE_MIN <= w <= self._SIZE_MAX
+            and self._SIZE_MIN <= h <= self._SIZE_MAX
+        ):
             self.bell()
+            messagebox.showwarning(
+                "Size out of range",
+                f"Dialog width and height must be between "
+                f"{self._SIZE_MIN} and {self._SIZE_MAX} pixels.",
+                parent=self,
+            )
             return
         self.result = (name, w, h)
         self.destroy()
