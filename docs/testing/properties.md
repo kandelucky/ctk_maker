@@ -55,7 +55,7 @@ Every editor type, drag-scrub, conditional rows (`disabled_when` / `hidden_when`
 
 ## Refactor candidates
 
-- [ ] `panel.py` size audit — 1272 lines in one file; schema walker, editor dispatch, chrome builder, commit path, pickers all live together. Candidate split: `panel_schema.py` (populate_schema + pair/group traversal) and `panel_commit.py` (commit_prop + editor lifecycle)
+- [x] ~~`panel.py` size audit~~ — done v0.0.15.12. 1378 → 682 lines. Split into `panel_schema.py` (355 lines) + `panel_commit.py` (418 lines) via `SchemaMixin` + `CommitMixin`.
 - [x] ~~Editor registry — dispatch is if-chain?~~ — already a dict lookup in `editors/__init__.py` (`_EDITORS[ptype]`). Outdated note.
 - [ ] `_populate_schema` filtering — 70-line while-loop does group / subgroup / pair state-tracking + hidden filtering inline. Could split the pair-collect and group-transition logic into helper generators.
 - [ ] `_is_hidden` / `_compute_disabled_states` API asymmetry — one returns `bool` per-prop, the other returns a dict for the whole schema. Unify: both compute per-prop, caller iterates.
@@ -82,3 +82,16 @@ Every editor type, drag-scrub, conditional rows (`disabled_when` / `hidden_when`
 
 - **[P3-4]** DPI mismatch — canvas document rectangle smaller than CTk widgets on 125% DPI display
   *Fix:* `canvas_scale = user_zoom × dpi_factor` in `zoom_controller`; all canvas drawing uses `canvas_scale` (v0.0.15.10).
+
+- **[P3-5]** CTkSlider orientation property change doesn't update widget (known bug)
+  *Status:* moved to [bugs.md](../todo/bugs.md). CTkProgressBar orientation works; CTkSlider missing `on_prop_recreate` width/height swap.
+
+- **[P3-6]** Drag-scrub Escape mid-drag cancel — not implemented
+  *Status:* moved to [bugs.md](../todo/bugs.md). Fix: add `<Escape>` binding in `drag_scrub.py` → reset to `_start_value` without commit.
+
+- **[P3-7]** Widget icon persists in Properties panel header after deselect
+  *Root cause:* `_type_icon_label.configure(image=None)` on CTkLabel doesn't clear the last image.
+  *Fix:* `image=""` instead of `image=None` (v0.0.15.11).
+
+- **[P3-8]** Managed-layout children (vbox/hbox/grid) accepted arbitrary x/y/width/height values via Inspector
+  *Fix:* `_apply_managed_layout_disabled` flips `_disabled_states` for geometry fields so the rows render dimmed + non-editable (v0.0.15.11).

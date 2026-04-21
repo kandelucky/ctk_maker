@@ -50,6 +50,7 @@ Every mutation pushed to `project.history`; each command reversible with ID stab
 - [ ] Ctrl+Z vs Edit menu vs toolbar — all three invoke same path
 - [ ] Undo during drag — disabled or queued?
 - [ ] Delete an ancestor → undo → full subtree rebuilt with original IDs + properties
+- [ ] **Rapid undo/redo grid reparent — button loss (legacy)** — Grid Frame 2×3 + 5 buttons in distinct cells; drag each button to a different cell (5 reparent ops); spam Ctrl+Z ≥10×; spam Ctrl+Y ≥10×; verify all 5 buttons return. Old report: one button "disappeared from memory" (4/5 came back). May have been fixed by v0.0.15.7 auto-grow undo tracking + v0.0.15.12 panel split.
 
 ## Refactor candidates
 
