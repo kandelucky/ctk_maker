@@ -4,14 +4,6 @@
 
 ---
 
-## 🐛 Orientation editor — CTkSlider orientation change broken
-
-Changing `orientation` property on CTkSlider doesn't update widget visually / recreate. `recreate_triggers = {"orientation"}` is set but the flip doesn't take effect. CTkProgressBar orientation works (has same `recreate_triggers`).
-
-**Investigation**: check `on_prop_recreate` hook for CTkSlider vs CTkProgressBar difference. CTkSlider likely missing the width/height swap logic that CTkProgressBar has.
-
----
-
 ## 🐛 Drag-scrub Escape cancel — not implemented
 
 Pressing Escape during drag-scrub should revert to original value. Currently Escape does nothing; release commits the current value.

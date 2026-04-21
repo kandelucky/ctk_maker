@@ -1,9 +1,12 @@
 """CTkSlider widget descriptor.
 
 A draggable value picker over a numeric range. Supports continuous
-and stepped modes plus horizontal / vertical orientation (unlike
-CTkProgressBar, CTkSlider accepts orientation via `configure(...)`
-so no recreate dance is needed).
+and stepped modes plus horizontal / vertical orientation. Matches
+CTkProgressBar's approach — ``orientation`` is init-only, so flipping
+it in the Inspector destroys + recreates the widget via
+``recreate_triggers`` + ``on_prop_recreate`` (the latter swaps
+width ↔ height so a 200×16 horizontal slider becomes a 16×200
+vertical one).
 
 Groups shown in the Properties panel, in order:
 
@@ -76,7 +79,7 @@ class CTkSliderDescriptor(WidgetDescriptor):
          "row_label": "Track Radius", "min": 0, "max": 50},
         {"name": "button_corner_radius", "type": "number", "label": "",
          "group": "Rectangle",
-         "row_label": "Button Radius", "min": 0, "max": 50},
+         "row_label": "Button Radius", "min": 1, "max": 50},
         {"name": "button_length", "type": "number", "label": "",
          "group": "Rectangle",
          "row_label": "Button Length", "min": 0,
@@ -129,12 +132,15 @@ class CTkSliderDescriptor(WidgetDescriptor):
     _NODE_ONLY_KEYS = {
         "x", "y", "border_enabled", "initial_value", "button_enabled",
     }
+    init_only_keys = {"orientation"}
+    recreate_triggers = frozenset({"orientation"})
 
     @classmethod
     def transform_properties(cls, properties: dict) -> dict:
         result = {
             k: v for k, v in properties.items()
             if k not in cls._NODE_ONLY_KEYS
+            and k not in cls.init_only_keys
         }
         result["state"] = (
             "normal" if properties.get("button_enabled", True)
@@ -150,12 +156,30 @@ class CTkSliderDescriptor(WidgetDescriptor):
 
     @classmethod
     def create_widget(cls, master, properties: dict, init_kwargs=None):
+        # Init-only kwargs are filtered out of transform_properties so
+        # configure() never sees them — reinject them here.
         kwargs = cls.transform_properties(properties)
+        for key in cls.init_only_keys:
+            if key in properties:
+                kwargs[key] = properties[key]
         if init_kwargs:
             kwargs.update(init_kwargs)
         widget = ctk.CTkSlider(master, **kwargs)
         cls.apply_state(widget, properties)
         return widget
+
+    @classmethod
+    def on_prop_recreate(cls, prop_name: str, properties: dict) -> dict:
+        # Flipping orientation swaps the widget's dimensions so a 200×16
+        # horizontal slider becomes a 16×200 vertical slider.
+        if prop_name != "orientation":
+            return {}
+        try:
+            w = int(properties.get("width", 200) or 200)
+            h = int(properties.get("height", 16) or 16)
+        except (TypeError, ValueError):
+            return {}
+        return {"width": h, "height": w}
 
     @classmethod
     def apply_state(cls, widget, properties: dict) -> None:

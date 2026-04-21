@@ -6,6 +6,7 @@
 
 ## 2026-04 — Area QA passes + refactors
 
+- **v0.0.15.14** (2026-04-21) — CTkSlider orientation flip now works (added `init_only_keys` + `recreate_triggers` + `on_prop_recreate` width/height swap matching CTkProgressBar); `button_corner_radius` min raised 0→1 to avoid CTk internal visual split bug.
 - **v0.0.15.13** (2026-04-21) — Grid / managed-layout child jump fix: non-geometry prop change (corner_radius / text / image) on a grid/vbox/hbox child no longer pulls it to parent's (0, 0).
 - **v0.0.15.12** (2026-04-21) — panel.py refactor: SchemaMixin + CommitMixin split. 1378 → 682 ხაზი.
 - **v0.0.15.11** (2026-04-21) — Area 3 (Properties panel) QA pass complete: 38/42 tests + 6 bug fixes.
