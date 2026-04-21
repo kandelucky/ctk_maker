@@ -480,7 +480,13 @@ def _image_source(props: dict, image_path: str) -> str:
     else:
         iw = _safe_int(props.get("width"), 64)
         ih = _safe_int(props.get("height"), 64)
-    path_src = _py_literal(image_path)
+    # Normalise path separators to forward slashes so the exported file
+    # reads consistently regardless of whether the path came from a
+    # filedialog (Unix-style on Windows) or was typed with backslashes.
+    # Both work in Python on Windows, but mixing both in one file looks
+    # sloppy and trips cross-platform readers.
+    normalised_path = str(image_path).replace("\\", "/")
+    path_src = _py_literal(normalised_path)
     # image_color is a builder-only tint applied via PIL (CTk doesn't
     # expose a native tint param). When set, route through the helper
     # emitted at module top so one PNG can back many colored variants.

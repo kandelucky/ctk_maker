@@ -51,6 +51,10 @@ class Toolbar(ctk.CTkFrame):
         self._add_button("folder", on_open, tooltip="Open project")
         self._add_button("save-all", on_save, tooltip="Save")
         self._add_separator()
+        self._add_button(
+            "file-code", on_export, tooltip="Export to Python",
+        )
+        self._add_separator()
         # Pre-load both icon variants so we can swap in place without
         # triggering a CTkButton layout shift on state change.
         self._icon_undo_on = load_icon("undo", size=ICON_SIZE, color=ICON_TINT)
@@ -67,7 +71,6 @@ class Toolbar(ctk.CTkFrame):
         self._redo_button = self._add_toggle_button(
             self._icon_redo_off, on_redo, tooltip="Redo (Ctrl+Y)",
         )
-        self._add_separator()
         self._add_button("play", on_preview, tooltip="Preview (Ctrl+R)")
         self._undo_enabled = False
         self._redo_enabled = False

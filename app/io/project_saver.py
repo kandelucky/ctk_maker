@@ -41,7 +41,10 @@ def project_to_dict(project: Project) -> dict:
         "name": project.name,
         "active_document": project.active_document_id,
         "documents": [doc.to_dict() for doc in project.documents],
-        "name_counters": dict(project._name_counters),
+        # name_counters persist per-document now — each Document's
+        # ``name_counters`` ends up in ``to_dict`` so reopening a
+        # project keeps unique names while every Dialog keeps its own
+        # sequence.
     }
 
 

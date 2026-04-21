@@ -128,14 +128,12 @@ def load_project(project: Project, path: str | Path) -> None:
         "active_document_changed", project.active_document_id,
     )
 
-    # Restore monotonic name counters AFTER widgets are added so
-    # auto-naming doesn't double-count the freshly inserted nodes.
-    counters = data.get("name_counters")
-    if isinstance(counters, dict):
-        project._name_counters = {
-            str(k): int(v) for k, v in counters.items()
-            if isinstance(v, (int, float))
-        }
+    # Name counters are now per-document (Document.name_counters) and
+    # round-trip through Document.from_dict / to_dict. Legacy v1 files
+    # with a top-level "name_counters" dict are ignored — new widgets
+    # added into a legacy project will restart from 0 for each doc.
+    # Harmless: the first new widget inherits the base name; rename
+    # as needed.
 
 
 def _clear_existing_widgets(project: Project) -> None:

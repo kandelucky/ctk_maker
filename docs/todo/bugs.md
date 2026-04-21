@@ -4,23 +4,25 @@
 
 ---
 
-## 🐛 Selection chrome lags widget position
+## 🐛 Nested-widget drag — selection vs. widget visual mismatch on high-DPI
 
-Two related symptoms — selection outline + resize handles don't track the widget accurately.
+**Symptom:** Dragging a widget inside a Frame on a 125 % DPI screen, the selection outline tracks the cursor but the actual widget visual drifts. The further the widget sits from the Frame's origin (bottom-right corner = worst case), the bigger the offset. After release the widget stays at the drifted visual position on canvas, while the model (`node.properties["x"/"y"]`) + Preview (`Ctrl+R`) show the widget at the cursor position. So preview != canvas visual for the same project state.
 
-### A — Drag lag (few pixels behind)
+**Screenshot:** selection rectangle floats in the middle of the Frame while the dragged Button sits in the lower-right corner.
 
-**Reproduce:** Frame + Button inside. Select the Button → drag it slowly across the Frame → the selection outline + handles trail the widget by several pixels. When the drag stops, chrome snaps to the correct position.
+**Root cause hypothesis (unverified):** Three places in the drag / property flow use different zoom factors:
+- `drag.py` motion → `place_configure(x = new_x * canvas_scale)` where `canvas_scale = user_zoom × DPI`
+- `_handle_coord_prop` (release) → `place_configure(x = x * user_zoom)`
+- Selection chrome → `canvas.move(dx_tick)` in physical pixels, and `winfo_rootx` for static bbox
 
-**Hypothesis:** Selection chrome redraw runs on a throttled / deferred path (`_schedule_selection_redraw`) while drag motion updates the widget's position via `canvas.coords` / `place_configure` synchronously. The chrome catches up at idle, so high-frequency motion events leave it visually behind.
+On 1.0 × 1.25 canvas_scale vs. 1.0 user_zoom, the two place() paths disagree by a factor of 1.25. Tried `user_zoom` in drag too (v0.0.15.17 attempt); user reported the offset then scaled with drag distance instead of widget position, so neither formula gave a clean result.
 
-### B — "Teleport" mis-follow (property change mis-follow)
+The real question: does CTk's `ScalingTracker` DPI-scale `.place(x=N)` args when `SetProcessDpiAwareness(1)` is set? Two possibilities, each produces different-direction mismatch:
+- CTk scales → `canvas_scale` overshoots, `user_zoom` matches
+- CTk doesn't scale → `canvas_scale` matches, `user_zoom` lags
 
-**Reproduce:** Widget at visible position, change `x` / `y` in Inspector to push it off-screen (scrolled-out area). The widget moves to the new location but the selection chrome **stays at the old visible position** — it never follows.
+Neither matches user observation cleanly, so one of the assumptions (cursor delta calc, chrome move, or bbox read) is also off.
 
-**Hypothesis:** The chrome redraw path doesn't update when the new position falls outside the visible canvas viewport, because bbox computation reads `winfo_rootx/rooty` which are only accurate for widgets currently mapped on-screen.
+**Next step:** add temporary `print()` statements logging `canvas_scale`, `user_zoom`, `event.x_root delta`, `widget.winfo_rootx`, computed `new_x * factor`, after a single drag. Compare numbers against the cursor's actual screen position. Empirical numbers will say which formula matches reality — the code theory is inconclusive.
 
-**Investigation for both:**
-- Log `_schedule_selection_redraw` call sites vs actual paint tick
-- Check `SelectionController._selected_bbox` behaviour when widget is outside the viewport
-- Consider moving chrome updates into the same event path as position commits instead of deferred redraw
+**Not blocking for now** — widget still usable, preview still correct, only the canvas visual during drag drifts. Revisit when a focused bug-hunting session is scheduled.

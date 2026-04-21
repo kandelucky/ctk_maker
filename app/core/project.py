@@ -187,10 +187,10 @@ class Project:
         self.name: str = "Untitled"
         self.documents: list[Document] = [Document(name=self.name)]
         self.active_document_id: str = self.documents[0].id
-        # Monotonic per-widget-type counter used to auto-name new widgets
-        # ("Button", "Button (1)", "Button (2)", …). Persisted with the
-        # project so numbers never get reused across reloads.
-        self._name_counters: dict[str, int] = {}
+        # Widget auto-name counters moved to Document.name_counters —
+        # each doc (including every Dialog) now has its own count
+        # sequence, and clearing / loading a project naturally resets
+        # them because the counters live on the new Document instances.
         # In-memory clipboard for Ctrl+C / Ctrl+V. Each entry is a
         # full WidgetNode.to_dict() snapshot of a copied subtree.
         # Not persisted — lost when the app quits.
@@ -420,19 +420,26 @@ class Project:
     # ------------------------------------------------------------------
     # Naming
     # ------------------------------------------------------------------
-    def _generate_unique_name(self, widget_type: str) -> str:
+    def _generate_unique_name(
+        self, widget_type: str, document=None,
+    ) -> str:
         """Monotonic name: 'Button' → 'Button (1)' → 'Button (2)' → ...
 
-        The counter is per widget type and never reuses numbers, even
-        after deletions — so renamed / removed widgets can't collide
-        with freshly generated names.
+        Counter is **per document** (stored on ``Document.name_counters``)
+        so each dialog restarts from zero and a freshly opened project
+        doesn't inherit counts from the previous editing session.
+        Never reuses numbers within a document even after deletions, so
+        renamed / removed widgets can't collide with freshly generated
+        names in the same form.
         """
         from app.widgets.registry import get_descriptor
         descriptor = get_descriptor(widget_type)
         base = descriptor.display_name if descriptor else widget_type
 
-        count = self._name_counters.get(widget_type, 0)
-        self._name_counters[widget_type] = count + 1
+        target_doc = document or self.active_document
+        counters = target_doc.name_counters
+        count = counters.get(widget_type, 0)
+        counters[widget_type] = count + 1
 
         if count == 0:
             return base
@@ -494,11 +501,13 @@ class Project:
         self, node: WidgetNode, parent_id: str | None = None,
         document_id: str | None = None,
     ) -> None:
-        if not node.name:
-            node.name = self._generate_unique_name(node.widget_type)
         if parent_id is None:
             target_doc = self._resolve_target_document(document_id)
             node.parent = None
+            if not node.name:
+                node.name = self._generate_unique_name(
+                    node.widget_type, document=target_doc,
+                )
             target_doc.root_widgets.append(node)
             owning_doc = target_doc
         else:
@@ -515,6 +524,10 @@ class Project:
                 owning_doc = self._doc_index.get(parent_id) or (
                     self.find_document_for_widget(parent_id)
                     or self.active_document
+                )
+            if not node.name:
+                node.name = self._generate_unique_name(
+                    node.widget_type, document=owning_doc,
                 )
         self._index_subtree(node, owning_doc)
         self.event_bus.publish("widget_added", node)

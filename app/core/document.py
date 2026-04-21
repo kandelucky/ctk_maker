@@ -74,6 +74,12 @@ class Document:
         # signature (``class X(ctk.CTk):`` vs ``ctk.CTkToplevel``).
         self.is_toplevel: bool = bool(is_toplevel)
         self.root_widgets: list[WidgetNode] = []
+        # Per-document monotonic counter for auto-naming new widgets
+        # ("Button", "Button (1)", "Button (2)", …). Kept per-document
+        # so numbering restarts inside each Dialog and every fresh
+        # project. Not persisted — load_project rebuilds it from
+        # existing widget names.
+        self.name_counters: dict[str, int] = {}
 
     # ------------------------------------------------------------------
     # Serialisation
@@ -90,6 +96,7 @@ class Document:
             "window_properties": dict(self.window_properties),
             "is_toplevel": self.is_toplevel,
             "widgets": [w.to_dict() for w in self.root_widgets],
+            "name_counters": dict(self.name_counters),
         }
 
     @classmethod
@@ -114,4 +121,14 @@ class Document:
             node = WidgetNode.from_dict(raw)
             node.parent = None
             doc.root_widgets.append(node)
+        # Restore per-document auto-name counters if the saved file
+        # has them (v0.0.15.17+). Older files fall back to 0 — first
+        # new widget after open reuses a base name, which was the
+        # behaviour users already observed on legacy projects.
+        raw_counters = data.get("name_counters")
+        if isinstance(raw_counters, dict):
+            doc.name_counters = {
+                str(k): int(v) for k, v in raw_counters.items()
+                if isinstance(v, (int, float))
+            }
         return doc

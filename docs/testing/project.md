@@ -33,26 +33,26 @@
 - [x] Multi-document project exports multiple classes (one per doc)
 - [x] Image widgets reference files correctly — `image_color` tint now routed through `_tint_image` helper (v0.0.15.17) so PIL tint survives export
 - [x] No stray imports, no dead code
-- [ ] Generated code passes basic pyflakes — not run (manual CE-2 runs the file; pyflakes is a separate check)
+- [x] Generated code passes basic pyflakes — ran on multi-doc + image-tint + all-widgets exports, zero issues
 
 ### Preview (Ctrl+R)
-- [ ] Launches subprocess with current project
-- [ ] Window appears correctly
-- [ ] Close preview → main builder still responsive
-- [ ] Unsaved changes — preview uses current state (not last save)
+- [x] Launches subprocess with current project
+- [x] Window appears correctly
+- [x] Close preview → main builder still responsive
+- [x] Unsaved changes — preview uses current state (not last save)
 
 ### Dirty tracking
-- [ ] Fresh project — not dirty
-- [ ] Any mutation → dirty flag on, title bar shows `*`
-- [ ] Save → dirty cleared
-- [ ] Undo to pre-first-change state → still dirty? (document behavior)
-- [ ] Close project with unsaved changes → prompt (Save / Discard / Cancel)
+- [x] Fresh project — not dirty
+- [x] Any mutation → dirty flag on, title bar shows `•`
+- [x] Save → dirty cleared
+- [x] Undo to pre-first-change state → dirty cleared (v0.0.15.16 history-marker fix)
+- [x] Close project with unsaved changes → prompt (Save / Discard / Cancel)
 
 ### Edge cases
-- [ ] Very large project (500+ widgets) — save time, load time
-- [ ] Empty project — save works, load works, export produces minimal class
-- [ ] File with unicode characters in path (Georgian / emoji)
-- [ ] Read-only file — load works, Save As prompts, Save over shows error
+- [x] Very large project (500+ widgets) — save / load time: slightly slow on open but usable (no loading indicator yet — tracked in roadmap)
+- [x] Empty project — save works, load works, export produces minimal class (17-line `class Untitled(ctk.CTk)` with `_build_ui: pass`)
+- [x] File with unicode characters in path (Georgian / emoji) — `სასს.py` export round-trips cleanly
+- [ ] Read-only file — load works, Save As prompts, Save over shows error *(skipped — manual chmod dance)*
 
 ## Refactor candidates
 
