@@ -985,6 +985,18 @@ class Workspace(ctk.CTkFrame):
             )
             if lt == "grid" and getattr(descriptor, "is_container", False):
                 self.layout_overlay.rearrange_container_children(widget_id)
+        # Managed-layout children (vbox / hbox / grid) are place-managed
+        # via the grid-as-place hack, but their x/y properties are 0 —
+        # zoom.apply_to_widget's place_configure(x=0,y=0) just pulled
+        # them to the container's top-left corner. Put them back by
+        # re-running the parent's child-manager, which recomputes the
+        # correct cell / pack coordinates.
+        if node is not None and node.parent is not None:
+            parent_lt = normalise_layout_type(
+                node.parent.properties.get("layout_type", "place"),
+            )
+            if parent_lt != "place":
+                self._reapply_child_manager(widget_id)
         if widget_id == self.project.selected_id:
             self._schedule_selection_redraw()
 
