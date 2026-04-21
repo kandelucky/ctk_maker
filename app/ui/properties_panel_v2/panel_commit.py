@@ -357,8 +357,8 @@ class CommitMixin:
                 h = int(node.properties.get("height", 0) or 0)
             except (TypeError, ValueError):
                 w = h = 0
-            half = max(0, min(w, h) // 2) if w > 0 and h > 0 else 0
-            return max(0, min(v, half) if half > 0 else v)
+            cap = max(0, min(w, h)) if w > 0 and h > 0 else 0
+            return max(0, min(v, cap) if cap > 0 else v)
         try:
             value = int(value)
         except (TypeError, ValueError):

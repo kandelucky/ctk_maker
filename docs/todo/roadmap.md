@@ -87,6 +87,11 @@ Worth a dedicated mini-phase after current refactor round.
 - [ ] Undo unity for layout swap — layout_type + N grid_row/column updates wrapped in one compound command
 - [ ] Load migration — legacy grid_row/col collisions don't trigger distribute pass on load
 
+### History panel UX
+
+- [ ] **Better entry labels** — current labels are generic ("Change Property", "Add Widget"). Include prop name + value diff ("Change fg_color: #1f6aa5 → #ff0000"), widget type ("Add CTkButton"), count for bulk ("Delete 3 widgets"). Pulls the description from the command's existing `label` field where set; audit each Command subclass for useful labels.
+- [ ] **Click entry → jump to that history point (multi-step undo)** — clicking a History row should replay undo (or redo) multiple steps until that entry is current. Today Ctrl+Z is step-by-step only; this matches Photoshop/Figma's history panel UX. Implementation: `history.jump_to(index)` loops undo/redo N times with `suspend_events_until_end` to avoid intermediate selection/render thrash.
+
 ---
 
 ## Phase 0.5 remaining — Property Editor

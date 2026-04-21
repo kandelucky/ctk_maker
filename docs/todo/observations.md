@@ -60,6 +60,34 @@ Pending font editor implementation. Currently `font_family` is a plain string �
 
 ---
 
+## Duplicate of multi-selection only selects one result
+
+**Inconsistency:**
+- **Copy / Paste** of multi-selection → all pasted objects are selected together
+- **Duplicate** (right-click → Duplicate) of multi-selection → only one duplicated object is selected
+
+Expected: Duplicate should mirror Paste and select the full set of new objects.
+
+**Fix candidate**: both paths end in `BulkAddCommand` — check that Duplicate path passes the full `new_ids` list to `project.set_multi_selection(ids, primary=...)` the way Paste does (see `object_tree_window.py` paste vs `workspace/core.py` duplicate).
+
+---
+
+## Selection state not tracked in undo/redo
+
+Undo/redo reverts widget changes but doesn't restore the selection set that was active when the change was made.
+
+**Example:**
+1. Select widget A
+2. Ctrl+click widget B (multi-select: [A, B])
+3. Ctrl+click widget A (deselect: [B])
+4. Ctrl+Z — reverts last property change, but selection stays as-is
+
+**Expected** (maybe): selection should also roll back so Ctrl+Z returns to the `[A, B]` state, next Ctrl+Z to `[A]`.
+
+**Why observation, not bug**: selection changes are cheap and user-controlled; treating them as undo steps would flood history with [select] entries. Worth design discussion before implementing — Figma/Photoshop don't track selection in undo either.
+
+---
+
 ## Workspace stale drag after slow properties panel load
 
 Defense guards in place (`event.state & 0x0100` in `_on_widget_motion`, `_drag = None` on press, `winfo_manager() == "place"` in `ZoomController.apply_to_widget`). Root cause retest pending — if stale drag no longer reproduces after v2 panel, guards stay as belt-and-suspenders.

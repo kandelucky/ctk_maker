@@ -254,12 +254,21 @@ class MainWindow(ctk.CTk):
             self._on_preview()
             return "break"
         if kc == 90:  # Z
-            if event.state & 0x0001:  # Shift → redo
+            is_redo = bool(event.state & 0x0001)  # Shift → redo
+            held = self._redo_key_held if is_redo else self._undo_key_held
+            if held:
+                return "break"
+            if is_redo:
+                self._redo_key_held = True
                 self._on_redo()
             else:
+                self._undo_key_held = True
                 self._on_undo()
             return "break"
         if kc == 89:  # Y
+            if self._redo_key_held:
+                return "break"
+            self._redo_key_held = True
             self._on_redo()
             return "break"
         return None
@@ -498,9 +507,24 @@ class MainWindow(ctk.CTk):
         # bind_all so undo/redo works when the Object Tree toplevel
         # has focus too — regular `self.bind` only fires for the
         # main window's widget tree.
-        self.bind_all("<Control-z>", lambda e: self._on_undo())
-        self.bind_all("<Control-y>", lambda e: self._on_redo())
-        self.bind_all("<Control-Shift-Z>", lambda e: self._on_redo())
+        # Block OS key-repeat on Ctrl+Z / Ctrl+Y — holding the key
+        # rips through the entire history in a blur. One press = one
+        # undo; releasing + pressing again is required for the next
+        # step. Tracks the pressed state per-accelerator; KeyPress
+        # events past the first are ignored until the matching
+        # KeyRelease clears the flag.
+        self._undo_key_held: bool = False
+        self._redo_key_held: bool = False
+        self.bind_all("<KeyPress-z>", self._on_undo_keypress)
+        self.bind_all("<KeyRelease-z>", self._on_undo_keyrelease)
+        self.bind_all("<KeyPress-y>", self._on_redo_keypress)
+        self.bind_all("<KeyRelease-y>", self._on_redo_keyrelease)
+        self.bind_all("<KeyPress-Z>", self._on_redo_keypress)
+        self.bind_all("<KeyRelease-Z>", self._on_redo_keyrelease)
+        # Non-Latin keyboard layouts send Georgian/Russian keysyms, so
+        # the z/y KeyRelease bindings above never fire. Catch by hardware
+        # keycode instead so the held flags clear on release.
+        self.bind_all("<KeyRelease>", self._on_any_keyrelease)
         # Copy / Paste at the main-window level so they work regardless
         # of which panel has focus. Widget bindings fire first in tk's
         # dispatch order, so Object Tree's own handlers still win when
@@ -882,6 +906,54 @@ class MainWindow(ctk.CTk):
     def _on_redo(self) -> str | None:
         self.project.history.redo()
         return "break"
+
+    # ------------------------------------------------------------------
+    # Undo / redo key-repeat guards
+    # ------------------------------------------------------------------
+    # Tk's <Control-z> binding fires for every OS-generated
+    # auto-repeat, so holding Ctrl+Z rips the entire history. We bind
+    # raw <KeyPress-z> / <KeyRelease-z> instead and ignore auto-repeat
+    # presses via a held-state flag.
+    _CTRL_MASK = 0x04
+    _SHIFT_MASK = 0x01
+
+    def _on_undo_keypress(self, event) -> str | None:
+        if not (event.state & self._CTRL_MASK):
+            return None
+        # Ctrl+Shift+Z is redo, not undo.
+        if event.state & self._SHIFT_MASK:
+            return None
+        if self._undo_key_held:
+            return "break"
+        self._undo_key_held = True
+        return self._on_undo()
+
+    def _on_undo_keyrelease(self, event) -> str | None:
+        self._undo_key_held = False
+        return None
+
+    def _on_redo_keypress(self, event) -> str | None:
+        if not (event.state & self._CTRL_MASK):
+            return None
+        if self._redo_key_held:
+            return "break"
+        self._redo_key_held = True
+        return self._on_redo()
+
+    def _on_redo_keyrelease(self, event) -> str | None:
+        self._redo_key_held = False
+        return None
+
+    def _on_any_keyrelease(self, event) -> str | None:
+        # Non-Latin layout fallback — clear the held flag by hardware
+        # keycode when the z/y KeyRelease binding doesn't match.
+        kc = getattr(event, "keycode", 0)
+        if kc == 90:  # Z
+            self._undo_key_held = False
+            self._redo_key_held = False
+        elif kc == 89:  # Y
+            self._redo_key_held = False
+        return None
 
     def _on_history_changed(self, *_args, **_kwargs) -> None:
         self._refresh_undo_redo_buttons()
