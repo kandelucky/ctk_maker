@@ -1,0 +1,355 @@
+"""Schema traversal + disabled/hidden state mixin for PropertiesPanelV2.
+
+Split out of the monolithic ``panel.py`` (v0.0.15.11 refactor round).
+Covers the "schema → Treeview rows" pipeline:
+
+- ``_parent_layout_type`` / ``_compute_layout_extras`` /
+  ``_effective_schema`` — compose the full schema (descriptor +
+  parent-driven pack_*/grid_* extras) for the selected node.
+- ``_populate_schema`` — walk the schema, emit group / subgroup /
+  paired / single rows into ``self.tree``.
+- ``_insert_pair`` / ``_insert_prop`` / ``_refresh_cell`` — row-level
+  renderers + value-cell updaters.
+- ``_compute_disabled_states`` / ``_apply_managed_layout_disabled`` /
+  ``_is_hidden`` / ``_row_tags_for`` / ``_apply_disabled_overlay`` —
+  ``disabled_when`` / ``hidden_when`` evaluation + per-row overlay
+  state sync.
+
+Relies on ``self.tree``, ``self.project``, ``self.current_id``,
+``self._prop_iids``, ``self._subgroup_preview_iids``,
+``self._style_subgroup_iid``, ``self._disabled_states``,
+``self._layout_extras`` — all set up in ``PropertiesPanelV2.__init__``.
+"""
+
+from __future__ import annotations
+
+import tkinter as tk
+
+from app.core.project import WINDOW_ID
+from app.widgets.layout_schema import (
+    DEFAULT_LAYOUT_TYPE,
+    child_layout_schema,
+)
+
+from .constants import STYLE_BOOL_NAMES
+from .editors import get_editor
+from .format_utils import (
+    compute_subgroup_preview,
+    format_numeric_pair_preview,
+    format_value,
+)
+
+
+class SchemaMixin:
+    """Schema walker + disabled/hidden state logic. See module docstring."""
+
+    # ------------------------------------------------------------------
+    # Layout extras (parent-driven pack_* / grid_* rows)
+    # ------------------------------------------------------------------
+    def _parent_layout_type(self, node) -> str:
+        """``place`` / ``pack`` / ``grid`` for the container holding
+        ``node``. Window itself has no parent — we return the default
+        so its descriptor's own LAYOUT_TYPE_ROW is the only one shown.
+        """
+        if node is None or node.id == WINDOW_ID:
+            return DEFAULT_LAYOUT_TYPE
+        parent = getattr(node, "parent", None)
+        if parent is not None:
+            return parent.properties.get(
+                "layout_type", DEFAULT_LAYOUT_TYPE,
+            )
+        # Root-level node: parent is the document/window.
+        doc = self.project.find_document_for_widget(node.id)
+        if doc is None:
+            return DEFAULT_LAYOUT_TYPE
+        return doc.window_properties.get(
+            "layout_type", DEFAULT_LAYOUT_TYPE,
+        )
+
+    def _compute_layout_extras(self, node) -> list[dict]:
+        if node is None or node.id == WINDOW_ID:
+            return []
+        return list(child_layout_schema(self._parent_layout_type(node)))
+
+    def _effective_schema(self, descriptor) -> list[dict]:
+        return list(descriptor.property_schema) + self._layout_extras
+
+    # ------------------------------------------------------------------
+    # Schema traversal → tree hierarchy
+    # ------------------------------------------------------------------
+    def _populate_schema(self, descriptor, properties: dict, node=None) -> None:
+        schema = [
+            p for p in self._effective_schema(descriptor)
+            if not self._is_hidden(p, properties)
+        ]
+        current_group: str | None = None
+        current_subgroup: str | None = None
+        group_iid: str = ""
+        subgroup_iid: str = ""
+
+        i = 0
+        while i < len(schema):
+            prop = schema[i]
+            group = prop.get("group", "General")
+            subgroup = prop.get("subgroup")
+            pair_id = prop.get("pair")
+
+            # Enter new group
+            if group != current_group:
+                group_iid = f"g:{group}"
+                self.tree.insert(
+                    "", "end", iid=group_iid,
+                    text=group, values=("",), open=True,
+                    tags=("class",),
+                )
+                current_group = group
+                current_subgroup = None
+                subgroup_iid = group_iid
+
+            # Enter new subgroup (or leave one)
+            if subgroup != current_subgroup:
+                if subgroup:
+                    subgroup_iid = f"g:{group}/{subgroup}"
+                    preview = compute_subgroup_preview(
+                        descriptor, group, subgroup, properties,
+                    )
+                    self.tree.insert(
+                        group_iid, "end", iid=subgroup_iid,
+                        text=subgroup, values=(preview,), open=False,
+                        tags=("group",),
+                    )
+                    self._subgroup_preview_iids[
+                        f"{group}/{subgroup}"
+                    ] = subgroup_iid
+                    # Track the Style subgroup specifically so we can
+                    # attach the multi-color preview overlay later.
+                    if subgroup.lower() == "style":
+                        self._style_subgroup_iid = subgroup_iid
+                else:
+                    subgroup_iid = group_iid
+                current_subgroup = subgroup
+
+            parent_iid = subgroup_iid
+
+            # Paired row detection — collect consecutive same-pair items
+            if pair_id:
+                items: list[dict] = []
+                j = i
+                while (
+                    j < len(schema) and schema[j].get("pair") == pair_id
+                ):
+                    items.append(schema[j])
+                    j += 1
+                self._insert_pair(items, properties, parent_iid)
+                i = j
+                continue
+
+            # Single prop
+            self._insert_prop(prop, properties, parent_iid)
+            i += 1
+
+    def _insert_pair(
+        self, items: list[dict], properties: dict, parent_iid: str,
+    ) -> None:
+        """Emit a pair as rows. Pure-numeric pairs (Position, Size)
+        get a virtual parent row; mixed pairs flatten into the parent
+        subgroup so they read like independent siblings.
+        """
+        all_numeric = all(p["type"] == "number" for p in items)
+        first = items[0]
+        pair_label = first.get("row_label") or first.get("label", "")
+
+        if all_numeric and pair_label:
+            # Virtual "Position" / "Size" parent row
+            virt_iid = f"pair:{first.get('pair')}"
+            preview = format_numeric_pair_preview(items, properties)
+            self.tree.insert(
+                parent_iid, "end", iid=virt_iid,
+                text=pair_label, values=(preview,),
+                open=False, tags=("group",),
+            )
+            for item in items:
+                self._insert_prop(item, properties, virt_iid)
+            return
+
+        # Mixed pair → flatten inline
+        for item in items:
+            self._insert_prop(item, properties, parent_iid)
+
+    def _insert_prop(
+        self, prop: dict, properties: dict, parent_iid: str,
+    ) -> None:
+        pname = prop["name"]
+        ptype = prop["type"]
+        # For paired props (x/y, width/height), the `row_label` belongs
+        # to the virtual parent row — children show their individual
+        # `label` (X/Y, W/H) instead.
+        if prop.get("pair"):
+            label = prop.get("label") or pname
+        else:
+            label = (
+                prop.get("row_label")
+                or prop.get("label")
+                or pname
+            )
+        value = properties.get(pname)
+        iid = f"p:{pname}"
+        self._prop_iids[pname] = iid
+
+        display = format_value(ptype, value, prop)
+        tags = self._row_tags_for(pname, prop, value)
+
+        self.tree.insert(
+            parent_iid, "end", iid=iid,
+            text=label, values=(display,),
+            open=False, tags=tags,
+        )
+
+        get_editor(ptype).populate(self, iid, pname, prop, value)
+
+    def _refresh_cell(self, iid: str, prop: dict, value) -> None:
+        ptype = prop["type"]
+        display = format_value(ptype, value, prop)
+        try:
+            self.tree.set(iid, "value", display)
+        except tk.TclError:
+            return
+
+        if ptype == "boolean":
+            try:
+                self.tree.item(
+                    iid,
+                    tags=self._row_tags_for(prop["name"], prop, value),
+                )
+            except tk.TclError:
+                pass
+            if prop["name"] in STYLE_BOOL_NAMES:
+                self._refresh_style_preview()
+
+        get_editor(ptype).refresh(self, iid, prop["name"], prop, value)
+
+        # Refresh subgroup preview (corners/border) if this prop feeds
+        # one.
+        self._maybe_refresh_subgroup_preview(prop)
+        # Numeric-pair virtual parents show a combined preview — refresh
+        # the parent's preview if this prop belongs to one.
+        self._maybe_refresh_pair_parent(prop)
+
+    def _maybe_refresh_subgroup_preview(self, prop: dict) -> None:
+        group = prop.get("group")
+        subgroup = prop.get("subgroup")
+        if not group or not subgroup:
+            return
+        key = f"{group}/{subgroup}"
+        iid = self._subgroup_preview_iids.get(key)
+        if iid is None:
+            return
+        descriptor = self._current_descriptor()
+        node = self.project.get_widget(self.current_id)
+        if descriptor is None or node is None:
+            return
+        preview = compute_subgroup_preview(
+            descriptor, group, subgroup, node.properties,
+        )
+        try:
+            self.tree.set(iid, "value", preview)
+        except tk.TclError:
+            pass
+
+    def _maybe_refresh_pair_parent(self, prop: dict) -> None:
+        pair_id = prop.get("pair")
+        if not pair_id:
+            return
+        descriptor = self._current_descriptor()
+        if descriptor is None:
+            return
+        pair_items = [
+            p for p in self._effective_schema(descriptor)
+            if p.get("pair") == pair_id
+        ]
+        if not all(p["type"] == "number" for p in pair_items):
+            return
+        virt_iid = f"pair:{pair_id}"
+        if not self.tree.exists(virt_iid):
+            return
+        node = self.project.get_widget(self.current_id)
+        if node is None:
+            return
+        preview = format_numeric_pair_preview(
+            pair_items, node.properties,
+        )
+        try:
+            self.tree.set(virt_iid, "value", preview)
+        except tk.TclError:
+            pass
+
+    def _find_prop(self, descriptor, prop_name: str):
+        for p in self._effective_schema(descriptor):
+            if p["name"] == prop_name:
+                return p
+        return None
+
+    # ------------------------------------------------------------------
+    # disabled_when / hidden_when
+    # ------------------------------------------------------------------
+    def _compute_disabled_states(
+        self, descriptor, properties: dict,
+    ) -> dict[str, bool]:
+        result: dict[str, bool] = {}
+        for prop in self._effective_schema(descriptor):
+            fn = prop.get("disabled_when")
+            if callable(fn):
+                try:
+                    result[prop["name"]] = bool(fn(properties))
+                except Exception:
+                    result[prop["name"]] = False
+        return result
+
+    def _apply_managed_layout_disabled(self, node) -> None:
+        """Disable geometry fields for managed-layout children — the
+        layout manager owns placement so x/y/width/height are read-only.
+        """
+        from app.widgets.layout_schema import normalise_layout_type
+        if node is None or node.parent is None:
+            return
+        parent_layout = normalise_layout_type(
+            node.parent.properties.get("layout_type", "place"),
+        )
+        if parent_layout == "place":
+            return
+        for field in ("x", "y", "width", "height"):
+            self._disabled_states[field] = True
+
+    def _is_hidden(self, prop: dict, properties: dict) -> bool:
+        """Schema rows can declare a ``hidden_when(properties)``
+        callable that makes the row vanish (not just disable) when
+        the predicate holds. Used for layout-specific fields that
+        don't apply under other managers — e.g. grid Dimensions
+        shouldn't even show on a vbox Frame.
+        """
+        fn = prop.get("hidden_when")
+        if callable(fn):
+            try:
+                return bool(fn(properties))
+            except Exception:
+                return False
+        return False
+
+    def _row_tags_for(self, pname: str, prop: dict, value) -> tuple[str, ...]:
+        tags: list[str] = []
+        if prop["type"] == "boolean" and not value:
+            tags.append("bool_off")
+        if self._disabled_states.get(pname):
+            tags.append("disabled")
+        return tuple(tags)
+
+    def _apply_disabled_overlay(
+        self, pname: str, prop: dict, disabled: bool,
+    ) -> None:
+        """Sync per-row overlays (swatches, buttons) with disabled."""
+        iid = self._prop_iids.get(pname)
+        if iid is None:
+            return
+        get_editor(prop["type"]).set_disabled(
+            self, iid, pname, prop, disabled,
+        )
