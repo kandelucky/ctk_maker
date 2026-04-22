@@ -2,7 +2,7 @@
 
 A desktop visual designer for **CustomTkinter** — drag and drop widgets onto a canvas, edit their properties live, and export the result as clean runnable Python.
 
-> **Status:** v0.0.15.11 — active development. Latest: Area 3 (Properties panel) QA pass complete — 38/42 tests passed, 6 bugs found + fixed (drag-scrub cursor, Object Tree menu emboss, geometry bounds clamp, DPI canvas mismatch, widget icon persist on deselect). See [version history](docs/history/README.md) for per-release highlights.
+> **Status:** v0.0.15.20 — active development. Latest: Area 7 (Widgets) QA pass in progress — Button + Label + Entry + Textbox + CheckBox swept; placeholder activation fix, password / readonly / justify on Entry, wrap on Textbox, border_spacing + hover toggle on Button, grid shrink guard preventing orphaned children, new **Tools → Inspect CTk Widget…** dialog cross-referencing every palette widget against the actual CTk constructor signature. See [version history](docs/history/README.md) for per-release highlights and [docs/todo/done.md](docs/todo/done.md) for the per-version changelog.
 
 [![v0.0.14](docs/history/v0.0.14.png)](docs/history/v0.0.14.png)
 
@@ -58,6 +58,10 @@ A desktop visual designer for **CustomTkinter** — drag and drop widgets onto a
 - **Object Tree** (`F8`) — hierarchical widget list with visibility/lock icons, search + filter, drag-to-reparent, multi-select
 - **History** (`F9`) — undo / redo stack
 - **Properties panel** — per-widget editors
+- **Tools → Inspect CTk Widget…** — side-by-side comparison of every palette widget against the actual CTk constructor signature, flagging exposed / CTk-only / builder-helper rows
+
+### Run Python Script
+- File menu + toolbar entry (`tv-minimal-play` icon) launches any `.py` / `.pyw` as a subprocess — quick way to test exported builds without leaving the builder. Last-used directory persists.
 
 ### Widgets (14 of 15 implemented)
 `CTkButton`, `CTkLabel`, `CTkFrame`, `CTkEntry`, `CTkCheckBox`, `CTkRadioButton`, `CTkComboBox`, `CTkOptionMenu`, `CTkSlider`, `CTkProgressBar`, `CTkSegmentedButton`, `CTkSwitch`, `CTkTextbox`, plus an `Image` descriptor. `CTkScrollableFrame` and `CTkTabview` render but their nested-children path is still partial — see [widget docs](docs/widgets/README.md).

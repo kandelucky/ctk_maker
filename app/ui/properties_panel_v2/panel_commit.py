@@ -21,7 +21,7 @@ The mixin relies on attributes set up by ``PropertiesPanelV2.__init__``
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 
 from ctk_color_picker import ColorPickerDialog
 
@@ -301,6 +301,19 @@ class CommitMixin:
         node = self.project.get_widget(self.current_id)
         if node is None:
             return
+        # Grid shrink guard — block grid_rows/grid_cols going below the
+        # max row/column index actually occupied by a child, otherwise
+        # children silently disappear from the canvas (still in the
+        # model, just out-of-bounds for the new grid).
+        if pname in ("grid_rows", "grid_cols"):
+            ok, msg = self._validate_grid_shrink(node, pname, value)
+            if not ok:
+                messagebox.showerror(
+                    "Cannot shrink grid", msg,
+                    parent=self.winfo_toplevel(),
+                )
+                self._refresh_row_after_reject(pname)
+                return
         # Disabled-icon-colour advisory: the exported code has to run
         # a helper to swap the tinted image when the widget flips to
         # disabled state (CTk doesn't do it natively). Warn once per
@@ -418,6 +431,64 @@ class CommitMixin:
             )
         except tk.TclError:
             pass
+
+    # ------------------------------------------------------------------
+    # Grid shrink validation
+    # ------------------------------------------------------------------
+    def _validate_grid_shrink(
+        self, node, pname: str, value,
+    ) -> tuple[bool, str]:
+        """Block grid_rows/grid_cols changes that would orphan children.
+
+        Returns ``(True, "")`` when the change is fine; otherwise
+        ``(False, message)`` with a user-facing explanation listing the
+        occupied row/column index.
+        """
+        try:
+            new_val = int(value)
+        except (TypeError, ValueError):
+            return True, ""
+        try:
+            current = int(node.properties.get(pname, 1) or 1)
+        except (TypeError, ValueError):
+            current = 1
+        if new_val >= current:
+            return True, ""
+        axis_key = "grid_row" if pname == "grid_rows" else "grid_column"
+        max_used = -1
+        for child in node.children:
+            try:
+                idx = int(child.properties.get(axis_key, 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if idx > max_used:
+                max_used = idx
+        if new_val <= max_used:
+            unit_word = "row" if pname == "grid_rows" else "column"
+            return False, (
+                f"Cannot shrink to {new_val} "
+                f"{unit_word}{'s' if new_val != 1 else ''} — "
+                f"a child widget occupies {unit_word} {max_used}. "
+                f"Move or delete that widget first."
+            )
+        return True, ""
+
+    def _refresh_row_after_reject(self, pname: str) -> None:
+        """Repaint the schema row for ``pname`` so the spinner / inline
+        editor snaps back to the stored value when a commit is blocked.
+        """
+        if self.current_id is None:
+            return
+        descriptor = self._current_descriptor()
+        if descriptor is None:
+            return
+        node = self.project.get_widget(self.current_id)
+        if node is None:
+            return
+        prop = self._find_prop(descriptor, pname)
+        iid = self._prop_iids.get(pname)
+        if prop is not None and iid is not None:
+            self._refresh_cell(iid, prop, node.properties.get(pname))
 
     # ------------------------------------------------------------------
     # Geometry bounds

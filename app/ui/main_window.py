@@ -641,6 +641,22 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
     def _on_about(self) -> None:
         messagebox.showinfo("About CTk Visual Builder", ABOUT_TEXT, parent=self)
 
+    def _on_inspect_widget(self) -> None:
+        # Reuse a single Toplevel — clicking the menu while it's open
+        # raises it instead of stacking duplicate windows.
+        win = getattr(self, "_widget_inspector_win", None)
+        if win is not None and win.winfo_exists():
+            try:
+                win.deiconify()
+                win.lift()
+                win.focus_set()
+            except tk.TclError:
+                self._widget_inspector_win = None
+            else:
+                return
+        from app.ui.widget_inspector_window import WidgetInspectorWindow
+        self._widget_inspector_win = WidgetInspectorWindow(self)
+
     def _on_toggle_object_tree(self) -> None:
         """Open/close Object Tree window in sync with its View-menu check.
 

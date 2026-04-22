@@ -6,6 +6,11 @@
 
 ## 2026-04 — Area QA passes + refactors
 
+- **v0.0.15.20** (2026-04-22) — Tools panel + grid shrink guard:
+  - **Tools → Inspect CTk Widget...** — new menubar entry opens a Toplevel comparing every palette widget against the actual CTk constructor signature (read at runtime via `inspect.signature`). Three-status table per row: ✓ exposed by builder, ⚠ CTk-only (typically runtime kwargs like `command` / `textvariable`), ★ builder helper (x/y, font_*, border_enabled toggle, etc.). Honours per-row `hidden_when` lambdas so vbox/hbox presets hide irrelevant grid_rows/grid_cols. Window stays on top of the builder (`transient` + post-render `lift`), reuses a single instance instead of stacking.
+  - **`tools/inspect_ctk_widget.py`** — standalone CLI helper that prints any CTk widget's `__init__` signature in coloured ANSI. Forces UTF-8 stdout so cp1252 consoles don't crash. Source of truth note: the official customtkinter doc site is incomplete — checkmark_color, bg_color etc. only show up via the actual signature.
+  - **Grid shrink guard** (panel_commit.py): when committing a smaller `grid_rows` / `grid_cols`, scan children for the max occupied row/column and reject the change with a dialog if any child would be orphaned. Spinner snaps back to the stored value via `_refresh_cell`.
+
 - **v0.0.15.19** (2026-04-22) — Area 7 (Widgets) — CTkButton + CTkLabel + CTkEntry + CTkTextbox pass + multiple feature additions:
   - **Disabled icon tint export**: when a button has both `image` and `image_color_disabled`, the exporter emits TWO tinted CTkImages (`self.{var}_icon_on` / `self.{var}_icon_off`) plus an `_apply_icon_state(button, on, off, state)` helper. Comment above each affected button shows the call signature. Builder pops a one-shot advisory when the user picks `image_color_disabled` (dismissable via "Don't show again" → settings).
   - **Settings → Reset Dismissed Warnings**: clears every `advisory_*` flag so dismissed dialogs surface again on their next trigger.

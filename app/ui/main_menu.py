@@ -196,6 +196,14 @@ class MenuMixin:
         )
         menubar.add_cascade(label="View", menu=view_menu)
 
+        # ---- Tools ----
+        tools_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
+        self._add_cmd(
+            tools_menu, "Inspect CTk Widget...",
+            self._on_inspect_widget, icon="search",
+        )
+        menubar.add_cascade(label="Tools", menu=tools_menu)
+
         # ---- Settings ----
         settings_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
         appearance_menu = tk.Menu(settings_menu, tearoff=0, **MENU_STYLE)
