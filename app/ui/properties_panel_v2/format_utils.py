@@ -21,6 +21,7 @@ from .constants import (
     COMPOUND_OPTIONS,
     JUSTIFY_OPTIONS,
     ORIENTATION_OPTIONS,
+    TEXT_POSITION_OPTIONS,
     WRAP_OPTIONS,
 )
 
@@ -108,6 +109,8 @@ def enum_options_for(ptype: str):
         return ORIENTATION_OPTIONS
     if ptype == "wrap":
         return WRAP_OPTIONS
+    if ptype == "text_position":
+        return TEXT_POSITION_OPTIONS
     if ptype == "grid_style":
         return GRID_STYLE_OPTIONS
     if ptype == "layout_type":

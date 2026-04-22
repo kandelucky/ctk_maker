@@ -180,6 +180,12 @@ Pick whichever best preserves preview = reality.
 
 ## Smaller ideas
 
+- **CTkRadioButton — alternate selection visuals (icon / pill fill)** — CTk's default visual for a checked radio is just the inner dot recolored to `fg_color`. Two more options worth offering in the Inspector:
+  - **Icon mode** — when selected, draw a glyph (✓ / ✕ / ● / configurable Lucide icon) on top of the radio canvas. Hide the default inner dot. Likely needs `widget._canvas.create_text(...)` post-`_draw()`, plus a hook to re-render on state change.
+  - **Pill / fill mode** — recolor the entire outer circle background to `fg_color` (instead of just the inner border). CTk leaves the center hollow by default — `fg_color` only stains the border. To get a true filled center, draw a `_canvas.create_oval` filled item under the inner-dot area, or hijack `border_width_checked` so the border eats inward to the centre. Worth a real custom draw rather than the border hack.
+  - Schema: `selection_style` enum (`dot` default / `fill` / `icon`) + `selection_icon` enum (visible when `selection_style="icon"`).
+  - Same private-API reach as the existing checkbox `_reposition_text` work; same exporter-helper pattern (`_radio_selection_style(rb, style, icon)`).
+
 - **Hover affects text + image, not just background** — CTk's hover effect changes only `fg_color → hover_color`; text colour and image tint stay fixed. Add two new Inspector colour rows on CTkButton: `text_hover_color` + `image_hover_color`, both clearable (cleared = "stay the same on hover"). Builder + exporter wire `<Enter>`/`<Leave>` bindings on the button: `<Enter>` swaps `text_color` to `text_hover_color` and re-tints the CTkImage, `<Leave>` restores. Both Preview and exported `.py` use the same emit path. Mostly valuable for icon-only / icon+label buttons where the icon should darken on hover. Trade-off: exported code grows by ~10 lines per affected button (helper + bind block).
 
 - **Font editor** — Inspector row for `font_family` with real picker (system list + search + preview sample). `tkinter.font.families()` source. Covers Area 3 test #11.

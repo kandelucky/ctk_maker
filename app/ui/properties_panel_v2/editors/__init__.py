@@ -33,6 +33,7 @@ _EDITORS: dict[str, Editor] = {
     "stretch": _ENUM,
     "grid_sticky": _ENUM,
     "wrap": _ENUM,
+    "text_position": _ENUM,
 }
 
 

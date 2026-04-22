@@ -122,8 +122,32 @@ def generate_code(
         w.widget_type in ("CTkEntry", "CTkTextbox", "CTkComboBox")
         for w in scoped_widgets
     )
+    # CTkCheckBox / CTkRadioButton / CTkSwitch grid the box + label
+    # in a hardcoded layout. ``text_position != "right"`` triggers
+    # the helper that re-grids them so the label sits anywhere.
+    # CTkCheckBox / CTkRadioButton (and later Switch) all share the
+    # same internal _canvas + _text_label grid layout — one helper
+    # handles the re-positioning for every one of them.
+    needs_text_alignment = any(
+        w.widget_type in ("CTkCheckBox", "CTkRadioButton", "CTkSwitch")
+        and (
+            (w.properties.get("text_position", "right") or "right") != "right"
+            or int(w.properties.get("text_spacing", 6) or 6) != 6
+        )
+        for w in scoped_widgets
+    )
+    # Any radio with a non-empty `group` triggers a tk.StringVar
+    # import + per-group declaration so radios in the same group
+    # actually deselect each other in the runtime app.
+    needs_tk_import = any(
+        w.widget_type == "CTkRadioButton"
+        and str(w.properties.get("group") or "").strip()
+        for w in scoped_widgets
+    )
 
     lines: list[str] = ["import customtkinter as ctk"]
+    if needs_tk_import:
+        lines.append("import tkinter as tk")
     if needs_pil:
         lines.append("from PIL import Image")
     lines.append("")
@@ -142,6 +166,10 @@ def generate_code(
 
     if needs_text_clipboard:
         lines.extend(_text_clipboard_helper_lines())
+        lines.append("")
+
+    if needs_text_alignment:
+        lines.extend(_align_text_label_helper_lines())
         lines.append("")
 
     used_class_names: set[str] = set()
@@ -211,6 +239,44 @@ def _iter_descendants(node):
         yield from _iter_descendants(child)
 
 
+def _collect_radio_groups(
+    root_widgets: list,
+) -> tuple[dict[str, tuple[str, str]], dict[str, str]]:
+    """Walk every widget in the doc and group radios by their `group`
+    name. Returns:
+
+    - ``radio_var_map``: ``{node.id: (var_attr, value_string)}`` —
+      the StringVar attribute the radio's ``variable=`` kwarg points
+      to plus the unique value the ``value=`` kwarg holds.
+    - ``group_to_var_attr``: ``{group_name: var_attr}`` — feeds the
+      one-shot ``self._rg_<slug> = tk.StringVar(...)`` declarations
+      emitted at the top of ``_build_ui``.
+
+    Empty / whitespace-only group names are treated as standalone
+    radios and skipped.
+    """
+    by_group: dict[str, list] = {}
+
+    def walk(nodes):
+        for n in nodes:
+            if n.widget_type == "CTkRadioButton":
+                grp = str(n.properties.get("group") or "").strip()
+                if grp:
+                    by_group.setdefault(grp, []).append(n)
+            walk(n.children)
+
+    walk(root_widgets)
+
+    radio_var_map: dict[str, tuple[str, str]] = {}
+    group_to_var_attr: dict[str, str] = {}
+    for group, nodes in by_group.items():
+        var_attr = f"self._rg_{_slug(group) or 'group'}"
+        group_to_var_attr[group] = var_attr
+        for i, node in enumerate(nodes):
+            radio_var_map[node.id] = (var_attr, f"r{i + 1}")
+    return radio_var_map, group_to_var_attr
+
+
 def _emit_class(
     doc: Document, class_name: str, force_main: bool = False,
 ) -> list[str]:
@@ -255,6 +321,19 @@ def _emit_class(
 
     counts: dict[str, int] = {}
     body_lines: list[str] = []
+    radio_var_map, group_to_var_attr = _collect_radio_groups(
+        doc.root_widgets,
+    )
+    if group_to_var_attr:
+        body_lines.append(
+            "# Shared StringVar per radio group — couples selection",
+        )
+        body_lines.append(
+            "# across radios that share a `group` name.",
+        )
+        for group, var_attr in group_to_var_attr.items():
+            body_lines.append(f'{var_attr} = tk.StringVar(value="")')
+        body_lines.append("")
     if not doc.root_widgets:
         body_lines.append("pass")
     else:
@@ -302,6 +381,7 @@ def _emit_class(
                 child_index=idx,
                 parent_cols=doc_cols,
                 parent_rows=doc_rows,
+                radio_var_map=radio_var_map,
             )
     for line in body_lines:
         lines.append(f"{INDENT}{INDENT}{line}" if line else "")
@@ -319,6 +399,7 @@ def _emit_subtree(
     child_index: int = 0,
     parent_cols: int = 1,
     parent_rows: int = 1,
+    radio_var_map: dict[str, tuple[str, str]] | None = None,
 ) -> None:
     var_name = _make_var_name(node, counts)
     lines.extend(
@@ -326,6 +407,7 @@ def _emit_subtree(
             node, var_name, master_var, instance_prefix,
             parent_layout, parent_spacing, child_index,
             parent_cols, parent_rows,
+            radio_var_map=radio_var_map,
         ),
     )
     lines.append("")
@@ -380,6 +462,7 @@ def _emit_subtree(
             child_index=idx,
             parent_cols=child_cols,
             parent_rows=child_rows,
+            radio_var_map=radio_var_map,
         )
 
 
@@ -399,6 +482,7 @@ def _emit_widget(
     child_index: int = 0,
     parent_cols: int = 1,
     parent_rows: int = 1,
+    radio_var_map: dict[str, tuple[str, str]] | None = None,
 ) -> list[str]:
     descriptor = get_descriptor(node.widget_type)
     if descriptor is None:
@@ -440,6 +524,18 @@ def _emit_widget(
         else:
             state_src = '"normal"'
         kwargs.append(("state", state_src))
+
+    # Group-coupled radio: thread the shared StringVar + the unique
+    # value through the constructor. CTkRadioButton accepts both only
+    # in __init__, never via configure.
+    if (
+        node.widget_type == "CTkRadioButton"
+        and radio_var_map is not None
+        and node.id in radio_var_map
+    ):
+        var_attr, value = radio_var_map[node.id]
+        kwargs.append(("variable", var_attr))
+        kwargs.append(("value", f'"{value}"'))
     elif "state_disabled" in props:
         state_src = (
             '"disabled"' if props.get("state_disabled") else '"normal"'
@@ -521,6 +617,17 @@ def _emit_widget(
         ),
     )
     lines.extend(descriptor.export_state(full_name, props))
+    # Group-coupled radio: prime the shared StringVar when this radio
+    # is the one the user marked as initially checked. Standalone
+    # radios fall through to the descriptor's plain `.select()` line.
+    if (
+        node.widget_type == "CTkRadioButton"
+        and radio_var_map is not None
+        and node.id in radio_var_map
+        and props.get("initially_checked")
+    ):
+        var_attr, value = radio_var_map[node.id]
+        lines.append(f'{var_attr}.set("{value}")')
     return lines
 
 
@@ -688,6 +795,46 @@ def _icon_state_helper_lines() -> list[str]:
         '        state=state,',
         '        image=icon_off if state == "disabled" else icon_on,',
         "    )",
+    ]
+
+
+def _align_text_label_helper_lines() -> list[str]:
+    """Emit a helper that re-grids the internal `_canvas` (box / dot)
+    and `_text_label` of any compound widget that follows the
+    CheckBox / RadioButton / Switch grid layout. Lets the label sit
+    on any side (left / top / bottom — right is CTk's default and
+    a no-op). Same private-attr reach the builder uses at design
+    time so canvas = preview = exported runtime.
+    """
+    return [
+        "def _align_text_label(widget, position, spacing=6):",
+        '    """Re-grid the checkbox box + label so the label sits at',
+        "    `position` (left / right / top / bottom) with `spacing` px",
+        "    between them. Same private-attr reach the CTk Visual",
+        '    Builder uses at design time."""',
+        '    canvas = getattr(widget, "_canvas", None)',
+        '    label = getattr(widget, "_text_label", None)',
+        '    bg = getattr(widget, "_bg_canvas", None)',
+        "    if canvas is None or label is None: return",
+        "    s = max(0, int(spacing))",
+        "    canvas.grid_forget(); label.grid_forget()",
+        "    if bg is not None: bg.grid_forget()",
+        '    if position == "left":',
+        '        if bg is not None: bg.grid(row=0, column=0, columnspan=3, sticky="nswe")',
+        '        label.grid(row=0, column=0, sticky="e", padx=(0, s)); canvas.grid(row=0, column=2, sticky="w")',
+        '        label["anchor"] = "e"',
+        '    elif position == "top":',
+        '        if bg is not None: bg.grid(row=0, column=0, rowspan=3, columnspan=3, sticky="nswe")',
+        '        label.grid(row=0, column=0, sticky="s", pady=(0, s)); canvas.grid(row=2, column=0, sticky="n")',
+        '        label["anchor"] = "center"',
+        '    elif position == "bottom":',
+        '        if bg is not None: bg.grid(row=0, column=0, rowspan=3, columnspan=3, sticky="nswe")',
+        '        canvas.grid(row=0, column=0, sticky="s"); label.grid(row=2, column=0, sticky="n", pady=(s, 0))',
+        '        label["anchor"] = "center"',
+        "    else:",
+        '        if bg is not None: bg.grid(row=0, column=0, columnspan=3, sticky="nswe")',
+        '        canvas.grid(row=0, column=0, sticky="e"); label.grid(row=0, column=2, sticky="w", padx=(s, 0))',
+        '        label["anchor"] = "w"',
     ]
 
 
