@@ -497,7 +497,9 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         self._clear_tree()
         self._type_label.configure(text="")
         self._id_label.configure(text="")
-        self._type_icon_label.configure(image="")
+        # CTk warns when image= isn't a CTkImage instance — pass
+        # None to clear instead of an empty string.
+        self._type_icon_label.configure(image=None)
         self._suspend_name_trace = True
         try:
             if self._name_var is not None:

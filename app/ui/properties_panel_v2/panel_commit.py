@@ -131,6 +131,7 @@ class CommitMixin:
         entry.bind("<Return>", lambda _e: self._commit_active_editor())
         entry.bind("<FocusOut>", lambda _e: self._commit_active_editor())
         entry.bind("<Escape>", lambda _e: self._cancel_active_editor())
+        self._attach_inline_context_menu(entry, prop=None)
 
     # ------------------------------------------------------------------
     # Click routing
@@ -218,6 +219,7 @@ class CommitMixin:
         entry.bind("<Return>", lambda _e: self._commit_active_editor())
         entry.bind("<FocusOut>", lambda _e: self._commit_active_editor())
         entry.bind("<Escape>", lambda _e: self._cancel_active_editor())
+        self._attach_inline_context_menu(entry, prop=prop)
 
     def _commit_active_editor(self) -> None:
         if self._active_editor is None or self._active_prop is None:
@@ -489,6 +491,103 @@ class CommitMixin:
         iid = self._prop_iids.get(pname)
         if prop is not None and iid is not None:
             self._refresh_cell(iid, prop, node.properties.get(pname))
+
+    # ------------------------------------------------------------------
+    # Inline editor right-click menu
+    # ------------------------------------------------------------------
+    def _attach_inline_context_menu(self, entry, prop: dict | None) -> None:
+        """Right-click on an inline tk.Entry overlay → Cut / Copy /
+        Paste / Select All. For number rows, also offer two
+        quick-fill commands that drop the schema's min / max value
+        straight into the field. ``prop=None`` skips the min/max
+        section (used for the multi-line text inline editor).
+        """
+        def _popup(event):
+            menu = tk.Menu(entry, tearoff=0, **MENU_STYLE)
+            has_selection = bool(entry.selection_present()) \
+                if hasattr(entry, "selection_present") else False
+            try:
+                # ``selection_present`` may raise on stale widget — guard.
+                has_selection = bool(entry.selection_present())
+            except tk.TclError:
+                has_selection = False
+            menu.add_command(
+                label="Cut",
+                command=lambda: entry.event_generate("<<Cut>>"),
+                state="normal" if has_selection else "disabled",
+            )
+            menu.add_command(
+                label="Copy",
+                command=lambda: entry.event_generate("<<Copy>>"),
+                state="normal" if has_selection else "disabled",
+            )
+            menu.add_command(
+                label="Paste",
+                command=lambda: entry.event_generate("<<Paste>>"),
+            )
+            menu.add_separator()
+            menu.add_command(
+                label="Select All",
+                command=lambda: (
+                    entry.select_range(0, tk.END),
+                    entry.icursor(tk.END),
+                ),
+            )
+            if prop is not None and prop.get("type") == "number":
+                self._append_min_max_menu_items(menu, entry, prop)
+            try:
+                menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                menu.grab_release()
+
+        entry.bind("<Button-3>", _popup, add="+")
+
+    def _append_min_max_menu_items(self, menu, entry, prop) -> None:
+        """Add ``Min: <value>`` / ``Max: <value>`` rows that, when
+        clicked, replace the entry contents with the schema's
+        clamp value. Lambdas in the schema are evaluated against the
+        current widget's properties so context-sensitive bounds
+        (e.g. corner_radius capped to half the widget height)
+        resolve correctly.
+        """
+        node = (
+            self.project.get_widget(self.current_id)
+            if self.current_id else None
+        )
+        props = node.properties if node is not None else {}
+
+        def _resolve(key):
+            raw = prop.get(key)
+            if callable(raw):
+                try:
+                    return raw(props)
+                except Exception:
+                    return None
+            return raw
+
+        lo = _resolve("min")
+        hi = _resolve("max")
+        if lo is None and hi is None:
+            return
+
+        def _replace(value):
+            entry.delete(0, tk.END)
+            entry.insert(0, str(value))
+            entry.select_range(0, tk.END)
+            entry.icursor(tk.END)
+            entry.focus_set()
+
+        menu.add_separator()
+        if lo is not None:
+            menu.add_command(
+                label=f"Min: {lo}",
+                command=lambda v=lo: _replace(v),
+            )
+        if hi is not None:
+            menu.add_command(
+                label=f"Max: {hi}",
+                command=lambda v=hi: _replace(v),
+            )
 
     # ------------------------------------------------------------------
     # Geometry bounds

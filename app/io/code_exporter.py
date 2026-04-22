@@ -111,6 +111,17 @@ def generate_code(
         and "button_enabled" in w.properties
         for w in scoped_widgets
     )
+    needs_auto_hover_text = any(
+        w.properties.get("text_hover") for w in scoped_widgets
+    )
+    # Right-click + non-Latin Ctrl router for every text-editable
+    # widget. Triggered when the project includes any Entry, Textbox,
+    # or ComboBox — those are the CTk widgets backed by tk.Entry /
+    # tk.Text under the hood.
+    needs_text_clipboard = any(
+        w.widget_type in ("CTkEntry", "CTkTextbox", "CTkComboBox")
+        for w in scoped_widgets
+    )
 
     lines: list[str] = ["import customtkinter as ctk"]
     if needs_pil:
@@ -123,6 +134,14 @@ def generate_code(
 
     if needs_icon_state:
         lines.extend(_icon_state_helper_lines())
+        lines.append("")
+
+    if needs_auto_hover_text:
+        lines.extend(_auto_hover_text_helper_lines())
+        lines.append("")
+
+    if needs_text_clipboard:
+        lines.extend(_text_clipboard_helper_lines())
         lines.append("")
 
     used_class_names: set[str] = set()
@@ -158,10 +177,14 @@ def generate_code(
         lines.append(f"{INDENT}app = ctk.CTk()")
         lines.append(f"{INDENT}app.withdraw()")
         lines.append(f"{INDENT}{var} = {preview_cls}(app)")
+        if needs_text_clipboard:
+            lines.append(f"{INDENT}_setup_text_clipboard(app)")
         lines.append(f"{INDENT}app.wait_window({var})")
     else:
         first_doc, first_class = class_names[0]
         lines.append(f"{INDENT}app = {first_class}()")
+        if needs_text_clipboard:
+            lines.append(f"{INDENT}_setup_text_clipboard(app)")
         # Comment out the way to open any Toplevel dialogs so the user
         # can copy the line into an event handler when they want to.
         for doc, cls in class_names[1:]:
@@ -665,6 +688,76 @@ def _icon_state_helper_lines() -> list[str]:
         '        state=state,',
         '        image=icon_off if state == "disabled" else icon_on,',
         "    )",
+    ]
+
+
+def _text_clipboard_helper_lines() -> list[str]:
+    """Emit a helper that wires right-click context menus and a
+    keycode-based Ctrl shortcut router onto every tk.Entry / tk.Text
+    widget. Lets the exported app's text fields support Cut / Copy /
+    Paste / Select All via mouse AND keyboard, regardless of the
+    user's keyboard layout (Latin keysyms break under non-Latin
+    layouts; hardware keycodes don't).
+    """
+    return [
+        "def _setup_text_clipboard(root):",
+        '    """Right-click menu + Ctrl shortcut router for every',
+        "    tk.Entry / tk.Text widget. Works on Latin AND non-Latin",
+        '    keyboard layouts (Georgian, Russian, …)."""',
+        "    import tkinter as tk",
+        "    def _popup(event):",
+        "        widget = event.widget",
+        "        # tk.Entry uses .selection_present(); tk.Text uses",
+        '        # .tag_ranges("sel"). Try both, default off.',
+        "        has_sel = False",
+        "        try: has_sel = bool(widget.selection_present())",
+        "        except Exception:",
+        "            try: has_sel = bool(widget.tag_ranges(\"sel\"))",
+        "            except Exception: has_sel = False",
+        "        menu = tk.Menu(widget, tearoff=0)",
+        '        menu.add_command(label="Cut",   state=("normal" if has_sel else "disabled"),  command=lambda: widget.event_generate("<<Cut>>"))',
+        '        menu.add_command(label="Copy",  state=("normal" if has_sel else "disabled"),  command=lambda: widget.event_generate("<<Copy>>"))',
+        '        menu.add_command(label="Paste", command=lambda: widget.event_generate("<<Paste>>"))',
+        "        menu.add_separator()",
+        '        menu.add_command(label="Select All", command=lambda: widget.event_generate("<<SelectAll>>"))',
+        "        try: menu.tk_popup(event.x_root, event.y_root)",
+        "        finally: menu.grab_release()",
+        "    def _ctrl(event):",
+        "        # Latin layouts (V/C/X/A keysym) hit tk's defaults — skip.",
+        '        if event.keysym.lower() in ("v", "c", "x", "a"): return None',
+        "        kc = event.keycode",
+        '        if kc == 86: event.widget.event_generate("<<Paste>>"); return "break"',
+        '        if kc == 67: event.widget.event_generate("<<Copy>>");  return "break"',
+        '        if kc == 88: event.widget.event_generate("<<Cut>>");   return "break"',
+        '        if kc == 65:',
+        '            try: event.widget.event_generate("<<SelectAll>>")',
+        "            except Exception: pass",
+        '            return "break"',
+        '    for cls in ("Entry", "Text"):',
+        '        root.bind_class(cls, "<Button-3>", _popup, add="+")',
+        '        root.bind_class(cls, "<Control-KeyPress>", _ctrl, add="+")',
+    ]
+
+
+def _auto_hover_text_helper_lines() -> list[str]:
+    """Emit a tiny module-level helper that wires <Enter>/<Leave> on a
+    button to swap its text colour. CTk's native hover only retints
+    the background; this gives the label its own reactive feel.
+    Reaches into ``_text_label`` directly so it doesn't trip CTk's
+    full configure pipeline (which would reset the hover background
+    mid-hover).
+    """
+    return [
+        "def _auto_hover_text(button, normal, hover):",
+        '    """Bind <Enter>/<Leave> to swap text_color. Same lighten/darken',
+        "    direction the CTk Visual Builder uses at design time so the",
+        '    runtime feel matches the canvas preview."""',
+        "    def _set(colour):",
+        '        lbl = getattr(button, "_text_label", None)',
+        "        if lbl is not None:",
+        "            lbl.configure(fg=colour)",
+        '    button.bind("<Enter>", lambda e: _set(hover))',
+        '    button.bind("<Leave>", lambda e: _set(normal))',
     ]
 
 

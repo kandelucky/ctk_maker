@@ -200,6 +200,11 @@ Pick whichever best preserves preview = reality.
 
 - **Rename `.ctkproj` extension** — current name is ad-hoc (`ctk` + `proj`). Pick a cleaner name before v1.0 public release. Candidates: `.ctkb` (builder), `.ctkui`, `.ctkform` (Qt Designer parallel — `.ui`). Needs: save/load path update, filedialog filters, recent-files migration for existing `.ctkproj` files, docs pass.
 
+- **Preview window — modal lockout + always-on-top** — when `Ctrl+R` (or per-dialog ▶) launches a preview, the builder should freeze until the preview window closes, and the preview should stay above every builder window. Two pieces:
+  - Topmost: post-process the temp `preview.py` (don't touch the user's exported `.py`) — replace `app.mainloop()` with `try: app.attributes('-topmost', True)` + `app.mainloop()`.
+  - Lockout: `self.attributes("-disabled", True)` on Windows + poll the subprocess every ~500 ms via `after`; restore on exit. Cross-platform fallback (Linux/X11 may need `iconify` instead of `-disabled`). Apply to both main and per-dialog preview launches.
+  - Skipped on first pass (2026-04-22) because the cross-platform path turned out fiddlier than expected.
+
 - **Templates / Presets** for common windows (login form, settings dialog, wizard).
 
 - **Variables panel** (StringVar, IntVar, BooleanVar — create + bind). Complementary to Command Target.

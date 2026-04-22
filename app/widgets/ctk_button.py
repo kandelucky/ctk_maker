@@ -12,7 +12,7 @@ Groups shown in the Properties panel, in order:
     State           — disabled flag
     Main Colors     — background, hover
     Text            — label, font style, alignment, text colors
-    Image & Alignment — image picker, image size, compound
+    Icon            — image picker, size, tint, compound, preserve aspect
 """
 import customtkinter as ctk
 
@@ -54,6 +54,8 @@ class CTkButtonDescriptor(WidgetDescriptor):
         "anchor": "center",
         "text_color": "#ffffff",
         "text_color_disabled": "#a0a0a0",
+        "text_hover": False,
+        "text_hover_color": "#b2b2b2",
         # Image
         "image": None,
         "image_color": None,
@@ -107,6 +109,8 @@ class CTkButtonDescriptor(WidgetDescriptor):
         # --- Button Interaction ------------------------------------------
         {"name": "button_enabled", "type": "boolean", "label": "",
          "group": "Button Interaction", "row_label": "Interactable"},
+        {"name": "hover", "type": "boolean", "label": "",
+         "group": "Button Interaction", "row_label": "Hover Effect"},
 
         # --- Main Colors -------------------------------------------------
         # Clearable — icon-only buttons usually want a transparent
@@ -114,8 +118,6 @@ class CTkButtonDescriptor(WidgetDescriptor):
         {"name": "fg_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Background",
          "clearable": True, "clear_value": "transparent"},
-        {"name": "hover", "type": "boolean", "label": "",
-         "group": "Main Colors", "row_label": "Hover"},
         {"name": "hover_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Hover Color",
          "disabled_when": lambda p: not p.get("hover", True)},
@@ -146,33 +148,38 @@ class CTkButtonDescriptor(WidgetDescriptor):
          "group": "Text", "row_label": "Normal Text Color"},
         {"name": "text_color_disabled", "type": "color", "label": "",
          "group": "Text", "row_label": "Disabled Text Color"},
+        {"name": "text_hover", "type": "boolean", "label": "",
+         "group": "Text", "row_label": "Hover Color Effect"},
+        {"name": "text_hover_color", "type": "color", "label": "",
+         "group": "Text", "row_label": "Hover Color",
+         "disabled_when": lambda p: not p.get("text_hover")},
 
-        # --- Image & Alignment -------------------------------------------
+        # --- Icon --------------------------------------------------------
         {"name": "image", "type": "image", "label": "",
-         "group": "Image & Alignment", "row_label": "Image"},
+         "group": "Icon", "row_label": "Icon"},
         {"name": "image_color", "type": "color", "label": "",
-         "group": "Image & Alignment", "row_label": "Normal Color",
+         "group": "Icon", "row_label": "Normal Color",
          "clearable": True, "clear_value": None,
          "disabled_when": lambda p: not p.get("image")},
         {"name": "image_color_disabled", "type": "color", "label": "",
-         "group": "Image & Alignment", "row_label": "Disabled Color",
+         "group": "Icon", "row_label": "Disabled Color",
          "clearable": True, "clear_value": None,
          "disabled_when": lambda p: not p.get("image")},
         {"name": "image_width", "type": "number", "label": "W",
-         "group": "Image & Alignment",
+         "group": "Icon",
          "pair": "img_size", "row_label": "Icon Size",
          "min": 4, "max": 512,
          "disabled_when": lambda p: not p.get("image")},
         {"name": "image_height", "type": "number", "label": "H",
-         "group": "Image & Alignment",
+         "group": "Icon",
          "pair": "img_size", "min": 4, "max": 512,
          "disabled_when": lambda p: (
              not p.get("image") or bool(p.get("preserve_aspect")))},
         {"name": "compound", "type": "compound", "label": "",
-         "group": "Image & Alignment", "row_label": "Icon Side",
+         "group": "Icon", "row_label": "Icon Side",
          "disabled_when": lambda p: not p.get("image")},
         {"name": "preserve_aspect", "type": "boolean", "label": "",
-         "group": "Image & Alignment", "row_label": "Preserve Aspect",
+         "group": "Icon", "row_label": "Preserve Aspect",
          "disabled_when": lambda p: not p.get("image")},
     ]
 
@@ -190,6 +197,11 @@ class CTkButtonDescriptor(WidgetDescriptor):
         "x", "y", "image_width", "image_height",
         "button_enabled", "border_enabled",
         "preserve_aspect", "image_color", "image_color_disabled",
+        # Builder-side text-hover effect — manually wires
+        # <Enter>/<Leave> to swap text_color, since CTk's native
+        # hover only retints the background. Neither key is a
+        # CTkButton kwarg.
+        "text_hover", "text_hover_color",
         # Legacy: migrated to button_enabled but may still appear in
         # old project files; never passed to CTkButton.
         "state_disabled",
@@ -376,4 +388,80 @@ class CTkButtonDescriptor(WidgetDescriptor):
         kwargs = cls.transform_properties(properties)
         if init_kwargs:
             kwargs.update(init_kwargs)
-        return ctk.CTkButton(master, **kwargs)
+        widget = ctk.CTkButton(master, **kwargs)
+        cls.apply_state(widget, properties)
+        return widget
+
+    # ==================================================================
+    # Text-colour Hover Effect — manual hover colour swap on
+    # <Enter>/<Leave>
+    # ==================================================================
+    @classmethod
+    def apply_state(cls, widget, properties: dict) -> None:
+        # tkinter's ``unbind(seq, funcid)`` is famously buggy — it often
+        # wipes every binding for the sequence (or wipes nothing).
+        # Sidestep the issue: bind <Enter>/<Leave> ONCE per widget and
+        # have the handler consult live attributes that ``apply_state``
+        # updates in place. Toggling the property off just sets the
+        # flag to False; the handler stops mutating the label.
+        normal = properties.get("text_color") or "#dce4ee"
+        was_enabled = bool(getattr(widget, "_auto_hover_enabled", False))
+        is_enabled = bool(properties.get("text_hover"))
+        widget._auto_hover_enabled = is_enabled
+        widget._auto_hover_normal = normal
+        widget._auto_hover_hover = (
+            properties.get("text_hover_color") or normal
+        )
+
+        # If the toggle just flipped off while the cursor is over the
+        # button, the text would otherwise be stuck in the hover
+        # colour (no leave handler runs). Force-restore.
+        if was_enabled and not is_enabled:
+            try:
+                lbl = getattr(widget, "_text_label", None)
+                if lbl is not None:
+                    lbl.configure(fg=normal)
+            except Exception:
+                pass
+
+        if getattr(widget, "_auto_hover_bound", False):
+            return
+
+        # NEVER call ``widget.configure(text_color=...)`` from the
+        # hover handler — CTk's configure routes through ``_draw()``
+        # which resets the in-flight hover state (the temporary
+        # hover_color background snaps back to fg_color mid-hover).
+        # Reach into the inner ``_text_label`` directly so only the
+        # fg colour shifts and CTk's own hover bindings keep working.
+        def _set_text(colour: str) -> None:
+            try:
+                lbl = getattr(widget, "_text_label", None)
+                if lbl is not None:
+                    lbl.configure(fg=colour)
+            except Exception:
+                pass
+
+        def _on_enter(_e):
+            if getattr(widget, "_auto_hover_enabled", False):
+                _set_text(widget._auto_hover_hover)
+
+        def _on_leave(_e):
+            if getattr(widget, "_auto_hover_enabled", False):
+                _set_text(widget._auto_hover_normal)
+
+        try:
+            widget.bind("<Enter>", _on_enter, add="+")
+            widget.bind("<Leave>", _on_leave, add="+")
+            widget._auto_hover_bound = True
+        except Exception:
+            log_error("CTkButtonDescriptor.apply_state auto_hover")
+
+    @classmethod
+    def export_state(cls, var_name: str, properties: dict) -> list[str]:
+        if not properties.get("text_hover"):
+            return []
+        normal = properties.get("text_color") or "#dce4ee"
+        hover = properties.get("text_hover_color") or normal
+        return [
+            f'_auto_hover_text({var_name}, "{normal}", "{hover}")',
+        ]
