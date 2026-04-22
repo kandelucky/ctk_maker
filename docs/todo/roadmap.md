@@ -4,13 +4,45 @@
 
 ---
 
-## 🚧 Active — Area 4 Commands QA pass
+## 🚧 Active — QA rounds
 
-- [ ] Area 4 — Commands (undo/redo): every mutation reversible, coalescing — `docs/testing/commands.md` (0/43)
-- [ ] Area 5 — Project lifecycle: save/load/export round-trip (0/44)
-- [ ] Area 6 — Multi-document: dialogs, chrome, cross-doc drag, accent color, z-order (0/54)
-- [ ] Area 7 — Widgets: 14+1 descriptors per-widget sanity (0/41)
+- [x] Area 4 — Commands (undo/redo): 42/43 ✅
+- [x] Area 5 — Project lifecycle: 41/44 ✅
+- [x] Area 6 — Multi-document: 54/54 ✅
+- [ ] Area 7 — Widgets: 19 palette entries, 115-item per-widget sweep — `docs/testing/widgets.md` (0/115)
 - [ ] Area 8 — Inspectors & Dialogs: Object Tree, History, menubar/toolbar, modals, Window Settings (0/103)
+
+---
+
+## Dedicated dialogs / windows
+
+Three windows currently delegate to native OS dialogs (or run silently in the background) and would benefit from a richer in-builder UI.
+
+- [ ] **Export dialog** — replace the bare `asksaveasfilename` File → Export step with a real dialog: target file path, scope (whole project vs active document), include `assets/` toggle (after the asset system lands), preview pane showing first N lines of generated code, "Open file after export" checkbox. Same dialog reused by File → Export and the per-document chrome Export icon.
+
+- [ ] **Run Python Script window** — today's Run Script just spawns `subprocess.Popen` and the user has zero feedback if the script crashes or prints. Wrap the launch in a small window: title bar with the script path, stdout / stderr captured into a scrolling text panel, exit code shown when the process ends, Stop button to kill the subprocess. Optionally support running `.ctkproj` directly (regenerate-and-run path from `ideas.md`).
+
+- [ ] **Settings / Preferences window** — global settings (`~/.ctk_visual_builder/settings.json`) currently have no UI; the "Reset Dismissed Warnings" item is the only entry exposed. Build a real Preferences dialog: appearance mode, default font / size, default project location, recent-project list cap, run-script defaults, dismissed-warnings list with per-item re-enable, autosave interval (after the autosave layer lands), color picker presets management.
+
+---
+
+## Portable images — assets system
+
+Image widgets currently export with **absolute filesystem paths** baked into the generated `.py`. Projects break the moment the user:
+- Moves the project folder
+- Sends the `.py` to another machine
+- Renames the source image on disk
+
+Target fix (committed, must ship before v1.0):
+
+- [ ] `assets/` folder alongside the `.ctkproj` file, auto-populated with every referenced image on save (copy-on-first-reference, deduped by SHA).
+- [ ] Widget `image` property stores `asset:<asset_id>` tokens instead of raw paths; the builder resolves tokens through `project.assets` at render time.
+- [ ] Exporter copies every used asset into `assets/` beside the generated `.py` and rewrites paths to relative (`Image.open("assets/<name>")`).
+- [ ] Load migration: legacy projects with absolute paths are moved into `assets/` on first save; tokens replace the raw paths.
+- [ ] Asset model: `project.assets: dict[asset_id → AssetEntry]` with `(relative_path, sha256, last_modified)`.
+- [ ] Missing asset on load — graceful degradation (placeholder + entry in observations).
+
+**Later**: Assets panel (4th sidebar tab — thumbnails, drag-to-canvas, drag-to-property, Import…). Drag-from-Explorer needs `tkinterdnd2`. That panel is a UX layer on top of the asset model, not a hard requirement for the portability fix.
 
 ---
 

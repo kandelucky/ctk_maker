@@ -106,7 +106,7 @@ CATALOG: tuple[WidgetGroup, ...] = (
         ),
     )),
     WidgetGroup("Buttons", (
-        WidgetEntry("CTkButton", "Button", "square"),
+        WidgetEntry("CTkButton", "Button", "square-dot"),
         WidgetEntry("CTkCheckBox", "Check Box", "square-check"),
         WidgetEntry("CTkRadioButton", "Radio Button", "circle-dot"),
         WidgetEntry("CTkSwitch", "Switch", "toggle-left"),
@@ -412,6 +412,18 @@ class Palette(ctk.CTkFrame):
 
     def _create_ghost(self, entry: WidgetEntry) -> None:
         self._destroy_ghost()
+        # Pull a hex colour off the descriptor's default `fg_color` so
+        # the drag preview matches the colour the dropped widget will
+        # actually have. Containers / themed defaults that store
+        # "transparent" or a (light, dark) tuple fall back to the
+        # generic CTk blue.
+        bg_color = "#1f6aa5"
+        descriptor = self._drag["descriptor"] if self._drag else None
+        if descriptor is not None:
+            candidate = descriptor.default_properties.get("fg_color")
+            if isinstance(candidate, str) and candidate.startswith("#"):
+                bg_color = candidate
+        self._ghost_valid_bg = bg_color
         ghost = tk.Toplevel(self)
         ghost.overrideredirect(True)
         ghost.attributes("-topmost", True)
@@ -420,13 +432,13 @@ class Palette(ctk.CTkFrame):
         except tk.TclError:
             pass
         frame = tk.Frame(
-            ghost, bg="#1f6aa5", bd=1, relief="solid",
-            highlightthickness=1, highlightbackground="#3b8ed0",
+            ghost, bg=bg_color, bd=1, relief="solid",
+            highlightthickness=1, highlightbackground=bg_color,
         )
         frame.pack()
         label = tk.Label(
             frame, text=f"+ {entry.display_name}",
-            bg="#1f6aa5", fg="white",
+            bg=bg_color, fg="white",
             font=("Segoe UI", 10, "bold"), padx=10, pady=4,
         )
         label.pack()
@@ -460,8 +472,9 @@ class Palette(ctk.CTkFrame):
         if valid == self._ghost_valid:
             return
         self._ghost_valid = valid
-        bg = "#1f6aa5" if valid else "#8b2a2a"
-        border = "#3b8ed0" if valid else "#c44343"
+        valid_bg = getattr(self, "_ghost_valid_bg", "#1f6aa5")
+        bg = valid_bg if valid else "#8b2a2a"
+        border = valid_bg if valid else "#c44343"
         try:
             self._ghost_frame.configure(
                 bg=bg, highlightbackground=border,

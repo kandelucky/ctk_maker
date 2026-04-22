@@ -39,6 +39,7 @@ class CTkTextboxDescriptor(WidgetDescriptor):
         "border_spacing": 3,
         # Content
         "initial_text": "",
+        "wrap": "char",
         "activate_scrollbars": True,
         # Button Interaction
         "button_enabled": True,
@@ -94,6 +95,8 @@ class CTkTextboxDescriptor(WidgetDescriptor):
         # --- Content -----------------------------------------------------
         {"name": "initial_text", "type": "multiline", "label": "",
          "group": "Content", "row_label": "Initial Text"},
+        {"name": "wrap", "type": "wrap", "label": "",
+         "group": "Content", "row_label": "Wrap"},
         {"name": "activate_scrollbars", "type": "boolean", "label": "",
          "group": "Content", "row_label": "Show Scrollbars"},
 

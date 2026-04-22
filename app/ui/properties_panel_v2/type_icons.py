@@ -4,7 +4,7 @@ from __future__ import annotations
 
 
 _TYPE_ICON_NAMES = {
-    "CTkButton": "square",
+    "CTkButton": "square-dot",
     "CTkLabel": "type",
     "CTkFrame": "frame",
     "CTkCheckBox": "square-check",

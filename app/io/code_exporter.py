@@ -98,7 +98,17 @@ def generate_code(
     scoped_widgets = list(_doc_widgets(docs_to_emit))
     needs_pil = any(w.properties.get("image") for w in scoped_widgets)
     needs_tint = any(
-        w.properties.get("image") and w.properties.get("image_color")
+        w.properties.get("image")
+        and (
+            w.properties.get("image_color")
+            or w.properties.get("image_color_disabled")
+        )
+        for w in scoped_widgets
+    )
+    needs_icon_state = any(
+        w.properties.get("image")
+        and w.properties.get("image_color_disabled")
+        and "button_enabled" in w.properties
         for w in scoped_widgets
     )
 
@@ -109,6 +119,10 @@ def generate_code(
 
     if needs_tint:
         lines.extend(_tint_helper_lines())
+        lines.append("")
+
+    if needs_icon_state:
+        lines.extend(_icon_state_helper_lines())
         lines.append("")
 
     used_class_names: set[str] = set()
@@ -395,16 +409,23 @@ def _emit_widget(
         kwargs.append((key, _py_literal(val)))
 
     if "button_enabled" in props:
-        state_src = (
-            '"normal"' if props.get("button_enabled", True)
-            else '"disabled"'
-        )
+        # CTkEntry adds a `readonly` boolean that wins over disabled.
+        if props.get("readonly"):
+            state_src = '"readonly"'
+        elif not props.get("button_enabled", True):
+            state_src = '"disabled"'
+        else:
+            state_src = '"normal"'
         kwargs.append(("state", state_src))
     elif "state_disabled" in props:
         state_src = (
             '"disabled"' if props.get("state_disabled") else '"normal"'
         )
         kwargs.append(("state", state_src))
+
+    # CTkEntry password masking → `show="•"` kwarg.
+    if props.get("password"):
+        kwargs.append(("show", '"•"'))
 
     if "border_enabled" in props and not props.get("border_enabled"):
         kwargs = [
@@ -415,8 +436,47 @@ def _emit_widget(
         kwargs.append(("font", _font_source(props)))
 
     image_path = props.get("image")
+    pre_lines: list[str] = []
+    # When a button has both an icon AND a disabled tint, emit TWO
+    # CTkImages + a heads-up comment so the user can call
+    # _apply_icon_state(...) from their state-change code. CTk swaps
+    # text_color on state but not image, so this is the only clean
+    # way to get a true disabled-looking icon.
+    has_disabled_tint = bool(
+        image_path
+        and props.get("image_color_disabled")
+        and "button_enabled" in props
+    )
     if image_path:
-        kwargs.append(("image", _image_source(props, image_path)))
+        if has_disabled_tint:
+            # Store both tinted variants on ``self`` so they stay
+            # accessible for _apply_icon_state(...) from any later
+            # state-change code the user writes.
+            on_attr = f"self.{var_name}_icon_on"
+            off_attr = f"self.{var_name}_icon_off"
+            on_src = _image_source_with_color(
+                props, image_path,
+                props.get("image_color") or "#ffffff",
+            )
+            off_src = _image_source_with_color(
+                props, image_path, props.get("image_color_disabled"),
+            )
+            pre_lines.append(
+                f"# Icon has a disabled-state colour. Call "
+                f"_apply_icon_state(self.{var_name},",
+            )
+            pre_lines.append(
+                f"# {on_attr}, {off_attr}, new_state) "
+                f"when you toggle state.",
+            )
+            pre_lines.append(f"{on_attr} = {on_src}")
+            pre_lines.append(f"{off_attr} = {off_src}")
+            start_attr = (
+                on_attr if props.get("button_enabled", True) else off_attr
+            )
+            kwargs.append(("image", start_attr))
+        else:
+            kwargs.append(("image", _image_source(props, image_path)))
         if "compound" not in props:
             kwargs.append(("compound", '"left"'))
 
@@ -424,7 +484,8 @@ def _emit_widget(
         getattr(descriptor, "ctk_class_name", "") or node.widget_type
     )
     full_name = f"{instance_prefix}{var_name}"
-    lines = [f"{full_name} = ctk.{ctk_class}("]
+    lines: list[str] = list(pre_lines)
+    lines.append(f"{full_name} = ctk.{ctk_class}(")
     lines.append(f"    {master_var},")
     for key, src in kwargs:
         lines.append(f"    {key}={src},")
@@ -538,10 +599,23 @@ def _image_source(props: dict, image_path: str) -> str:
     # sloppy and trips cross-platform readers.
     normalised_path = str(image_path).replace("\\", "/")
     path_src = _py_literal(normalised_path)
-    # image_color is a builder-only tint applied via PIL (CTk doesn't
-    # expose a native tint param). When set, route through the helper
-    # emitted at module top so one PNG can back many colored variants.
-    color = props.get("image_color")
+    # image_color / image_color_disabled are builder-only PIL tints
+    # (CTk doesn't expose a native image tint param). Pick between the
+    # two based on ``button_enabled`` — the builder's preview does the
+    # same, so the exported file matches what the designer saw.
+    # ``button_enabled`` only lives on command-capable widgets
+    # (CTkButton etc.); leaf widgets without that key fall through to
+    # the plain ``image_color``.
+    if (
+        "button_enabled" in props
+        and not bool(props.get("button_enabled"))
+    ):
+        color = (
+            props.get("image_color_disabled")
+            or props.get("image_color")
+        )
+    else:
+        color = props.get("image_color")
     if color:
         return (
             f"_tint_image({path_src}, {_py_literal(color)}, ({iw}, {ih}))"
@@ -552,6 +626,46 @@ def _image_source(props: dict, image_path: str) -> str:
         f"dark_image=Image.open({path_src}), "
         f"size=({iw}, {ih}))"
     )
+
+
+def _image_source_with_color(
+    props: dict, image_path: str, color: str,
+) -> str:
+    """Force a specific tint colour, regardless of ``button_enabled``.
+    Used when the exporter emits BOTH the normal + disabled icon
+    variants for a button that carries an ``image_color_disabled``.
+    """
+    if "image_width" in props or "image_height" in props:
+        iw = _safe_int(props.get("image_width"), 20)
+        ih = _safe_int(props.get("image_height"), 20)
+    else:
+        iw = _safe_int(props.get("width"), 64)
+        ih = _safe_int(props.get("height"), 64)
+    normalised_path = str(image_path).replace("\\", "/")
+    return (
+        f"_tint_image({_py_literal(normalised_path)}, "
+        f"{_py_literal(color)}, ({iw}, {ih}))"
+    )
+
+
+def _icon_state_helper_lines() -> list[str]:
+    """Emit ``_apply_icon_state`` — the companion helper that swaps a
+    button's icon + state together. CTk's own state change doesn't
+    touch the image, so a disabled-tint variant never shows up without
+    this wrapper. The exporter also drops a per-button comment so the
+    user knows where to wire it from their own code.
+    """
+    return [
+        "def _apply_icon_state(button, icon_on, icon_off, state):",
+        '    """Swap a CTkButton\'s icon to match a state change.',
+        "    Call this from your own code whenever you disable / enable",
+        "    a button whose icon carries an image_color_disabled variant.",
+        '    """',
+        '    button.configure(',
+        '        state=state,',
+        '        image=icon_off if state == "disabled" else icon_on,',
+        "    )",
+    ]
 
 
 def _tint_helper_lines() -> list[str]:

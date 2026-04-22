@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ctkmaker"
+version = "0.0.1"
+description = "Visual UI designer for CustomTkinter — drag-and-drop widgets, edit properties live, export as Python code. Full release coming soon."
+readme = "PYPI_README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    { name = "Lasha Kandelaki", email = "voxe.studio@voxe.studio" }
+]
+keywords = [
+    "customtkinter",
+    "ctk",
+    "tkinter",
+    "gui",
+    "ui-builder",
+    "visual-designer",
+    "drag-and-drop",
+    "wysiwyg",
+    "python-gui",
+    "rad-tool"
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: User Interfaces",
+    "Topic :: Software Development :: Build Tools",
+]
+
+[project.urls]
+Homepage = "https://github.com/kandelucky/ctkmaker"
+Repository = "https://github.com/kandelucky/ctkmaker"
+Issues = "https://github.com/kandelucky/ctkmaker/issues"
+
+[tool.setuptools]
+packages = ["ctkmaker"]

@@ -301,6 +301,13 @@ class CommitMixin:
         node = self.project.get_widget(self.current_id)
         if node is None:
             return
+        # Disabled-icon-colour advisory: the exported code has to run
+        # a helper to swap the tinted image when the widget flips to
+        # disabled state (CTk doesn't do it natively). Warn once per
+        # pick, dismissable via ``~/.ctk_visual_builder/settings.json``
+        # key ``advisory_image_color_disabled_dismissed``.
+        if pname == "image_color_disabled" and value:
+            self._maybe_show_disabled_icon_advisory()
         # Clamp geometry writes to the container's bounds — typed values
         # (Inspector entry, spinner, drag-scrub) used to accept anything,
         # so it was trivial to shove a widget outside the window via
@@ -332,6 +339,85 @@ class CommitMixin:
         self.project.history.push(
             MultiChangePropertyCommand(self.current_id, changed),
         )
+
+    # ------------------------------------------------------------------
+    # Advisory dialog — disabled-icon tint requires runtime helper
+    # ------------------------------------------------------------------
+    _ADVISORY_KEY = "advisory_image_color_disabled_dismissed"
+
+    def _maybe_show_disabled_icon_advisory(self) -> None:
+        """Pop a one-shot warning when the user picks an
+        ``image_color_disabled`` value. CTk has no native icon-tint-on-
+        state-change mechanism, so the exported file can't just
+        forward the builder's disabled colour — it needs a runtime
+        helper to swap images. The exporter emits that helper + a
+        comment per affected button; this dialog surfaces the same
+        advisory at design time so the designer isn't surprised by
+        the runtime behaviour.
+        """
+        from app.core.settings import load_settings, save_setting
+        if load_settings().get(self._ADVISORY_KEY):
+            return
+        top = self.winfo_toplevel()
+        dont_show = tk.BooleanVar(value=False)
+        dialog = tk.Toplevel(top)
+        dialog.title("Disabled icon colour")
+        dialog.transient(top)
+        dialog.grab_set()
+        dialog.configure(bg="#2b2b2b")
+        dialog.resizable(False, False)
+        msg = (
+            "Heads up — disabled-state icon colour isn't automatic.\n\n"
+            "CTk swaps the button's text colour on state change, but\n"
+            "images don't follow. The exporter adds a helper\n"
+            "(_apply_icon_state) + a comment on every affected button\n"
+            "so you can wire the swap from your own state-change code.\n"
+        )
+        lbl = tk.Label(
+            dialog, text=msg, bg="#2b2b2b", fg="#cccccc",
+            font=("Segoe UI", 10), justify="left", anchor="w",
+            padx=20, pady=16,
+        )
+        lbl.pack(fill="x")
+        chk = tk.Checkbutton(
+            dialog, text="Don't show this again",
+            variable=dont_show,
+            bg="#2b2b2b", fg="#cccccc",
+            activebackground="#2b2b2b", activeforeground="#ffffff",
+            selectcolor="#2b2b2b", bd=0, padx=20,
+            font=("Segoe UI", 10),
+        )
+        chk.pack(anchor="w", pady=(0, 12))
+
+        def _on_ok():
+            if dont_show.get():
+                save_setting(self._ADVISORY_KEY, True)
+            dialog.destroy()
+
+        btn = tk.Button(
+            dialog, text="OK", width=10,
+            bg="#3b8ed0", fg="#ffffff",
+            activebackground="#144870", activeforeground="#ffffff",
+            bd=0, font=("Segoe UI", 10, "bold"), relief="flat",
+            command=_on_ok,
+        )
+        btn.pack(pady=(0, 16))
+        dialog.bind("<Return>", lambda _e: _on_ok())
+        dialog.bind("<Escape>", lambda _e: dialog.destroy())
+        dialog.update_idletasks()
+        # Centre on parent.
+        try:
+            px = top.winfo_rootx()
+            py = top.winfo_rooty()
+            pw = top.winfo_width()
+            ph = top.winfo_height()
+            dw = dialog.winfo_width()
+            dh = dialog.winfo_height()
+            dialog.geometry(
+                f"+{px + (pw - dw) // 2}+{py + (ph - dh) // 2}",
+            )
+        except tk.TclError:
+            pass
 
     # ------------------------------------------------------------------
     # Geometry bounds

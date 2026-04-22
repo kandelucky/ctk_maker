@@ -10,7 +10,7 @@ Work one area top-to-bottom before moving on. Commit at the end of each area's c
 
 ## Progress
 
-Overall: **256 / 409** tests passed (63%)
+Overall: **256 / 483** tests passed (53%)
 
 | #   | Area                 | File                                           | Focus                                                                        | Progress  |
 | --- | -------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------- | --------- |
@@ -20,7 +20,7 @@ Overall: **256 / 409** tests passed (63%)
 | 4   | Commands (undo/redo) | [commands.md](commands.md)                     | every mutation reversible, coalescing                                        | 42 / 43 ✅ |
 | 5   | Project lifecycle    | [project.md](project.md)                       | save / load / export round-trip                                              | 40 / 44 ✅ |
 | 6   | Multi-document       | [multi_document.md](multi_document.md)         | dialogs, chrome, cross-doc drag, accent color, z-order                       | 54 / 54 ✅ |
-| 7   | Widgets              | [widgets.md](widgets.md)                       | 14+1 descriptors, per-widget sanity                                          | 0 / 41    |
+| 7   | Widgets              | [widgets.md](widgets.md)                       | 19 palette entries — per-widget sanity + surprises                           | 0 / 115   |
 | 8   | Inspectors & Dialogs | [inspectors_dialogs.md](inspectors_dialogs.md) | Object Tree, History, menubar / toolbar / shortcuts, modals, Window Settings | 0 / 103   |
 
 **Current area:** Area 6 complete ✅ — 54/54 passed. Next: Area 7 — Widgets.

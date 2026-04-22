@@ -21,6 +21,7 @@ from .constants import (
     COMPOUND_OPTIONS,
     JUSTIFY_OPTIONS,
     ORIENTATION_OPTIONS,
+    WRAP_OPTIONS,
 )
 
 GRID_STYLE_OPTIONS = ("none", "dots", "lines")
@@ -105,6 +106,8 @@ def enum_options_for(ptype: str):
         return JUSTIFY_OPTIONS
     if ptype == "orientation":
         return ORIENTATION_OPTIONS
+    if ptype == "wrap":
+        return WRAP_OPTIONS
     if ptype == "grid_style":
         return GRID_STYLE_OPTIONS
     if ptype == "layout_type":

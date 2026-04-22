@@ -36,8 +36,10 @@ class CTkEntryDescriptor(WidgetDescriptor):
         # Content
         "placeholder_text": "Enter text…",
         "initial_value": "",
+        "password": False,
         # Button Interaction
         "button_enabled": True,
+        "readonly": False,
         # Main colors
         "fg_color": "#343638",
         # Text content + style
@@ -48,6 +50,7 @@ class CTkEntryDescriptor(WidgetDescriptor):
         "font_overstrike": False,
         "text_color": "#dce4ee",
         "placeholder_text_color": "#9ea0a2",
+        "justify": "left",
     }
 
     property_schema = [
@@ -92,10 +95,15 @@ class CTkEntryDescriptor(WidgetDescriptor):
          "group": "Content", "row_label": "Placeholder"},
         {"name": "initial_value", "type": "multiline", "label": "",
          "group": "Content", "row_label": "Initial Text"},
+        {"name": "password", "type": "boolean", "label": "",
+         "group": "Content", "row_label": "Password"},
 
         # --- Button Interaction ------------------------------------------
         {"name": "button_enabled", "type": "boolean", "label": "",
-         "group": "Button Interaction", "row_label": "Interactable"},
+         "group": "Button Interaction", "row_label": "Interactable",
+         "disabled_when": lambda p: bool(p.get("readonly"))},
+        {"name": "readonly", "type": "boolean", "label": "",
+         "group": "Button Interaction", "row_label": "Read-only"},
 
         # --- Main Colors -------------------------------------------------
         {"name": "fg_color", "type": "color", "label": "",
@@ -114,6 +122,9 @@ class CTkEntryDescriptor(WidgetDescriptor):
         {"name": "font_overstrike", "type": "boolean", "label": "",
          "group": "Text", "subgroup": "Style", "row_label": "Strike"},
 
+        {"name": "justify", "type": "justify", "label": "",
+         "group": "Text", "row_label": "Text Align"},
+
         {"name": "text_color", "type": "color", "label": "",
          "group": "Text", "row_label": "Normal Text Color"},
         {"name": "placeholder_text_color", "type": "color", "label": "",
@@ -122,7 +133,9 @@ class CTkEntryDescriptor(WidgetDescriptor):
 
     _NODE_ONLY_KEYS = {
         "x", "y",
-        "button_enabled", "border_enabled", "initial_value",
+        "button_enabled", "readonly",
+        "border_enabled", "initial_value",
+        "password",  # maps to CTk's `show` below
     }
     _FONT_KEYS = {
         "font_size", "font_bold", "font_italic",
@@ -136,10 +149,21 @@ class CTkEntryDescriptor(WidgetDescriptor):
             if k not in cls._NODE_ONLY_KEYS and k not in cls._FONT_KEYS
         }
 
-        result["state"] = (
-            "normal" if properties.get("button_enabled", True)
-            else "disabled"
-        )
+        # State priority: readonly wins over disabled, both override
+        # the default normal.
+        if properties.get("readonly"):
+            result["state"] = "readonly"
+        elif not properties.get("button_enabled", True):
+            result["state"] = "disabled"
+        else:
+            result["state"] = "normal"
+
+        # Password masking: builder-side `password` boolean → CTk
+        # `show="•"` (standard bullet across platforms). ALWAYS emit
+        # the key so toggling password off actually clears CTk's
+        # previously-set `show` — configure() doesn't unset what isn't
+        # passed.
+        result["show"] = "•" if properties.get("password") else ""
 
         if not properties.get("border_enabled"):
             result["border_width"] = 0
@@ -173,22 +197,49 @@ class CTkEntryDescriptor(WidgetDescriptor):
 
     @classmethod
     def apply_state(cls, widget, properties: dict) -> None:
-        # CTkEntry needs state="normal" to accept delete/insert; if the
-        # widget is disabled we temporarily flip it then restore.
-        was_disabled = str(widget.cget("state")) == "disabled"
+        # CTk's placeholder is literally the entry's text styled with
+        # placeholder_text_color, gated by the internal
+        # `_placeholder_text_active` flag. Touching the widget without
+        # respecting that flag either wipes the placeholder (and never
+        # re-arms) or leaves stale user text when the field is cleared.
+        #
+        # Disabled caveat: tkinter's Entry silently drops `insert()`
+        # when state=disabled, so CTk cannot actually show its
+        # placeholder on a disabled entry at runtime. We mirror that
+        # here — no placeholder on canvas when the field is disabled,
+        # so WYSIWYG matches preview. Read-only entries accept
+        # programmatic insert, so placeholder is fine there.
+        initial = properties.get("initial_value") or ""
+        placeholder_active = bool(
+            getattr(widget, "_placeholder_text_active", False),
+        )
+        current_state = str(widget.cget("state"))
+        needs_flip = current_state in ("disabled", "readonly")
+        is_disabled = current_state == "disabled"
+        if not initial and placeholder_active and not is_disabled:
+            return
         try:
-            if was_disabled:
+            if needs_flip:
                 widget.configure(state="normal")
+            if placeholder_active:
+                try:
+                    widget._deactivate_placeholder()
+                except Exception:
+                    pass
             widget.delete(0, "end")
-            initial = properties.get("initial_value") or ""
             if initial:
                 widget.insert(0, str(initial))
+            elif not is_disabled:
+                try:
+                    widget._activate_placeholder()
+                except Exception:
+                    pass
         except Exception:
             log_error("CTkEntryDescriptor.apply_state insert")
         finally:
-            if was_disabled:
+            if needs_flip:
                 try:
-                    widget.configure(state="disabled")
+                    widget.configure(state=current_state)
                 except Exception:
                     pass
 
@@ -197,4 +248,18 @@ class CTkEntryDescriptor(WidgetDescriptor):
         initial = properties.get("initial_value") or ""
         if not initial:
             return []
-        return [f"{var_name}.insert(0, {str(initial)!r})"]
+        # tkinter.Entry silently drops insert() when state is disabled
+        # or readonly, so we flip to normal, insert, then restore.
+        if properties.get("readonly"):
+            target_state = "readonly"
+        elif not properties.get("button_enabled", True):
+            target_state = "disabled"
+        else:
+            target_state = "normal"
+        if target_state == "normal":
+            return [f"{var_name}.insert(0, {str(initial)!r})"]
+        return [
+            f'{var_name}.configure(state="normal")',
+            f"{var_name}.insert(0, {str(initial)!r})",
+            f'{var_name}.configure(state="{target_state}")',
+        ]

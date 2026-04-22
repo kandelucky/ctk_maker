@@ -113,6 +113,10 @@ class MenuMixin:
             file_menu, "Export Active Document...",
             self._on_export_active_document, icon="file-code",
         )
+        self._add_cmd(
+            file_menu, "Run Python Script...",
+            self._on_run_script, icon="tv-minimal-play",
+        )
         file_menu.add_separator()
         self._add_cmd(file_menu, "Close", self._on_close_project, icon="x", accelerator="Ctrl+W")
         self._add_cmd(file_menu, "Quit", self._on_quit, icon="log-out", accelerator="Ctrl+Q")
@@ -203,6 +207,11 @@ class MenuMixin:
                 command=self._on_appearance_change,
             )
         self._add_cascade(settings_menu, "Appearance Mode", appearance_menu, icon="palette")
+        settings_menu.add_separator()
+        self._add_cmd(
+            settings_menu, "Reset Dismissed Warnings",
+            self._on_reset_advisories, icon="bell",
+        )
         menubar.add_cascade(label="Settings", menu=settings_menu)
 
         # ---- Help ----
@@ -378,3 +387,29 @@ class MenuMixin:
     def _z_order_with_history(self, nid: str, direction: str) -> None:
         from app.core.commands import push_zorder_history
         push_zorder_history(self.project, nid, direction)
+
+    # ------------------------------------------------------------------
+    # Advisory-dialog reset — clears every "don't show again" setting
+    # so the dismissable warnings pop up again on their triggers.
+    # ------------------------------------------------------------------
+    def _on_reset_advisories(self) -> None:
+        from app.core.settings import load_settings, save_setting
+        settings = load_settings()
+        advisory_keys = [
+            k for k in settings if k.startswith("advisory_")
+        ]
+        if not advisory_keys:
+            messagebox.showinfo(
+                "Warnings reset",
+                "No dismissed warnings to reset.",
+                parent=self,
+            )
+            return
+        for key in advisory_keys:
+            save_setting(key, False)
+        messagebox.showinfo(
+            "Warnings reset",
+            f"Cleared {len(advisory_keys)} dismissed warning(s). "
+            "They'll surface again on their next trigger.",
+            parent=self,
+        )

@@ -36,10 +36,12 @@ class CTkButtonDescriptor(WidgetDescriptor):
         "border_enabled": False,
         "border_width": 1,
         "border_color": "#565b5e",
+        "border_spacing": 2,
         # Button Interaction
         "button_enabled": True,
         # Main colors
         "fg_color": "#1f6aa5",
+        "hover": True,
         "hover_color": "#144870",
         # Text content + style
         "text": "CTkButton",
@@ -98,6 +100,9 @@ class CTkButtonDescriptor(WidgetDescriptor):
          "group": "Rectangle", "subgroup": "Border",
          "row_label": "Color",
          "disabled_when": lambda p: not p.get("border_enabled")},
+        {"name": "border_spacing", "type": "number", "label": "",
+         "group": "Rectangle",
+         "row_label": "Inner Padding", "min": 0, "max": 20},
 
         # --- Button Interaction ------------------------------------------
         {"name": "button_enabled", "type": "boolean", "label": "",
@@ -109,8 +114,11 @@ class CTkButtonDescriptor(WidgetDescriptor):
         {"name": "fg_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Background",
          "clearable": True, "clear_value": "transparent"},
-        {"name": "hover_color", "type": "color", "label": "",
+        {"name": "hover", "type": "boolean", "label": "",
          "group": "Main Colors", "row_label": "Hover"},
+        {"name": "hover_color", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Hover Color",
+         "disabled_when": lambda p: not p.get("hover", True)},
 
         # --- Text --------------------------------------------------------
         {"name": "text", "type": "multiline", "label": "",

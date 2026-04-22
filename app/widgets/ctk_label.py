@@ -39,7 +39,6 @@ class CTkLabelDescriptor(WidgetDescriptor):
         "justify": "center",
         "wraplength": 0,
         "text_color": "#ffffff",
-        "text_color_disabled": "#a0a0a0",
         "fg_color": "transparent",
         "bg_color": "transparent",
     }
@@ -89,9 +88,11 @@ class CTkLabelDescriptor(WidgetDescriptor):
          "disabled_when": lambda p: not p.get("font_wrap")},
 
         {"name": "text_color", "type": "color", "label": "",
-         "group": "Text", "row_label": "Normal Text Color"},
-        {"name": "text_color_disabled", "type": "color", "label": "",
-         "group": "Text", "row_label": "Disabled Text Color"},
+         "group": "Text", "row_label": "Text Color"},
+
+        {"name": "fg_color", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Background",
+         "clearable": True, "clear_value": "transparent"},
     ]
 
     derived_triggers = {"text", "width", "height", "font_bold", "font_autofit"}

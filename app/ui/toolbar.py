@@ -41,6 +41,7 @@ class Toolbar(ctk.CTkFrame):
         on_theme_toggle: Callable[[], None],
         on_undo: Callable[[], None],
         on_redo: Callable[[], None],
+        on_run_script: Callable[[], None] | None = None,
     ):
         super().__init__(
             master, fg_color=BAR_BG, corner_radius=0, height=BAR_HEIGHT,
@@ -54,6 +55,14 @@ class Toolbar(ctk.CTkFrame):
         self._add_button(
             "file-code", on_export, tooltip="Export to Python",
         )
+        if on_run_script is not None:
+            self._add_button(
+                "tv-minimal-play", on_run_script,
+                tooltip="Run Python Script...",
+            )
+        # Double separator — wider visual gap between the file group
+        # and the editing controls.
+        self._add_separator()
         self._add_separator()
         # Pre-load both icon variants so we can swap in place without
         # triggering a CTkButton layout shift on state change.
@@ -71,6 +80,7 @@ class Toolbar(ctk.CTkFrame):
         self._redo_button = self._add_toggle_button(
             self._icon_redo_off, on_redo, tooltip="Redo (Ctrl+Y)",
         )
+        self._add_separator()
         self._add_button("play", on_preview, tooltip="Preview (Ctrl+R)")
         self._undo_enabled = False
         self._redo_enabled = False

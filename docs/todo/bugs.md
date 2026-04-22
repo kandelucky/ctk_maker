@@ -26,3 +26,13 @@ Neither matches user observation cleanly, so one of the assumptions (cursor delt
 **Next step:** add temporary `print()` statements logging `canvas_scale`, `user_zoom`, `event.x_root delta`, `widget.winfo_rootx`, computed `new_x * factor`, after a single drag. Compare numbers against the cursor's actual screen position. Empirical numbers will say which formula matches reality — the code theory is inconclusive.
 
 **Not blocking for now** — widget still usable, preview still correct, only the canvas visual during drag drifts. Revisit when a focused bug-hunting session is scheduled.
+
+---
+
+## ✅ CTkEntry — placeholder_text invisible on canvas
+
+**Symptom:** dropping a fresh Entry or reopening a project showed a blank field on the builder canvas even though `placeholder_text` had a value. Exported `.py` ran fine — placeholder appeared there.
+
+**Root cause:** `CTkEntryDescriptor.apply_state` was calling `widget.delete(0, "end")` unconditionally on every widget create. CTk's placeholder is literally the entry's text styled with `placeholder_text_color`, gated by the internal `_placeholder_text_active` flag. The blanket `delete()` wiped the placeholder text, and the flag never re-armed.
+
+**Fix (v0.0.15.19):** early-return from `apply_state` when `initial_value` is empty — leave the widget untouched so CTk's post-init placeholder activation survives.

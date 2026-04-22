@@ -123,6 +123,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             on_theme_toggle=self._on_theme_toggle,
             on_undo=self._on_undo,
             on_redo=self._on_redo,
+            on_run_script=self._on_run_script,
         )
         self.toolbar.pack(side="top", fill="x")
 
@@ -698,6 +699,47 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
     def _on_f9_history_window(self) -> None:
         self._history_var.set(not self._history_var.get())
         self._on_toggle_history_window()
+
+    def _on_run_script(self) -> None:
+        """Pick any local .py file and run it as a subprocess. Useful
+        for quickly testing scripts the user already exported (or any
+        other Python file) without leaving the builder. The chosen
+        directory is remembered on the settings file so the next pick
+        starts where the previous one left off.
+        """
+        from app.core.settings import load_settings, save_setting
+        last_dir = load_settings().get("run_script_last_dir") or str(
+            Path.home() / "Desktop",
+        )
+        path = filedialog.askopenfilename(
+            parent=self,
+            title="Run a Python script",
+            initialdir=last_dir,
+            filetypes=[("Python", "*.py"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        save_setting("run_script_last_dir", str(Path(path).parent))
+        if Path(path).suffix.lower() not in {".py", ".pyw"}:
+            messagebox.showerror(
+                "Not a Python script",
+                f"Run Python Script only accepts .py / .pyw files.\n\n"
+                f"You picked:\n{path}",
+                parent=self,
+            )
+            return
+        try:
+            subprocess.Popen(
+                [sys.executable, path],
+                cwd=str(Path(path).parent),
+            )
+        except OSError:
+            log_error("run_script subprocess")
+            messagebox.showerror(
+                "Run failed",
+                f"Could not launch:\n{path}",
+                parent=self,
+            )
 
     def _on_export(self) -> None:
         path = filedialog.asksaveasfilename(
