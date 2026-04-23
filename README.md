@@ -62,7 +62,7 @@ A desktop visual designer for **CustomTkinter** — drag and drop widgets onto a
 
 ### Keyboard shortcuts
 
-All shortcuts work regardless of keyboard layout.
+All shortcuts work with Latin and non-Latin keyboard layouts.
 
 | Shortcut | Action |
 |---|---|
