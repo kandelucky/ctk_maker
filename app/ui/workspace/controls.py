@@ -150,7 +150,7 @@ class WorkspaceControls:
         self._btn_preview.pack(
             side="left", expand=True, anchor="e", padx=(0, 2), pady=3,
         )
-        _attach_tooltip(self._btn_preview, "Preview (Ctrl+R)")
+        _attach_tooltip(self._btn_preview, "Preview Project (Ctrl+R)")
 
         self._btn_preview_active = ctk.CTkButton(
             center, image=self._icon_sq_off,
@@ -162,7 +162,7 @@ class WorkspaceControls:
         self._btn_preview_active.pack(
             side="left", expand=True, anchor="w", padx=(2, 0), pady=3,
         )
-        _attach_tooltip(self._btn_preview_active, "Preview Active")
+        _attach_tooltip(self._btn_preview_active, "Preview Active Dialog (Ctrl+P)")
 
         # Subscribe to project events to keep button states in sync
         bus = self.project.event_bus

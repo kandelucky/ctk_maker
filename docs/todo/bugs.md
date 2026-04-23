@@ -48,3 +48,9 @@ Neither matches user observation cleanly, so one of the assumptions (cursor delt
 **Next step:** measure empirically. Drop a 300×200 ScrollableFrame at 1:1, compare `anchor_widget.winfo_reqwidth()` against the configured 300. Decide whether to (a) subtract scrollbar width when setting `_desired_width` so the OUTER container hits the target, or (b) size the canvas window from the widget's actual reqwidth/reqheight after render.
 
 **Not blocking for now** — widget still drops + previews + exports; only the 1:1 visual matches exactly after the fix.
+
+---
+
+## Theme toggle (Light/Dark/System) — does not apply
+
+**Symptom:** View → Appearance Mode (currently hidden/disabled) — switching between Light/Dark/System does not update the canvas, panels, or chrome. Currently hidden from the UI until the bug is fixed.

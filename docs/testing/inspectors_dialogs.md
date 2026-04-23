@@ -5,124 +5,130 @@ Object Tree (F8), History (F9), main-window chrome (menubar / toolbar / shortcut
 ## Test
 
 ### Object Tree panel (F8)
-- [ ] Hierarchical widget list — parent / child indentation correct
-- [ ] Tree respects z-order (top of parent.children at the bottom, visually matches canvas stacking)
-- [ ] Expand / collapse via chevron
-- [ ] Search / filter field narrows the list in real time
-- [ ] Filter survives selection change (doesn't clear on click)
-- [ ] Row icons: widget type glyph + visibility (eye) + lock (padlock)
-- [ ] Click visibility icon → toggles `node.visible`, canvas reflects
-- [ ] Click lock icon → toggles `node.locked`, canvas rejects drag / resize
-- [ ] Click row → selects widget on canvas
-- [ ] Ctrl+click — multi-select (extended mode)
-- [ ] Shift+click — range select
-- [ ] Drag row onto another row → reparents (drop target becomes new parent)
-- [ ] Drag row between siblings → reorders z-order
-- [ ] Drag onto top-level → promotes to root
-- [ ] Right-click → context menu: Rename, Duplicate, Delete, Copy, Paste, Bring to Front, Send to Back
-- [ ] Inline rename (F2 or double-click name) — edit in place, Enter commits, Escape cancels
-- [ ] Container suffix: `[vbox]` / `[hbox]` / `[grid]` / `[place]`
-- [ ] Only active document's widgets visible
-- [ ] Bottom status strip shows active document name
-- [ ] Floating window variant (View → Object Tree) mirrors docked panel
-- [ ] Docked panel resize via PanedWindow sash
+- [x] Hierarchical widget list — parent / child indentation correct
+- [x] Tree respects z-order (top of parent.children at the bottom, visually matches canvas stacking)
+- [x] Expand / collapse via chevron
+- [x] Search / filter field narrows the list in real time
+- [x] Filter survives selection change (doesn't clear on click)
+- [x] Row icons: widget type glyph + visibility (eye) + lock (padlock)
+- [x] Click visibility icon → toggles `node.visible`, canvas reflects
+- [x] Click lock icon → toggles `node.locked`, canvas rejects drag / resize
+- [x] Click row → selects widget on canvas
+- [x] Ctrl+click — multi-select (extended mode)
+- [x] Shift+click — range select
+- [x] Drag row onto another row → reparents (drop target becomes new parent)
+- [x] Drag row between siblings → reorders z-order
+- [x] Drag onto top-level → promotes to root
+- [x] Right-click → context menu: Rename, Duplicate, Delete, Copy, Paste, Bring to Front, Send to Back
+- [x] Inline rename (double-click name) — edit in place, Enter commits, Escape cancels
+- [x] Container suffix: `[vbox]` / `[hbox]` / `[grid]` / `[place]`
+- [x] Only active document's widgets visible
+- [x] Bottom status strip shows active document name
+- [x] Floating window variant (View → Object Tree) mirrors docked panel
+- [x] Docked panel resize via PanedWindow sash
 
 ### History panel (F9)
-- [ ] F9 toggles visibility
-- [ ] Live-updating stack — new entries append on every command
-- [ ] Current-state marker on correct row
-- [ ] Click undo entry → jumps to that state
-- [ ] Click redo entry (above current) → redoes to that state
-- [ ] Redo stack rows visibly differ (greyed / italicised)
-- [ ] Long history scrolls
-- [ ] Entry descriptions match the command (e.g. "Move Button", "Delete Frame")
-- [ ] Coalesced rapid commands appear as single entries
-- [ ] History panel keeps focus on itself — doesn't steal canvas focus during active drag
-- [ ] Empty history — panel shows placeholder / zero state
+- [x] F9 toggles visibility (floating) + docked in sidebar toggle
+- [x] Live-updating stack — new entries append on every command
+- [x] Current-state marker on correct row
+- [x] Click undo entry → jumps to that state
+- [x] Click redo entry (above current) → redoes to that state
+- [x] Redo stack rows visibly differ (greyed)
+- [x] Long history scrolls
+- [x] Entry descriptions match the command
+- [x] Coalesced rapid commands appear as single entries
+- [x] History panel keeps focus on itself — doesn't steal canvas focus during active drag
+- [x] Empty history — panel shows placeholder
 
 ### Main window menubar
-- [ ] **File** — New, Open, Save, Save As, Recent Files ▸, Export, Exit
-- [ ] **Edit** — Undo, Redo, Cut, Copy, Paste, Duplicate, Delete, Select All
-- [ ] **View** — Object Tree, History, theme toggle, status bar
-- [ ] **Form** — Add Dialog, Delete Dialog, Rename Dialog
-- [ ] **Help** — Documentation link, About
-- [ ] Enabled / disabled state reflects selection, clipboard, history
+- [x] **File** — New, New Untitled, Open, Save, Save As, Recent Files ▸, Export, Quit
+- [x] **Edit** — Undo, Redo, Cut, Copy, Paste, Duplicate, Rename, Delete, Select All
+- [x] **Form** — Preview, Preview Active Dialog, Add Dialog, Remove, Rename, Form Settings, Move Up/Down, All Forms
+- [x] **Widget** — grouped cascades matching palette (Layouts/Containers/Buttons/Display/Selection/Input)
+- [x] **Help** — Documentation, About (with library links)
+- [x] Enabled / disabled state reflects selection, clipboard, history
 
 ### Toolbar
-- [ ] All icon buttons render at correct size (16px, tinted)
-- [ ] Buttons respect menubar enabled / disabled state
-- [ ] Hover tooltip per button
-- [ ] Add Dialog button opens preset picker
+- [x] All icon buttons render at correct size, tinted
+- [x] Buttons respect enabled / disabled state (Undo/Redo dim when empty)
+- [x] Hover tooltip appears above cursor per button
+- [x] Workspace bar: Preview Project / Preview Active Dialog icons with dim state
 
 ### Keyboard shortcuts
-- [ ] `Ctrl+Z` / `Ctrl+Y` — undo / redo
-- [ ] `Ctrl+S` / `Ctrl+Shift+S` — save / save as
-- [ ] `Ctrl+O` — open project
-- [ ] `Ctrl+N` — new project
-- [ ] `Ctrl+C` / `Ctrl+V` / `Ctrl+X` — copy / paste / cut
-- [ ] `Ctrl+D` — duplicate
-- [ ] `Delete` — remove selection
-- [ ] `Arrow keys` — 1px nudge
-- [ ] `Shift+arrow` — 10px nudge
-- [ ] `F2` — rename selected
-- [ ] `F8` / `F9` — Object Tree / History toggles
-- [ ] `Escape` — deselect
-- [ ] `Ctrl+R` — preview (spawn exported .py)
-- [ ] `Ctrl+wheel` — zoom
-- [ ] Shortcuts work with Georgian keyboard layout too (legacy workaround)
+- [x] `Ctrl+Z` / `Ctrl+Y` — undo / redo
+- [x] `Ctrl+S` / `Ctrl+Shift+S` — save / save as
+- [x] `Ctrl+O` — open project
+- [x] `Ctrl+N` — new project
+- [x] `Ctrl+C` / `Ctrl+V` / `Ctrl+X` — copy / paste / cut
+- [x] `Ctrl+D` — duplicate
+- [x] `Delete` — remove selection
+- [x] `Arrow keys` — 1px nudge
+- [x] `Shift+arrow` — 10px nudge
+- [x] `Ctrl+I` — rename selected (replaces F2)
+- [x] `Ctrl+P` — preview active dialog
+- [x] `Ctrl+M` — add dialog
+- [x] `Ctrl+A` — select all (active document)
+- [x] `Ctrl+Shift+I` — documentation
+- [x] `F8` / `F9` — Object Tree / History toggles
+- [x] `Escape` — deselect
+- [x] `Ctrl+R` — preview project
+- [x] `Ctrl+Q` — quit
+- [x] `Ctrl+wheel` — zoom
+- [x] Shortcuts work with non-Latin keyboard layouts (hardware keycode fallback)
 
 ### Startup dialog
-- [ ] Appears on first launch (no recent project)
-- [ ] Buttons: New, Open, Recent (list), Exit
-- [ ] Recent list filters missing / deleted files
-- [ ] Selecting a project dismisses dialog + loads workspace
-- [ ] Cancel / close → app quits
+- [x] Appears on first launch (no recent project)
+- [x] Buttons: New, Open, Recent (list), Exit
+- [x] Recent list filters missing / deleted files
+- [x] Selecting a project dismisses dialog + loads workspace
+- [x] Cancel / close → app quits
 
 ### New Project dialog
-- [ ] Fields: name, save path, maybe default size
-- [ ] Validation: non-empty name, writable path
-- [ ] Cancel returns to startup / closes builder
-- [ ] Create → empty project opens in workspace
+- [x] Fields: name, save path, default size
+- [x] Validation: non-empty name, writable path
+- [x] Cancel returns to startup / closes builder
+- [x] Create → empty project opens in workspace
 
 ### Rename dialog
-- [ ] Triggered by F2 / context menu / Form menu
-- [ ] Prefills current name
-- [ ] Commit applies + pushes RenameCommand
-- [ ] Cancel leaves state untouched
+- [x] Triggered by Ctrl+I / right-click context menu / Form → Rename
+- [x] Prefills current name
+- [x] Commit applies + pushes RenameCommand
+- [x] Cancel leaves state untouched
 
 ### Add Dialog preset picker
-- [ ] Opens on `+ Add Dialog` click
-- [ ] Presets: Alert / Compact / Medium / Settings / Wizard / Same as Main
-- [ ] Preview / preset description visible
-- [ ] Selection → creates dialog + pushes AddDocumentCommand
+- [x] Opens on `+ Add Dialog` / Ctrl+M
+- [x] Presets: Alert / Compact / Medium / Settings / Wizard / Same as Main
+- [x] Selection → creates dialog + pushes AddDocumentCommand
 
 ### Unsaved-changes prompt
-- [ ] Triggered on Close / New / Open when project dirty
-- [ ] Buttons: Save / Discard / Cancel
-- [ ] Save path: saves + proceeds
-- [ ] Discard: proceeds without save
-- [ ] Cancel: no-op
+- [x] Triggered on New / Open when project dirty
+- [x] Buttons: Save / Discard / Cancel
+- [x] Save path: saves + proceeds
+- [x] Discard: proceeds without save
+- [x] Cancel: no-op
 
 ### Window Settings (per-document)
-- [ ] Opened via chrome ⚙ on any document
-- [ ] Title field — syncs with project name on Main Window
-- [ ] Size: width / height sliders / number inputs
-- [ ] `fg_color` — live preview on document rectangle
-- [ ] `resizable_x` / `resizable_y` — toggles
-- [ ] `frameless` — toggle; preview updates chrome
-- [ ] Builder Grid — style (`none` / `dots` / `lines`), colour, spacing; design-time only, not exported
-- [ ] `accent_color` (optional override for chrome tint) — live preview on chrome, clear falls back to auto-derived hue
+- [x] Opened via chrome ⚙ / Form → Form Settings / Ctrl+I on window node
+- [x] Title field — syncs with project name on Main Window
+- [x] Size: width / height inputs
+- [x] `fg_color` — live preview on document rectangle
+- [x] `resizable_x` / `resizable_y` — toggles
+- [x] `frameless` — toggle; preview updates chrome
+- [x] Builder Grid — style (`none` / `dots` / `lines`), colour, spacing; design-time only
+- [x] `accent_color` — live preview on chrome, clear falls back to auto-derived hue
 
 ### Status bar
-- [ ] Zoom controls: slider + / - / reset
-- [ ] Zoom readout in %
-- [ ] Active document label (when multi-doc)
-- [ ] Font-scale warning when scaling breaks readability
+- [x] Zoom controls: slider + / - / reset
+- [x] Zoom readout in %
+- [x] Active document label (when multi-doc)
+- [x] Font-scale warning when scaling breaks readability
 
 ### Theme toggle
-- [ ] Light / Dark switch (menu or toolbar)
-- [ ] Switches canvas BG, chrome, panel BG, icon tints
-- [ ] Persists across sessions
+- [!] Light / Dark switch hidden (View → Appearance Mode disabled) — see bugs.md
+- [!] Canvas BG, chrome, panel BG, icon tints do not update on toggle
+- [!] Persistence across sessions — not verified (toggle broken)
+
+---
 
 ## Refactor candidates
 
@@ -141,4 +147,13 @@ Object Tree (F8), History (F9), main-window chrome (menubar / toolbar / shortcut
 
 ## Findings
 
-<!-- inspector / dialog bugs here -->
+- **[Object Tree]** Filter dropdown showed widgets from all documents — fixed: scoped to active document only. v0.0.15.25
+- **[Object Tree]** F2 inline rename didn't work — replaced with double-click inline Entry overlay + Ctrl+I shortcut. v0.0.15.25
+- **[Object Tree]** Type column showed full type names (100px) — replaced with 2–3 letter initials (36px); CTkFrame layout-aware (VFr/HFr/GFr). v0.0.15.25
+- **[Properties]** Name field turned white in disabled state on Windows — `disabledbackground` fix. v0.0.15.25
+- **[Properties]** Type icon persisted after deselection — CTkLabel `_update_image` skips label update on None; bypass via `_label.configure(image="")`. v0.0.15.25
+- **[Properties]** Right-click disabled items showed doubled text (Windows) — `state="disabled"` replaced with `foreground` colour trick. v0.0.15.25
+- **[Shortcuts]** Ctrl+D (Duplicate) and Ctrl+X (Cut) missing — added with Georgian keycode fallback. v0.0.15.32
+- **[Shortcuts]** F2 (Rename) never fired — removed; Ctrl+I added instead. v0.0.15.32
+- **[Theme toggle]** Light/Dark/System toggle does not apply — deferred, hidden in View menu. Filed in bugs.md.
+- **[Menu border]** White border on dropdown menus is OS-level (Windows native menu frame) — cannot be controlled via tkinter `bd`. Accepted limitation.

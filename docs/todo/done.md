@@ -139,3 +139,4 @@
 - 2026-04-23 v0.0.15.30 — About dialog (custom tk.Toplevel, clickable library links), Settings menu disabled
 - 2026-04-23 v0.0.15.31 — Workspace bar: Preview/Preview Active (square-play/play icons, dim state), All Forms dropdown, Containers moved to bottom; toolbar: save icon, preview removed, tooltip above cursor, single separator; palette/menu regrouped
 - 2026-04-23 v0.0.15.32 — Shortcuts: Ctrl+D/X/I/P/M/A/Shift+I added, Georgian fallback; Edit menu: Cut+Duplicate+Rename; Form menu accelerators; Help: Documentation+Ctrl+Shift+I; README shortcuts table
+- 2026-04-23 v0.0.16 — Area 8 complete: 100/103 tests passed; testing docs updated; theme toggle deferred to bugs.md

@@ -232,8 +232,8 @@ class MenuMixin:
         #          9=Move Up, 10=Move Down
         self._add_cmd(form_menu, "Preview", self._on_preview,
                       icon="play", accelerator="Ctrl+R")
-        self._add_cmd(form_menu, "Preview Active", self._on_preview_active,
-                      icon="play", accelerator="Ctrl+P")
+        self._add_cmd(form_menu, "Preview Active Dialog", self._on_preview_active,
+                      icon="square-play", accelerator="Ctrl+P")
         form_menu.add_separator()
         self._add_cmd(form_menu, "Add Dialog", self._on_add_dialog,
                       icon="plus", accelerator="Ctrl+M")
