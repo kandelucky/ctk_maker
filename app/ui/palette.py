@@ -105,11 +105,6 @@ CATALOG: tuple[WidgetGroup, ...] = (
             default_name="Grid Layout",
         ),
     )),
-    WidgetGroup("Containers", (
-        WidgetEntry("CTkFrame", "Frame", "frame"),
-        WidgetEntry("CTkScrollableFrame", "Scrollable Frame", "scroll-text"),
-        WidgetEntry("CTkTabview", "Tab View", "layout-panel-top"),
-    )),
     WidgetGroup("Buttons", (
         WidgetEntry("CTkButton", "Button", "square-dot"),
         WidgetEntry("CTkSegmentedButton", "Segmented Button", "panel-left-right-dashed"),
@@ -130,6 +125,11 @@ CATALOG: tuple[WidgetGroup, ...] = (
         WidgetEntry("CTkComboBox", "Combo Box", "chevrons-up-down"),
         WidgetEntry("CTkOptionMenu", "Option Menu", "menu"),
         WidgetEntry("CTkSlider", "Slider", "sliders-horizontal"),
+    )),
+    WidgetGroup("Containers", (
+        WidgetEntry("CTkFrame", "Frame", "frame"),
+        WidgetEntry("CTkScrollableFrame", "Scrollable Frame", "scroll-text"),
+        WidgetEntry("CTkTabview", "Tab View", "layout-panel-top"),
     )),
 )
 

@@ -272,6 +272,12 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             "request_preview_dialog", self._on_preview_dialog,
         )
         bus.subscribe(
+            "request_preview", lambda *_a, **_k: self._on_preview(),
+        )
+        bus.subscribe(
+            "request_preview_active", lambda *_a, **_k: self._on_preview_active(),
+        )
+        bus.subscribe(
             "request_export_document", self._on_export_active_document,
         )
         self._refresh_undo_redo_buttons()

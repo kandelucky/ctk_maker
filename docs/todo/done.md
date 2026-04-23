@@ -137,3 +137,4 @@
 - 2026-04-23 v0.0.15.28 — Widget menu (cascades per group), palette regrouped: Layouts/Containers/Buttons/Display/Selection/Input
 - 2026-04-23 v0.0.15.29 — Form menu redesign: Preview Active, Remove/Move Up/Down with dim state, Rename, Form Settings, All Forms submenu (dynamic doc list + center on click); screenshot idea saved to ideas.md
 - 2026-04-23 v0.0.15.30 — About dialog (custom tk.Toplevel, clickable library links), Settings menu disabled
+- 2026-04-23 v0.0.15.31 — Workspace bar: Preview/Preview Active (square-play/play icons, dim state), All Forms dropdown, Containers moved to bottom; toolbar: save icon, preview removed, tooltip above cursor, single separator; palette/menu regrouped

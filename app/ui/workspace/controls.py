@@ -21,6 +21,7 @@ import tkinter as tk
 import customtkinter as ctk
 
 from app.ui.icons import load_icon
+from app.ui.toolbar import _attach_tooltip
 
 # Tool identifiers — also used by ``chrome.py`` (via the workspace
 # delegator) and ``drag.py`` (via the literal ``"hand"`` string).
@@ -57,11 +58,20 @@ class WorkspaceControls:
     through the exposed pan API.
     """
 
+    ICON_ON  = "#cccccc"
+    ICON_OFF = "#555555"
+
     def __init__(self, workspace) -> None:
         self.workspace = workspace
         self._tool: str = TOOL_EDIT
         self._tool_buttons: dict[str, ctk.CTkButton] = {}
         self._pan_state: dict | None = None
+        self._btn_preview: ctk.CTkButton | None = None
+        self._btn_preview_active: ctk.CTkButton | None = None
+        self._icon_play_on  = load_icon("play", size=16, color=self.ICON_ON)
+        self._icon_play_off = load_icon("play", size=16, color=self.ICON_OFF)
+        self._icon_sq_on    = load_icon("square-play", size=16, color=self.ICON_ON)
+        self._icon_sq_off   = load_icon("square-play", size=16, color=self.ICON_OFF)
 
     # ------------------------------------------------------------------
     # Convenience accessors
@@ -123,9 +133,93 @@ class WorkspaceControls:
             )
             self._tool_buttons[tool_id] = btn
 
-        # Right-aligned "Add Dialog" shortcut — mirrors Form → Add
-        # Dialog. Explicit text beside the icon so users discover
-        # the multi-document flow without hunting through the menu.
+        # Centre — Preview + Preview Active
+        sq_play = load_icon("square-play", size=16)
+        _btn_kw = dict(
+            text="", width=28, height=24, corner_radius=3,
+            fg_color="transparent", hover_color=TOOL_BTN_HOVER,
+        )
+        center = ctk.CTkFrame(bar, fg_color="transparent")
+        center.pack(side="left", expand=True, fill="x")
+
+        self._btn_preview = ctk.CTkButton(
+            center, image=self._icon_play_off,
+            command=lambda: self.project.event_bus.publish("request_preview"),
+            **_btn_kw,
+        )
+        self._btn_preview.pack(
+            side="left", expand=True, anchor="e", padx=(0, 2), pady=3,
+        )
+        _attach_tooltip(self._btn_preview, "Preview (Ctrl+R)")
+
+        self._btn_preview_active = ctk.CTkButton(
+            center, image=self._icon_sq_off,
+            command=lambda: self.project.event_bus.publish(
+                "request_preview_active",
+            ),
+            **_btn_kw,
+        )
+        self._btn_preview_active.pack(
+            side="left", expand=True, anchor="w", padx=(2, 0), pady=3,
+        )
+        _attach_tooltip(self._btn_preview_active, "Preview Active")
+
+        # Subscribe to project events to keep button states in sync
+        bus = self.project.event_bus
+        for evt in (
+            "widget_added", "widget_removed",
+            "active_document_changed", "project_renamed",
+        ):
+            bus.subscribe(evt, lambda *_a, **_k: self.refresh_preview_buttons())
+        self.refresh_preview_buttons()
+
+        # Right-aligned "Add Dialog" + "All Forms ▾" group
+        import tkinter as tk
+        _MENU_STYLE = dict(
+            bg="#2d2d30", fg="#cccccc",
+            activebackground="#094771", activeforeground="#ffffff",
+            bd=0, borderwidth=0, relief="flat",
+            font=("Segoe UI", 10),
+        )
+
+        def _show_forms_menu(event=None, btn=None):
+            menu = tk.Menu(bar, tearoff=0, **_MENU_STYLE)
+            active_id = self.project.active_document_id
+            for doc in self.project.documents:
+                label = doc.name or "Untitled"
+                if doc.is_toplevel:
+                    label = f"{label}  (Dialog)"
+                is_active = doc.id == active_id
+                menu.add_command(
+                    label=("▸ " if is_active else "   ") + label,
+                    foreground="#ffffff" if is_active else "#cccccc",
+                    command=lambda did=doc.id: self._focus_document(did),
+                )
+            try:
+                x = btn.winfo_rootx()
+                y = btn.winfo_rooty() + btn.winfo_height()
+                menu.tk_popup(x, y)
+            finally:
+                menu.grab_release()
+
+        chevron_icon = load_icon("chevron-down", size=12)
+        forms_btn = ctk.CTkButton(
+            bar, text="All Forms",
+            image=chevron_icon, compound="right",
+            width=100, height=24, corner_radius=3,
+            fg_color="transparent", hover_color=TOOL_BTN_HOVER,
+            text_color="#cccccc", font=("Segoe UI", 10),
+        )
+        forms_btn.configure(
+            command=lambda b=forms_btn: _show_forms_menu(btn=b),
+        )
+        forms_btn.pack(side="right", padx=(0, 6), pady=3)
+
+        # Separator between Add Dialog and All Forms
+        ctk.CTkFrame(
+            bar, width=1, fg_color="#3c3c3c", corner_radius=0,
+        ).pack(side="right", fill="y", pady=6)
+
         plus_icon = load_icon("plus", size=14)
         add_btn = ctk.CTkButton(
             bar,
@@ -141,7 +235,7 @@ class WorkspaceControls:
             font=("Segoe UI", 10),
             command=self._on_add_dialog_click,
         )
-        add_btn.pack(side="right", padx=(0, 6), pady=3)
+        add_btn.pack(side="right", padx=(0, 2), pady=3)
 
         self._refresh_tool_buttons()
 
@@ -156,6 +250,26 @@ class WorkspaceControls:
 
     def _on_add_dialog_click(self) -> None:
         self.project.event_bus.publish("request_add_dialog")
+
+    def _focus_document(self, doc_id: str) -> None:
+        self.project.set_active_document(doc_id)
+        self.workspace.focus_document(doc_id)
+
+    def refresh_preview_buttons(self) -> None:
+        if self._btn_preview is None:
+            return
+        doc = self.project.active_document
+        # Preview (main window) — active when any widget exists in project
+        main_has_widgets = bool(self.project.root_widgets)
+        self._btn_preview.configure(
+            image=self._icon_play_on if main_has_widgets else self._icon_play_off,
+        )
+        # Preview Active — active when on a dialog with at least one widget
+        is_dialog = getattr(doc, "is_toplevel", False)
+        dialog_has_widgets = is_dialog and bool(doc.root_widgets)
+        self._btn_preview_active.configure(
+            image=self._icon_sq_on if dialog_has_widgets else self._icon_sq_off,
+        )
 
     def _refresh_tool_buttons(self) -> None:
         for tool_id, btn in self._tool_buttons.items():

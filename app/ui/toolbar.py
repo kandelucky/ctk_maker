@@ -51,7 +51,7 @@ class Toolbar(ctk.CTkFrame):
 
         self._add_button("file-plus", on_new, tooltip="New project")
         self._add_button("folder", on_open, tooltip="Open project")
-        self._add_button("save-all", on_save, tooltip="Save")
+        self._add_button("save", on_save, tooltip="Save")
         self._add_separator()
         self._add_button(
             "file-code", on_export, tooltip="Export to Python",
@@ -61,9 +61,6 @@ class Toolbar(ctk.CTkFrame):
                 "tv-minimal-play", on_run_script,
                 tooltip="Run Python Script...",
             )
-        # Double separator — wider visual gap between the file group
-        # and the editing controls.
-        self._add_separator()
         self._add_separator()
         # Pre-load both icon variants so we can swap in place without
         # triggering a CTkButton layout shift on state change.
@@ -81,8 +78,6 @@ class Toolbar(ctk.CTkFrame):
         self._redo_button = self._add_toggle_button(
             self._icon_redo_off, on_redo, tooltip="Redo (Ctrl+Y)",
         )
-        self._add_separator()
-        self._add_button("play", on_preview, tooltip="Preview (Ctrl+R)")
         self._undo_enabled = False
         self._redo_enabled = False
 
@@ -164,15 +159,10 @@ TOOLTIP_DELAY_MS = 500
 
 
 def _attach_tooltip(widget, text: str) -> None:
-    state = {"after": None, "tip": None}
+    state = {"after": None, "tip": None, "mx": 0, "my": 0}
 
     def show():
         state["after"] = None
-        try:
-            rx = widget.winfo_rootx()
-            ry = widget.winfo_rooty() + widget.winfo_height() + 4
-        except tk.TclError:
-            return
         tip = tk.Toplevel(widget)
         tip.wm_overrideredirect(True)
         try:
@@ -188,10 +178,17 @@ def _attach_tooltip(widget, text: str) -> None:
             bd=0,
         )
         label.pack(padx=1, pady=1)
-        tip.geometry(f"+{rx}+{ry}")
+        tip.update_idletasks()
+        th = tip.winfo_height()
+        # Show above the cursor so the tooltip is never covered
+        tx = state["mx"] + 12
+        ty = state["my"] - th - 6
+        tip.geometry(f"+{tx}+{ty}")
         state["tip"] = tip
 
-    def on_enter(_e):
+    def on_enter(e):
+        state["mx"] = e.x_root
+        state["my"] = e.y_root
         cancel()
         state["after"] = widget.after(TOOLTIP_DELAY_MS, show)
 
