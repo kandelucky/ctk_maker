@@ -1,12 +1,11 @@
-"""History inspector — shows the Undo/Redo stack as a floating list.
+"""History inspector — shows the Undo/Redo stack as a scrollable list.
 
-Mirrors ``ObjectTreeWindow``'s shape (CTkToplevel + ttk.Treeview) but
-much simpler: one column, no drag/drop, no context menu. Entries above
-the current position are past operations (undoable); entries below are
-future operations (redoable, dimmed).
+``HistoryPanel`` is an embeddable ``ctk.CTkFrame`` used in the docked
+sidebar tab.  ``HistoryWindow`` is a thin ``CTkToplevel`` wrapper around
+it for the floating (F9) use-case.
 
-Refreshes on the project event bus's ``history_changed`` event so it
-stays in sync with toolbar buttons and keyboard shortcuts.
+Entries above the current-state marker are past operations (undoable);
+entries below are future operations (redoable, dimmed).
 """
 
 from __future__ import annotations
@@ -41,46 +40,21 @@ CURRENT_MARKER = "◉ Current state"
 EMPTY_TEXT = "(no history yet)"
 
 
-class HistoryWindow(ctk.CTkToplevel):
-    def __init__(
-        self,
-        parent,
-        project: "Project",
-        on_close: Callable[[], None] | None = None,
-    ):
-        super().__init__(parent)
-        self.title("History")
-        self.configure(fg_color=BG)
-        self.geometry(f"{DIALOG_W}x{DIALOG_H}")
-        self.minsize(220, 200)
+class HistoryPanel(ctk.CTkFrame):
+    """Embeddable history list — use inside a sidebar tab or any frame."""
 
-        try:
-            self.transient(parent)
-        except tk.TclError:
-            pass
-
+    def __init__(self, parent, project: "Project"):
+        super().__init__(parent, fg_color=PANEL_BG, corner_radius=0, border_width=0)
         self.project = project
-        self._on_close_callback = on_close
-
-        self._build_tree()
-        self._place_relative_to(parent)
-
-        bus = project.event_bus
         self._bus_subs: list[tuple[str, Callable]] = []
-        for evt in ("history_changed",):
-            bus.subscribe(evt, self._on_history_changed)
-            self._bus_subs.append((evt, self._on_history_changed))
-
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._build_tree()
+        bus = project.event_bus
+        bus.subscribe("history_changed", self._on_history_changed)
+        self._bus_subs.append(("history_changed", self._on_history_changed))
         self.after(0, self._refresh)
 
     # ------------------------------------------------------------------
-    # UI build
-    # ------------------------------------------------------------------
     def _build_tree(self) -> None:
-        container = ctk.CTkFrame(self, fg_color=PANEL_BG, corner_radius=0)
-        container.pack(fill="both", expand=True, padx=6, pady=6)
-
         style = ttk.Style(self)
         style_name = "History.Treeview"
         style.configure(
@@ -97,16 +71,9 @@ class HistoryWindow(ctk.CTkToplevel):
             background=[("selected", TREE_SELECTED_BG)],
             foreground=[("selected", "#ffffff")],
         )
-        style.configure(
-            f"{style_name}.Heading",
-            background=TREE_HEADING_BG,
-            foreground=TREE_HEADING_FG,
-            font=("Segoe UI", TREE_FONT_SIZE, "bold"),
-            borderwidth=0,
-        )
 
         self.tree = ttk.Treeview(
-            container,
+            self,
             columns=(),
             show="tree",
             style=style_name,
@@ -117,29 +84,35 @@ class HistoryWindow(ctk.CTkToplevel):
             "current", background=CURRENT_BG, foreground=CURRENT_FG,
         )
         self.tree.tag_configure("empty", foreground=EMPTY_FG)
+        self.tree.bind("<Button-1>", self._on_click, add="+")
 
-        vsb = ttk.Scrollbar(
-            container, orient="vertical", command=self.tree.yview,
+        vsb = ctk.CTkScrollbar(
+            self, orientation="vertical",
+            command=self.tree.yview,
+            width=10, corner_radius=4,
+            fg_color="transparent",
+            button_color="#3a3a3a",
+            button_hover_color="#4a4a4a",
         )
         self.tree.configure(yscrollcommand=vsb.set)
         self.tree.pack(side="left", fill="both", expand=True)
         vsb.pack(side="right", fill="y")
 
-    def _place_relative_to(self, parent) -> None:
-        try:
-            parent.update_idletasks()
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            x = px + pw - DIALOG_W - 30
-            y = py + 340
-            self.geometry(f"{DIALOG_W}x{DIALOG_H}+{x}+{y}")
-        except tk.TclError:
-            pass
+    def _on_click(self, event) -> None:
+        iid = self.tree.identify_row(event.y)
+        if not iid or iid in ("current", "") or iid.startswith("empty"):
+            return
+        history = self.project.history
+        if iid.startswith("u:"):
+            i = int(iid[2:])
+            steps = len(history._undo) - 1 - i
+            for _ in range(steps):
+                history.undo()
+        elif iid.startswith("r:"):
+            i = int(iid[2:])
+            for _ in range(i + 1):
+                history.redo()
 
-    # ------------------------------------------------------------------
-    # Refresh
-    # ------------------------------------------------------------------
     def _on_history_changed(self, *_args, **_kwargs) -> None:
         self._refresh()
 
@@ -147,47 +120,27 @@ class HistoryWindow(ctk.CTkToplevel):
         for iid in self.tree.get_children(""):
             self.tree.delete(iid)
         history = self.project.history
-        undo_stack = history._undo  # oldest → newest
-        redo_stack = history._redo  # top of stack = next redo
+        undo_stack = history._undo
+        redo_stack = history._redo
         if not undo_stack and not redo_stack:
-            self.tree.insert(
-                "", "end", text=EMPTY_TEXT, tags=("empty",),
-            )
+            self.tree.insert("", "end", text=EMPTY_TEXT, tags=("empty",))
             return
         for i, cmd in enumerate(undo_stack):
             desc = cmd.description or cmd.__class__.__name__
-            self.tree.insert(
-                "", "end", iid=f"u:{i}", text=f"  {desc}",
-            )
+            self.tree.insert("", "end", iid=f"u:{i}", text=f"  {desc}")
         self.tree.insert(
             "", "end", iid="current",
             text=CURRENT_MARKER, tags=("current",),
         )
-        # Redo stack: the LAST entry in self._redo is the next command
-        # to run on Ctrl+Y. Display chronologically so the list reads
-        # naturally top-to-bottom.
         for i, cmd in enumerate(reversed(redo_stack)):
             desc = cmd.description or cmd.__class__.__name__
             self.tree.insert(
                 "", "end", iid=f"r:{i}", text=f"  {desc}", tags=("redo",),
             )
-        # Keep the current marker visible without stealing focus.
         try:
             self.tree.see("current")
         except tk.TclError:
             pass
-
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
-    def _on_close(self) -> None:
-        self._unsubscribe_bus()
-        if self._on_close_callback is not None:
-            try:
-                self._on_close_callback()
-            except Exception:
-                pass
-        self.destroy()
 
     def destroy(self) -> None:
         self._unsubscribe_bus()
@@ -201,3 +154,54 @@ class HistoryWindow(ctk.CTkToplevel):
         except Exception:
             pass
         self._bus_subs = []
+
+
+class HistoryWindow(ctk.CTkToplevel):
+    """Floating window wrapper around ``HistoryPanel`` (opened by F9)."""
+
+    def __init__(
+        self,
+        parent,
+        project: "Project",
+        on_close: Callable[[], None] | None = None,
+    ):
+        super().__init__(parent)
+        self.title("History")
+        self.configure(fg_color=BG)
+        self.geometry(f"{DIALOG_W}x{DIALOG_H}")
+        self.minsize(220, 200)
+        try:
+            self.transient(parent)
+        except tk.TclError:
+            pass
+
+        self._on_close_callback = on_close
+        self.panel = HistoryPanel(self, project)
+        self.panel.pack(fill="both", expand=True, padx=6, pady=6)
+        self._place_relative_to(parent)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _place_relative_to(self, parent) -> None:
+        try:
+            parent.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            x = px + pw - DIALOG_W - 30
+            y = py + 340
+            self.geometry(f"{DIALOG_W}x{DIALOG_H}+{x}+{y}")
+        except tk.TclError:
+            pass
+
+    def _on_close(self) -> None:
+        if self._on_close_callback is not None:
+            try:
+                self._on_close_callback()
+            except Exception:
+                pass
+        self.destroy()
+
+    def destroy(self) -> None:
+        if hasattr(self, "panel"):
+            self.panel._unsubscribe_bus()
+        super().destroy()

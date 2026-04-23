@@ -17,7 +17,7 @@ from app.io.code_exporter import export_project
 from app.io.project_loader import ProjectLoadError, load_project
 from app.io.project_saver import save_project
 from app.ui.dialogs import NewProjectSizeDialog
-from app.ui.history_window import HistoryWindow
+from app.ui.history_window import HistoryPanel, HistoryWindow
 from app.ui.main_menu import APPEARANCE_MODES, MenuMixin
 from app.ui.main_shortcuts import ShortcutsMixin
 from app.ui.object_tree_window import ObjectTreePanel, ObjectTreeWindow
@@ -60,6 +60,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         self.title("CTk Visual Builder")
         self.minsize(900, 600)
         self._set_centered_geometry(1280, 800)
+        self.configure(fg_color="#252526")
 
         # Reconfigure every named Tk font to Segoe UI so Georgian (and
         # other non-Latin scripts) renders instead of "?" placeholders.
@@ -158,17 +159,95 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             borderwidth=0,
             showhandle=False,
         )
-        self.object_tree = ObjectTreePanel(self.right_pane, self.project)
+        # Top pane: Object Tree + History share one slot, switched by
+        # a header row with two toggle buttons.
+        _top_wrap = tk.Frame(self.right_pane, bg="#1e1e1e")
+
+        _hdr = tk.Frame(_top_wrap, bg="#2d2d2d", height=28)
+        _hdr.pack(side="top", fill="x")
+        _hdr.pack_propagate(False)
+
+        _content = tk.Frame(_top_wrap, bg="#1e1e1e")
+        _content.pack(fill="both", expand=True)
+
+        self.object_tree = ObjectTreePanel(_content, self.project)
+        self._docked_history = HistoryPanel(_content, self.project)
+        self.object_tree.pack(fill="both", expand=True)
+
+        _ACT_BG   = "#3a3a3a"
+        _ACT_FG   = "#ffffff"
+        _INACT_FG = "#888888"
+
+        def _show_tree():
+            self._docked_history.pack_forget()
+            self.object_tree.pack(fill="both", expand=True)
+            self._btn_tree.configure(
+                fg_color=_ACT_BG, text_color=_ACT_FG, hover_color=_ACT_BG,
+            )
+            self._btn_hist.configure(
+                fg_color="transparent", text_color=_INACT_FG,
+                hover_color="#2d2d2d",
+            )
+
+        def _show_history():
+            self.object_tree.pack_forget()
+            self._docked_history.pack(fill="both", expand=True)
+            self._btn_hist.configure(
+                fg_color=_ACT_BG, text_color=_ACT_FG, hover_color=_ACT_BG,
+            )
+            self._btn_tree.configure(
+                fg_color="transparent", text_color=_INACT_FG,
+                hover_color="#2d2d2d",
+            )
+
+        _btn_kw = dict(
+            height=28, corner_radius=0,
+            font=("Segoe UI", 10), border_width=0,
+        )
+        self._btn_tree = ctk.CTkButton(
+            _hdr, text="Object Tree", command=_show_tree,
+            fg_color=_ACT_BG, text_color=_ACT_FG,
+            hover_color=_ACT_BG, **_btn_kw,
+        )
+        self._btn_hist = ctk.CTkButton(
+            _hdr, text="History", command=_show_history,
+            fg_color="transparent", text_color=_INACT_FG,
+            hover_color="#2d2d2d", **_btn_kw,
+        )
+        self._btn_tree.pack(side="left", expand=True, fill="both")
+        self._btn_hist.pack(side="left", expand=True, fill="both")
+
+        # Bottom pane: Properties (+ future tabs via same header pattern).
+        _props_wrap = tk.Frame(self.right_pane, bg="#1e1e1e")
+
+        _phdr = tk.Frame(_props_wrap, bg="#2d2d2d", height=28)
+        _phdr.pack(side="top", fill="x")
+        _phdr.pack_propagate(False)
+
+        _pcontent = tk.Frame(_props_wrap, bg="#1e1e1e")
+        _pcontent.pack(fill="both", expand=True)
+
         self.properties = PropertiesPanel(
-            self.right_pane, self.project,
+            _pcontent, self.project,
             tool_provider=lambda: self.workspace.controls.tool,
             tool_setter=lambda t: self.workspace.controls.set_tool(t),
         )
+        self.properties.pack(fill="both", expand=True)
+
+        self._btn_props = ctk.CTkButton(
+            _phdr, text="Properties",
+            fg_color=_ACT_BG, text_color=_ACT_FG,
+            hover_color=_ACT_BG,
+            height=28, corner_radius=0,
+            font=("Segoe UI", 10), border_width=0,
+        )
+        self._btn_props.pack(side="left", expand=True, fill="both")
+
         self.right_pane.add(
-            self.object_tree, minsize=160, height=280, stretch="never",
+            _top_wrap, minsize=160, height=280, stretch="never",
         )
         self.right_pane.add(
-            self.properties, minsize=320, stretch="always",
+            _props_wrap, minsize=320, stretch="always",
         )
 
         self.paned.add(self.palette, minsize=150, width=200, stretch="never")

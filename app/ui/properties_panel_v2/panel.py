@@ -143,11 +143,6 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
     # Chrome: panel title, type header, name row
     # ==================================================================
     def _build_chrome(self) -> None:
-        title = ctk.CTkLabel(
-            self, text="Properties", font=("Segoe UI", 13, "bold"),
-        )
-        title.pack(pady=(6, 2), padx=10)
-
         # Type header bar (dark stripe with widget type + ID + help)
         self._type_bar = ctk.CTkFrame(
             self, fg_color=HEADER_BG, height=26, corner_radius=0,

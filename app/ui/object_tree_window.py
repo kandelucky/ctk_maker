@@ -274,21 +274,11 @@ class ObjectTreePanel(ctk.CTkFrame):
 
         accent = self.project.get_accent_color()
 
-        # Centered bold title — matches the Properties panel.
-        self._title = tk.Label(
-            self, text="Object Tree",
-            bg=BG, fg="#cccccc",
-            font=("Segoe UI", 11, "bold"),
-        )
-        self._title.pack(side="top", pady=(2, 1))
-
         # Accent-coloured border wrap — 1px of the active document's
-        # theme colour. Starts below the title.
+        # theme colour.
         wrap = tk.Frame(
             self, bg=BG,
-            highlightbackground=accent,
-            highlightcolor=accent,
-            highlightthickness=1,
+            highlightthickness=0,
         )
         wrap.pack(fill="both", expand=True, padx=4, pady=(0, 4))
         wrap.pack_propagate(False)
