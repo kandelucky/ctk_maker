@@ -138,3 +138,4 @@
 - 2026-04-23 v0.0.15.29 — Form menu redesign: Preview Active, Remove/Move Up/Down with dim state, Rename, Form Settings, All Forms submenu (dynamic doc list + center on click); screenshot idea saved to ideas.md
 - 2026-04-23 v0.0.15.30 — About dialog (custom tk.Toplevel, clickable library links), Settings menu disabled
 - 2026-04-23 v0.0.15.31 — Workspace bar: Preview/Preview Active (square-play/play icons, dim state), All Forms dropdown, Containers moved to bottom; toolbar: save icon, preview removed, tooltip above cursor, single separator; palette/menu regrouped
+- 2026-04-23 v0.0.15.32 — Shortcuts: Ctrl+D/X/I/P/M/A/Shift+I added, Georgian fallback; Edit menu: Cut+Duplicate+Rename; Form menu accelerators; Help: Documentation+Ctrl+Shift+I; README shortcuts table

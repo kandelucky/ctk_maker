@@ -182,12 +182,24 @@ class MenuMixin:
         )
         edit_menu.add_separator()
         self._add_cmd(
+            edit_menu, "Cut", self._on_menu_cut,
+            accelerator="Ctrl+X",
+        )
+        self._add_cmd(
             edit_menu, "Copy", self._on_menu_copy,
             accelerator="Ctrl+C",
         )
         self._add_cmd(
             edit_menu, "Paste", self._on_menu_paste,
             accelerator="Ctrl+V",
+        )
+        self._add_cmd(
+            edit_menu, "Duplicate", self._on_menu_duplicate,
+            accelerator="Ctrl+D",
+        )
+        self._add_cmd(
+            edit_menu, "Rename", self._on_menu_rename,
+            accelerator="Ctrl+I",
         )
         self._add_cmd(
             edit_menu, "Delete", self._on_menu_delete,
@@ -221,15 +233,15 @@ class MenuMixin:
         self._add_cmd(form_menu, "Preview", self._on_preview,
                       icon="play", accelerator="Ctrl+R")
         self._add_cmd(form_menu, "Preview Active", self._on_preview_active,
-                      icon="play")
+                      icon="play", accelerator="Ctrl+P")
         form_menu.add_separator()
         self._add_cmd(form_menu, "Add Dialog", self._on_add_dialog,
-                      icon="plus")
+                      icon="plus", accelerator="Ctrl+M")
         self._add_cmd(form_menu, "Remove", self._on_remove_current_document,
                       icon="trash-2")
         form_menu.add_separator()
         self._add_cmd(form_menu, "Rename", self._on_rename_current_doc,
-                      icon="pencil")
+                      icon="pencil", accelerator="Ctrl+I")
         self._add_cmd(form_menu, "Form Settings", self._on_form_settings,
                       icon="settings")
         form_menu.add_separator()
@@ -306,7 +318,8 @@ class MenuMixin:
 
         # ---- Help ----
         help_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
-        self._add_cmd(help_menu, "Widget Documentation", self._on_widget_docs, icon="book-open")
+        self._add_cmd(help_menu, "Documentation", self._on_widget_docs,
+                      icon="book-open", accelerator="Ctrl+Shift+I")
         help_menu.add_separator()
         self._add_cmd(help_menu, "About...", self._on_about, icon="info")
         menubar.add_cascade(label="Help", menu=help_menu)
@@ -394,6 +407,55 @@ class MenuMixin:
     # Edit menu dispatchers — route to project methods so the same
     # action works regardless of which window has focus.
     # ------------------------------------------------------------------
+    def _on_menu_cut(self) -> None:
+        ids = self.project.selected_ids
+        if not ids:
+            return
+        self.project.copy_to_clipboard(ids)
+        # Delete without confirmation
+        for wid in list(ids):
+            node = self.project.get_widget(wid)
+            if node is None:
+                continue
+            from app.core.commands import DeleteWidgetCommand
+            snapshot = node.to_dict()
+            parent_id = node.parent.id if node.parent is not None else None
+            siblings = (
+                node.parent.children if node.parent is not None
+                else self.project.root_widgets
+            )
+            try:
+                index = siblings.index(node)
+            except ValueError:
+                index = len(siblings)
+            owning_doc = self.project.find_document_for_widget(wid)
+            doc_id = owning_doc.id if owning_doc is not None else None
+            self.project.remove_widget(wid)
+            self.project.history.push(
+                DeleteWidgetCommand(snapshot, parent_id, index, doc_id),
+            )
+
+    def _on_menu_duplicate(self) -> None:
+        if hasattr(self, "workspace"):
+            self.workspace._duplicate_selection()
+
+    def _on_menu_rename(self) -> None:
+        from app.ui.dialogs import RenameDialog
+        from app.core.commands import RenameCommand
+        sid = self.project.selected_id
+        if sid is None:
+            return
+        node = self.project.get_widget(sid)
+        if node is None:
+            return
+        dialog = RenameDialog(self, node.name)
+        if dialog.result and dialog.result != node.name:
+            before = node.name
+            self.project.rename_widget(sid, dialog.result)
+            self.project.history.push(
+                RenameCommand(sid, before, dialog.result),
+            )
+
     def _on_menu_copy(self) -> None:
         ids = self.project.selected_ids
         if ids:
@@ -458,7 +520,12 @@ class MenuMixin:
         )
 
     def _on_menu_select_all(self) -> None:
-        all_ids = {node.id for node in self.project.iter_all_widgets()}
+        def _walk(nodes):
+            for n in nodes:
+                yield n
+                yield from _walk(n.children)
+        doc = self.project.active_document
+        all_ids = {n.id for n in _walk(doc.root_widgets)}
         if not all_ids:
             return
         primary = self.project.selected_id or next(iter(all_ids))

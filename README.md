@@ -60,6 +60,37 @@ A desktop visual designer for **CustomTkinter** — drag and drop widgets onto a
 - **Properties panel** — per-widget editors
 - **Tools → Inspect CTk Widget…** — side-by-side comparison of every palette widget against the actual CTk constructor signature, flagging exposed / CTk-only / builder-helper rows
 
+### Keyboard shortcuts
+
+All shortcuts work on Latin and non-Latin (Georgian, Russian, …) keyboard layouts.
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl+N` | New project (dialog) |
+| `Ctrl+O` | Open project |
+| `Ctrl+S` | Save |
+| `Ctrl+Shift+S` | Save As |
+| `Ctrl+Q` | Quit |
+| `Ctrl+Z` | Undo |
+| `Ctrl+Y` | Redo |
+| `Ctrl+C` | Copy selected |
+| `Ctrl+V` | Paste |
+| `Ctrl+X` | Cut |
+| `Ctrl+D` | Duplicate |
+| `Ctrl+I` | Rename selected |
+| `Ctrl+A` | Select all (active document) |
+| `Delete` | Delete selected |
+| `Arrow keys` | Nudge 1 px |
+| `Shift+Arrow` | Nudge 10 px |
+| `Ctrl+R` | Preview whole project |
+| `Ctrl+P` | Preview active dialog |
+| `Ctrl+M` | Add Dialog |
+| `Ctrl+Shift+I` | Documentation |
+| `F8` | Toggle Object Tree (floating) |
+| `F9` | Toggle History (floating) |
+| `Escape` | Deselect |
+| `Ctrl+Wheel` | Zoom in / out |
+
 ### Run Python Script
 - File menu + toolbar entry (`tv-minimal-play` icon) launches any `.py` / `.pyw` as a subprocess — quick way to test exported builds without leaving the builder. Last-used directory persists.
 

@@ -531,10 +531,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
 
     def _on_preview_active(self) -> None:
         doc = self.project.active_document
-        if doc.is_toplevel:
+        if doc.is_toplevel and doc.root_widgets:
             self._on_preview_dialog(doc.id)
-        else:
-            self._on_preview()
 
     def _on_rename_current_doc(self) -> None:
         from app.ui.dialogs import RenameDialog

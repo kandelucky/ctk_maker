@@ -45,6 +45,7 @@ class ShortcutsMixin:
         latin = event.keysym.lower()
         if latin in (
             "v", "c", "x", "a", "s", "n", "o", "w", "q", "r", "z", "y",
+            "d", "i", "p", "m",
         ):
             return None
         kc = event.keycode
@@ -59,10 +60,14 @@ class ShortcutsMixin:
             widget.event_generate("<<Cut>>")
             return "break"
         if kc == 65:  # A
-            try:
-                widget.event_generate("<<SelectAll>>")
-            except tk.TclError:
-                pass
+            focused = self.focus_get()
+            if isinstance(focused, (tk.Entry, tk.Text)):
+                try:
+                    focused.event_generate("<<SelectAll>>")
+                except tk.TclError:
+                    pass
+            else:
+                self._on_menu_select_all()
             return "break"
         if kc == 83:  # S
             self._on_save()
@@ -81,6 +86,21 @@ class ShortcutsMixin:
             return "break"
         if kc == 82:  # R
             self._on_preview()
+            return "break"
+        if kc == 68:  # D
+            self._on_menu_duplicate()
+            return "break"
+        if kc == 73:  # I
+            if event.state & self._SHIFT_MASK:
+                self._on_docs_shortcut()
+            else:
+                self._on_menu_rename()
+            return "break"
+        if kc == 80:  # P
+            self._on_preview_active()
+            return "break"
+        if kc == 77:  # M
+            self._on_add_dialog()
             return "break"
         if kc == 90:  # Z
             is_redo = bool(event.state & self._SHIFT_MASK)
@@ -146,12 +166,22 @@ class ShortcutsMixin:
         self.bind("<Control-C>", self._on_copy_shortcut)
         self.bind("<Control-v>", self._on_paste_shortcut)
         self.bind("<Control-V>", self._on_paste_shortcut)
-        # Non-Latin layout fallback: _on_control_keypress (bind_all)
-        # translates the hardware keycode into these virtual events.
-        # Without binding them at the main-window level they'd fire
-        # into the void when focus is outside the Object Tree.
+        self.bind("<Control-x>", self._on_cut_shortcut)
+        self.bind("<Control-X>", self._on_cut_shortcut)
+        self.bind("<Control-d>", lambda e: self._on_menu_duplicate())
+        self.bind("<Control-D>", lambda e: self._on_menu_duplicate())
+        self.bind("<Control-i>", lambda e: self._on_menu_rename())
+        self.bind("<Control-I>", lambda e: self._on_menu_rename())
+        self.bind("<Control-Shift-I>", lambda e: self._on_docs_shortcut())
+        self.bind("<Control-p>", lambda e: self._on_preview_active())
+        self.bind("<Control-P>", lambda e: self._on_preview_active())
+        self.bind("<Control-m>", lambda e: self._on_add_dialog())
+        self.bind("<Control-M>", lambda e: self._on_add_dialog())
+        self.bind_all("<Control-a>", self._on_select_all_shortcut)
+        self.bind_all("<Control-A>", self._on_select_all_shortcut)
         self.bind("<<Copy>>", self._on_copy_shortcut)
         self.bind("<<Paste>>", self._on_paste_shortcut)
+        self.bind("<<Cut>>", self._on_cut_shortcut)
 
     # ------------------------------------------------------------------
     # Auto-repeat guards
@@ -209,4 +239,20 @@ class ShortcutsMixin:
         if isinstance(self.focus_get(), (tk.Entry, tk.Text)):
             return None
         self._on_menu_paste()
+        return "break"
+
+    def _on_cut_shortcut(self, _event=None) -> str | None:
+        if isinstance(self.focus_get(), (tk.Entry, tk.Text)):
+            return None
+        self._on_menu_cut()
+        return "break"
+
+    def _on_select_all_shortcut(self, _event=None) -> str | None:
+        if isinstance(self.focus_get(), (tk.Entry, tk.Text)):
+            return None
+        self._on_menu_select_all()
+        return "break"
+
+    def _on_docs_shortcut(self, _event=None) -> str | None:
+        self._on_widget_docs()
         return "break"
