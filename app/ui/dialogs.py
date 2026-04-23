@@ -323,3 +323,91 @@ class NewProjectSizeDialog(ctk.CTkToplevel):
     def _on_cancel(self) -> None:
         self.result = None
         self.destroy()
+
+
+# ---------------------------------------------------------------------------
+# About dialog
+# ---------------------------------------------------------------------------
+
+_BUILT_WITH = [
+    ("CustomTkinter",         "https://github.com/TomSchimansky/CustomTkinter", "MIT"),
+    ("Lucide Icons",          "https://lucide.dev",                              "MIT"),
+    ("Pillow",                "https://pypi.org/project/Pillow/",                "HPND"),
+    ("ctk-tint-color-picker", "https://pypi.org/project/ctk-tint-color-picker/", "MIT"),
+]
+
+_ABT_BG   = "#1e1e1e"
+_ABT_FG   = "#cccccc"
+_ABT_DIM  = "#888888"
+_ABT_LINK = "#5bc0f8"
+_ABT_SEP  = "#3a3a3a"
+
+
+class AboutDialog(tk.Toplevel):
+    def __init__(self, parent, app_version: str = ""):
+        super().__init__(parent)
+        self.title("About CTk Visual Builder")
+        self.configure(bg=_ABT_BG)
+        self.resizable(False, False)
+        self.transient(parent)
+        self._build(app_version)
+        # Fixed size — position centered on parent
+        W, H = 480, 320
+        px = parent.winfo_rootx() + parent.winfo_width() // 2
+        py = parent.winfo_rooty() + parent.winfo_height() // 2
+        self.geometry(f"{W}x{H}+{px - W // 2}+{py - H // 2}")
+        self.lift()
+        self.focus_set()
+
+    def _build(self, version: str) -> None:
+        import webbrowser
+        pad = dict(padx=24)
+
+        tk.Frame(self, bg=_ABT_BG, height=20).pack()
+        tk.Label(
+            self, text="CTk Visual Builder",
+            bg=_ABT_BG, fg=_ABT_FG, font=("Segoe UI", 16, "bold"),
+        ).pack(**pad)
+        tk.Label(
+            self, text=version or "",
+            bg=_ABT_BG, fg=_ABT_DIM, font=("Segoe UI", 10),
+        ).pack(**pad, pady=(2, 0))
+        tk.Label(
+            self,
+            text="Drag-and-drop designer for CustomTkinter\nthat exports clean Python code.",
+            bg=_ABT_BG, fg=_ABT_DIM, font=("Segoe UI", 10), justify="center",
+        ).pack(padx=24, pady=(12, 0))
+
+        tk.Frame(self, bg=_ABT_SEP, height=1).pack(fill="x", padx=24, pady=16)
+
+        tk.Label(
+            self, text="Built with",
+            bg=_ABT_BG, fg=_ABT_FG, font=("Segoe UI", 10, "bold"),
+        ).pack(**pad, pady=(0, 8))
+
+        for name, url, lic in _BUILT_WITH:
+            row = tk.Frame(self, bg=_ABT_BG)
+            row.pack(fill="x", padx=24, pady=2)
+            tk.Label(
+                row, text=f"{name}  ", bg=_ABT_BG, fg=_ABT_FG,
+                font=("Segoe UI", 10), anchor="w",
+            ).pack(side="left")
+            link = tk.Label(
+                row, text=url, bg=_ABT_BG, fg=_ABT_LINK,
+                font=("Segoe UI", 10, "underline"), cursor="hand2",
+            )
+            link.pack(side="left")
+            link.bind("<Button-1>", lambda _e, u=url: webbrowser.open(u))
+            tk.Label(
+                row, text=f"  ({lic})", bg=_ABT_BG, fg=_ABT_DIM,
+                font=("Segoe UI", 9),
+            ).pack(side="left")
+
+        tk.Frame(self, bg=_ABT_SEP, height=1).pack(fill="x", padx=24, pady=16)
+        btn = tk.Button(
+            self, text="Close", command=self.destroy,
+            bg="#3a3a3a", fg=_ABT_FG, activebackground="#4a4a4a",
+            activeforeground=_ABT_FG, relief="flat", bd=0,
+            font=("Segoe UI", 10), padx=20, pady=4, cursor="hand2",
+        )
+        btn.pack(pady=(0, 20))

@@ -770,7 +770,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             log_error("widget docs open")
 
     def _on_about(self) -> None:
-        messagebox.showinfo("About CTk Visual Builder", ABOUT_TEXT, parent=self)
+        from app.ui.dialogs import AboutDialog
+        AboutDialog(self, app_version="v0.0.15")
 
     def _on_inspect_widget(self) -> None:
         # Reuse a single Toplevel — clicking the menu while it's open

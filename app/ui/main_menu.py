@@ -300,7 +300,9 @@ class MenuMixin:
             settings_menu, "Reset Dismissed Warnings",
             self._on_reset_advisories, icon="bell",
         )
-        menubar.add_cascade(label="Settings", menu=settings_menu)
+        menubar.add_cascade(
+            label="Settings", menu=settings_menu, state="disabled",
+        )
 
         # ---- Help ----
         help_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
