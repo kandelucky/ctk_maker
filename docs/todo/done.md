@@ -134,3 +134,4 @@
 - 2026-04-23 v0.0.15.25 — Area 8 start: Object Tree UX — inline rename (double-click), type initials + layout-aware Frame variants, Order column, larger arrows, filter active-doc-only + blue tint indicator, Name field disabledbackground fix, CTkLabel icon clear fix, right-click menu disabled items foreground fix, Enter defocuses Name field, right-click on Name field
 - 2026-04-23 v0.0.15.26 — History panel docked in sidebar (Tree/History toggle buttons), click-to-jump in history, accent borders removed from Object Tree + History + Properties, Properties title label removed, Properties tab header added, HistoryPanel extracted as reusable CTkFrame
 - 2026-04-23 v0.0.15.27 — File menu: New Untitled (file-plus-corner icon, no save dialog), Save As icon→save-all, Close removed; toolbar: on_new_untitled wired
+- 2026-04-23 v0.0.15.28 — Widget menu (cascades per group), palette regrouped: Layouts/Containers/Buttons/Display/Selection/Input

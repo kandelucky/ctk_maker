@@ -26,6 +26,7 @@ import tkinter as tk
 from tkinter import messagebox
 
 from app.ui.icons import load_tk_icon
+from app.ui.palette import CATALOG
 
 
 MENU_BG = "#2d2d30"
@@ -179,6 +180,20 @@ class MenuMixin:
             form_menu, "Remove Current", self._on_remove_current_document,
         )
         menubar.add_cascade(label="Form", menu=form_menu)
+
+        # ---- Widget ----
+        widget_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
+        for group in CATALOG:
+            group_menu = tk.Menu(widget_menu, tearoff=0, **MENU_STYLE)
+            for entry in group.items:
+                self._add_cmd(
+                    group_menu,
+                    entry.display_name,
+                    lambda e=entry: self.palette.add_entry(e),
+                    icon=entry.icon,
+                )
+            self._add_cascade(widget_menu, group.title, group_menu)
+        menubar.add_cascade(label="Widget", menu=widget_menu)
 
         # ---- View ----
         view_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)

@@ -105,29 +105,31 @@ CATALOG: tuple[WidgetGroup, ...] = (
             default_name="Grid Layout",
         ),
     )),
-    WidgetGroup("Buttons", (
-        WidgetEntry("CTkButton", "Button", "square-dot"),
-        WidgetEntry("CTkCheckBox", "Check Box", "square-check"),
-        WidgetEntry("CTkRadioButton", "Radio Button", "circle-dot"),
-        WidgetEntry("CTkSwitch", "Switch", "toggle-left"),
-        WidgetEntry("CTkSegmentedButton", "Segmented Button", "panel-left-right-dashed"),
-    )),
-    WidgetGroup("Inputs", (
-        WidgetEntry("CTkEntry", "Entry", "text-cursor-input"),
-        WidgetEntry("CTkTextbox", "Textbox", "file-text"),
-        WidgetEntry("CTkComboBox", "Combo Box", "chevrons-up-down"),
-        WidgetEntry("CTkOptionMenu", "Option Menu", "menu"),
-        WidgetEntry("CTkSlider", "Slider", "sliders-horizontal"),
-    )),
     WidgetGroup("Containers", (
         WidgetEntry("CTkFrame", "Frame", "frame"),
         WidgetEntry("CTkScrollableFrame", "Scrollable Frame", "scroll-text"),
         WidgetEntry("CTkTabview", "Tab View", "layout-panel-top"),
     )),
+    WidgetGroup("Buttons", (
+        WidgetEntry("CTkButton", "Button", "square-dot"),
+        WidgetEntry("CTkSegmentedButton", "Segmented Button", "panel-left-right-dashed"),
+    )),
     WidgetGroup("Display", (
         WidgetEntry("CTkLabel", "Label", "type"),
         WidgetEntry("Image", "Image", "image"),
         WidgetEntry("CTkProgressBar", "Progress Bar", "loader"),
+    )),
+    WidgetGroup("Selection", (
+        WidgetEntry("CTkCheckBox", "Check Box", "square-check"),
+        WidgetEntry("CTkRadioButton", "Radio Button", "circle-dot"),
+        WidgetEntry("CTkSwitch", "Switch", "toggle-left"),
+    )),
+    WidgetGroup("Input", (
+        WidgetEntry("CTkEntry", "Entry", "text-cursor-input"),
+        WidgetEntry("CTkTextbox", "Textbox", "file-text"),
+        WidgetEntry("CTkComboBox", "Combo Box", "chevrons-up-down"),
+        WidgetEntry("CTkOptionMenu", "Option Menu", "menu"),
+        WidgetEntry("CTkSlider", "Slider", "sliders-horizontal"),
     )),
 )
 
@@ -483,6 +485,13 @@ class Palette(ctk.CTkFrame):
                 self._ghost_label.configure(bg=bg)
         except tk.TclError:
             pass
+
+    def add_entry(self, entry: WidgetEntry) -> None:
+        """Add a widget from a palette entry — called by the Widget menu."""
+        descriptor = get_descriptor(entry.type_name)
+        if descriptor is None:
+            return
+        self._add_widget_default(entry, descriptor)
 
     def _add_widget_default(
         self, entry: WidgetEntry, descriptor,
