@@ -14,6 +14,14 @@
 
 ---
 
+## Multi-document workspace UX
+
+- [ ] **Hide / show individual dialogs in workspace** — per-document visibility toggle in the chrome strip (eye icon or minimize button). Hidden dialogs stay in the project / Object Tree but are collapsed off-canvas. Useful when working on one window without the others cluttering the viewport. Pairs with the existing `node.visible` toggle logic; needs a document-level visibility flag in `ProjectDocument`.
+
+- [ ] **Project files / assets browser panel** — 4th sidebar tab showing all files referenced by the project (images, fonts, any future asset types). Thumbnails + path + "Locate missing file" for broken refs. Drag from panel → canvas sets the `image` property. Foundation for the portable-assets system.
+
+---
+
 ## Dedicated dialogs / windows
 
 Three windows currently delegate to native OS dialogs (or run silently in the background) and would benefit from a richer in-builder UI.
@@ -250,3 +258,5 @@ Final name: **CTkMaker** (2026-04-20). Pending: availability check (PyPI, GitHub
 - [ ] GitHub issue templates
 - [ ] Discussions enabled
 - [ ] "Getting started in 5 min" tutorial
+- [ ] Example projects — 3–5 bundled `.ctkproj` files (login form, settings dialog, dashboard) opened via File → Open Example; shows the builder's full capability at first launch
+- [ ] GIF tutorials — screen-recorded walkthroughs per feature (drop widget, edit properties, export + run); embedded in docs site and README; 10–30 sec each

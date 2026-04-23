@@ -62,7 +62,10 @@ class CommitMixin:
                 # Empty values → show a single disabled hint instead
                 # of an empty menu the user can't interact with.
                 menu = tk.Menu(self, tearoff=0, **MENU_STYLE)
-                menu.add_command(label="(no segments)", state="disabled")
+                menu.add_command(
+                    label="(no segments)",
+                    foreground="#555555",
+                )
                 try:
                     menu.tk_popup(x_root, y_root)
                 finally:
@@ -565,15 +568,23 @@ class CommitMixin:
                 has_selection = bool(entry.selection_present())
             except tk.TclError:
                 has_selection = False
+            _fg = MENU_STYLE.get("fg", "#cccccc")
+            _dim = "#555555"
             menu.add_command(
                 label="Cut",
-                command=lambda: entry.event_generate("<<Cut>>"),
-                state="normal" if has_selection else "disabled",
+                command=(
+                    lambda: entry.event_generate("<<Cut>>")
+                    if has_selection else None
+                ),
+                foreground=_fg if has_selection else _dim,
             )
             menu.add_command(
                 label="Copy",
-                command=lambda: entry.event_generate("<<Copy>>"),
-                state="normal" if has_selection else "disabled",
+                command=(
+                    lambda: entry.event_generate("<<Copy>>")
+                    if has_selection else None
+                ),
+                foreground=_fg if has_selection else _dim,
             )
             menu.add_command(
                 label="Paste",

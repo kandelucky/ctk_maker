@@ -128,3 +128,7 @@
 ## Phase 0 — MVP
 
 - Three-panel layout, event bus, Project model, WidgetNode, descriptor pattern, CTkButton, click-to-add, selection, live property editing.
+
+---
+
+- 2026-04-23 v0.0.15.25 — Area 8 start: Object Tree UX — inline rename (double-click), type initials + layout-aware Frame variants, Order column, larger arrows, filter active-doc-only + blue tint indicator, Name field disabledbackground fix, CTkLabel icon clear fix, right-click menu disabled items foreground fix, Enter defocuses Name field, right-click on Name field

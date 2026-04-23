@@ -52,8 +52,8 @@ EYE_VISIBLE = "👁"
 EYE_HIDDEN = ""
 LOCK_ON = "🔒"
 LOCK_OFF = ""
-ARROW_EXPANDED = "▾ "
-ARROW_COLLAPSED = "▸ "
+ARROW_EXPANDED = "▼ "
+ARROW_COLLAPSED = "▶ "
 ARROW_LEAF = "   "
 INDENT_STR = "      "  # 6 spaces per depth level — clearer nesting
 TREE_ROW_HEIGHT = 22
@@ -64,6 +64,30 @@ DIALOG_H = 460
 DRAG_THRESHOLD = 5
 
 FILTER_ALL_LABEL = "All types"
+
+_TYPE_INITIALS: dict[str, str] = {
+    "CTkButton":          "Btn",
+    "CTkLabel":           "Lbl",
+    "CTkEntry":           "Ent",
+    "CTkTextbox":         "Txt",
+    "CTkCheckBox":        "Chk",
+    "CTkRadioButton":     "Rad",
+    "CTkSwitch":          "Sw",
+    "CTkSegmentedButton": "Seg",
+    "CTkSlider":          "Sld",
+    "CTkProgressBar":     "Bar",
+    "CTkComboBox":        "Cmb",
+    "CTkOptionMenu":      "Opt",
+    "CTkScrollableFrame": "ScF",
+    "CTkTabview":         "Tab",
+    "Image":              "Img",
+}
+_FRAME_LAYOUT_INITIALS: dict[str, str] = {
+    "place": "Frm",
+    "vbox":  "VFr",
+    "hbox":  "HFr",
+    "grid":  "GFr",
+}
 
 CTX_MENU_STYLE = dict(
     bg="#2d2d30",
@@ -372,13 +396,13 @@ class ObjectTreePanel(ctk.CTkFrame):
         self.tree.heading("#0", text="👁")
         self.tree.heading("lock", text="🔒")
         self.tree.heading("name", text="Name")
-        self.tree.heading("type", text="Type")
-        self.tree.heading("layer", text="Layer")
+        self.tree.heading("type", text="T")
+        self.tree.heading("layer", text="Order")
         self.tree.column("#0", width=36, stretch=False, anchor="center")
         self.tree.column("lock", width=32, stretch=False, anchor="center")
         self.tree.column("name", width=160, stretch=True, anchor="w")
-        self.tree.column("type", width=100, stretch=False, anchor="w")
-        self.tree.column("layer", width=56, stretch=False, anchor="center")
+        self.tree.column("type", width=36, stretch=False, anchor="center")
+        self.tree.column("layer", width=52, stretch=False, anchor="center")
 
         # CTkScrollbar — matches the Properties panel style so the
         # docked right sidebar reads consistently. Kwargs mirror the
@@ -413,6 +437,7 @@ class ObjectTreePanel(ctk.CTkFrame):
         self.tree.bind("<B1-Motion>", self._on_drag_motion, add="+")
         self.tree.bind("<ButtonRelease-1>", self._on_drag_release, add="+")
         self.tree.bind("<Button-3>", self._on_right_click, add="+")
+        self.tree.bind("<Double-Button-1>", self._on_double_click, add="+")
 
     # ------------------------------------------------------------------
     # Refresh / population
@@ -478,14 +503,27 @@ class ObjectTreePanel(ctk.CTkFrame):
             tags=("doc-row",),
         )
 
+    def _iter_active_widgets(self):
+        """Yield every widget in the active document only, depth-first."""
+        active = self.project.active_document
+        if active is None:
+            return
+
+        def _walk(nodes):
+            for node in nodes:
+                yield node
+                yield from _walk(node.children)
+
+        yield from _walk(active.root_widgets)
+
     def _rebuild_filter_options(self) -> None:
         """Rebuild the filter dropdown so it only lists widget types
-        actually present in the project (sorted by display name).
+        actually present in the active document (sorted by display name).
         """
         if self._filter_menu is None:
             return
         type_names_in_project = {
-            node.widget_type for node in self.project.iter_all_widgets()
+            node.widget_type for node in self._iter_active_widgets()
         }
         entries: list[tuple[str, str]] = []
         for desc in all_descriptors():
@@ -526,7 +564,7 @@ class ObjectTreePanel(ctk.CTkFrame):
             return None
 
         visible: set[str] = set()
-        for node in self.project.iter_all_widgets():
+        for node in self._iter_active_widgets():
             if type_name is not None and node.widget_type != type_name:
                 continue
             if search and search not in (node.name or "").lower():
@@ -565,7 +603,7 @@ class ObjectTreePanel(ctk.CTkFrame):
             iid=node.id,
             text="",
             image=icon if icon is not None else "",
-            values=(lock_cell, name_cell, node.widget_type, str(layer)),
+            values=(lock_cell, name_cell, self._type_initial(node), str(layer)),
             tags=tags,
         )
         if not node.children or node.id in self._collapsed_ids:
@@ -595,6 +633,11 @@ class ObjectTreePanel(ctk.CTkFrame):
 
     def _on_filter_changed(self) -> None:
         self.refresh()
+        if self._filter_menu is not None:
+            is_active = self._filter_var.get() != FILTER_ALL_LABEL
+            self._filter_menu.configure(
+                text_color="#5bc0f8" if is_active else "#cccccc",
+            )
 
     def _on_search_key(self, _event=None) -> None:
         if self._search_entry is None:
@@ -903,6 +946,14 @@ class ObjectTreePanel(ctk.CTkFrame):
             current = current.parent
         return depth
 
+    def _type_initial(self, node: "WidgetNode") -> str:
+        if node.widget_type == "CTkFrame":
+            layout = normalise_layout_type(
+                node.properties.get("layout_type", "place"),
+            )
+            return _FRAME_LAYOUT_INITIALS.get(layout, "Frm")
+        return _TYPE_INITIALS.get(node.widget_type, node.widget_type[:3])
+
     def _node_visible(self, widget_id: str) -> bool:
         node = self.project.get_widget(widget_id)
         return bool(node.visible) if node is not None else True
@@ -1191,6 +1242,82 @@ class ObjectTreePanel(ctk.CTkFrame):
     # ------------------------------------------------------------------
     # Right-click context menu
     # ------------------------------------------------------------------
+    def _on_double_click(self, event) -> str | None:
+        iid = self.tree.identify_row(event.y)
+        if not iid or iid.startswith("doc:"):
+            return None
+        if self.tree.identify_column(event.x) != "#2":
+            return None
+        self._start_inline_rename(iid)
+        return "break"
+
+    def _start_inline_rename(self, iid: str) -> None:
+        import tkinter.font as tkfont
+        from app.core.project import WINDOW_ID
+        node = self.project.get_widget(iid)
+        if node is None or iid == WINDOW_ID:
+            return
+        try:
+            bbox = self.tree.bbox(iid, "name")
+        except tk.TclError:
+            return
+        if not bbox:
+            return
+        cell_x, cell_y, cell_w, cell_h = bbox
+
+        depth = self._node_depth(node)
+        has_children = bool(node.children)
+        expanded = node.id not in self._collapsed_ids
+        arrow = (ARROW_EXPANDED if expanded else ARROW_COLLAPSED) if has_children else ARROW_LEAF
+        prefix = INDENT_STR * depth + arrow
+        try:
+            prefix_px = tkfont.Font(family="Segoe UI", size=TREE_FONT_SIZE).measure(prefix)
+        except Exception:
+            prefix_px = 0
+
+        x = cell_x + prefix_px
+        w = max(40, cell_w - prefix_px - 4)
+        before = node.name or ""
+
+        entry = tk.Entry(
+            self.tree,
+            font=("Segoe UI", TREE_FONT_SIZE),
+            bg="#2d2d30", fg="#cccccc",
+            insertbackground="#cccccc",
+            relief="flat", bd=0,
+            highlightthickness=1,
+            highlightbackground="#3b8ed0",
+            highlightcolor="#3b8ed0",
+        )
+        entry.insert(0, before)
+        entry.select_range(0, tk.END)
+        entry.place(x=x, y=cell_y, width=w, height=cell_h)
+        entry.focus_set()
+
+        committed = [False]
+
+        def _commit(_e=None):
+            if committed[0]:
+                return
+            committed[0] = True
+            new_name = entry.get().strip()
+            entry.destroy()
+            if new_name and new_name != before:
+                self.project.rename_widget(iid, new_name)
+                self.project.history.push(
+                    RenameCommand(iid, before, new_name),
+                )
+
+        def _cancel(_e=None):
+            if committed[0]:
+                return
+            committed[0] = True
+            entry.destroy()
+
+        entry.bind("<Return>", _commit)
+        entry.bind("<Escape>", _cancel)
+        entry.bind("<FocusOut>", _commit)
+
     def _on_right_click(self, event) -> str:
         iid = self.tree.identify_row(event.y)
         if not iid:

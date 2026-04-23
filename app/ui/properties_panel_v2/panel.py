@@ -215,6 +215,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         self._name_entry = tk.Entry(
             self._name_row, textvariable=self._name_var,
             bg=VALUE_BG, fg="#cccccc", insertbackground="#cccccc",
+            disabledbackground=VALUE_BG, disabledforeground="#555555",
             font=("Segoe UI", 11),
             relief="flat", bd=0,
             highlightthickness=1,
@@ -223,6 +224,10 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         )
         self._name_entry.pack(side="left", fill="x", expand=True, padx=(0, 6))
         self._name_var.trace_add("write", self._on_name_var_write)
+        self._name_entry.bind(
+            "<Return>", lambda _e: self.tree.focus_set(),
+        )
+        self._attach_inline_context_menu(self._name_entry, prop=None)
 
     def _open_widget_docs(self) -> None:
         # Best-effort: open the widget's wiki page if we have a selection.
@@ -493,13 +498,24 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
     # ==================================================================
     # Rebuild
     # ==================================================================
+    def _clear_type_icon(self) -> None:
+        """CTkLabel._update_image is a no-op when _image is None, so
+        the underlying tk.Label keeps the old PhotoImage.  Clear it
+        directly via the internal _label attribute."""
+        self._type_icon_label.configure(image=None)
+        self._type_icon_label.image = None
+        inner = getattr(self._type_icon_label, "_label", None)
+        if inner is not None:
+            try:
+                inner.configure(image="")
+            except tk.TclError:
+                pass
+
     def _show_empty(self) -> None:
         self._clear_tree()
         self._type_label.configure(text="")
         self._id_label.configure(text="")
-        # CTk warns when image= isn't a CTkImage instance — pass
-        # None to clear instead of an empty string.
-        self._type_icon_label.configure(image=None)
+        self._clear_type_icon()
         self._suspend_name_trace = True
         try:
             if self._name_var is not None:
@@ -631,7 +647,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             self._type_icon_label.configure(image=icon)
             self._type_icon_label.image = icon  # retain ref
         else:
-            self._type_icon_label.configure(image=None)
+            self._clear_type_icon()
 
         self._suspend_name_trace = True
         try:

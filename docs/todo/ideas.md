@@ -231,6 +231,33 @@ Pick whichever best preserves preview = reality.
 
 ---
 
+## Open Core — monetization strategy
+
+Strategy confirmed 2026-04-23.
+
+### Free tier (Community Edition)
+Full visual editor, all current widgets, save/load, code export, MIT license, public on GitHub. Goal: adoption and traction. Export must stay free — without it the tool is just a toy and users leave.
+
+### Pro tier
+Paid features as a separate private repo / installable plugin module. Unlocked post-payment, never open-sourced.
+
+**Core Pro value: Custom Code Injection** — in-builder code editor that auto-connects logic (callbacks, event handlers, variables) to the visual layout. Professionals pay for this because it removes the main friction: building a UI visually, then hand-stitching the logic separately. See *Behavior / runtime methods → Option B* above for the technical design.
+
+Additional Pro candidates:
+- Advanced widgets (charts, data tables, tree view, etc.)
+- Bundled ready-made themes (no manual palette setup)
+- Priority support (email / chat) vs. community-only (GitHub / forum)
+
+### Repo structure
+- **CE repo** (public): only CE features, `.gitignore` enforced. MIT license.
+- **Pro repo** (private): plugin module delivered post-payment. Commercial license.
+- Clear separation: Pro plugin imports CE's public API only; CE never imports Pro.
+
+### Timing
+Grow user base first — CE + documentation + examples + GIF tutorials. Add Pro once real usage is visible. "Code Injection / Logic Binding" is the natural first paid feature; it's the most requested gap after the visual editor is polished.
+
+---
+
 ## Comparisons / competitive notes
 
 ### PyUIBuilder comparison
