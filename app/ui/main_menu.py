@@ -98,6 +98,7 @@ class MenuMixin:
         # ---- File ----
         file_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
         self._add_cmd(file_menu, "New...", self._on_new, icon="file-plus", accelerator="Ctrl+N")
+        self._add_cmd(file_menu, "New Untitled", self._on_new_untitled, icon="file-plus-corner")
         self._add_cmd(file_menu, "Open...", self._on_open, icon="folder-open", accelerator="Ctrl+O")
 
         self._recent_menu = tk.Menu(file_menu, tearoff=0, **MENU_STYLE)
@@ -106,7 +107,7 @@ class MenuMixin:
 
         file_menu.add_separator()
         self._add_cmd(file_menu, "Save", self._on_save, icon="save", accelerator="Ctrl+S")
-        self._add_cmd(file_menu, "Save As...", self._on_save_as, icon="save", accelerator="Ctrl+Shift+S")
+        self._add_cmd(file_menu, "Save As...", self._on_save_as, icon="save-all", accelerator="Ctrl+Shift+S")
         file_menu.add_separator()
         self._add_cmd(file_menu, "Export to Python...", self._on_export, icon="file-code")
         self._add_cmd(
@@ -118,7 +119,6 @@ class MenuMixin:
             self._on_run_script, icon="tv-minimal-play",
         )
         file_menu.add_separator()
-        self._add_cmd(file_menu, "Close", self._on_close_project, icon="x", accelerator="Ctrl+W")
         self._add_cmd(file_menu, "Quit", self._on_quit, icon="log-out", accelerator="Ctrl+Q")
         menubar.add_cascade(label="File", menu=file_menu)
 

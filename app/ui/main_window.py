@@ -117,6 +117,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         self.toolbar = Toolbar(
             self,
             on_new=self._on_new,
+            on_new_untitled=self._on_new_untitled,
             on_open=self._on_open,
             on_save=self._on_save,
             on_preview=self._on_preview,
@@ -510,6 +511,17 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             messagebox.showerror("Save failed", "Could not write the project file.", parent=self)
             return
         self._set_current_path(path)
+
+    def _on_new_untitled(self) -> None:
+        if not self._confirm_discard_if_dirty():
+            return
+        self.project.clear()
+        self.project.name = "Untitled"
+        self.project.active_document.name = "Untitled"
+        self._current_path = None
+        self._clear_dirty()
+        self._refresh_title()
+        self.project.event_bus.publish("project_renamed", self.project.name)
 
     def _on_close_project(self) -> None:
         self._on_new()
