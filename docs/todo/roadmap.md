@@ -72,6 +72,17 @@ Target fix (committed, must ship before v1.0):
 
 ## Phase 6.x — Widgets remaining
 
+### CTkScrollableFrame — container behavior
+
+Children dropped into CTkScrollableFrame via Object Tree appear in the model but are invisible on canvas. Root cause: CTkScrollableFrame embeds a tk.Canvas whose scroll region is only updated via `<Configure>` events on `self`; `place()` children don't trigger that event, so the scrollable canvas never "sees" them.
+
+Fix path:
+- After reparenting a child into ScrollableFrame, manually update `_parent_canvas` scroll region: call `widget._parent_canvas.configure(scrollregion=widget.bbox("all"))` or similar.
+- Or bind `<Configure>` on the inner scrollable frame to always sync scroll region.
+- May also need workspace to re-lift the inner child above the canvas layer.
+
+Simpler alternative: force ScrollableFrame children to use `pack()` or `grid()` (not `place()`) so CTk's geometry propagation updates the canvas naturally.
+
 ### CTkTabview + CTkScrollableFrame nesting
 
 Drop widgets into specific tabs / inside scrollable frame. Shared container-nesting story for composite widgets.

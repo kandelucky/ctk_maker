@@ -97,9 +97,9 @@ class CTkComboBoxDescriptor(WidgetDescriptor):
          "disabled_when": lambda p: not p.get("border_enabled")},
 
         # --- Values ------------------------------------------------------
-        {"name": "values", "type": "multiline", "label": "",
+        {"name": "values", "type": "segment_values", "label": "",
          "group": "Values", "row_label": "Values"},
-        {"name": "initial_value", "type": "multiline", "label": "",
+        {"name": "initial_value", "type": "segment_initial", "label": "",
          "group": "Values", "row_label": "Initial Value"},
 
         # --- Button Interaction ------------------------------------------
@@ -177,6 +177,7 @@ class CTkComboBoxDescriptor(WidgetDescriptor):
         result["values"] = [
             line for line in str(raw_values).splitlines() if line.strip()
         ] or [""]
+
 
         try:
             size = int(properties.get("font_size") or 13)

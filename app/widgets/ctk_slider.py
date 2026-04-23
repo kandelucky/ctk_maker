@@ -39,7 +39,7 @@ class CTkSliderDescriptor(WidgetDescriptor):
         # Rectangle
         "corner_radius": 8,
         "button_corner_radius": 8,
-        "button_length": 0,
+        "button_length": 1,
         "border_enabled": False,
         "border_width": 6,
         "border_color": "#565b5e",
@@ -76,14 +76,14 @@ class CTkSliderDescriptor(WidgetDescriptor):
         # --- Rectangle ---------------------------------------------------
         {"name": "corner_radius", "type": "number", "label": "",
          "group": "Rectangle",
-         "row_label": "Track Radius", "min": 0, "max": 50},
+         "row_label": "Track Radius", "min": 1, "max": 50},
         {"name": "button_corner_radius", "type": "number", "label": "",
          "group": "Rectangle",
          "row_label": "Button Radius", "min": 1, "max": 50},
         {"name": "button_length", "type": "number", "label": "",
          "group": "Rectangle",
-         "row_label": "Button Length", "min": 0,
-         "max": lambda p: max(0, int(p.get("width", 200)) // 2)},
+         "row_label": "Button Length", "min": 1,
+         "max": lambda p: max(1, int(p.get("width", 200)) // 2)},
         {"name": "border_enabled", "type": "boolean", "label": "",
          "group": "Rectangle", "subgroup": "Border",
          "row_label": "Enabled"},
@@ -135,6 +135,15 @@ class CTkSliderDescriptor(WidgetDescriptor):
     init_only_keys = {"orientation"}
     recreate_triggers = frozenset({"orientation"})
 
+    # Greyed-out colour overrides applied when the slider is set to
+    # disabled. CTk's own ``state="disabled"`` only blocks input; the
+    # widget keeps its full-colour look, which makes "interactable"
+    # off invisible at a glance. These match CTkButton's disabled
+    # text shade so the dim feel is consistent across widgets.
+    _DISABLED_TRACK = "#3a3a3a"
+    _DISABLED_PROGRESS = "#5a5a5a"
+    _DISABLED_BUTTON = "#6a6a6a"
+
     @classmethod
     def transform_properties(cls, properties: dict) -> dict:
         result = {
@@ -142,10 +151,17 @@ class CTkSliderDescriptor(WidgetDescriptor):
             if k not in cls._NODE_ONLY_KEYS
             and k not in cls.init_only_keys
         }
-        result["state"] = (
-            "normal" if properties.get("button_enabled", True)
-            else "disabled"
-        )
+        enabled = bool(properties.get("button_enabled", True))
+        result["state"] = "normal" if enabled else "disabled"
+        if not enabled:
+            # Override the colour kwargs so CTk paints the slider in
+            # a clearly disabled palette. button_hover_color stays in
+            # sync with button_color so accidental hover doesn't
+            # flash a fresher shade on the dimmed knob.
+            result["fg_color"] = cls._DISABLED_TRACK
+            result["progress_color"] = cls._DISABLED_PROGRESS
+            result["button_color"] = cls._DISABLED_BUTTON
+            result["button_hover_color"] = cls._DISABLED_BUTTON
         if not properties.get("border_enabled"):
             result["border_width"] = 0
         # Steps = 0 means "continuous" — pass None so CTk treats it
@@ -193,6 +209,7 @@ class CTkSliderDescriptor(WidgetDescriptor):
 
     @classmethod
     def export_kwarg_overrides(cls, properties: dict) -> dict:
+        overrides: dict = {}
         # CTkSlider crashes with ZeroDivisionError when the user drags
         # it if `number_of_steps=0` is passed; the runtime replaces 0
         # with None in `transform_properties`, the exporter now does
@@ -202,8 +219,15 @@ class CTkSliderDescriptor(WidgetDescriptor):
         except (TypeError, ValueError):
             steps = 0
         if steps <= 0:
-            return {"number_of_steps": None}
-        return {}
+            overrides["number_of_steps"] = None
+        # Mirror the runtime grey-out so the exported app shows the
+        # same disabled palette the builder canvas does.
+        if not properties.get("button_enabled", True):
+            overrides["fg_color"] = cls._DISABLED_TRACK
+            overrides["progress_color"] = cls._DISABLED_PROGRESS
+            overrides["button_color"] = cls._DISABLED_BUTTON
+            overrides["button_hover_color"] = cls._DISABLED_BUTTON
+        return overrides
 
     @classmethod
     def export_state(cls, var_name: str, properties: dict) -> list[str]:

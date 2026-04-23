@@ -6,6 +6,18 @@
 
 ## 2026-04 — Area QA passes + refactors
 
+- **v0.0.15.23** (2026-04-22) — Area 7 batch 2: SegmentedButton / Tabview / ComboBox / OptionMenu / ScrollableFrame + small fixes across widgets:
+  - **CTkSegmentedButton / CTkTabview / CTkComboBox / CTkOptionMenu** — `values` / `tab_names` fields switched from multiline text editor to new `segment_values` ptype (single "Edit..." button opens a scrollable +/- table dialog via `SegmentValuesDialog`). `initial_value` / `initial_tab` fields switched to `segment_initial` ptype (dynamic dropdown reading sibling values prop at popup time).
+  - **CTkSegmentedButton** post-edit selection fix — `_bind_widget_events` is now idempotent (`_ws_bound_nid` flag); workspace re-walks children after every `configure()` so CTk's internally-rebuilt segment buttons regain event handlers.
+  - **CTkSegmentedButton** icon → `panel-left-right-dashed`.
+  - **CTkTabview** — `initial_tab` applied via `widget.set()` in `apply_state` + emitted in `export_state`. Tab names guard (last tab undeletable in dialog).
+  - **CTkSlider** — disabled visual (grey color override for track/progress/button in `transform_properties` + `export_kwarg_overrides`). corner_radius / button_length / button_corner_radius min → 1. button_length default → 1.
+  - **CTkProgressBar** — corner_radius min → 1.
+  - **CTkEntry** — disabled visual (dim fg/text/border). Focus-lost bug in preview/export fixed: `_setup_text_clipboard` now also binds `<Button-1>` globally to defer `root.focus_set()` on non-text clicks, triggering CTk's `_entry_focus_out` → placeholder restore.
+  - **CTkFrame / layouts** — `layout_spacing` hidden (not just dimmed) for `place` layout. CTkScrollableFrame: Layout group removed; scrollbar track color clearable.
+  - **New files**: `tools/segment_values_dialog.py`, `app/ui/properties_panel_v2/editors/segment_values.py`, `panel-left-right-dashed.png`.
+  - **Inspector right-click context menu** extended to `segment_values` editor + `segment_initial_options` reads both `values` and `tab_names` for dynamic dropdown.
+
 - **v0.0.15.22** (2026-04-22) — CheckBox / RadioButton / Switch text alignment + radio group export + small fixes:
   - **4-way text position + spacing** for CheckBox / RadioButton / Switch (Inspector → Text → Text Position dropdown left/right/top/bottom + Text Spacing 0–100). Re-grids CTk's internal `_canvas` / `_text_label` / `_bg_canvas` (private reach — same trade-off as the Button text-hover work). bg always covers the full widget area via `rowspan=3, columnspan=3` so top/bottom layouts don't leave a misaligned background. Cursor preserved (snapshot outer cursor before re-grid, propagate to children after). Re-grid is gated on actual position/spacing change so unrelated property edits don't disturb cursor state.
   - **Exporter helper** `_align_text_label(widget, position, spacing)` emitted once per project that uses the feature; covers all three widget types via a shared internal layout. New `text_position` ptype + `TEXT_POSITION_OPTIONS` constant + format_utils + editors registry.

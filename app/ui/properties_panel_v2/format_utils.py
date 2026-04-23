@@ -55,9 +55,13 @@ def format_value(ptype: str, value, prop: dict) -> str:
         return LAYOUT_DISPLAY_NAMES.get(str(value), str(value or "—"))
     if ptype in LAYOUT_ENUM_TYPES:
         return str(value) if value not in (None, "") else "—"
-    if ptype in ("multiline", "image"):
-        # Shown via overlay label, not the tree cell.
+    if ptype in ("multiline", "image", "segment_values"):
+        # Shown via overlay label / button, not the tree cell.
         return ""
+    if ptype == "segment_initial":
+        # Render the picked segment text in the cell; the dropdown
+        # popup is the actual editor.
+        return str(value) if value not in (None, "") else "—"
     if value is None:
         return ""
     return str(value)

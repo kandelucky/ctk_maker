@@ -883,6 +883,23 @@ def _text_clipboard_helper_lines() -> list[str]:
         '    for cls in ("Entry", "Text"):',
         '        root.bind_class(cls, "<Button-3>", _popup, add="+")',
         '        root.bind_class(cls, "<Control-KeyPress>", _ctrl, add="+")',
+        "    # Clicks on non-text widgets (Frame, root, Button, etc.)",
+        "    # force focus to the root so any previously-focused",
+        "    # Entry / Text fires FocusOut — that's what CTk relies on",
+        "    # to restore its placeholder when the field is empty.",
+        "    # Without this the caret stays blinking in an Entry even",
+        "    # after the user clicked somewhere else.",
+        "    def _focus_restore(event):",
+        "        target = event.widget",
+        "        if isinstance(target, (tk.Entry, tk.Text)):",
+        "            return",
+        "        # Defer by one tick so the clicked widget's own focus",
+        "        # handling runs first; if it takes focus, we stay out",
+        "        # of its way. Otherwise focus lands on the root and",
+        "        # any Entry picks up its FocusOut.",
+        "        try: root.after(1, root.focus_set)",
+        "        except Exception: pass",
+        '    root.bind_all("<Button-1>", _focus_restore, add="+")',
     ]
 
 

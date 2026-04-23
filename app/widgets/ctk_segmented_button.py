@@ -84,9 +84,14 @@ class CTkSegmentedButtonDescriptor(WidgetDescriptor):
          "disabled_when": lambda p: not p.get("border_enabled")},
 
         # --- Values ------------------------------------------------------
-        {"name": "values", "type": "multiline", "label": "",
+        # Custom editor: the value cell + ✎ button both open a +/-
+        # table dialog instead of the generic multiline text editor.
+        {"name": "values", "type": "segment_values", "label": "",
          "group": "Values", "row_label": "Values"},
-        {"name": "initial_value", "type": "multiline", "label": "",
+        # Dynamic dropdown — options come from the current ``values``
+        # list, not a hardcoded enum. Stored as the segment text
+        # (same shape the old multiline editor produced).
+        {"name": "initial_value", "type": "segment_initial", "label": "",
          "group": "Values", "row_label": "Initial Value"},
 
         # --- Button Interaction ------------------------------------------

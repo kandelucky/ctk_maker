@@ -110,7 +110,7 @@ CATALOG: tuple[WidgetGroup, ...] = (
         WidgetEntry("CTkCheckBox", "Check Box", "square-check"),
         WidgetEntry("CTkRadioButton", "Radio Button", "circle-dot"),
         WidgetEntry("CTkSwitch", "Switch", "toggle-left"),
-        WidgetEntry("CTkSegmentedButton", "Segmented Button", "rows-3"),
+        WidgetEntry("CTkSegmentedButton", "Segmented Button", "panel-left-right-dashed"),
     )),
     WidgetGroup("Inputs", (
         WidgetEntry("CTkEntry", "Entry", "text-cursor-input"),

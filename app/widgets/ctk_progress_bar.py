@@ -57,7 +57,7 @@ class CTkProgressBarDescriptor(WidgetDescriptor):
         # --- Rectangle ---------------------------------------------------
         {"name": "corner_radius", "type": "number", "label": "",
          "group": "Rectangle",
-         "row_label": "Corner Radius", "min": 0, "max": 50},
+         "row_label": "Corner Radius", "min": 1, "max": 50},
         {"name": "border_enabled", "type": "boolean", "label": "",
          "group": "Rectangle", "subgroup": "Border",
          "row_label": "Enabled"},

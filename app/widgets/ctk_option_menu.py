@@ -83,9 +83,9 @@ class CTkOptionMenuDescriptor(WidgetDescriptor):
          )},
 
         # --- Values ------------------------------------------------------
-        {"name": "values", "type": "multiline", "label": "",
+        {"name": "values", "type": "segment_values", "label": "",
          "group": "Values", "row_label": "Values"},
-        {"name": "initial_value", "type": "multiline", "label": "",
+        {"name": "initial_value", "type": "segment_initial", "label": "",
          "group": "Values", "row_label": "Initial Value"},
 
         # --- Button Interaction ------------------------------------------

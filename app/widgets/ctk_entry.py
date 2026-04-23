@@ -142,6 +142,17 @@ class CTkEntryDescriptor(WidgetDescriptor):
         "font_underline", "font_overstrike",
     }
 
+    # Greyed-out palette for state="disabled". CTk's own disabled
+    # state only blocks input; the field keeps its full colour
+    # scheme, so an Entry with existing text looks identical to an
+    # enabled one. These overrides make the disabled state readable
+    # at a glance. Readonly stays styled like a normal field
+    # (expected behaviour — the user should still be able to read
+    # and select the text copy-wise).
+    _DISABLED_FG = "#2a2a2a"
+    _DISABLED_TEXT = "#606060"
+    _DISABLED_BORDER = "#444444"
+
     @classmethod
     def transform_properties(cls, properties: dict) -> dict:
         result = {
@@ -167,6 +178,16 @@ class CTkEntryDescriptor(WidgetDescriptor):
 
         if not properties.get("border_enabled"):
             result["border_width"] = 0
+
+        # Dim the Entry when state=disabled so the user can tell at
+        # a glance that it's not editable. Keep readonly looking
+        # normal — it's supposed to read like a regular field that
+        # just happens to be locked from typing.
+        if result.get("state") == "disabled":
+            result["fg_color"] = cls._DISABLED_FG
+            result["text_color"] = cls._DISABLED_TEXT
+            if properties.get("border_enabled"):
+                result["border_color"] = cls._DISABLED_BORDER
 
         try:
             size = int(properties.get("font_size") or 13)
@@ -242,6 +263,25 @@ class CTkEntryDescriptor(WidgetDescriptor):
                     widget.configure(state=current_state)
                 except Exception:
                     pass
+
+    @classmethod
+    def export_kwarg_overrides(cls, properties: dict) -> dict:
+        # Mirror the runtime disabled palette so the exported app
+        # renders the same dimmed look the builder canvas shows.
+        readonly = bool(properties.get("readonly"))
+        disabled = (
+            not readonly
+            and not properties.get("button_enabled", True)
+        )
+        if not disabled:
+            return {}
+        overrides = {
+            "fg_color": cls._DISABLED_FG,
+            "text_color": cls._DISABLED_TEXT,
+        }
+        if properties.get("border_enabled"):
+            overrides["border_color"] = cls._DISABLED_BORDER
+        return overrides
 
     @classmethod
     def export_state(cls, var_name: str, properties: dict) -> list[str]:

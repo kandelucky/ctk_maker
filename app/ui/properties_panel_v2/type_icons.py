@@ -15,7 +15,7 @@ _TYPE_ICON_NAMES = {
     "CTkComboBox": "chevrons-up-down",
     "CTkOptionMenu": "menu",
     "CTkSlider": "sliders-horizontal",
-    "CTkSegmentedButton": "rows-3",
+    "CTkSegmentedButton": "panel-left-right-dashed",
     "CTkScrollableFrame": "scroll-text",
     "CTkTabview": "layout-panel-top",
     "CTkProgressBar": "loader",

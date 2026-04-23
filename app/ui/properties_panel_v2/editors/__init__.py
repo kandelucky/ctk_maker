@@ -14,6 +14,7 @@ from .enum import EnumEditor
 from .image import ImageEditor
 from .multiline import MultilineEditor
 from .number import NumberEditor
+from .segment_values import SegmentValuesEditor
 
 _FALLBACK = Editor()
 _ENUM = EnumEditor()
@@ -34,6 +35,8 @@ _EDITORS: dict[str, Editor] = {
     "grid_sticky": _ENUM,
     "wrap": _ENUM,
     "text_position": _ENUM,
+    "segment_initial": _ENUM,
+    "segment_values": SegmentValuesEditor(),
 }
 
 

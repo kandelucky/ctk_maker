@@ -36,3 +36,15 @@ Neither matches user observation cleanly, so one of the assumptions (cursor delt
 **Root cause:** `CTkEntryDescriptor.apply_state` was calling `widget.delete(0, "end")` unconditionally on every widget create. CTk's placeholder is literally the entry's text styled with `placeholder_text_color`, gated by the internal `_placeholder_text_active` flag. The blanket `delete()` wiped the placeholder text, and the flag never re-armed.
 
 **Fix (v0.0.15.19):** early-return from `apply_state` when `initial_value` is empty — leave the widget untouched so CTk's post-init placeholder activation survives.
+
+---
+
+## 🐛 CTkScrollableFrame — editor/preview size mismatch at 1:1 zoom
+
+**Symptom:** at 1:1 zoom, a ScrollableFrame's visual size on the builder canvas differs from the same widget in preview / exported runtime. Changing `width` / `height` in the Inspector doesn't visibly grow/shrink the widget as expected.
+
+**Root cause hypothesis:** CTk's `CTkScrollableFrame.configure(width=..., height=...)` routes through `_set_dimensions`, which only resizes the INNER `_parent_canvas`; the OUTER `_parent_frame` (our `canvas_anchor`) sizes itself from its children + scrollbar + label, so its rendered box is NOT the requested dimensions. The workspace pins the canvas window via `canvas.itemconfigure(window_id, width=lw*zoom, height=lh*zoom)` — if that's smaller than parent_frame's natural size, the widget overflows or clips; if larger, empty space appears around it. Preview has no canvas window constraint, so the widget renders at its natural size, which can differ by scrollbar width (~14 px) plus padding.
+
+**Next step:** measure empirically. Drop a 300×200 ScrollableFrame at 1:1, compare `anchor_widget.winfo_reqwidth()` against the configured 300. Decide whether to (a) subtract scrollbar width when setting `_desired_width` so the OUTER container hits the target, or (b) size the canvas window from the widget's actual reqwidth/reqheight after render.
+
+**Not blocking for now** — widget still drops + previews + exports; only the 1:1 visual matches exactly after the fix.

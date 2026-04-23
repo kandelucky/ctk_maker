@@ -15,15 +15,6 @@ Groups shown in the Properties panel, in order:
 import customtkinter as ctk
 
 from app.widgets.base import WidgetDescriptor
-from app.widgets.layout_schema import (
-    DEFAULT_LAYOUT_TYPE,
-    LAYOUT_CONTAINER_DEFAULTS,
-    LAYOUT_GRID_COLS_ROW,
-    LAYOUT_GRID_ROWS_ROW,
-    LAYOUT_SPACING_ROW,
-    LAYOUT_TYPE_ROW,
-    normalise_layout_type,
-)
 
 
 # builder label_text_align → CTkScrollableFrame label_anchor
@@ -59,11 +50,6 @@ class CTkScrollableFrameDescriptor(WidgetDescriptor):
         "scrollbar_button_hover_color": "#4a4a4a",
         # Main colors
         "fg_color": "#2b2b2b",
-        # Layout — geometry manager used for THIS frame's children
-        # at export time. ``place`` keeps absolute x/y; vbox/hbox/grid
-        # also drive canvas rendering (Stage 3.1 onward).
-        "layout_type": DEFAULT_LAYOUT_TYPE,
-        **LAYOUT_CONTAINER_DEFAULTS,
     }
 
     property_schema = [
@@ -113,33 +99,20 @@ class CTkScrollableFrameDescriptor(WidgetDescriptor):
         {"name": "orientation", "type": "orientation", "label": "",
          "group": "Scrollbar", "row_label": "Orientation"},
         {"name": "scrollbar_fg_color", "type": "color", "label": "",
-         "group": "Scrollbar", "row_label": "Track"},
+         "group": "Scrollbar", "row_label": "Track",
+         "clearable": True, "clear_value": "transparent"},
         {"name": "scrollbar_button_color", "type": "color", "label": "",
          "group": "Scrollbar", "row_label": "Thumb"},
         {"name": "scrollbar_button_hover_color", "type": "color", "label": "",
          "group": "Scrollbar", "row_label": "Thumb Hover"},
 
         # --- Main Colors -------------------------------------------------
-        # Clearable only on Layout Frames (vbox / hbox / grid) — plain
-        # place-based Frames stay filled.
         {"name": "fg_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Frame Background",
-         "clearable": lambda p: normalise_layout_type(
-             p.get("layout_type", "place"),
-         ) != "place",
-         "clear_value": "transparent"},
-
-        # --- Layout (children manager) -----------------------------------
-        LAYOUT_TYPE_ROW,
-        LAYOUT_SPACING_ROW,
-        LAYOUT_GRID_ROWS_ROW,
-        LAYOUT_GRID_COLS_ROW,
+         "group": "Main Colors", "row_label": "Frame Background"},
     ]
 
     _NODE_ONLY_KEYS = {
         "x", "y", "border_enabled", "label_text_align",
-        "layout_type", "layout_spacing",
-        "grid_rows", "grid_cols",
     }
     init_only_keys = {"orientation"}
     recreate_triggers = frozenset({"orientation"})

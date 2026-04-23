@@ -51,10 +51,27 @@ class CommitMixin:
     def _popup_enum_menu_at(
         self, pname: str, ptype: str, x_root: int, y_root: int,
     ) -> None:
-        options = enum_options_for(ptype)
+        node = self.project.get_widget(self.current_id)
+        # Dynamic enums — options computed from the current widget's
+        # data, not a static list. ``segment_initial`` reads the
+        # sibling ``values`` prop so the dropdown reflects whatever
+        # segments the user just typed in the table editor.
+        if ptype == "segment_initial":
+            options = self._segment_initial_options(node)
+            if not options:
+                # Empty values → show a single disabled hint instead
+                # of an empty menu the user can't interact with.
+                menu = tk.Menu(self, tearoff=0, **MENU_STYLE)
+                menu.add_command(label="(no segments)", state="disabled")
+                try:
+                    menu.tk_popup(x_root, y_root)
+                finally:
+                    menu.grab_release()
+                return
+        else:
+            options = enum_options_for(ptype)
         if not options:
             return
-        node = self.project.get_widget(self.current_id)
         current = node.properties.get(pname) if node else None
         menu = tk.Menu(self, tearoff=0, **MENU_STYLE)
         # tk.Menu drops PhotoImage refs as soon as the caller scope
@@ -293,6 +310,43 @@ class CommitMixin:
         dialog.wait_window()
         if dialog.result is not None:
             self._commit_prop(pname, dialog.result)
+
+    def _segment_initial_options(self, node) -> list[str]:
+        """Read the current node's segment/tab names and split into
+        dropdown options. Checks ``values`` (CTkSegmentedButton) and
+        ``tab_names`` (CTkTabview) — whichever is present.
+        """
+        if node is None:
+            return []
+        raw = (
+            node.properties.get("values")
+            or node.properties.get("tab_names")
+            or ""
+        )
+        return [
+            line for line in str(raw).splitlines() if line.strip()
+        ]
+
+    def _open_segment_values_editor(self, pname: str) -> None:
+        """Table-based +/- editor for ``CTkSegmentedButton.values``.
+        Stored on the node as the same newline-separated string the
+        old multiline editor produced — exporter / runtime are
+        unchanged. Empty rows are dropped on save.
+        """
+        from tools.segment_values_dialog import SegmentValuesDialog
+        node = self.project.get_widget(self.current_id)
+        if node is None:
+            return
+        current = node.properties.get(pname) or ""
+        values = [
+            line for line in str(current).splitlines() if line.strip()
+        ]
+        dialog = SegmentValuesDialog(
+            self.winfo_toplevel(), "Edit Segments", values,
+        )
+        dialog.wait_window()
+        if dialog.result is not None:
+            self._commit_prop(pname, "\n".join(dialog.result))
 
     # ------------------------------------------------------------------
     # Commit path

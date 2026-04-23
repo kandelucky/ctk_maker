@@ -1008,6 +1008,13 @@ class Workspace(ctk.CTkFrame):
             log_error(
                 f"workspace._on_property_changed widget.configure {prop_name}",
             )
+        # Re-walk bindings — composites like CTkSegmentedButton tear
+        # down inner children inside ``configure(values=…)`` (and
+        # transform_properties always passes the full kwarg set, so
+        # this fires on every property edit, not just values). The
+        # idempotent ``_bind_widget_events`` skips already-bound
+        # widgets and only attaches handlers to brand-new children.
+        self._bind_widget_events(widget, widget_id)
         text_label = getattr(widget, "_text_label", None)
         if text_label is not None:
             try:
@@ -1146,41 +1153,60 @@ class Workspace(ctk.CTkFrame):
         # NotImplementedError from `.bind()` because they compose
         # multiple inner clickable widgets — the children loop below
         # is what actually wires the handlers for those.
-        def _safe_bind(seq, cb):
-            try:
-                widget.bind(seq, cb, add="+")
-            except NotImplementedError:
-                pass
-            except tk.TclError:
-                pass
+        #
+        # Idempotent: tagged widgets are skipped on re-walk so callers
+        # can safely re-invoke after a CTk configure that rebuilt
+        # internal children (CTkSegmentedButton tears down its segment
+        # buttons every time `values=` is reconfigured — and the
+        # generic configure path passes `values` on every property
+        # edit, so without this re-walk the new segments would have
+        # no workspace bindings and the widget would look "dead" on
+        # the canvas after any property change).
+        already_bound = getattr(widget, "_ws_bound_nid", None) == nid
+        if not already_bound:
+            def _safe_bind(seq, cb):
+                try:
+                    widget.bind(seq, cb, add="+")
+                except NotImplementedError:
+                    pass
+                except tk.TclError:
+                    pass
 
-        _safe_bind(
-            "<ButtonPress-1>",
-            lambda e, n=nid: self.drag_controller.on_press(e, n),
-        )
-        _safe_bind(
-            "<B1-Motion>",
-            lambda e, n=nid: self.drag_controller.on_motion(e, n),
-        )
-        _safe_bind(
-            "<ButtonRelease-1>",
-            lambda e, n=nid: self.drag_controller.on_release(e, n),
-        )
-        _safe_bind("<Button-2>", self.controls.on_middle_press)
-        _safe_bind("<B2-Motion>", self.controls.on_middle_motion)
-        _safe_bind("<ButtonRelease-2>", self.controls.on_middle_release)
-        # Ctrl+wheel forwards to ZoomController so zoom works even
-        # when the pointer happens to hover a widget instead of empty
-        # canvas area.
-        _safe_bind("<Control-MouseWheel>", self.zoom.handle_ctrl_wheel)
-        _safe_bind(
-            "<Button-3>",
-            lambda e, n=nid: self._on_widget_right_click(e, n),
-        )
-        try:
-            widget.configure(cursor="fleur")
-        except (tk.TclError, NotImplementedError, ValueError):
-            pass
+            _safe_bind(
+                "<ButtonPress-1>",
+                lambda e, n=nid: self.drag_controller.on_press(e, n),
+            )
+            _safe_bind(
+                "<B1-Motion>",
+                lambda e, n=nid: self.drag_controller.on_motion(e, n),
+            )
+            _safe_bind(
+                "<ButtonRelease-1>",
+                lambda e, n=nid: self.drag_controller.on_release(e, n),
+            )
+            _safe_bind("<Button-2>", self.controls.on_middle_press)
+            _safe_bind("<B2-Motion>", self.controls.on_middle_motion)
+            _safe_bind(
+                "<ButtonRelease-2>", self.controls.on_middle_release,
+            )
+            # Ctrl+wheel forwards to ZoomController so zoom works even
+            # when the pointer happens to hover a widget instead of
+            # empty canvas area.
+            _safe_bind(
+                "<Control-MouseWheel>", self.zoom.handle_ctrl_wheel,
+            )
+            _safe_bind(
+                "<Button-3>",
+                lambda e, n=nid: self._on_widget_right_click(e, n),
+            )
+            try:
+                widget.configure(cursor="fleur")
+            except (tk.TclError, NotImplementedError, ValueError):
+                pass
+            widget._ws_bound_nid = nid
+        # Always recurse — even if THIS widget is already bound, a
+        # composite CTk widget may have spawned brand-new children
+        # since the last walk that still need their handlers.
         for child in widget.winfo_children():
             self._bind_widget_events(child, nid)
 

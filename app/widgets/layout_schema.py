@@ -70,7 +70,10 @@ LAYOUT_SPACING_ROW = {
     "row_label": "Spacing",
     "min": 0,
     "max": 200,
-    "disabled_when": lambda p: normalise_layout_type(
+    # Hidden — not just dimmed — when the parent uses ``place``,
+    # because the value is meaningless there. Keeps the Inspector
+    # tidy on plain Frames + the document-level Layout group.
+    "hidden_when": lambda p: normalise_layout_type(
         p.get("layout_type", "place"),
     ) == "place",
 }

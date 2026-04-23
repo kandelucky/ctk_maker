@@ -45,6 +45,7 @@ class CTkTabviewDescriptor(WidgetDescriptor):
         "border_color": "#565b5e",
         # Tabs
         "tab_names": "Tab 1\nTab 2\nTab 3",
+        "initial_tab": "",
         # Button Interaction
         "button_enabled": True,
         # Main colors
@@ -93,8 +94,10 @@ class CTkTabviewDescriptor(WidgetDescriptor):
          "disabled_when": lambda p: not p.get("border_enabled")},
 
         # --- Tabs --------------------------------------------------------
-        {"name": "tab_names", "type": "multiline", "label": "",
+        {"name": "tab_names", "type": "segment_values", "label": "",
          "group": "Tabs", "row_label": "Tab Names"},
+        {"name": "initial_tab", "type": "segment_initial", "label": "",
+         "group": "Tabs", "row_label": "Initial Tab"},
 
         # --- Button Interaction ------------------------------------------
         {"name": "button_enabled", "type": "boolean", "label": "",
@@ -127,6 +130,7 @@ class CTkTabviewDescriptor(WidgetDescriptor):
 
     _NODE_ONLY_KEYS = {
         "x", "y", "border_enabled", "tab_names", "button_enabled",
+        "initial_tab",
     }
 
     @classmethod
@@ -165,13 +169,13 @@ class CTkTabviewDescriptor(WidgetDescriptor):
 
         Diffs the desired list against `widget._name_list` so live
         edits to the Tab Names property add/remove only what changed.
+        Sets the active tab to `initial_tab` when provided.
         """
         desired = cls._parse_tab_names(properties) or ["Tab 1"]
         try:
             existing = list(getattr(widget, "_name_list", []) or [])
         except Exception:
             existing = []
-        # Remove tabs that are no longer in `desired`.
         for name in list(existing):
             if name not in desired:
                 try:
@@ -180,7 +184,6 @@ class CTkTabviewDescriptor(WidgetDescriptor):
                     log_error(
                         f"CTkTabviewDescriptor.apply_state delete {name!r}",
                     )
-        # Add tabs that didn't exist yet, in the user-declared order.
         current = list(getattr(widget, "_name_list", []) or [])
         for name in desired:
             if name not in current:
@@ -190,10 +193,20 @@ class CTkTabviewDescriptor(WidgetDescriptor):
                     log_error(
                         f"CTkTabviewDescriptor.apply_state add {name!r}",
                     )
+        initial = (properties.get("initial_tab") or "").strip()
+        if initial and initial in desired:
+            try:
+                widget.set(initial)
+            except Exception:
+                pass
 
     @classmethod
     def export_state(cls, var_name: str, properties: dict) -> list[str]:
-        return [
+        lines = [
             f"{var_name}.add({name!r})"
             for name in cls._parse_tab_names(properties)
         ]
+        initial = (properties.get("initial_tab") or "").strip()
+        if initial and initial in cls._parse_tab_names(properties):
+            lines.append(f"{var_name}.set({initial!r})")
+        return lines
