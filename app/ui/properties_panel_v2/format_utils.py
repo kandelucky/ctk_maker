@@ -35,14 +35,13 @@ def format_value(ptype: str, value, prop: dict) -> str:
     """Render a schema value as the string shown in the tree cell."""
     if ptype == "color":
         # Leading spaces reserve room for the swatch overlay.
-        # "transparent" is CTk's sentinel for "no fill" — the builder
-        # doesn't truly render transparency (CTk fakes it with the
-        # parent's fg_color), so surface the clearer label "none" to
-        # the user while keeping the stored value compatible.
+        # None and "transparent" both surface as "none" so a cleared
+        # clearable field reads clearly instead of staying blank.
+        if value is None or str(value) == "transparent":
+            return "              none"
         if not value:
             return ""
-        display = "none" if str(value) == "transparent" else str(value)
-        return f"              {display}"
+        return f"              {str(value)}"
     if ptype == "boolean":
         return "☑" if value else "☐"
     if ptype == "anchor":

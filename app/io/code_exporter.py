@@ -848,9 +848,7 @@ def _text_clipboard_helper_lines() -> list[str]:
     """
     return [
         "def _setup_text_clipboard(root):",
-        '    """Right-click menu + Ctrl shortcut router for every',
-        "    tk.Entry / tk.Text widget. Works on Latin AND non-Latin",
-        '    keyboard layouts (Georgian, Russian, …)."""',
+        '    """Add right-click menu and keyboard shortcuts to all text fields."""',
         "    import tkinter as tk",
         "    def _popup(event):",
         "        widget = event.widget",

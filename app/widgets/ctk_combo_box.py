@@ -150,6 +150,9 @@ class CTkComboBoxDescriptor(WidgetDescriptor):
     _NODE_ONLY_KEYS = {
         "x", "y",
         "button_enabled", "border_enabled", "initial_value",
+        # Cleanup: dropdown_width was briefly added then removed
+        # (not a valid CTkComboBox kwarg). Strip from old project files.
+        "dropdown_width",
     }
     _FONT_KEYS = {
         "font_size", "font_bold", "font_italic",

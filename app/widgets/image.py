@@ -78,7 +78,7 @@ class ImageDescriptor(WidgetDescriptor):
         # knob that did nothing.
         {"name": "image_color", "type": "color", "label": "",
          "group": "Tint", "row_label": "Normal Color",
-         "clearable": True, "clear_value": None,
+         "clearable": True, "clear_value": "transparent",
          "disabled_when": lambda p: not p.get("image")},
 
         # --- Main Colors -------------------------------------------------

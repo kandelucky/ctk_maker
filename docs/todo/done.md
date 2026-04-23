@@ -6,6 +6,14 @@
 
 ## 2026-04 — Area QA passes + refactors
 
+- **v0.0.15.24** (2026-04-22) — Image QA + color editor polish:
+  - **Image widget** — Area 7 QA passed. All 7 checks: palette drop, image picker + clear, preserve_aspect, tint, fg_color transparent, missing path placeholder, export as CTkLabel.
+  - **Tint Color / image_color clear UX**: `clear_value` changed `None` → `"transparent"` (same as `fg_color`) so the ✕ button dims and shows "none" when no tint is set. Same fix applied to CTkButton's `image_color` / `image_color_disabled`.
+  - **`_is_cleared` fix**: `None` and `"transparent"` are now treated as equivalent cleared sentinels so `_is_cleared(None, "transparent")` returns `True`. ✕ cursor changes `"hand2"` ↔ `"arrow"` based on cleared state; click is a no-op when already cleared.
+  - **`format_value` for color**: `None` now surfaces as `"              none"` matching `"transparent"`. Empty string still returns `""`.
+  - **Exported clipboard helper docstring** simplified.
+  - **ComboBox `dropdown_width` cleanup**: added to `_NODE_ONLY_KEYS` so old project files that accidentally stored it don't crash on open.
+
 - **v0.0.15.23** (2026-04-22) — Area 7 batch 2: SegmentedButton / Tabview / ComboBox / OptionMenu / ScrollableFrame + small fixes across widgets:
   - **CTkSegmentedButton / CTkTabview / CTkComboBox / CTkOptionMenu** — `values` / `tab_names` fields switched from multiline text editor to new `segment_values` ptype (single "Edit..." button opens a scrollable +/- table dialog via `SegmentValuesDialog`). `initial_value` / `initial_tab` fields switched to `segment_initial` ptype (dynamic dropdown reading sibling values prop at popup time).
   - **CTkSegmentedButton** post-edit selection fix — `_bind_widget_events` is now idempotent (`_ws_bound_nid` flag); workspace re-walks children after every `configure()` so CTk's internally-rebuilt segment buttons regain event handlers.

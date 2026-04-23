@@ -42,12 +42,21 @@ def _swatch_bg(value) -> str:
     return text
 
 
+_CLEARED_SENTINELS = frozenset({None, "", "transparent"})
+
+
 def _is_cleared(value, clear_value) -> bool:
-    """True when the current value matches the schema's clear sentinel
-    — either literally equal, or both empty-like (``None`` / ``""``)."""
+    """True when the current value matches the schema's clear sentinel.
+
+    ``None`` and ``"transparent"`` are treated as equivalent cleared
+    states so that a field whose clear_value is ``"transparent"``
+    shows the ✕ as inactive when the stored value is still ``None``
+    (e.g. a freshly-dropped widget whose optional tint was never set).
+    """
     if value == clear_value:
         return True
-    if not value and not clear_value:
+    # Both "empty-like" and both sentinels → cleared.
+    if value in _CLEARED_SENTINELS and clear_value in _CLEARED_SENTINELS:
         return True
     return False
 
@@ -95,29 +104,35 @@ class ColorEditor(Editor):
         self, panel, iid: str, pname: str, prop: dict, value,
     ) -> None:
         clear_value = prop.get("clear_value")
+        cleared = _is_cleared(value, clear_value)
         btn = tk.Label(
             panel.tree, text="✕", bg=VALUE_BG,
             fg=self._clear_fg(value, clear_value),
             font=("Segoe UI", 9),
-            cursor="hand2",
+            cursor="arrow" if cleared else "hand2",
             highlightthickness=0, bd=0,
         )
-        btn.bind(
-            "<Button-1>",
-            lambda _e, p=pname, cv=clear_value:
-                panel._commit_prop(p, cv),
-        )
-        btn.bind(
-            "<Enter>",
-            lambda _e, w=btn: w.configure(fg=TREE_FG),
-        )
-        btn.bind(
-            "<Leave>",
-            lambda _e, w=btn, p=pname, cv=clear_value:
-                w.configure(fg=self._clear_fg(
-                    self._read_value(panel, p), cv,
-                )),
-        )
+
+        def _on_click(_e, p=pname, cv=clear_value, w=btn):
+            if _is_cleared(self._read_value(panel, p), cv):
+                return
+            panel._commit_prop(p, cv)
+
+        def _on_enter(_e, w=btn, p=pname, cv=clear_value):
+            if not _is_cleared(self._read_value(panel, p), cv):
+                w.configure(fg=TREE_FG)
+
+        def _on_leave(_e, w=btn, p=pname, cv=clear_value):
+            val = self._read_value(panel, p)
+            is_cleared = _is_cleared(val, cv)
+            w.configure(
+                fg=self._clear_fg(val, cv),
+                cursor="arrow" if is_cleared else "hand2",
+            )
+
+        btn.bind("<Button-1>", _on_click)
+        btn.bind("<Enter>", _on_enter)
+        btn.bind("<Leave>", _on_leave)
         panel.overlays.add(iid, SLOT_COLOR_CLEAR, btn, place_color_clear)
 
     def _clear_fg(self, value, clear_value) -> str:

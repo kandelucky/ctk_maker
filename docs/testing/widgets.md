@@ -206,6 +206,7 @@ the template instead of repeating it.
 - [ ] Cold widget creation cost (descriptor → CTk constructor)
 - [ ] `CTkFont(...)` cache per (family, size, style) — rebuilt on every prop change?
 - [ ] `CTkImage` / `_tint_image` cache per (path, hex, size)?
+- [ ] CTkImage export redundancy: `light_image=Image.open(path), dark_image=Image.open(path)` opens the same file twice. Open once, assign to a local var, pass twice: `_img = Image.open(path); ctk.CTkImage(light_image=_img, dark_image=_img, ...)`.
 - [ ] `_apply_grow_equal_split` iterates every grow sibling per re-apply — profile for 10+ children
 
 ## Findings
