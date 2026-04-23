@@ -523,6 +523,46 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         self._refresh_title()
         self.project.event_bus.publish("project_renamed", self.project.name)
 
+    def _on_preview_active(self) -> None:
+        doc = self.project.active_document
+        if doc.is_toplevel:
+            self._on_preview_dialog(doc.id)
+        else:
+            self._on_preview()
+
+    def _on_rename_current_doc(self) -> None:
+        from app.ui.dialogs import RenameDialog
+        doc = self.project.active_document
+        dialog = RenameDialog(self, doc.name)
+        if dialog.result and dialog.result != doc.name:
+            doc.name = dialog.result
+            self.project.event_bus.publish("project_renamed", self.project.name)
+            self._on_project_modified()
+
+    def _on_form_settings(self) -> None:
+        from app.core.project import WINDOW_ID
+        self.project.select_widget(WINDOW_ID)
+
+    def _on_move_doc_up(self) -> None:
+        docs = self.project.documents
+        doc = self.project.active_document
+        idx = docs.index(doc)
+        if idx <= 1:
+            return
+        docs[idx], docs[idx - 1] = docs[idx - 1], docs[idx]
+        self.project.event_bus.publish("project_renamed", self.project.name)
+        self._on_project_modified()
+
+    def _on_move_doc_down(self) -> None:
+        docs = self.project.documents
+        doc = self.project.active_document
+        idx = docs.index(doc)
+        if idx == 0 or idx >= len(docs) - 1:
+            return
+        docs[idx], docs[idx + 1] = docs[idx + 1], docs[idx]
+        self.project.event_bus.publish("project_renamed", self.project.name)
+        self._on_project_modified()
+
     def _on_close_project(self) -> None:
         self._on_new()
 

@@ -180,6 +180,8 @@ Pick whichever best preserves preview = reality.
 
 ## Smaller ideas
 
+- **Preview window screenshot** — button in the preview window (or Form menu item) that captures the current state of the running preview subprocess and saves it as a PNG. Implementation options: (a) use `PIL.ImageGrab.grab(bbox=hwnd_rect)` to capture the preview window's client area by HWND; (b) export + render headlessly via an offscreen CTk root with `wm_withdraw`. User selects save path via `asksaveasfilename`. Useful for quick UI mockup exports without running a separate screenshot tool.
+
 - **CTkRadioButton — alternate selection visuals (icon / pill fill)** — CTk's default visual for a checked radio is just the inner dot recolored to `fg_color`. Two more options worth offering in the Inspector:
   - **Icon mode** — when selected, draw a glyph (✓ / ✕ / ● / configurable Lucide icon) on top of the radio canvas. Hide the default inner dot. Likely needs `widget._canvas.create_text(...)` post-`_draw()`, plus a hook to re-render on state change.
   - **Pill / fill mode** — recolor the entire outer circle background to `fg_color` (instead of just the inner border). CTk leaves the center hollow by default — `fg_color` only stains the border. To get a true filled center, draw a `_canvas.create_oval` filled item under the inner-dot area, or hijack `border_width_checked` so the border eats inward to the centre. Worth a real custom draw rather than the border hack.

@@ -56,6 +56,47 @@ APPEARANCE_MODES = ["Light", "Dark", "System"]
 class MenuMixin:
     """Menubar + Edit-menu dispatch. See module docstring."""
 
+    def _rebuild_windows_menu(self) -> None:
+        m = getattr(self, "_windows_menu", None)
+        if m is None:
+            return
+        m.delete(0, "end")
+        active_id = self.project.active_document_id
+        for doc in self.project.documents:
+            label = doc.name or "Untitled"
+            if doc.is_toplevel:
+                label = f"{label}  (Dialog)"
+            is_active = doc.id == active_id
+            fg = MENU_ACTIVE_FG if is_active else MENU_FG
+            m.add_command(
+                label=("▸ " if is_active else "   ") + label,
+                foreground=fg,
+                command=lambda did=doc.id: self._on_focus_document(did),
+            )
+
+    def _on_focus_document(self, doc_id: str) -> None:
+        self.project.set_active_document(doc_id)
+        self.workspace.focus_document(doc_id)
+
+    def _refresh_form_menu_state(self) -> None:
+        m = getattr(self, "_form_menu", None)
+        if m is None:
+            return
+        doc = self.project.active_document
+        is_dialog = getattr(doc, "is_toplevel", False)
+        docs = self.project.documents
+        idx = docs.index(doc) if doc in docs else 0
+        on = MENU_FG
+        off = MENU_DISABLED_FG
+        # Remove (index 4) — disabled on main window
+        m.entryconfig(4, foreground=on if is_dialog else off)
+        # Move Up (index 9) — dialog and not first dialog (idx>1)
+        m.entryconfig(9, foreground=on if (is_dialog and idx > 1) else off)
+        # Move Down (index 10) — dialog and not last
+        m.entryconfig(
+            10, foreground=on if (is_dialog and idx < len(docs) - 1) else off,
+        )
+
     # ------------------------------------------------------------------
     # Low-level helpers
     # ------------------------------------------------------------------
@@ -167,18 +208,42 @@ class MenuMixin:
         menubar.add_cascade(label="Edit", menu=edit_menu)
 
         # ---- Form ----
-        form_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
-        self._add_cmd(
-            form_menu, "Preview", self._on_preview,
-            icon="play", accelerator="Ctrl+R",
+        form_menu = tk.Menu(
+            menubar, tearoff=0,
+            postcommand=self._refresh_form_menu_state,
+            **MENU_STYLE,
         )
+        self._form_menu = form_menu
+        # indices: 0=Preview, 1=Preview Active, 2=sep,
+        #          3=Add Dialog, 4=Remove, 5=sep,
+        #          6=Rename, 7=Form Settings, 8=sep,
+        #          9=Move Up, 10=Move Down
+        self._add_cmd(form_menu, "Preview", self._on_preview,
+                      icon="play", accelerator="Ctrl+R")
+        self._add_cmd(form_menu, "Preview Active", self._on_preview_active,
+                      icon="play")
         form_menu.add_separator()
-        self._add_cmd(
-            form_menu, "Add Dialog", self._on_add_dialog,
+        self._add_cmd(form_menu, "Add Dialog", self._on_add_dialog,
+                      icon="plus")
+        self._add_cmd(form_menu, "Remove", self._on_remove_current_document,
+                      icon="trash-2")
+        form_menu.add_separator()
+        self._add_cmd(form_menu, "Rename", self._on_rename_current_doc,
+                      icon="pencil")
+        self._add_cmd(form_menu, "Form Settings", self._on_form_settings,
+                      icon="settings")
+        form_menu.add_separator()
+        self._add_cmd(form_menu, "Move Up", self._on_move_doc_up,
+                      icon="arrow-up")
+        self._add_cmd(form_menu, "Move Down", self._on_move_doc_down,
+                      icon="arrow-down")
+        form_menu.add_separator()
+        self._windows_menu = tk.Menu(
+            form_menu, tearoff=0,
+            postcommand=self._rebuild_windows_menu,
+            **MENU_STYLE,
         )
-        self._add_cmd(
-            form_menu, "Remove Current", self._on_remove_current_document,
-        )
+        form_menu.add_cascade(label="All Forms", menu=self._windows_menu)
         menubar.add_cascade(label="Form", menu=form_menu)
 
         # ---- Widget ----

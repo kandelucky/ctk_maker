@@ -135,3 +135,4 @@
 - 2026-04-23 v0.0.15.26 — History panel docked in sidebar (Tree/History toggle buttons), click-to-jump in history, accent borders removed from Object Tree + History + Properties, Properties title label removed, Properties tab header added, HistoryPanel extracted as reusable CTkFrame
 - 2026-04-23 v0.0.15.27 — File menu: New Untitled (file-plus-corner icon, no save dialog), Save As icon→save-all, Close removed; toolbar: on_new_untitled wired
 - 2026-04-23 v0.0.15.28 — Widget menu (cascades per group), palette regrouped: Layouts/Containers/Buttons/Display/Selection/Input
+- 2026-04-23 v0.0.15.29 — Form menu redesign: Preview Active, Remove/Move Up/Down with dim state, Rename, Form Settings, All Forms submenu (dynamic doc list + center on click); screenshot idea saved to ideas.md
