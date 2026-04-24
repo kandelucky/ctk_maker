@@ -231,7 +231,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         if descriptor is None:
             return
         url = (
-            "https://github.com/kandelucky/ctk_visual_builder/"
+            "https://github.com/kandelucky/ctkmaker/"
             f"wiki/{descriptor.type_name}"
         )
         try:

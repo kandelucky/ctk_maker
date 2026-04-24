@@ -32,7 +32,7 @@ SUBTITLE_FG = "#888888"
 class StartupDialog(ctk.CTkToplevel):
     def __init__(self, parent):
         super().__init__(parent)
-        self.title("CTk Visual Builder")
+        self.title("CTkMaker")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
@@ -72,7 +72,7 @@ class StartupDialog(ctk.CTkToplevel):
         header.pack(fill="x", padx=24, pady=(18, 8))
 
         ctk.CTkLabel(
-            header, text="CTk Visual Builder",
+            header, text="CTkMaker",
             font=("Segoe UI", 18, "bold"),
             text_color=TITLE_FG, anchor="w",
         ).pack(fill="x")

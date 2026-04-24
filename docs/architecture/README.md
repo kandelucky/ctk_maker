@@ -1,6 +1,6 @@
 # Architecture
 
-> Developer-facing docs for how CTk Visual Builder is organized internally.
+> Developer-facing docs for how CTkMaker is organized internally.
 
 ## Contents
 

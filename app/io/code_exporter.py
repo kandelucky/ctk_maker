@@ -1015,7 +1015,7 @@ def _auto_hover_text_helper_lines() -> list[str]:
     return [
         "def _auto_hover_text(button, normal, hover):",
         '    """Bind <Enter>/<Leave> to swap text_color. Same lighten/darken',
-        "    direction the CTk Visual Builder uses at design time so the",
+        "    direction CTkMaker uses at design time so the",
         '    runtime feel matches the canvas preview."""',
         "    def _set(colour):",
         '        lbl = getattr(button, "_text_label", None)',

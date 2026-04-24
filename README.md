@@ -1,4 +1,4 @@
-# CTk Visual Builder
+# CTkMaker
 
 A desktop visual designer for **CustomTkinter** — drag and drop widgets onto a canvas, edit their properties live, and export the result as clean runnable Python.
 
@@ -107,8 +107,8 @@ All shortcuts work with Latin and non-Latin keyboard layouts.
 ## Install
 
 ```bash
-git clone https://github.com/kandelucky/ctk_visual_builder.git
-cd ctk_visual_builder
+git clone https://github.com/kandelucky/ctkmaker.git
+cd ctkmaker
 pip install -r requirements.txt
 python main.py
 ```

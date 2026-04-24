@@ -1,4 +1,4 @@
-"""Standalone multiline text editor dialog for the CTk Visual Builder.
+"""Standalone multiline text editor dialog for CTkMaker.
 
 A modal Toplevel with a `tk.Text` editor. Features:
 

@@ -1,6 +1,6 @@
 # Contributing
 
-> How to set up a dev environment and contribute to CTk Visual Builder.
+> How to set up a dev environment and contribute to CTkMaker.
 
 ## Dev setup
 

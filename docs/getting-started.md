@@ -1,6 +1,6 @@
 # Getting Started
 
-> Install CTk Visual Builder and create your first project in under two minutes.
+> Install CTkMaker and create your first project in under two minutes.
 
 ## Requirements
 

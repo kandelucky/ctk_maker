@@ -1,6 +1,6 @@
 # User Guide
 
-> End-user documentation for working with CTk Visual Builder.
+> End-user documentation for working with CTkMaker.
 
 ## Contents
 

@@ -1,5 +1,5 @@
 @echo off
-title CTk Visual Builder
+title CTkMaker
 cd /d "%~dp0"
 python main.py
 if errorlevel 1 (

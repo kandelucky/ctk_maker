@@ -346,7 +346,7 @@ _ABT_SEP  = "#3a3a3a"
 class AboutDialog(tk.Toplevel):
     def __init__(self, parent, app_version: str = ""):
         super().__init__(parent)
-        self.title("About CTk Visual Builder")
+        self.title("About CTkMaker")
         self.configure(bg=_ABT_BG)
         self.resizable(False, False)
         self.transient(parent)
@@ -365,7 +365,7 @@ class AboutDialog(tk.Toplevel):
 
         tk.Frame(self, bg=_ABT_BG, height=20).pack()
         tk.Label(
-            self, text="CTk Visual Builder",
+            self, text="CTkMaker",
             bg=_ABT_BG, fg=_ABT_FG, font=("Segoe UI", 16, "bold"),
         ).pack(**pad)
         tk.Label(

@@ -1,6 +1,6 @@
-# CTk Visual Builder — Documentation
+# CTkMaker — Documentation
 
-Welcome to the **CTk Visual Builder** documentation. This is a drag-and-drop
+Welcome to the **CTkMaker** documentation. This is a drag-and-drop
 visual designer for [CustomTkinter](https://customtkinter.tomschimansky.com/)
 that exports clean Python code.
 

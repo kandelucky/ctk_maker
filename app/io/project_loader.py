@@ -62,7 +62,7 @@ def load_project(project: Project, path: str | Path) -> None:
 
     if not isinstance(data, dict):
         raise ProjectLoadError(
-            "This file is not a CTk Visual Builder project.\n\n"
+            "This file is not a CTkMaker project.\n\n"
             f"File: {path.name}\n"
             "Expected a project object at the top of the file. "
             "Pick a valid .ctkproj file to open."
@@ -76,7 +76,7 @@ def load_project(project: Project, path: str | Path) -> None:
             "builder.\n\n"
             f"File version: {version!r}\n"
             f"This build supports: {supported}\n\n"
-            "Update CTk Visual Builder to the latest release, or open "
+            "Update CTkMaker to the latest release, or open "
             "the file with the version it was saved in."
         )
 

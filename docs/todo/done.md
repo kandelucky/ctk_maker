@@ -6,6 +6,12 @@
 
 ## 2026-04 — Area QA passes + refactors
 
+- **v0.0.18.3** (2026-04-24) — Rename: CTk Visual Builder → CTkMaker:
+  - **Display name** flipped across every user-facing surface — main window title, AboutDialog, StartupDialog, project_loader error messages, exported-code header comment, README, all `docs/*.md` pages, `run.bat` console title, `tools/text_editor_dialog.py` docstring.
+  - **GitHub URLs** updated from `kandelucky/ctk_visual_builder` to `kandelucky/ctkmaker` (main_window's docs URL + Properties panel's wiki link). Repo rename to `ctkmaker` happens on github.com; the auto-redirect handles legacy links during transition.
+  - **Per-user config dir** (`~/.ctk_visual_builder/settings.json` / `recent.json`) intentionally kept as-is to avoid orphaning existing user data on first launch. Migration to `~/.ctkmaker/` scheduled in roadmap alongside the untitled-autosave spool dir (single touch of the root folder for both).
+  - Reference: Akascape's `CTkDesigner` ([ctkdesigner.akascape.com](https://ctkdesigner.akascape.com/)) is a direct competitor — same author as CTkScrollableDropdown — and is why the user's first preferred name was unavailable.
+
 - **v0.0.18.2** (2026-04-24) — Autosave + Recover from Backup menu:
   - **`AutosaveController`** in `app/core/autosave.py` — every 5 minutes (configurable via `autosave_interval_minutes` in settings) while the project is dirty AND has a saved path, writes the current state to `<path>.autosave` via atomic `.tmp` + `os.replace`. Skipped for untitled projects (no path = no autosave); Phase 2 will spool them to a per-user dir.
   - **No-op tick skip** — controller snapshots the history's top marker after every successful write and compares it on the next tick; if the user hasn't edited (or has undone back to the last-autosaved state), the tick is a no-op so a long idle period doesn't rewrite the same `.autosave` content every minute. The marker is reset whenever `dirty_changed -> False` fires (explicit save or undo back to the saved marker) so the next dirty cycle starts fresh.

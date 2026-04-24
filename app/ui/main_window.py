@@ -33,7 +33,7 @@ from app.ui.workspace import Workspace
 PROJECT_FILE_TYPES = [("CTk Builder project", "*.ctkproj"), ("All files", "*.*")]
 
 ABOUT_TEXT = (
-    "CTk Visual Builder\n"
+    "CTkMaker\n"
     "v0.0.12\n\n"
     "Drag-and-drop designer for CustomTkinter that exports clean Python code.\n\n"
     "Built with:\n"
@@ -43,7 +43,7 @@ ABOUT_TEXT = (
     "  • ctk-tint-color-picker"
 )
 
-GITHUB_DOCS_URL = "https://github.com/kandelucky/ctk_visual_builder/blob/main/docs/widgets/README.md"
+GITHUB_DOCS_URL = "https://github.com/kandelucky/ctkmaker/blob/main/docs/widgets/README.md"
 
 
 class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
@@ -60,7 +60,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
     """
     def __init__(self):
         super().__init__()
-        self.title("CTk Visual Builder")
+        self.title("CTkMaker")
         self.minsize(900, 600)
         self._set_centered_geometry(1280, 800)
         self.configure(fg_color="#252526")
@@ -362,7 +362,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             self.project.event_bus.publish("dirty_changed", False)
 
     def _refresh_title(self) -> None:
-        base = "CTk Visual Builder"
+        base = "CTkMaker"
         if self._current_path:
             base += f" — {Path(self._current_path).stem}"
         elif self.project.name and self.project.name != "Untitled":
@@ -906,7 +906,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
 
     def _on_about(self) -> None:
         from app.ui.dialogs import AboutDialog
-        AboutDialog(self, app_version="v0.0.18.2")
+        AboutDialog(self, app_version="v0.0.18.3")
 
     def _on_inspect_widget(self) -> None:
         # Reuse a single Toplevel — clicking the menu while it's open

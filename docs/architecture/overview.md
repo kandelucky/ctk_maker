@@ -1,6 +1,6 @@
 # Architecture Overview
 
-> The four layers of CTk Visual Builder and how they talk to each other.
+> The four layers of CTkMaker and how they talk to each other.
 
 ## Layers
 

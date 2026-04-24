@@ -1,6 +1,6 @@
 # Version history
 
-Visual snapshots of CTk Visual Builder across releases.
+Visual snapshots of CTkMaker across releases.
 
 | Version | Screenshot | Highlights |
 |---------|-----------|------------|
