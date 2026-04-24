@@ -1,4 +1,4 @@
-"""CTkSwitch widget descriptor.
+﻿"""CTkSwitch widget descriptor.
 
 A toggle switch — like CTkCheckBox visually but rendered as an
 iOS-style slider.
@@ -46,7 +46,7 @@ class CTkSwitchDescriptor(WidgetDescriptor):
         "initially_checked": False,
         # Main colors
         "fg_color": "#4a4d50",
-        "progress_color": "#1f6aa5",
+        "progress_color": "#6366f1",
         "button_color": "#d5d9de",
         "button_hover_color": "#ffffff",
         # Text content + style

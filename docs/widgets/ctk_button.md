@@ -1,4 +1,4 @@
-# CTkButton
+﻿# CTkButton
 
 A clickable button with rounded corners, hover/pressed states, optional
 border, text + icon composition, and full text formatting.
@@ -35,8 +35,8 @@ the Enabled toggle.
 
 | Row | Property | Default |
 |---|---|---|
-| Background | `fg_color` | `#1f6aa5` |
-| Hover | `hover_color` | `#144870` |
+| Background | `fg_color` | `#6366f1` |
+| Hover | `hover_color` | `#4f46e5` |
 
 CTk reuses `hover_color` for the pressed state.
 

@@ -903,7 +903,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
 
     def _on_about(self) -> None:
         from app.ui.dialogs import AboutDialog
-        AboutDialog(self, app_version="v0.0.20")
+        AboutDialog(self, app_version="v0.0.20.1")
 
     def _on_inspect_widget(self) -> None:
         # Reuse a single Toplevel — clicking the menu while it's open

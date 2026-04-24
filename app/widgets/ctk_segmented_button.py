@@ -1,4 +1,4 @@
-"""CTkSegmentedButton widget descriptor.
+﻿"""CTkSegmentedButton widget descriptor.
 
 A row of mutually-exclusive buttons, like a Mac-style segmented
 control or a tab bar. The "selected" segment is highlighted.
@@ -40,8 +40,8 @@ class CTkSegmentedButtonDescriptor(WidgetDescriptor):
         "button_enabled": True,
         # Main colors
         "fg_color": "#4a4d50",
-        "selected_color": "#1f6aa5",
-        "selected_hover_color": "#144870",
+        "selected_color": "#6366f1",
+        "selected_hover_color": "#4f46e5",
         "unselected_color": "#4a4d50",
         "unselected_hover_color": "#696969",
         # Text content + style

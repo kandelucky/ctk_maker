@@ -88,8 +88,18 @@ All shortcuts work with Latin and non-Latin keyboard layouts.
 | `Ctrl+Shift+I` | Documentation |
 | `F8` | Toggle Object Tree (floating) |
 | `F9` | Toggle History (floating) |
+| `F10` | Toggle Project (floating) |
 | `Escape` | Deselect |
+
+### Mouse actions
+
+| Action | Effect |
+|---|---|
+| Middle-mouse drag | Pan canvas |
 | `Ctrl+Wheel` | Zoom in / out |
+| Click | Select widget |
+| `Ctrl`+click | Toggle widget in selection |
+| Right-click | Context menu |
 
 ### Run Python Script
 - File menu + toolbar entry (`tv-minimal-play` icon) launches any `.py` / `.pyw` as a subprocess — quick way to test exported builds without leaving the builder. Last-used directory persists.

@@ -1,4 +1,4 @@
-"""CTkTabview widget descriptor.
+﻿"""CTkTabview widget descriptor.
 
 A tabbed container with a segmented-button-style tab bar across the
 top. Each tab holds an inner CTkFrame for content.
@@ -59,8 +59,8 @@ class CTkTabviewDescriptor(WidgetDescriptor):
         # Main colors
         "fg_color": "#2b2b2b",
         "segmented_button_fg_color": "#4a4d50",
-        "segmented_button_selected_color": "#1f6aa5",
-        "segmented_button_selected_hover_color": "#144870",
+        "segmented_button_selected_color": "#6366f1",
+        "segmented_button_selected_hover_color": "#4f46e5",
         "segmented_button_unselected_color": "#4a4d50",
         "segmented_button_unselected_hover_color": "#696969",
         # Text

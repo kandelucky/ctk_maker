@@ -1,4 +1,4 @@
-# CTkProgressBar
+﻿# CTkProgressBar
 
 A decorative bar showing fractional progress between 0% and 100%. Static preview — the builder treats it as a snapshot of the progress value, not as an animated indicator.
 
@@ -35,6 +35,6 @@ Flipping orientation automatically swaps width and height (`on_prop_recreate` ho
 | Row | Property | Default |
 |---|---|---|
 | Track Background | `fg_color` | `#4a4d50` |
-| Progress Fill | `progress_color` | `#1f6aa5` |
+| Progress Fill | `progress_color` | `#6366f1` |
 
 The builder hardcodes `mode="determinate"` so what you see in the editor matches the exported widget exactly.

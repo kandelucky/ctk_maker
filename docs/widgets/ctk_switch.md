@@ -1,4 +1,4 @@
-# CTkSwitch
+﻿# CTkSwitch
 
 A toggle switch — conceptually a checkbox, visually an iOS-style
 slider with a moving knob.
@@ -42,7 +42,7 @@ label has room beside it.
 | Row | Property | Default |
 |---|---|---|
 | Track (Off) | `fg_color` | `#4a4d50` |
-| Track (On) | `progress_color` | `#1f6aa5` |
+| Track (On) | `progress_color` | `#6366f1` |
 | Knob | `button_color` | `#d5d9de` |
 | Knob Hover | `button_hover_color` | `#ffffff` |
 

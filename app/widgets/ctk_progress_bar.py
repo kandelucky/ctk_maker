@@ -1,4 +1,4 @@
-"""CTkProgressBar widget descriptor.
+﻿"""CTkProgressBar widget descriptor.
 
 A pure decoration bar that shows fractional progress between 0 and 1.
 No interaction — the builder treats it as a static preview of the
@@ -38,7 +38,7 @@ class CTkProgressBarDescriptor(WidgetDescriptor):
         "initial_percent": 50,
         # Main colors
         "fg_color": "#4a4d50",
-        "progress_color": "#1f6aa5",
+        "progress_color": "#6366f1",
     }
 
     property_schema = [

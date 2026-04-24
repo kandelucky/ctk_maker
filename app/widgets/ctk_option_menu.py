@@ -42,8 +42,8 @@ class CTkOptionMenuDescriptor(WidgetDescriptor):
         "button_enabled": True,
         "hover": True,
         # Main colors
-        "fg_color": "#1f6aa5",
-        "button_color": "#144870",
+        "fg_color": "#6366f1",
+        "button_color": "#4f46e5",
         "button_hover_color": "#203a4f",
         # Dropdown colors
         "dropdown_fg_color": "#2b2b2b",

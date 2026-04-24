@@ -1,4 +1,4 @@
-# CTkSlider
+﻿# CTkSlider
 
 A draggable value picker over a numeric range. Supports continuous and stepped modes plus horizontal / vertical orientation.
 
@@ -53,5 +53,5 @@ Unlike CTkProgressBar, CTkSlider accepts `orientation` via `configure(...)` so f
 |---|---|---|
 | Track Background | `fg_color` | `#4a4d50` |
 | Progress Fill | `progress_color` | `#aab0b5` |
-| Button | `button_color` | `#1f6aa5` |
-| Button Hover | `button_hover_color` | `#144870` |
+| Button | `button_color` | `#6366f1` |
+| Button Hover | `button_hover_color` | `#4f46e5` |

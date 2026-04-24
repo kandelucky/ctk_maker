@@ -1,4 +1,4 @@
-"""Widget Box — palette of CTk widgets grouped by category.
+﻿"""Widget Box — palette of CTk widgets grouped by category.
 
 Qt Designer-inspired layout:
     [ Widget Box ]            — title
@@ -419,7 +419,7 @@ class Palette(ctk.CTkFrame):
         # actually have. Containers / themed defaults that store
         # "transparent" or a (light, dark) tuple fall back to the
         # generic CTk blue.
-        bg_color = "#1f6aa5"
+        bg_color = "#6366f1"
         descriptor = self._drag["descriptor"] if self._drag else None
         if descriptor is not None:
             candidate = descriptor.default_properties.get("fg_color")
@@ -474,7 +474,7 @@ class Palette(ctk.CTkFrame):
         if valid == self._ghost_valid:
             return
         self._ghost_valid = valid
-        valid_bg = getattr(self, "_ghost_valid_bg", "#1f6aa5")
+        valid_bg = getattr(self, "_ghost_valid_bg", "#6366f1")
         bg = valid_bg if valid else "#8b2a2a"
         border = valid_bg if valid else "#c44343"
         try:

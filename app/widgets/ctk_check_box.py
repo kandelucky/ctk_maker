@@ -1,4 +1,4 @@
-"""CTkCheckBox widget descriptor.
+﻿"""CTkCheckBox widget descriptor.
 
 A labeled checkbox. The checkbox square and the text are rendered
 side by side; CTk composes them automatically.
@@ -43,8 +43,8 @@ class CTkCheckBoxDescriptor(WidgetDescriptor):
         "hover": True,
         "initially_checked": False,
         # Main colors
-        "fg_color": "#1f6aa5",
-        "hover_color": "#144870",
+        "fg_color": "#6366f1",
+        "hover_color": "#4f46e5",
         "checkmark_color": "#e5e5e5",
         # Text content + style
         "text": "CTkCheckBox",

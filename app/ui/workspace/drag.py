@@ -1,4 +1,4 @@
-"""Widget drag-to-move + drag-to-reparent controller.
+﻿"""Widget drag-to-move + drag-to-reparent controller.
 
 Holds the per-gesture drag state (``_drag``) and the three press /
 motion / release handlers every canvas widget is bound to. The
@@ -907,7 +907,7 @@ class WidgetDragController:
                 rect_id = canvas.create_rectangle(
                     bbox[0] - 6, bbox[1] - 4,
                     bbox[2] + 6, bbox[3] + 4,
-                    fill="#1f6aa5", outline="#3b8ed0", width=1,
+                    fill="#6366f1", outline="#3b8ed0", width=1,
                     tags=("drag_ghost", "drag_ghost_rect"),
                 )
                 # Text was created first (below rect on the stack);

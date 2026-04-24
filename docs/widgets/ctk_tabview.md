@@ -1,4 +1,4 @@
-# CTkTabview
+﻿# CTkTabview
 
 A tabbed container with a segmented-button-style tab bar across the
 top. Each tab owns an inner CTkFrame for its content.
@@ -49,8 +49,8 @@ Wraps [`customtkinter.CTkTabview`](https://customtkinter.tomschimansky.com/docum
 |---|---|---|
 | Frame Background | `fg_color` | `#2b2b2b` |
 | Tab Bar Background | `segmented_button_fg_color` | `#4a4d50` |
-| Tab Selected | `segmented_button_selected_color` | `#1f6aa5` |
-| Tab Selected Hover | `segmented_button_selected_hover_color` | `#144870` |
+| Tab Selected | `segmented_button_selected_color` | `#6366f1` |
+| Tab Selected Hover | `segmented_button_selected_hover_color` | `#4f46e5` |
 | Tab Unselected | `segmented_button_unselected_color` | `#4a4d50` |
 | Tab Unselected Hover | `segmented_button_unselected_hover_color` | `#696969` |
 

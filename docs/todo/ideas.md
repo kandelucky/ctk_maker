@@ -215,6 +215,10 @@ Pick whichever best preserves preview = reality.
 
 - **vbox / hbox / grid — outer padding (4 sides)** — ახლა `layout_spacing` მხოლოდ children-ს შორის spacing-ია. ბევრ layout-ს სჭირდება გარე padding (top/right/bottom/left). tkinter pack/grid-ს native outer padding არ აქვს — ყველაზე სწორი მიდგომა: 4 ახალი property (`layout_padding_top/bottom/left/right`), ხოლო export/canvas-ზე FIRST + LAST children-ს `padx=(left, right)` + `pady=(top_or_bottom, spacing/2)` ოვერლაის. multi-file change: layout_schema, exporter, workspace layout_overlay. Mid-size feature.
 
+- **Export dialog (rich)** — competitor [CTkDesigner](https://ctkdesigner.akascape.com/) ships an Export panel with: Default Mode (System/Light/Dark), Default Theme (blue/green/dark-blue/...), Scale (100% / 125% / 150% / ...), DPI Awareness toggle, Default Page (multi-page selector), OOP code toggle (procedural vs class-based output), Create button. Worth borrowing the shape — replaces the current bare `asksaveasfilename` Export step. See `roadmap.md` "Dedicated dialogs / windows → Export dialog" for the existing scope; the OOP-code toggle and Default Mode/Theme/Scale/DPI controls are the new bits to add.
+
+- **JSON templates** — save the current widget tree (or a selection) as a reusable JSON template the user can drop back onto another project's canvas. Right-click a widget / group → "Save as template..."; File menu → "Insert template..." pulls from `~/.ctkmaker/templates/` (or per-project `templates/`). CTkDesigner does this — handy for Login form, Settings dialog, etc. building blocks.
+
 - **CTkComboBox / CTkOptionMenu — Phase 2 dropdown polish** (Phase 1 shipped in v0.0.18 — scrollable popup + width matching + offset / button_align / max_visible / corner_radius / border):
   - *Item font customization* — size / bold / italic / underline / strike for popup buttons. New props `dropdown_font_size`, `dropdown_font_bold`, etc. Wire through ScrollableDropdown — pass `font=ctk.CTkFont(...)` per CTkButton.
   - *Per-row button height* — `dropdown_button_height` property so users can make compact or chunky popups.

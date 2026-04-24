@@ -1,4 +1,4 @@
-# CTkRadioButton
+﻿# CTkRadioButton
 
 A labelled radio button. Multiple radios that share a group name form a set where only one can be selected at a time.
 
@@ -44,8 +44,8 @@ Group coordination is handled by the workspace: radios with a shared name get a 
 
 | Row | Property | Default |
 |---|---|---|
-| Fill (Checked) | `fg_color` | `#1f6aa5` |
-| Hover | `hover_color` | `#144870` |
+| Fill (Checked) | `fg_color` | `#6366f1` |
+| Hover | `hover_color` | `#4f46e5` |
 
 ## Text
 

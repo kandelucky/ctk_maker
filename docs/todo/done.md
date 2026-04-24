@@ -6,6 +6,14 @@
 
 ## 2026-04 — Area QA passes + refactors
 
+- **v0.0.20.1** (2026-04-24) — Indigo widget theme + README polish + competitor inspirations:
+  - **Default widget colour** flipped from CTk's blue (`#1f6aa5` / `#144870`) to Tailwind Indigo 500 (`#6366f1` / Indigo 600 `#4f46e5` for hover) across every CTk descriptor that ships with `fg_color` / `hover_color` / `selected_color` / `progress_color` defaults — Button, CheckBox, RadioButton, Switch, Slider, SegmentedButton, Tabview, ProgressBar, OptionMenu. Builder UI chrome (toolbar, dialogs) still uses CTk's default blue — those render through CTk's own theme JSON, which would need a separate custom-theme pass.
+  - **Builder-side accent colour** in `palette.py` (drag ghost), `dialogs.py` (RecentRow hover), `properties_panel_v2/panel_commit.py` (popup hover, color picker initial), `workspace/drag.py` (drop preview) flipped to the same Indigo so the design-time accents match the widgets being placed.
+  - **Per-widget docs (`docs/widgets/ctk_*.md`)** updated to show the new default hex in their property tables.
+  - **`tools/color_swatches.py`** — new throwaway script: a 10-button palette demo (Tailwind 500 picks: Indigo / Violet / Pink / Rose / Orange / Amber / Lime / Emerald / Teal / Cyan) that copies the picked hex to the clipboard. Used to settle on Indigo before the full sweep.
+  - **README** — split the keyboard shortcuts table into a `Keyboard shortcuts` table and a new `Mouse actions` table (Middle-mouse drag pan, Ctrl+Wheel zoom, Click select, Ctrl+click toggle selection, Right-click context menu). Added F10 (Project window) to the keyboard table.
+  - **`docs/todo/ideas.md`** — captured two CTkDesigner UX ideas worth borrowing later: a richer Export dialog (Default Mode / Theme / Scale / DPI Awareness / Default Page / OOP-code toggle) and JSON templates (Save / Insert reusable widget-tree blocks).
+
 - **v0.0.20** (2026-04-24) — Asset tokens + project-scoped Image picker (Phase B-2):
   - **`app/core/assets.py`** — `asset:images/<name>` token utilities: `is_asset_token`, `parse_asset_token`, `make_asset_token`, `resolve_asset_token` (token → abs path against a project file), `absolute_to_token` (in-assets abs path → token, else None), `copy_to_assets` (file picker / drop target → SHA-deduped copy with collision-safe filename).
   - **Project save/load round-trip** — `project_saver._tokenize_image_paths` walks the serialized doc tree and rewrites any in-assets absolute `image` property to the portable token form; `project_loader._resolve_image_tokens` does the reverse on read so descriptors keep seeing plain absolute paths in memory.

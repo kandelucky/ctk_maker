@@ -1,4 +1,4 @@
-# CTkCheckBox
+﻿# CTkCheckBox
 
 A labelled checkbox. The checkbox square and the label sit side by side.
 
@@ -41,8 +41,8 @@ The inner clickable square is sized separately from the row itself — `width`/`
 
 | Row | Property | Default |
 |---|---|---|
-| Fill (Checked) | `fg_color` | `#1f6aa5` |
-| Hover | `hover_color` | `#144870` |
+| Fill (Checked) | `fg_color` | `#6366f1` |
+| Hover | `hover_color` | `#4f46e5` |
 | Check Mark | `checkmark_color` | `#e5e5e5` |
 
 ## Text

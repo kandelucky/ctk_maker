@@ -1,4 +1,4 @@
-"""CTkSlider widget descriptor.
+﻿"""CTkSlider widget descriptor.
 
 A draggable value picker over a numeric range. Supports continuous
 and stepped modes plus horizontal / vertical orientation. Matches
@@ -56,8 +56,8 @@ class CTkSliderDescriptor(WidgetDescriptor):
         # Main colors
         "fg_color": "#4a4d50",
         "progress_color": "#aab0b5",
-        "button_color": "#1f6aa5",
-        "button_hover_color": "#144870",
+        "button_color": "#6366f1",
+        "button_hover_color": "#4f46e5",
     }
 
     property_schema = [

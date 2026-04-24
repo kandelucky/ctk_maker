@@ -1,4 +1,4 @@
-"""CTkButton widget descriptor.
+﻿"""CTkButton widget descriptor.
 
 Declares the full schema the Properties panel uses to render editors
 for a CTkButton, plus the bridge that converts the builder's
@@ -40,9 +40,9 @@ class CTkButtonDescriptor(WidgetDescriptor):
         # Button Interaction
         "button_enabled": True,
         # Main colors
-        "fg_color": "#1f6aa5",
+        "fg_color": "#6366f1",
         "hover": True,
-        "hover_color": "#144870",
+        "hover_color": "#4f46e5",
         # Text content + style
         "text": "CTkButton",
         "font_size": 13,

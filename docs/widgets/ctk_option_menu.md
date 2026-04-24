@@ -1,4 +1,4 @@
-# CTkOptionMenu
+﻿# CTkOptionMenu
 
 A dropdown picker: the main button shows the current value, clicking it opens a native menu to pick from a fixed list of strings. Unlike CTkComboBox, the user cannot type a custom value.
 
@@ -36,8 +36,8 @@ Wraps [`customtkinter.CTkOptionMenu`](https://customtkinter.tomschimansky.com/do
 
 | Row | Property | Default |
 |---|---|---|
-| Background | `fg_color` | `#1f6aa5` |
-| Arrow Button | `button_color` | `#144870` |
+| Background | `fg_color` | `#6366f1` |
+| Arrow Button | `button_color` | `#4f46e5` |
 | Arrow Hover | `button_hover_color` | `#203a4f` |
 
 ## Dropdown Colors

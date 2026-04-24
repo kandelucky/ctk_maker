@@ -1,4 +1,4 @@
-"""Commit path + editor lifecycle mixin for PropertiesPanelV2.
+﻿"""Commit path + editor lifecycle mixin for PropertiesPanelV2.
 
 Split out of the monolithic ``panel.py`` (v0.0.15.11 refactor round).
 Covers every user-interaction path that turns a value into a
@@ -281,7 +281,7 @@ class CommitMixin:
         node = self.project.get_widget(self.current_id)
         if node is None:
             return
-        initial = node.properties.get(pname) or "#1f6aa5"
+        initial = node.properties.get(pname) or "#6366f1"
         dialog = ColorPickerDialog(
             self.winfo_toplevel(), initial_color=initial,
         )
@@ -532,7 +532,7 @@ class CommitMixin:
         btn = tk.Button(
             dialog, text="OK", width=10,
             bg="#3b8ed0", fg="#ffffff",
-            activebackground="#144870", activeforeground="#ffffff",
+            activebackground="#4f46e5", activeforeground="#ffffff",
             bd=0, font=("Segoe UI", 10, "bold"), relief="flat",
             command=_on_ok,
         )

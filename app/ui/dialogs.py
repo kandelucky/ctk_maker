@@ -1,4 +1,4 @@
-"""Modal dialogs used by the builder.
+﻿"""Modal dialogs used by the builder.
 
 NewProjectSizeDialog (File → New): standalone modal wrapping
 NewProjectForm. Returns (name, path, w, h) on Create or None if
@@ -463,7 +463,7 @@ class ConfirmDialog(tk.Toplevel):
         ).pack(side="left", padx=(0, 8))
         tk.Button(
             btn_row, text=ok_text, command=self._on_ok,
-            bg="#1f6aa5", fg="#ffffff", activebackground="#144870",
+            bg="#6366f1", fg="#ffffff", activebackground="#4f46e5",
             activeforeground="#ffffff", relief="flat", bd=0,
             font=("Segoe UI", 10), padx=20, pady=4, cursor="hand2",
         ).pack(side="left")

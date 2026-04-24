@@ -1,4 +1,4 @@
-"""CTkRadioButton widget descriptor.
+﻿"""CTkRadioButton widget descriptor.
 
 A labeled radio button. Multiple radios that share a `variable`
 form a group where only one can be selected at a time; in the
@@ -45,8 +45,8 @@ class CTkRadioButtonDescriptor(WidgetDescriptor):
         "initially_checked": False,
         "group": "",
         # Main colors
-        "fg_color": "#1f6aa5",
-        "hover_color": "#144870",
+        "fg_color": "#6366f1",
+        "hover_color": "#4f46e5",
         # Text content + style
         "text": "CTkRadioButton",
         "font_size": 13,

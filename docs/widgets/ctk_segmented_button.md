@@ -1,4 +1,4 @@
-# CTkSegmentedButton
+﻿# CTkSegmentedButton
 
 A row of mutually-exclusive buttons — a Mac-style segmented control or a tab bar. One segment is always highlighted as "selected".
 
@@ -38,8 +38,8 @@ Wraps [`customtkinter.CTkSegmentedButton`](https://customtkinter.tomschimansky.c
 | Row | Property | Default |
 |---|---|---|
 | Outer Background | `fg_color` | `#4a4d50` |
-| Selected | `selected_color` | `#1f6aa5` |
-| Selected Hover | `selected_hover_color` | `#144870` |
+| Selected | `selected_color` | `#6366f1` |
+| Selected Hover | `selected_hover_color` | `#4f46e5` |
 | Unselected | `unselected_color` | `#4a4d50` |
 | Unselected Hover | `unselected_hover_color` | `#696969` |
 
