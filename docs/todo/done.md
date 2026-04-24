@@ -6,6 +6,18 @@
 
 ## 2026-04 — Area QA passes + refactors
 
+- **v0.0.18** (2026-04-24) — ScrollableDropdown helper for ComboBox + OptionMenu:
+  - **New `app/widgets/scrollable_dropdown.py`** — Toplevel-based popup that replaces CTk's character-width-based `DropdownMenu`. Width matches `attach.winfo_width()`, scrollbar appears past `max_visible`, popup frame is a full CTkFrame with configurable border / radius / fg.
+  - **CTkOptionMenu two-click selection** — first click selects, follow-up click within 500 ms opens; afterwards plain clicks just keep the selection (no surprise popups). Wired in `_bind_widget_events` via a wrapped `_open_dropdown_menu`.
+  - **New "Dropdown Layout" property group** for both widgets: `dropdown_offset`, `dropdown_button_align` (left / center / right), `dropdown_max_visible`, `dropdown_corner_radius`, `dropdown_border_enabled` + `dropdown_border_width` + `dropdown_border_color`.
+  - **Outside-click-to-close** — `<FocusOut>` on overrideredirect Toplevels was unreliable on Windows (popup vanished on first frame); replaced with `<Button-1>` on the parent toplevel that hides only when the click lands outside both the popup and the attach widget. Toggle behaviour: clicking the attach while the popup is open closes it.
+  - **Toplevel bg sync** — `tk.Toplevel` background now matches popup `fg_color` so the rounded `CTkFrame` corners don't reveal the system gray underneath as a "ghost popup".
+  - **Deferred rebuild** — building children inside a withdrawn Toplevel left CTkScrollableFrame in a bad layout state (text invisible after a `max_visible` change). `configure_style` now flags `_buttons_dirty` when withdrawn and rebuilds inside `show()` after `deiconify`.
+  - **Edit Values vs Edit Segments vs Edit Tabs** — segment_values editor button label and dialog title now branch on `widget_type`: `tab_names` → "Edit Tabs", `CTkSegmentedButton` → "Edit Segments", everything else → "Edit Values".
+  - **Exporter integration** — `_emit_widget` emits `widget._scrollable_dropdown = ScrollableDropdown(widget, ...)` for every CTkComboBox / CTkOptionMenu, `generate_code` adds the import, `export_project` side-cars `scrollable_dropdown.py` next to the export so Preview and exported apps both render the new popup.
+  - **widgets.md** — CTkScrollableFrame, CTkTabview, CTkComboBox, CTkOptionMenu sections all green; `[!]` deferred entries removed; Findings updated with the v0.0.17 SF/Tabview resolutions and the v0.0.18 dropdown work.
+  - **ideas.md** — Phase 2 dropdown polish (per-item font, button height, unified arrow icon, ComboBox text-input tooltip) carried over.
+
 - **v0.0.15.24** (2026-04-22) — Image QA + color editor polish:
   - **Image widget** — Area 7 QA passed. All 7 checks: palette drop, image picker + clear, preserve_aspect, tint, fg_color transparent, missing path placeholder, export as CTkLabel.
   - **Tint Color / image_color clear UX**: `clear_value` changed `None` → `"transparent"` (same as `fg_color`) so the ✕ button dims and shows "none" when no tint is set. Same fix applied to CTkButton's `image_color` / `image_color_disabled`.

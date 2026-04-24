@@ -54,7 +54,38 @@ def export_project(
         preview_dialog_id=preview_dialog_id,
         single_document_id=single_document_id,
     )
-    Path(path).write_text(source, encoding="utf-8")
+    out = Path(path)
+    out.write_text(source, encoding="utf-8")
+    # Side-car the ScrollableDropdown helper next to the export when
+    # any ComboBox / OptionMenu is in the project — the import in the
+    # generated code resolves it via the export directory.
+    if _project_uses_scrollable_dropdown(project, single_document_id):
+        helper_src = Path(
+            __file__,
+        ).resolve().parent.parent.joinpath(
+            "widgets", "scrollable_dropdown.py",
+        ).read_text(encoding="utf-8")
+        out.with_name("scrollable_dropdown.py").write_text(
+            helper_src, encoding="utf-8",
+        )
+
+
+def _project_uses_scrollable_dropdown(
+    project: Project, single_document_id: str | None,
+) -> bool:
+    if single_document_id:
+        doc = project.get_document(single_document_id)
+        docs = [doc] if doc is not None else []
+    else:
+        docs = list(project.documents)
+    for doc in docs:
+        for root in doc.root_widgets:
+            if root.widget_type in ("CTkComboBox", "CTkOptionMenu"):
+                return True
+            for desc in _iter_descendants(root):
+                if desc.widget_type in ("CTkComboBox", "CTkOptionMenu"):
+                    return True
+    return False
 
 
 def generate_code(
@@ -122,6 +153,12 @@ def generate_code(
         w.widget_type in ("CTkEntry", "CTkTextbox", "CTkComboBox")
         for w in scoped_widgets
     )
+    # ComboBox + OptionMenu wear our ScrollableDropdown helper for a
+    # scrollable popup that matches the parent's pixel width.
+    needs_scrollable_dropdown = any(
+        w.widget_type in ("CTkComboBox", "CTkOptionMenu")
+        for w in scoped_widgets
+    )
     # CTkCheckBox / CTkRadioButton / CTkSwitch grid the box + label
     # in a hardcoded layout. ``text_position != "right"`` triggers
     # the helper that re-grids them so the label sits anywhere.
@@ -150,6 +187,8 @@ def generate_code(
         lines.append("import tkinter as tk")
     if needs_pil:
         lines.append("from PIL import Image")
+    if needs_scrollable_dropdown:
+        lines.append("from scrollable_dropdown import ScrollableDropdown")
     lines.append("")
 
     if needs_tint:
@@ -652,6 +691,10 @@ def _emit_widget(
         ),
     )
     lines.extend(descriptor.export_state(full_name, props))
+    # ScrollableDropdown side-car wiring for ComboBox + OptionMenu. The
+    # helper class lives in scrollable_dropdown.py beside this file.
+    if node.widget_type in ("CTkComboBox", "CTkOptionMenu"):
+        lines.extend(_scrollable_dropdown_lines(full_name, props))
     # Group-coupled radio: prime the shared StringVar when this radio
     # is the one the user marked as initially checked. Standalone
     # radios fall through to the descriptor's plain `.select()` line.
@@ -663,6 +706,31 @@ def _emit_widget(
     ):
         var_attr, value = radio_var_map[node.id]
         lines.append(f'{var_attr}.set("{value}")')
+    return lines
+
+
+def _scrollable_dropdown_lines(var_name: str, props: dict) -> list[str]:
+    bw = int(props.get("dropdown_border_width", 1))
+    if not props.get("dropdown_border_enabled", True):
+        bw = 0
+    kwargs = [
+        ("fg_color", props.get("dropdown_fg_color", "#2b2b2b")),
+        ("text_color", props.get("dropdown_text_color", "#dce4ee")),
+        ("hover_color", props.get("dropdown_hover_color", "#3a3a3a")),
+        ("offset", int(props.get("dropdown_offset", 4))),
+        ("button_align", props.get("dropdown_button_align", "center")),
+        ("max_visible", int(props.get("dropdown_max_visible", 8))),
+        ("border_width", bw),
+        ("border_color", props.get("dropdown_border_color", "#3c3c3c")),
+        ("corner_radius", int(props.get("dropdown_corner_radius", 6))),
+    ]
+    lines = [
+        f"{var_name}._scrollable_dropdown = ScrollableDropdown(",
+        f"    {var_name},",
+    ]
+    for k, v in kwargs:
+        lines.append(f"    {k}={_py_literal(v)},")
+    lines.append(")")
     return lines
 
 

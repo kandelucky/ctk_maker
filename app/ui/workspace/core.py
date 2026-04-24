@@ -1253,6 +1253,51 @@ class Workspace(ctk.CTkFrame):
             except (tk.TclError, NotImplementedError, ValueError):
                 pass
             widget._ws_bound_nid = nid
+        # CTkOptionMenu opens its dropdown on every Button-1, which
+        # makes selecting it without firing the menu impossible. Gate
+        # _open_dropdown_menu so the first click only selects, then
+        # arm a short window in which a follow-up click opens the
+        # menu. After the window expires, plain clicks just keep the
+        # selection without surprising the user with a popup.
+        if (
+            isinstance(widget, ctk.CTkOptionMenu)
+            and not getattr(widget, "_builder_two_click_wrapped", False)
+        ):
+            _orig_open = widget._open_dropdown_menu
+
+            def _gated_open(_o=_orig_open, _n=nid, _ws=self, _w=widget):
+                is_selected = _n in _ws.project.selected_ids
+                armed = getattr(_w, "_builder_open_armed", False)
+                if is_selected and armed:
+                    _w._builder_open_armed = False
+                    _o()
+                    return
+                # Arm only if this click is the one that actually
+                # selects the widget (drag_press runs after _clicked
+                # so we schedule the check to after_idle).
+                def _maybe_arm(w=_w, n=_n, ws=_ws):
+                    try:
+                        if (
+                            n in ws.project.selected_ids
+                            and not getattr(w, "_builder_open_armed", False)
+                        ):
+                            w._builder_open_armed = True
+                            w.after(
+                                500,
+                                lambda ww=w: setattr(
+                                    ww, "_builder_open_armed", False,
+                                ) if ww.winfo_exists() else None,
+                            )
+                    except tk.TclError:
+                        pass
+
+                try:
+                    _w.after_idle(_maybe_arm)
+                except tk.TclError:
+                    pass
+
+            widget._open_dropdown_menu = _gated_open
+            widget._builder_two_click_wrapped = True
         # Always recurse — even if THIS widget is already bound, a
         # composite CTk widget may have spawned brand-new children
         # since the last walk that still need their handlers.

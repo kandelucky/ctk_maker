@@ -4,28 +4,13 @@
 
 ---
 
-## 🐛 Nested-widget drag — selection vs. widget visual mismatch on high-DPI
+## ✅ Nested-widget drag — selection vs. widget visual mismatch on high-DPI
 
-**Symptom:** Dragging a widget inside a Frame on a 125 % DPI screen, the selection outline tracks the cursor but the actual widget visual drifts. The further the widget sits from the Frame's origin (bottom-right corner = worst case), the bigger the offset. After release the widget stays at the drifted visual position on canvas, while the model (`node.properties["x"/"y"]`) + Preview (`Ctrl+R`) show the widget at the cursor position. So preview != canvas visual for the same project state.
+**Symptom (was):** dragging a widget inside a Frame on a 125 % / 150 % DPI screen, the selection outline tracked the cursor but the actual widget visual drifted. Worst at bottom-right of the parent; after release the widget stayed at the drifted position.
 
-**Screenshot:** selection rectangle floats in the middle of the Frame while the dragged Button sits in the lower-right corner.
+**Root cause (found v0.0.17):** CTk overrides `.place()` to apply DPI scaling via `_apply_argument_scaling`, but does **not** override `.place_configure()`. The initial placement in `_place_nested` went through `.place()` (scaled), while drag motion, `_handle_coord_prop` (release), and `apply_to_widget` used `.place_configure()` (unscaled). On the first drag tick the widget jumped from CTk-scaled coords to raw tk coords, offset by the DPI factor.
 
-**Root cause hypothesis (unverified):** Three places in the drag / property flow use different zoom factors:
-- `drag.py` motion → `place_configure(x = new_x * canvas_scale)` where `canvas_scale = user_zoom × DPI`
-- `_handle_coord_prop` (release) → `place_configure(x = x * user_zoom)`
-- Selection chrome → `canvas.move(dx_tick)` in physical pixels, and `winfo_rootx` for static bbox
-
-On 1.0 × 1.25 canvas_scale vs. 1.0 user_zoom, the two place() paths disagree by a factor of 1.25. Tried `user_zoom` in drag too (v0.0.15.17 attempt); user reported the offset then scaled with drag distance instead of widget position, so neither formula gave a clean result.
-
-The real question: does CTk's `ScalingTracker` DPI-scale `.place(x=N)` args when `SetProcessDpiAwareness(1)` is set? Two possibilities, each produces different-direction mismatch:
-- CTk scales → `canvas_scale` overshoots, `user_zoom` matches
-- CTk doesn't scale → `canvas_scale` matches, `user_zoom` lags
-
-Neither matches user observation cleanly, so one of the assumptions (cursor delta calc, chrome move, or bbox read) is also off.
-
-**Next step:** add temporary `print()` statements logging `canvas_scale`, `user_zoom`, `event.x_root delta`, `widget.winfo_rootx`, computed `new_x * factor`, after a single drag. Compare numbers against the cursor's actual screen position. Empirical numbers will say which formula matches reality — the code theory is inconclusive.
-
-**Not blocking for now** — widget still usable, preview still correct, only the canvas visual during drag drifts. Revisit when a focused bug-hunting session is scheduled.
+**Fix (v0.0.17):** unified every nested placement path on `.place(...)`. Drag motion, release property-change handler, and zoom apply-to-widget all now route through CTk's scaling wrapper.
 
 ---
 
@@ -39,15 +24,15 @@ Neither matches user observation cleanly, so one of the assumptions (cursor delt
 
 ---
 
-## 🐛 CTkScrollableFrame — editor/preview size mismatch at 1:1 zoom
+## ✅ CTkScrollableFrame — editor/preview size mismatch
 
-**Symptom:** at 1:1 zoom, a ScrollableFrame's visual size on the builder canvas differs from the same widget in preview / exported runtime. Changing `width` / `height` in the Inspector doesn't visibly grow/shrink the widget as expected.
+**Symptom (was):** a ScrollableFrame stored at 200×200 visually rendered at ~137×137 in the editor while a plain Frame at 200×200 looked correct. Preview also oversized SF by the scrollbar width (~14 px).
 
-**Root cause hypothesis:** CTk's `CTkScrollableFrame.configure(width=..., height=...)` routes through `_set_dimensions`, which only resizes the INNER `_parent_canvas`; the OUTER `_parent_frame` (our `canvas_anchor`) sizes itself from its children + scrollbar + label, so its rendered box is NOT the requested dimensions. The workspace pins the canvas window via `canvas.itemconfigure(window_id, width=lw*zoom, height=lh*zoom)` — if that's smaller than parent_frame's natural size, the widget overflows or clips; if larger, empty space appears around it. Preview has no canvas window constraint, so the widget renders at its natural size, which can differ by scrollbar width (~14 px) plus padding.
+**Root cause (found v0.0.17):** two cooperating issues:
+- Builder's composite canvas item used `zoom.value` (user_zoom only) for width/height while CTk scales widget geometry by `_apply_widget_scaling` (= user_zoom × DPI). Outer frame ended up pinned to raw `lw` px while plain Frame rendered at `lw × DPI`.
+- Preview outer auto-grew by the scrollbar width because CTk's `width=` only sizes the inner canvas.
 
-**Next step:** measure empirically. Drop a 300×200 ScrollableFrame at 1:1, compare `anchor_widget.winfo_reqwidth()` against the configured 300. Decide whether to (a) subtract scrollbar width when setting `_desired_width` so the OUTER container hits the target, or (b) size the canvas window from the widget's actual reqwidth/reqheight after render.
-
-**Not blocking for now** — widget still drops + previews + exports; only the 1:1 visual matches exactly after the fix.
+**Fix (v0.0.17):** `_place_top_level` + `_sync_composite_size` pin the canvas window using `canvas_scale` so SF matches a plain Frame at the same stored size on any DPI. `export_state` emits `._parent_frame.configure(width, height) + grid_propagate(False)` so the exported runtime matches the builder exactly. `_disable_container_propagate` now leaves SF's inner frame propagating so children pack naturally.
 
 ---
 

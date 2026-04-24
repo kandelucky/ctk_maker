@@ -24,10 +24,17 @@ BTN_FG_DISABLED = "#666666"
 
 
 class SegmentValuesEditor(Editor):
+    @staticmethod
+    def _label_for(panel, pname: str) -> str:
+        if pname == "tab_names":
+            return "Edit Tabs..."
+        node = panel.project.get_widget(panel.current_id)
+        if node is not None and node.widget_type == "CTkSegmentedButton":
+            return "Edit Segments..."
+        return "Edit Values..."
+
     def populate(self, panel, iid, pname, prop, value) -> None:
-        label_text = (
-            "Edit Tabs..." if pname == "tab_names" else "Edit Segments..."
-        )
+        label_text = self._label_for(panel, pname)
         btn = tk.Label(
             panel.tree, text=label_text,
             bg=BTN_BG, fg=BTN_FG,

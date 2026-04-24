@@ -118,6 +118,8 @@ the template instead of repeating it.
 - [x] `initial_value` populated on load
 - [x] Dropdown style (`dropdown_fg_color` / `dropdown_hover_color` / `dropdown_text_color`)
 - [x] `text_align` → anchor mapping
+- [x] Scrollable dropdown popup matches parent width (v0.0.18)
+- [x] Dropdown Layout group: offset, item align, max visible, corner radius, border
 
 ### CTkOptionMenu
 - [x] Template (1–8)
@@ -125,6 +127,9 @@ the template instead of repeating it.
 - [x] `dynamic_resizing` hardcoded False (verify exporter)
 - [x] `text_align` → anchor mapping
 - [x] No border (by design — `_NODE_ONLY_KEYS`?)
+- [x] Two-click selection in builder (first click selects, second opens within 500ms) (v0.0.18)
+- [x] Scrollable dropdown popup matches parent width (v0.0.18)
+- [x] Dropdown Layout group: offset, item align, max visible, corner radius, border
 
 ---
 
@@ -157,16 +162,18 @@ the template instead of repeating it.
 - [x] Drag-to-cell snap + palette drop respects cell under cursor
 - [x] Auto-grow when all cells full; Grid → place swap preserves distribution
 
-### CTkScrollableFrame (partial — nested children path)
-- [x] Template 1, 2, 6, 7 (drop, edit, save/load, export)
+### CTkScrollableFrame
+- [x] Template (1–8)
 - [x] Scrollbar orientation + colours
-- [!] Drop-children-inside doesn't work — CTk renders children on a hidden inner canvas not accessible via master= assignment; deferred to roadmap
+- [x] Drop children inside via vbox/hbox layout (v0.0.17) — children pack vertically/horizontally and the inner frame grows; preview matches editor width/height
+- [x] `layout_type` (vbox/hbox) + `layout_spacing`
 
-### CTkTabview (partial — tabs yes, per-tab children no)
-- [x] Template 1, 2, 6, 7
+### CTkTabview
+- [x] Template (1–8)
 - [x] `tab_names` multi-line list → `.add("name")` per tab in export
-- [x] Rename / reorder tabs (via SegmentValuesDialog — reorder by delete+re-add)
-- [!] Dropping widgets into a specific tab not supported — palette drop goes to root canvas; deferred to roadmap
+- [x] Rename / reorder tabs (via SegmentValuesDialog — reorder by delete+re-add); rename warning on attached children
+- [x] Drop widgets into a specific tab (v0.0.17) — `parent_slot` tracks tab assignment, drag/reparent/undo all preserve it
+- [x] Tab Bar Position (top/bottom) + Tab Bar Align (left/center/right/stretch)
 
 ---
 
@@ -218,6 +225,7 @@ the template instead of repeating it.
 - **[CTkButton]** `text_hover_color` change reset CTk's hover background state — `widget.configure(text_color=...)` triggers `_draw()` which resets hover; fixed by writing directly to `widget._text_label.configure(fg=colour)`. Fixed v0.0.15.14.
 - **[CTkComboBox]** crash on palette drop — `dropdown_width` (removed kwarg) was being passed to `CTkComboBox` constructor; added to `_NODE_ONLY_KEYS` for cleanup from old project files. Fixed v0.0.15.24.
 - **[Image]** `image_color` ✕ button stayed active even when color was `None` — `_is_cleared` treated `None` and `"transparent"` as distinct; fixed by adding both to `_CLEARED_SENTINELS` frozenset. Fixed v0.0.15.24.
-- **[CTkScrollableFrame]** children cannot be dropped inside — CTk renders the scrollable content on an internal canvas widget that is not exposed as a standard Tk master; container behavior deferred to roadmap.
-- **[CTkTabview]** widgets cannot be dropped into individual tabs — tab content frames are internal CTk objects not exposed via the builder tree; deferred to roadmap.
+- **[CTkScrollableFrame]** children cannot be dropped inside — fixed by treating SF as a vbox/hbox container; children pack inside the inner frame, outer frame is pinned to stored width/height with `grid_propagate(False)` so preview matches editor. Resolved v0.0.17.
+- **[CTkTabview]** widgets cannot be dropped into individual tabs — fixed by tracking `parent_slot` on every nested node; descriptor `child_master` resolves to `widget.tab(slot)`, drag/reparent/undo preserve the assignment, exporter emits `.tab(name)` as the master. Resolved v0.0.17.
+- **[CTkComboBox / CTkOptionMenu]** dropdown popup didn't scroll, ignored parent width, and was visually unstyleable beyond colours — replaced CTk's native popup with a Toplevel-based `ScrollableDropdown` helper. Width = `attach.winfo_width()`, scrollbar kicks in past `max_visible`, popup frame is full CTkFrame (border / radius / fg). FocusOut binding swapped for `<Button-1>` on root toplevel because overrideredirect Toplevels on Windows never get focus, causing the popup to vanish on the first frame. Side-car file written next to the export so Preview / exported apps both render the new popup. Resolved v0.0.18.
 - **[Widget Inspector]** `ttk.Style.theme_use("clam")` wrecked Object Tree + Properties panel styling — removed; named style configure used instead. Fixed v0.0.15.22.

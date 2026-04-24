@@ -49,6 +49,14 @@ class CTkOptionMenuDescriptor(WidgetDescriptor):
         "dropdown_fg_color": "#2b2b2b",
         "dropdown_hover_color": "#3a3a3a",
         "dropdown_text_color": "#dce4ee",
+        # Dropdown layout
+        "dropdown_offset": 4,
+        "dropdown_button_align": "center",
+        "dropdown_max_visible": 8,
+        "dropdown_corner_radius": 6,
+        "dropdown_border_enabled": True,
+        "dropdown_border_width": 1,
+        "dropdown_border_color": "#3c3c3c",
         # Text content + style
         "font_size": 13,
         "font_bold": False,
@@ -111,6 +119,30 @@ class CTkOptionMenuDescriptor(WidgetDescriptor):
         {"name": "dropdown_text_color", "type": "color", "label": "",
          "group": "Dropdown Colors", "row_label": "Text"},
 
+        # --- Dropdown Layout ---------------------------------------------
+        {"name": "dropdown_offset", "type": "number", "label": "",
+         "group": "Dropdown Layout", "row_label": "Offset",
+         "min": 0, "max": 40},
+        {"name": "dropdown_button_align", "type": "justify", "label": "",
+         "group": "Dropdown Layout", "row_label": "Item Align"},
+        {"name": "dropdown_max_visible", "type": "number", "label": "",
+         "group": "Dropdown Layout", "row_label": "Max Visible",
+         "min": 1, "max": 30},
+        {"name": "dropdown_corner_radius", "type": "number", "label": "",
+         "group": "Dropdown Layout", "row_label": "Corner Radius",
+         "min": 0, "max": 30},
+        {"name": "dropdown_border_enabled", "type": "boolean", "label": "",
+         "group": "Dropdown Layout", "subgroup": "Border",
+         "row_label": "Enabled"},
+        {"name": "dropdown_border_width", "type": "number", "label": "",
+         "group": "Dropdown Layout", "subgroup": "Border",
+         "row_label": "Thickness", "min": 1, "max": 10,
+         "disabled_when": lambda p: not p.get("dropdown_border_enabled")},
+        {"name": "dropdown_border_color", "type": "color", "label": "",
+         "group": "Dropdown Layout", "subgroup": "Border",
+         "row_label": "Color",
+         "disabled_when": lambda p: not p.get("dropdown_border_enabled")},
+
         # --- Text --------------------------------------------------------
         {"name": "font_size", "type": "number", "label": "",
          "group": "Text", "row_label": "Size", "min": 6, "max": 96},
@@ -136,6 +168,11 @@ class CTkOptionMenuDescriptor(WidgetDescriptor):
     _NODE_ONLY_KEYS = {
         "x", "y",
         "button_enabled", "initial_value", "text_align",
+        # Dropdown popup is rendered by our ScrollableDropdown helper,
+        # not by CTk — so these never reach CTkOptionMenu.configure().
+        "dropdown_offset", "dropdown_button_align", "dropdown_max_visible",
+        "dropdown_corner_radius", "dropdown_border_enabled",
+        "dropdown_border_width", "dropdown_border_color",
     }
     _FONT_KEYS = {
         "font_size", "font_bold", "font_italic",
@@ -189,11 +226,36 @@ class CTkOptionMenuDescriptor(WidgetDescriptor):
         return result
 
     @classmethod
+    def _dropdown_kwargs(cls, properties: dict) -> dict:
+        bw = int(properties.get("dropdown_border_width", 1))
+        if not properties.get("dropdown_border_enabled", True):
+            bw = 0
+        return dict(
+            fg_color=properties.get("dropdown_fg_color", "#2b2b2b"),
+            text_color=properties.get("dropdown_text_color", "#dce4ee"),
+            hover_color=properties.get("dropdown_hover_color", "#3a3a3a"),
+            offset=int(properties.get("dropdown_offset", 4)),
+            button_align=properties.get("dropdown_button_align", "center"),
+            max_visible=int(properties.get("dropdown_max_visible", 8)),
+            border_width=bw,
+            border_color=properties.get(
+                "dropdown_border_color", "#3c3c3c",
+            ),
+            corner_radius=int(
+                properties.get("dropdown_corner_radius", 6),
+            ),
+        )
+
+    @classmethod
     def create_widget(cls, master, properties: dict, init_kwargs=None):
+        from app.widgets.scrollable_dropdown import ScrollableDropdown
         kwargs = cls.transform_properties(properties)
         if init_kwargs:
             kwargs.update(init_kwargs)
         widget = ctk.CTkOptionMenu(master, **kwargs)
+        widget._scrollable_dropdown = ScrollableDropdown(
+            widget, **cls._dropdown_kwargs(properties),
+        )
         cls.apply_state(widget, properties)
         return widget
 
@@ -205,6 +267,9 @@ class CTkOptionMenuDescriptor(WidgetDescriptor):
                 widget.set(str(initial))
             except Exception:
                 log_error("CTkOptionMenuDescriptor.apply_state set")
+        sd = getattr(widget, "_scrollable_dropdown", None)
+        if sd is not None:
+            sd.configure_style(**cls._dropdown_kwargs(properties))
 
     @classmethod
     def export_state(cls, var_name: str, properties: dict) -> list[str]:

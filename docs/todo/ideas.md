@@ -215,11 +215,11 @@ Pick whichever best preserves preview = reality.
 
 - **vbox / hbox / grid — outer padding (4 sides)** — ახლა `layout_spacing` მხოლოდ children-ს შორის spacing-ია. ბევრ layout-ს სჭირდება გარე padding (top/right/bottom/left). tkinter pack/grid-ს native outer padding არ აქვს — ყველაზე სწორი მიდგომა: 4 ახალი property (`layout_padding_top/bottom/left/right`), ხოლო export/canvas-ზე FIRST + LAST children-ს `padx=(left, right)` + `pady=(top_or_bottom, spacing/2)` ოვერლაის. multi-file change: layout_schema, exporter, workspace layout_overlay. Mid-size feature.
 
-- **CTkComboBox / CTkOptionMenu — remaining UX items** (from Area 7 findings):
-  - *Two-click interaction model* — first click on ComboBox/OptionMenu = select widget (no dropdown), second click = activate dropdown. Requires workspace to intercept CTk's `<Button-1>` dropdown handler and block it when widget isn't already selected. Pattern used by Qt Designer.
-  - *Dropdown width matches widget* — CTk's dropdown is character-width-based (`DropdownMenu._min_character_width`, default 18). Pixel width can't be set directly. Fix: compute `widget_px / avg_char_px` in `apply_state`, set `widget._dropdown_menu._min_character_width = computed`, then `widget._dropdown_menu.configure(values=[...])` to rebuild. Font-metric approximation needed; fragile across font sizes / DPI.
-  - *Scrollable dropdown* — CTk's dropdown popup doesn't scroll natively. Workaround: a fixed `dropdown_height` cap that cuts off at N items. Real fix: replace CTk's internal dropdown with a custom CTkScrollableFrame-based popup. Big change.
-  - *Unified visual (arrow icon)* — CTkComboBox and CTkOptionMenu should share identical arrow/chevron icon aesthetics. Both accept `button_image=CTkImage(...)`. Could provide a consistent icon via descriptor's default `button_image_data`.
+- **CTkComboBox / CTkOptionMenu — Phase 2 dropdown polish** (Phase 1 shipped in v0.0.18 — scrollable popup + width matching + offset / button_align / max_visible / corner_radius / border):
+  - *Item font customization* — size / bold / italic / underline / strike for popup buttons. New props `dropdown_font_size`, `dropdown_font_bold`, etc. Wire through ScrollableDropdown — pass `font=ctk.CTkFont(...)` per CTkButton.
+  - *Per-row button height* — `dropdown_button_height` property so users can make compact or chunky popups.
+  - *Unified arrow icon* — CTkComboBox + CTkOptionMenu should share identical chevron aesthetics. Both accept `button_image=CTkImage(...)`. Could provide a consistent icon via descriptor's default `button_image_data`.
+  - *Tooltip on ComboBox text input* — clarify in Properties panel that the entry accepts custom values not in the dropdown list (currently unintuitive — user may not realise typing is allowed).
 
 - **Templates / Presets** for common windows (login form, settings dialog, wizard).
 

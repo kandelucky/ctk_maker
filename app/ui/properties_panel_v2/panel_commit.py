@@ -345,7 +345,12 @@ class CommitMixin:
             line for line in str(current).splitlines() if line.strip()
         ]
         is_tabview = pname == "tab_names"
-        title = "Edit Tabs" if is_tabview else "Edit Segments"
+        if is_tabview:
+            title = "Edit Tabs"
+        elif node.widget_type == "CTkSegmentedButton":
+            title = "Edit Segments"
+        else:
+            title = "Edit Values"
         dialog = SegmentValuesDialog(
             self.winfo_toplevel(), title, values,
         )
