@@ -66,6 +66,25 @@ class WidgetDescriptor:
         return {}
 
     @classmethod
+    def before_recreate(cls, node, widget, prop_name: str) -> None:
+        """Hook called just before the workspace destroys this widget's
+        subtree in response to a ``recreate_triggers`` change. Lets a
+        descriptor migrate child state that depends on a soon-to-be-
+        obsolete widget attribute (CTkTabview reads ``widget._name_list``
+        to remap children's ``parent_slot`` when a tab is renamed).
+        Default: no-op.
+        """
+
+    @classmethod
+    def child_master(cls, widget, child_node):
+        """Return the tk master that should host a nested child of this
+        container. Defaults to the container widget itself; composite
+        containers whose children live inside a named sub-widget
+        (CTkTabview → `widget.tab(child.parent_slot)`) override this.
+        """
+        return widget
+
+    @classmethod
     def canvas_anchor(cls, widget):
         """Return the widget the workspace should hand to
         `canvas.create_window` / `widget.place()`. For most widgets

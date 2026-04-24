@@ -283,6 +283,17 @@ class SelectionController:
             return None
         inner, _window_id = self.widget_views[widget_id]
         widget = self.anchor_views.get(widget_id, inner)
+        # Un-gridded widgets (e.g. children of a non-active Tabview
+        # tab) still report `winfo_rootx/width` from their last layout,
+        # so the chrome would render over nothing. `winfo_ismapped`
+        # returns False for ungridded / unpacked / unplaced widgets —
+        # short-circuit to hide chrome instead of stamping stale
+        # coords onto the canvas.
+        try:
+            if not widget.winfo_ismapped():
+                return None
+        except tk.TclError:
+            return None
         try:
             rx = widget.winfo_rootx() - self.canvas.winfo_rootx()
             ry = widget.winfo_rooty() - self.canvas.winfo_rooty()

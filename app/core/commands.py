@@ -479,6 +479,8 @@ class ReparentCommand(Command):
         old_document_id: str | None = None,
         new_document_id: str | None = None,
         parent_dim_changes: tuple[str, dict] | None = None,
+        old_parent_slot: str | None = None,
+        new_parent_slot: str | None = None,
     ):
         self.widget_id = widget_id
         self.old_parent_id = old_parent_id
@@ -496,6 +498,10 @@ class ReparentCommand(Command):
         # undo reverts the dims after moving the widget back; redo
         # re-applies them so the grid grows in step with the reparent.
         self._parent_dim_changes = parent_dim_changes
+        # parent_slot is the tab name when reparenting into a Tabview —
+        # captured so undo / redo restore the correct tab assignment.
+        self.old_parent_slot = old_parent_slot
+        self.new_parent_slot = new_parent_slot
         self.description = "Reparent widget"
 
     def _move(
@@ -506,14 +512,16 @@ class ReparentCommand(Command):
         x: int,
         y: int,
         document_id: str | None,
+        parent_slot: str | None = None,
     ) -> None:
         node = project.get_widget(self.widget_id)
         if node is None:
             return
-        # Write coords before reparent so the destroy+recreate that
-        # reparent triggers picks up the restored x/y.
+        # Write coords + parent_slot before reparent so the destroy+
+        # recreate that reparent triggers picks up the restored state.
         node.properties["x"] = x
         node.properties["y"] = y
+        node.parent_slot = parent_slot
         # Same-parent + same-doc moves are sibling reorders. The
         # captured ``index`` is post-move (final slot), which doesn't
         # match ``project.reparent``'s pre-pop semantics — running
@@ -547,6 +555,7 @@ class ReparentCommand(Command):
         self._move(
             project, self.old_parent_id, self.old_index,
             self.old_x, self.old_y, self.old_document_id,
+            parent_slot=self.old_parent_slot,
         )
         if self._parent_dim_changes is not None:
             parent_id, changes = self._parent_dim_changes
@@ -567,6 +576,7 @@ class ReparentCommand(Command):
         self._move(
             project, self.new_parent_id, self.new_index,
             self.new_x, self.new_y, self.new_document_id,
+            parent_slot=self.new_parent_slot,
         )
 
 

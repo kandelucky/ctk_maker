@@ -47,6 +47,8 @@ ANCHOR_DROPDOWN_ORDER = list(ANCHOR_CODE_TO_LABEL.values())
 
 COMPOUND_OPTIONS = ["top", "left", "right", "bottom"]
 JUSTIFY_OPTIONS = ["left", "center", "right"]
+TAB_BAR_ALIGN_OPTIONS = ["left", "center", "right", "stretch"]
+TAB_BAR_POSITION_OPTIONS = ["top", "bottom"]
 ORIENTATION_OPTIONS = ["horizontal", "vertical"]
 TEXT_POSITION_OPTIONS = ["left", "right", "top", "bottom"]
 WRAP_OPTIONS = ["none", "char", "word"]

@@ -416,7 +416,12 @@ class Workspace(ctk.CTkFrame):
                 entry = self.widget_views.get(node.id)
                 if entry is not None:
                     widget, _ = entry
-                    bbox = self._widget_canvas_bbox(widget)
+                    # Composite containers (CTkScrollableFrame) expose
+                    # an outer anchor widget with the correct fixed
+                    # dimensions; the inner `widget` collapses to 0x0
+                    # when empty and would fail the bbox size guard.
+                    hit_widget = self._anchor_views.get(node.id, widget)
+                    bbox = self._widget_canvas_bbox(hit_widget)
                     if bbox is not None:
                         x1, y1, x2, y2 = bbox
                         if x1 <= canvas_x <= x2 and y1 <= canvas_y <= y2:
@@ -730,7 +735,8 @@ class Workspace(ctk.CTkFrame):
     def _sync_composite_size(self, widget_id: str, node) -> None:
         """Push width/height onto the outer anchor container for
         composite widgets. Top-level uses `canvas.itemconfigure` on
-        the window item; nested uses `place_configure`.
+        the window item (physical pixel coords → ``canvas_scale``);
+        nested uses `place_configure` (CTk-scaled → ``zoom.value``).
         """
         anchor = self._anchor_views.get(widget_id)
         if anchor is None:
@@ -743,12 +749,19 @@ class Workspace(ctk.CTkFrame):
             return
         if lw <= 0 or lh <= 0:
             return
-        zw = max(1, int(lw * self.zoom.value))
-        zh = max(1, int(lh * self.zoom.value))
         try:
             if window_id is not None:
-                self.canvas.itemconfigure(window_id, width=zw, height=zh)
+                # Canvas items live in physical pixels; match the
+                # initial placement in ``_place_top_level`` so a
+                # post-creation property change doesn't shrink the
+                # outer frame back to ``lw * zoom.value`` while
+                # CTk's own scaled widget still wants ``lw * DPI``.
+                cw = max(1, int(lw * self.zoom.canvas_scale))
+                ch = max(1, int(lh * self.zoom.canvas_scale))
+                self.canvas.itemconfigure(window_id, width=cw, height=ch)
             elif anchor.winfo_manager() == "place":
+                zw = max(1, int(lw * self.zoom.value))
+                zh = max(1, int(lh * self.zoom.value))
                 anchor.place_configure(width=zw, height=zh)
         except tk.TclError:
             pass
@@ -917,7 +930,11 @@ class Workspace(ctk.CTkFrame):
                 )
                 self.canvas.coords(window_id, cx, cy)
             elif widget.winfo_manager() == "place":
-                widget.place_configure(
+                # ``.place`` (not ``.place_configure``) routes through
+                # CTk's DPI-scaling wrapper — see drag.py for the full
+                # rationale. Using ``place_configure`` here would jump
+                # the widget back to raw tk pixels after a drag.
+                widget.place(
                     x=int(x * self.zoom.value),
                     y=int(y * self.zoom.value),
                 )
@@ -944,7 +961,19 @@ class Workspace(ctk.CTkFrame):
         for k, v in updates.items():
             if node.properties.get(k) != v:
                 self.project.update_property(widget_id, k, v)
-        self.lifecycle.on_widget_removed(widget_id)
+        entry = self.widget_views.get(widget_id)
+        if entry is not None:
+            widget_obj, _ = entry
+            try:
+                descriptor.before_recreate(node, widget_obj, prop_name)
+            except Exception:
+                log_error(f"{node.widget_type}.before_recreate")
+
+        def _remove_subtree(n) -> None:
+            for c in list(n.children):
+                _remove_subtree(c)
+            self.lifecycle.on_widget_removed(n.id)
+        _remove_subtree(node)
         self.lifecycle.create_widget_subtree(node)
         if widget_id == self.project.selected_id:
             self._schedule_selection_redraw()
@@ -1090,8 +1119,23 @@ class Workspace(ctk.CTkFrame):
             # Nested drop — coords relative to the container widget.
             container_widget, _ = self.widget_views[container_node.id]
             zoom = self.zoom.value or 1.0
-            rel_x = (x_root - container_widget.winfo_rootx()) / zoom
-            rel_y = (y_root - container_widget.winfo_rooty()) / zoom
+            # Tabview drops land inside the currently-active tab's
+            # inner frame; rel_x/rel_y are computed against that frame
+            # so the place() coords match what the user sees on canvas.
+            coord_ref = container_widget
+            active_tab_slot: str | None = None
+            if container_node.widget_type == "CTkTabview":
+                try:
+                    active_tab_slot = container_widget.get() or None
+                except Exception:
+                    active_tab_slot = None
+                if active_tab_slot:
+                    try:
+                        coord_ref = container_widget.tab(active_tab_slot)
+                    except Exception:
+                        coord_ref = container_widget
+            rel_x = (x_root - coord_ref.winfo_rootx()) / zoom
+            rel_y = (y_root - coord_ref.winfo_rooty()) / zoom
             parent_layout = normalise_layout_type(
                 container_node.properties.get("layout_type", "place"),
             )
@@ -1123,6 +1167,11 @@ class Workspace(ctk.CTkFrame):
             widget_type=descriptor.type_name,
             properties=properties,
         )
+        if (
+            container_node is not None
+            and container_node.widget_type == "CTkTabview"
+        ):
+            node.parent_slot = active_tab_slot
         if getattr(entry, "default_name", None):
             node.name = entry.default_name
         self.project.add_widget(node, parent_id=parent_id)

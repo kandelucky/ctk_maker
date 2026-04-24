@@ -190,7 +190,7 @@ class WidgetLifecycle:
         if descriptor is None:
             return
         parent_node = node.parent
-        master = self._resolve_master(parent_node)
+        master = self._resolve_master(parent_node, node)
         if parent_node is not None:
             self._apply_fill_default(descriptor, parent_node, node)
             self._auto_assign_grid_cell(parent_node, node)
@@ -240,18 +240,34 @@ class WidgetLifecycle:
             )
         self.widget_views[node.id] = (widget, window_id)
         ws._bind_widget_events(anchor_widget, node.id)
+        if node.widget_type == "CTkTabview":
+            self._wire_tabview_selection_refresh(widget)
         if not node.visible:
             self._set_widget_visibility(widget, window_id, node, False)
+
+    def _wire_tabview_selection_refresh(self, tabview) -> None:
+        """Route CTk's tab-switch callback to the selection controller
+        so chrome around a child widget in the just-hidden tab doesn't
+        stay stamped on the canvas. The callback fires AFTER CTk
+        re-grids the new tab, so `winfo_ismapped` readings in
+        `_bbox_for` are settled by the time we redraw.
+        """
+        def _on_tab_switched(*_a, **_kw) -> None:
+            self.workspace.after_idle(self.selection.draw)
+        tabview._command = _on_tab_switched
 
     # ------------------------------------------------------------------
     # on_widget_added helpers
     # ------------------------------------------------------------------
-    def _resolve_master(self, parent_node) -> tk.Widget:
+    def _resolve_master(self, parent_node, child_node=None) -> tk.Widget:
         """Return the tk master for a new widget under ``parent_node``.
         Top-level widgets live directly on the canvas; nested widgets
         live inside their parent's tk widget. Falls back to the canvas
         when a parent exists in the model but its view hasn't been
-        created yet (e.g. mid-reparent).
+        created yet (e.g. mid-reparent). For composite parents whose
+        children live inside a named sub-widget (CTkTabview), the
+        descriptor's ``child_master`` hook maps to the real host
+        (``tabview.tab(slot)``).
         """
         if parent_node is None:
             return self.canvas
@@ -259,6 +275,10 @@ class WidgetLifecycle:
         if parent_entry is None:
             return self.canvas
         master, _ = parent_entry
+        if child_node is not None:
+            parent_descriptor = get_descriptor(parent_node.widget_type)
+            if parent_descriptor is not None:
+                master = parent_descriptor.child_master(master, child_node)
         return master
 
     def _instantiate_widget(
@@ -291,10 +311,22 @@ class WidgetLifecycle:
         breaking drop-into UX. Disabled on every container; ``place``
         children don't trigger propagate anyway so non-pack modes
         are unaffected.
+
+        For composite containers (CTkScrollableFrame), only the OUTER
+        anchor widget is pinned — the INNER frame must keep
+        propagate(True) so it grows with packed children, which is
+        what drives CTk's ``<Configure>``-bound scrollregion update.
+        Disabling propagate on the inner frame would leave children
+        packed but clipped to the frame's initial 0-height natural
+        size (invisible on canvas while still in the model).
         """
         if not getattr(descriptor, "is_container", False):
             return
-        for forget_target in {widget, anchor_widget}:
+        targets = (
+            {anchor_widget} if widget is not anchor_widget
+            else {widget}
+        )
+        for forget_target in targets:
             # CTkScrollableFrame overrides pack_propagate /
             # grid_propagate to take no argument (the inner canvas
             # it wraps can't honour "don't shrink to content"), so
@@ -326,10 +358,15 @@ class WidgetLifecycle:
         kwargs = {"anchor": "nw", "window": anchor_widget}
         # Composite widgets (CTkScrollableFrame) don't propagate their
         # requested size to the canvas; pin the canvas item size
-        # explicitly so the outer container doesn't grow.
+        # explicitly so the outer container doesn't grow. Use
+        # ``canvas_scale`` (= user_zoom × DPI) so the canvas item
+        # matches CTk's DPI-scaled widget sizing — otherwise on
+        # DPI-aware Windows a ScrollableFrame stored at 200 renders
+        # at ~135 physical pixels while a plain Frame stored at 200
+        # renders at ~300 physical pixels.
         if is_composite:
             kwargs.update(
-                _composite_place_size(lw, lh, self.zoom.value),
+                _composite_place_size(lw, lh, self.zoom.canvas_scale),
             )
         return self.canvas.create_window(cx, cy, **kwargs)
 

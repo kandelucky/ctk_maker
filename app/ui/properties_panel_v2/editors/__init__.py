@@ -35,6 +35,8 @@ _EDITORS: dict[str, Editor] = {
     "grid_sticky": _ENUM,
     "wrap": _ENUM,
     "text_position": _ENUM,
+    "tab_bar_align": _ENUM,
+    "tab_bar_position": _ENUM,
     "segment_initial": _ENUM,
     "segment_values": SegmentValuesEditor(),
 }

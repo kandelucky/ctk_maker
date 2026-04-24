@@ -230,7 +230,10 @@ class ZoomController:
             # would un-hide it unexpectedly.
             try:
                 if widget.winfo_manager() == "place":
-                    widget.place_configure(
+                    # ``.place`` routes through CTk's DPI scaling;
+                    # ``place_configure`` bypasses it. Keeping these
+                    # in sync avoids cross-DPI widget jumps.
+                    widget.place(
                         x=int(lx * self.value),
                         y=int(ly * self.value),
                     )

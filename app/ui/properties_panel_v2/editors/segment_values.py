@@ -25,8 +25,11 @@ BTN_FG_DISABLED = "#666666"
 
 class SegmentValuesEditor(Editor):
     def populate(self, panel, iid, pname, prop, value) -> None:
+        label_text = (
+            "Edit Tabs..." if pname == "tab_names" else "Edit Segments..."
+        )
         btn = tk.Label(
-            panel.tree, text="Edit Segments...",
+            panel.tree, text=label_text,
             bg=BTN_BG, fg=BTN_FG,
             font=("Segoe UI", 10), anchor="center",
             relief="flat", bd=0, cursor="hand2",

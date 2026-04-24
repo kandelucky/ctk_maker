@@ -344,12 +344,66 @@ class CommitMixin:
         values = [
             line for line in str(current).splitlines() if line.strip()
         ]
+        is_tabview = pname == "tab_names"
+        title = "Edit Tabs" if is_tabview else "Edit Segments"
         dialog = SegmentValuesDialog(
-            self.winfo_toplevel(), "Edit Segments", values,
+            self.winfo_toplevel(), title, values,
         )
         dialog.wait_window()
-        if dialog.result is not None:
-            self._commit_prop(pname, "\n".join(dialog.result))
+        if dialog.result is None:
+            return
+        new_values = dialog.result
+        if is_tabview and not self._confirm_tabview_change(
+            node, values, new_values,
+        ):
+            return
+        self._commit_prop(pname, "\n".join(new_values))
+
+    def _confirm_tabview_change(
+        self, node, old_names: list[str], new_names: list[str],
+    ) -> bool:
+        """Ask the user to confirm a tab-list edit that would affect
+        nested children. Detects a single-tab rename (one removed, one
+        added) and previews the auto-migration; any other delta that
+        orphans children warns they'll be moved to the first tab.
+        Returns True to proceed with the commit, False to cancel.
+        """
+        removed = [n for n in old_names if n not in new_names]
+        if not removed:
+            return True
+        affected_slots = {
+            getattr(c, "parent_slot", None) for c in node.children
+        }
+        affected_count = sum(
+            1 for c in node.children
+            if getattr(c, "parent_slot", None) in removed
+        )
+        if affected_count == 0:
+            return True
+        _ = affected_slots  # kept for future per-tab breakdown
+        added = [n for n in new_names if n not in old_names]
+        if len(removed) == 1 and len(added) == 1:
+            msg = (
+                f"Renaming tab '{removed[0]}' to '{added[0]}'.\n"
+                f"{affected_count} widget(s) will move to the "
+                f"renamed tab."
+            )
+        else:
+            first = new_names[0] if new_names else "Tab 1"
+            msg = (
+                f"{affected_count} widget(s) are in tabs being "
+                f"deleted or renamed.\n"
+                f"They will be moved to '{first}'.\n\n"
+                f"Tip: rename tabs one at a time to keep widgets "
+                f"attached to the renamed tab."
+            )
+        from app.ui.dialogs import ConfirmDialog
+        dialog = ConfirmDialog(
+            self.winfo_toplevel(), "Tab change", msg,
+            ok_text="Continue", cancel_text="Back",
+        )
+        dialog.wait_window()
+        return dialog.result
 
     # ------------------------------------------------------------------
     # Commit path

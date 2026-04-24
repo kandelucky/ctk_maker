@@ -50,6 +50,14 @@ class CTkScrollableFrameDescriptor(WidgetDescriptor):
         "scrollbar_button_hover_color": "#4a4a4a",
         # Main colors
         "fg_color": "#2b2b2b",
+        # Internal layout — children pack top-down (or left-right for
+        # horizontal orientation). Mirrors CTk's native usage pattern:
+        # scrollable frames fill with pack/grid children, inner frame
+        # auto-grows, CTk's own <Configure> hook updates scrollregion
+        # so the scrollbar activates when content exceeds the viewport.
+        # Not exposed in property_schema — driven by orientation.
+        "layout_type": "vbox",
+        "layout_spacing": 4,
     }
 
     property_schema = [
@@ -113,9 +121,27 @@ class CTkScrollableFrameDescriptor(WidgetDescriptor):
 
     _NODE_ONLY_KEYS = {
         "x", "y", "border_enabled", "label_text_align",
+        "layout_type", "layout_spacing",
     }
     init_only_keys = {"orientation"}
     recreate_triggers = frozenset({"orientation"})
+
+    @classmethod
+    def on_prop_recreate(cls, prop_name: str, properties: dict) -> dict:
+        """Keep ``layout_type`` in sync with ``orientation``: vertical
+        scroll → vbox (children pack top-down), horizontal → hbox.
+        The workspace's recreate path applies these returned updates
+        before rebuilding the widget, so children re-render with the
+        correct pack side immediately.
+        """
+        if prop_name != "orientation":
+            return {}
+        orientation = properties.get("orientation", "vertical")
+        return {
+            "layout_type": (
+                "hbox" if orientation == "horizontal" else "vbox"
+            ),
+        }
 
     @classmethod
     def transform_properties(cls, properties: dict) -> dict:
@@ -149,3 +175,23 @@ class CTkScrollableFrameDescriptor(WidgetDescriptor):
         # CTkScrollableFrame lives inside its own outer CTkFrame
         # (`_parent_frame`) — that's the widget the canvas must embed.
         return getattr(widget, "_parent_frame", widget)
+
+    @classmethod
+    def export_state(cls, var_name: str, properties: dict) -> list[str]:
+        # CTk's `width`/`height` only size the inner canvas; the outer
+        # ``_parent_frame`` auto-grows by the scrollbar width
+        # (~14 px). Builder pins the outer to the user-specified
+        # dimensions via ``canvas.itemconfigure`` — mirror that in the
+        # exported runtime so preview + export match the canvas.
+        try:
+            w = int(properties.get("width") or 0)
+            h = int(properties.get("height") or 0)
+        except (TypeError, ValueError):
+            return []
+        if w <= 0 or h <= 0:
+            return []
+        return [
+            f"{var_name}._parent_frame.configure("
+            f"width={w}, height={h})",
+            f"{var_name}._parent_frame.grid_propagate(False)",
+        ]

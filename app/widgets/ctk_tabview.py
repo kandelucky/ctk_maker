@@ -27,10 +27,16 @@ class CTkTabviewDescriptor(WidgetDescriptor):
     type_name = "CTkTabview"
     display_name = "Tabview"
     prefers_fill_in_layout = True
-    # Not a builder-side container yet — children can't be dropped into
-    # a specific tab. Revisit when the composite-widget integration
-    # story lands (see TODO.md).
-    is_container = False
+    # Children drop into the currently-active tab; `parent_slot` on the
+    # child node holds the tab name. `child_master` below resolves the
+    # real tk master (`widget.tab(slot)`) so CTk places the child inside
+    # the tab's inner frame rather than the tabview itself.
+    is_container = True
+    # Tab rename destroys the old tab frame in CTk — children with a
+    # stale `parent_slot` would be orphaned. Full destroy + rebuild
+    # via the workspace's recreate path, with `before_recreate`
+    # migrating children's slots first.
+    recreate_triggers = frozenset({"tab_names"})
 
     default_properties = {
         # Geometry
@@ -45,7 +51,9 @@ class CTkTabviewDescriptor(WidgetDescriptor):
         "border_color": "#565b5e",
         # Tabs
         "tab_names": "Tab 1\nTab 2\nTab 3",
-        "initial_tab": "",
+        "initial_tab": "Tab 1",
+        "tab_position": "top",
+        "tab_anchor": "center",
         # Button Interaction
         "button_enabled": True,
         # Main colors
@@ -98,6 +106,10 @@ class CTkTabviewDescriptor(WidgetDescriptor):
          "group": "Tabs", "row_label": "Tab Names"},
         {"name": "initial_tab", "type": "segment_initial", "label": "",
          "group": "Tabs", "row_label": "Initial Tab"},
+        {"name": "tab_position", "type": "tab_bar_position", "label": "",
+         "group": "Tabs", "row_label": "Tab Bar Position"},
+        {"name": "tab_anchor", "type": "tab_bar_align", "label": "",
+         "group": "Tabs", "row_label": "Tab Bar Align"},
 
         # --- Button Interaction ------------------------------------------
         {"name": "button_enabled", "type": "boolean", "label": "",
@@ -130,7 +142,21 @@ class CTkTabviewDescriptor(WidgetDescriptor):
 
     _NODE_ONLY_KEYS = {
         "x", "y", "border_enabled", "tab_names", "button_enabled",
-        "initial_tab",
+        "initial_tab", "tab_anchor", "tab_position",
+    }
+
+    # (position, align) → CTk anchor value. `stretch` keeps the base
+    # anchor (center / s) and is re-gridded with sticky="nsew" via
+    # `_apply_tab_stretch` after widget creation.
+    _TAB_ANCHOR_MAP = {
+        ("top", "left"):     "nw",
+        ("top", "center"):   "center",
+        ("top", "right"):    "ne",
+        ("top", "stretch"):  "center",
+        ("bottom", "left"):    "sw",
+        ("bottom", "center"):  "s",
+        ("bottom", "right"):   "se",
+        ("bottom", "stretch"): "s",
     }
 
     @classmethod
@@ -145,7 +171,49 @@ class CTkTabviewDescriptor(WidgetDescriptor):
         )
         if not properties.get("border_enabled"):
             result["border_width"] = 0
+        position = properties.get("tab_position", "top")
+        align = properties.get("tab_anchor", "center")
+        result["anchor"] = cls._TAB_ANCHOR_MAP.get(
+            (position, align), "center",
+        )
         return result
+
+    @classmethod
+    def _apply_tab_stretch(cls, widget, stretched: bool) -> None:
+        """Re-grid the internal ``_segmented_button`` with
+        ``sticky="nsew"`` when stretched; otherwise hand control back
+        to CTk's own ``_set_grid_segmented_button`` so the sticky
+        matches the current anchor (``ns`` / ``nsw`` / ``nse`` for
+        center / left / right). Without this bypass, setting ``ns``
+        blindly would overwrite the alignment-specific stickies and
+        leave left/right align visually identical to center.
+        """
+        sb = getattr(widget, "_segmented_button", None)
+        if sb is None:
+            return
+        if stretched:
+            try:
+                info = sb.grid_info()
+            except Exception:
+                info = {}
+            try:
+                sb.grid(
+                    row=info.get("row", 1),
+                    column=info.get("column", 0),
+                    rowspan=info.get("rowspan", 2),
+                    columnspan=info.get("columnspan", 1),
+                    padx=info.get("padx", 0),
+                    sticky="nsew",
+                )
+            except Exception:
+                pass
+            return
+        restore = getattr(widget, "_set_grid_segmented_button", None)
+        if restore is not None:
+            try:
+                restore()
+            except Exception:
+                pass
 
     @classmethod
     def _parse_tab_names(cls, properties: dict) -> list[str]:
@@ -153,6 +221,53 @@ class CTkTabviewDescriptor(WidgetDescriptor):
         return [
             line.strip() for line in str(raw).splitlines() if line.strip()
         ]
+
+    @classmethod
+    def before_recreate(cls, node, widget, prop_name: str) -> None:
+        """Remap children's ``parent_slot`` before a ``tab_names``
+        change destroys + rebuilds the tabview. Detects a single-tab
+        rename (one name removed, one added) and migrates children
+        from the old name to the new; otherwise, stale slots fall
+        back to the first tab so no child ends up orphaned.
+        """
+        if prop_name != "tab_names":
+            return
+        old_names = list(getattr(widget, "_name_list", []) or [])
+        new_names = cls._parse_tab_names(node.properties) or ["Tab 1"]
+        removed = [n for n in old_names if n not in new_names]
+        added = [n for n in new_names if n not in old_names]
+        rename_map: dict[str, str] = {}
+        if len(removed) == 1 and len(added) == 1:
+            rename_map[removed[0]] = added[0]
+        for child in node.children:
+            slot = getattr(child, "parent_slot", None)
+            if slot in rename_map:
+                child.parent_slot = rename_map[slot]
+            elif slot not in new_names:
+                child.parent_slot = new_names[0]
+
+    @classmethod
+    def child_master(cls, widget, child_node):
+        """Children live inside `widget.tab(parent_slot)` — the inner
+        CTkFrame that CTk creates per tab. Falls back to the first tab
+        if `parent_slot` is missing or no longer present (e.g. tab was
+        renamed). Never returns the tabview itself: placing a child
+        directly on the tabview would render it on top of the tab bar
+        and escape tab-switch visibility gating.
+        """
+        names = list(getattr(widget, "_name_list", []) or [])
+        if not names:
+            return widget
+        slot = getattr(child_node, "parent_slot", None)
+        if slot and slot in names:
+            try:
+                return widget.tab(slot)
+            except Exception:
+                pass
+        try:
+            return widget.tab(names[0])
+        except Exception:
+            return widget
 
     @classmethod
     def create_widget(cls, master, properties: dict, init_kwargs=None):
@@ -199,6 +314,24 @@ class CTkTabviewDescriptor(WidgetDescriptor):
                 widget.set(initial)
             except Exception:
                 pass
+        cls._apply_tab_stretch(
+            widget, properties.get("tab_anchor") == "stretch",
+        )
+        # CTk bug workaround: `configure(anchor=...)` only re-grids the
+        # segmented button — it skips `_set_grid_canvas` and
+        # `_set_grid_current_tab`, so after a top→bottom flip the
+        # canvas + active tab stay in the top-layout rows. Call them
+        # explicitly here so a live anchor change actually moves the
+        # tab bar to the chosen side.
+        for method_name in (
+            "_set_grid_canvas", "_set_grid_current_tab",
+        ):
+            fn = getattr(widget, method_name, None)
+            if fn is not None:
+                try:
+                    fn()
+                except Exception:
+                    pass
 
     @classmethod
     def export_state(cls, var_name: str, properties: dict) -> list[str]:
@@ -209,4 +342,13 @@ class CTkTabviewDescriptor(WidgetDescriptor):
         initial = (properties.get("initial_tab") or "").strip()
         if initial and initial in cls._parse_tab_names(properties):
             lines.append(f"{var_name}.set({initial!r})")
+        if properties.get("tab_anchor") == "stretch":
+            # Re-grid the internal segmented button with sticky="nsew"
+            # so the tab buttons fill the full bar width. The segmented
+            # button already weights its columns per tab, so stretching
+            # the container distributes buttons evenly.
+            lines.append(
+                f'{var_name}._segmented_button.grid('
+                f'row=1, rowspan=2, column=0, sticky="nsew")',
+            )
         return lines

@@ -624,13 +624,19 @@ class WidgetDragController:
           nested place children fall through to per-widget
           ``place_configure`` since tags can't reach them.
         """
-        # Canvas-space drag: cursor delta is in physical pixels, and
-        # canvas drawings scale by canvas_scale. Dividing by the same
-        # factor keeps the widget moving in step with the cursor on
-        # high-DPI displays.
-        zoom = self.zoom.canvas_scale or 1.0
-        dx_logical = int(dx_root / zoom)
-        dy_logical = int(dy_root / zoom)
+        # Two scales in play:
+        # - ``canvas_scale`` (= user_zoom × DPI_factor) maps physical
+        #   cursor pixels to logical model pixels — used for the delta.
+        # - ``zoom.value`` (= user_zoom only) is what ``_place_nested``
+        #   feeds to ``.place(x, y)``, because tk already applies DPI
+        #   scaling to place() args on DPI-aware windows. Drag motion
+        #   must re-use that same scale when writing back to
+        #   ``place_configure`` so the widget lands where the cursor
+        #   is instead of drifting by DPI_factor on nested children.
+        canvas_scale = self.zoom.canvas_scale or 1.0
+        place_scale = self.zoom.value or 1.0
+        dx_logical = int(dx_root / canvas_scale)
+        dy_logical = int(dy_root / canvas_scale)
         dx_tick = event.x_root - self._drag["last_mx"]
         dy_tick = event.y_root - self._drag["last_my"]
         hidden_mode = self._drag.get("hidden_mode", False)
@@ -674,12 +680,18 @@ class WidgetDragController:
             w_widget, w_window_id = entry
             if w_window_id is None:
                 # Nested place child — ``drag_group`` can't reach it;
-                # keep it in sync via place_configure.
+                # keep it in sync via ``.place(...)``. Must use ``.place``
+                # (not ``.place_configure``) because CTk only overrides
+                # the former with its DPI scaling wrapper — calling
+                # ``place_configure`` bypasses ``_apply_argument_scaling``
+                # and lands the widget at raw tk pixels while the
+                # initial ``_place_nested`` call routed through CTk's
+                # scaling, causing a cross-DPI jump on first drag tick.
                 try:
                     if w_widget.winfo_manager() == "place":
-                        w_widget.place_configure(
-                            x=int(new_x * zoom),
-                            y=int(new_y * zoom),
+                        w_widget.place(
+                            x=int(new_x * place_scale),
+                            y=int(new_y * place_scale),
                         )
                 except tk.TclError:
                     pass
@@ -982,9 +994,11 @@ class WidgetDragController:
             old_index = len(old_siblings)
         old_x = drag["start_x"]
         old_y = drag["start_y"]
+        old_parent_slot = node.parent_slot
         # Mutate: remove from container, append to doc root, reset x/y
         node.properties["x"] = nx
         node.properties["y"] = ny
+        node.parent_slot = None
         if node in old_siblings:
             old_siblings.remove(node)
         node.parent = None
@@ -1006,6 +1020,8 @@ class WidgetDragController:
                 new_y=ny,
                 old_document_id=same_doc_id,
                 new_document_id=same_doc_id,
+                old_parent_slot=old_parent_slot,
+                new_parent_slot=None,
             ),
         )
         return True
@@ -1069,12 +1085,18 @@ class WidgetDragController:
             old_index = old_siblings.index(node)
         except ValueError:
             old_index = len(old_siblings)
+        old_parent_slot = node.parent_slot
         # Compute + commit the new logical x/y in the drop target's
         # frame of reference (container-local, or doc-local for a
         # top-level drop).
         new_x, new_y = self._compute_drop_coords(nid, target, new_doc)
         node.properties["x"] = max(0, new_x)
         node.properties["y"] = max(0, new_y)
+        # Tabview target: drop lands in the currently-active tab. Any
+        # other target (or a top-level drop) clears the slot so the
+        # node stops referring to a tab it no longer belongs to.
+        new_parent_slot = self._resolve_tabview_slot(target)
+        node.parent_slot = new_parent_slot
         if cross_doc and target is None:
             # Cross-doc top-level drop: bypass project.reparent (which
             # always targets the active doc) and move the whole group
@@ -1092,8 +1114,26 @@ class WidgetDragController:
             new_parent_id, new_x, new_y,
             old_doc, new_doc,
             parent_dim_changes=drag.get("parent_dim_changes"),
+            old_parent_slot=old_parent_slot,
+            new_parent_slot=new_parent_slot,
         )
         return True
+
+    def _resolve_tabview_slot(self, target) -> str | None:
+        """Return the currently-active tab name when ``target`` is a
+        CTkTabview; None otherwise. Used by both the reparent-drag and
+        extract paths to stamp (or clear) the node's ``parent_slot``.
+        """
+        if target is None or target.widget_type != "CTkTabview":
+            return None
+        entry = self.widget_views.get(target.id)
+        if entry is None:
+            return None
+        target_widget, _ = entry
+        try:
+            return target_widget.get() or None
+        except Exception:
+            return None
 
     def _compute_drop_coords(
         self, nid: str, target, new_doc,
@@ -1118,8 +1158,22 @@ class WidgetDragController:
             )
             return new_x, new_y
         target_widget, _ = self.widget_views[target.id]
-        rel_x = widget.winfo_rootx() - target_widget.winfo_rootx()
-        rel_y = widget.winfo_rooty() - target_widget.winfo_rooty()
+        # Tabview target: measure against the active tab's inner frame
+        # (same reference CTk will use as the widget's master after
+        # reparent) so the dropped x/y land where the cursor aimed.
+        coord_ref = target_widget
+        if target.widget_type == "CTkTabview":
+            try:
+                active = target_widget.get() or None
+            except Exception:
+                active = None
+            if active:
+                try:
+                    coord_ref = target_widget.tab(active)
+                except Exception:
+                    coord_ref = target_widget
+        rel_x = widget.winfo_rootx() - coord_ref.winfo_rootx()
+        rel_y = widget.winfo_rooty() - coord_ref.winfo_rooty()
         new_x = int(rel_x / zoom)
         new_y = int(rel_y / zoom)
         if normalise_layout_type(
@@ -1239,6 +1293,8 @@ class WidgetDragController:
         old_x: int, old_y: int, new_parent_id: str | None,
         new_x: int, new_y: int, old_doc, new_doc,
         parent_dim_changes: tuple[str, dict] | None = None,
+        old_parent_slot: str | None = None,
+        new_parent_slot: str | None = None,
     ) -> None:
         """Compute the widget's post-reparent sibling index and push a
         single ``ReparentCommand``. Used for in-doc reparents and for
@@ -1271,6 +1327,8 @@ class WidgetDragController:
             old_document_id=old_doc_id,
             new_document_id=new_doc_id,
             parent_dim_changes=parent_dim_changes,
+            old_parent_slot=old_parent_slot,
+            new_parent_slot=new_parent_slot,
         ))
 
     # ------------------------------------------------------------------

@@ -21,6 +21,8 @@ from .constants import (
     COMPOUND_OPTIONS,
     JUSTIFY_OPTIONS,
     ORIENTATION_OPTIONS,
+    TAB_BAR_ALIGN_OPTIONS,
+    TAB_BAR_POSITION_OPTIONS,
     TEXT_POSITION_OPTIONS,
     WRAP_OPTIONS,
 )
@@ -46,7 +48,10 @@ def format_value(ptype: str, value, prop: dict) -> str:
         return "☑" if value else "☐"
     if ptype == "anchor":
         return ANCHOR_CODE_TO_LABEL.get(str(value), str(value or ""))
-    if ptype in ("compound", "justify", "orientation", "grid_style"):
+    if ptype in (
+        "compound", "justify", "orientation", "grid_style",
+        "tab_bar_align", "tab_bar_position",
+    ):
         return str(value) if value is not None else ""
     if ptype == "layout_type":
         # layout_type stores the internal key (``place`` / ``vbox`` /
@@ -108,6 +113,10 @@ def enum_options_for(ptype: str):
         return COMPOUND_OPTIONS
     if ptype == "justify":
         return JUSTIFY_OPTIONS
+    if ptype == "tab_bar_align":
+        return TAB_BAR_ALIGN_OPTIONS
+    if ptype == "tab_bar_position":
+        return TAB_BAR_POSITION_OPTIONS
     if ptype == "orientation":
         return ORIENTATION_OPTIONS
     if ptype == "wrap":

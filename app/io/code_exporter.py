@@ -428,7 +428,15 @@ def _emit_subtree(
     # built at 240×180 down to the natural size of whatever vbox
     # children it holds. Builder canvas already does this at widget
     # creation — the exported runtime needs it too.
-    if child_layout != DEFAULT_LAYOUT_TYPE and node.children:
+    if (
+        child_layout != DEFAULT_LAYOUT_TYPE and node.children
+        and node.widget_type != "CTkScrollableFrame"
+    ):
+        # CTkScrollableFrame overrides ``grid_propagate`` to take no
+        # positional args (it delegates to its outer ``_parent_frame``)
+        # — ``grid_propagate(False)`` would raise ``TypeError`` at
+        # runtime. Pinning is handled in SF's own ``export_state``
+        # via ``_parent_frame.grid_propagate(False)``.
         lines.append(f"{child_master}.pack_propagate(False)")
         lines.append(f"{child_master}.grid_propagate(False)")
         if child_layout == "grid":
@@ -450,10 +458,24 @@ def _emit_subtree(
         )
     except (TypeError, ValueError):
         child_spacing = 0
+    is_tabview = node.widget_type == "CTkTabview"
+    tab_names_for_fallback: list[str] = []
+    if is_tabview:
+        raw = node.properties.get("tab_names") or ""
+        tab_names_for_fallback = [
+            ln.strip() for ln in str(raw).splitlines() if ln.strip()
+        ] or ["Tab 1"]
     for idx, child in enumerate(node.children):
+        if is_tabview:
+            slot = getattr(child, "parent_slot", None)
+            if not slot or slot not in tab_names_for_fallback:
+                slot = tab_names_for_fallback[0]
+            child_master_for_child = f"{child_master}.tab({slot!r})"
+        else:
+            child_master_for_child = child_master
         _emit_subtree(
             child,
-            master_var=child_master,
+            master_var=child_master_for_child,
             lines=lines,
             counts=counts,
             instance_prefix=instance_prefix,
@@ -514,6 +536,19 @@ def _emit_widget(
             kwargs.append((key, _py_literal(lines_list)))
             continue
         kwargs.append((key, _py_literal(val)))
+
+    # CTkTabview: map node-only `tab_anchor` ("left"/"center"/"right")
+    # onto CTk's `anchor` kwarg ("w"/"center"/"e"). Stored separately
+    # from the generic 3x3 `anchor` picker used by Button / Label so
+    # Tabview's simpler horizontal-only control gets its own dropdown.
+    if node.widget_type == "CTkTabview":
+        _tabview_anchor_map = {
+            "left": "w", "center": "center", "right": "e",
+        }
+        ta = _tabview_anchor_map.get(
+            props.get("tab_anchor", "center"), "center",
+        )
+        kwargs.append(("anchor", f'"{ta}"'))
 
     if "button_enabled" in props:
         # CTkEntry adds a `readonly` boolean that wins over disabled.
