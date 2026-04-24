@@ -43,7 +43,7 @@ ABOUT_TEXT = (
     "  • ctk-tint-color-picker"
 )
 
-GITHUB_DOCS_URL = "https://github.com/kandelucky/ctkmaker/blob/main/docs/widgets/README.md"
+GITHUB_DOCS_URL = "https://github.com/kandelucky/ctk_maker/blob/main/docs/widgets/README.md"
 
 
 class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):

@@ -10,7 +10,7 @@ readme = "PYPI_README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [
-    { name = "Lasha Kandelaki", email = "voxe.studio@voxe.studio" }
+    { name = "Lasha Kandelaki", email = "kandelucky.dev@gmail.com" }
 ]
 keywords = [
     "customtkinter",
@@ -38,9 +38,9 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/kandelucky/ctkmaker"
-Repository = "https://github.com/kandelucky/ctkmaker"
-Issues = "https://github.com/kandelucky/ctkmaker/issues"
+Homepage = "https://github.com/kandelucky/ctk_maker"
+Repository = "https://github.com/kandelucky/ctk_maker"
+Issues = "https://github.com/kandelucky/ctk_maker/issues"
 
 [tool.setuptools]
 packages = ["ctkmaker"]

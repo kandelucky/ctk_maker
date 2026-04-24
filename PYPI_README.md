@@ -24,12 +24,12 @@ ctkmaker
 
 ## Current status
 
-The source code lives at [github.com/kandelucky/ctkmaker](https://github.com/kandelucky/ctkmaker).
+The source code lives at [github.com/kandelucky/ctk_maker](https://github.com/kandelucky/ctk_maker).
 You can run the development version directly:
 
 ```bash
-git clone https://github.com/kandelucky/ctkmaker.git
-cd ctkmaker
+git clone https://github.com/kandelucky/ctk_maker.git
+cd ctk_maker
 pip install -r requirements.txt
 python main.py
 ```

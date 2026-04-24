@@ -107,8 +107,8 @@ All shortcuts work with Latin and non-Latin keyboard layouts.
 ## Install
 
 ```bash
-git clone https://github.com/kandelucky/ctkmaker.git
-cd ctkmaker
+git clone https://github.com/kandelucky/ctk_maker.git
+cd ctk_maker
 pip install -r requirements.txt
 python main.py
 ```
