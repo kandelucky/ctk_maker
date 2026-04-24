@@ -9,6 +9,9 @@ from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
+from app.core.autosave import (
+    AutosaveController, autosave_path_for, clear_autosave,
+)
 from app.core.logger import log_error
 from app.core.project import Project
 from app.core.recent_files import add_recent
@@ -284,6 +287,19 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
 
         self.protocol("WM_DELETE_WINDOW", self._on_window_close)
 
+        # Layer 3 of project safety stack — periodic write-out of the
+        # current state to ``<path>.autosave`` while dirty. Skipped
+        # for untitled projects (no path = no autosave). Cleared on
+        # explicit save.
+        self._autosave = AutosaveController(
+            self.project, self,
+            path_provider=lambda: self._current_path,
+            interval_minutes=int(
+                load_settings().get("autosave_interval_minutes", 5),
+            ),
+        )
+        self._autosave.start()
+
         self.after(120, self._show_startup_dialog)
 
     # ------------------------------------------------------------------
@@ -372,6 +388,11 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             self._on_save()
             if self._dirty:
                 return False
+        else:
+            # Explicit discard — drop the autosave so the next launch
+            # doesn't offer to restore the changes the user just
+            # decided to throw away.
+            clear_autosave(self._current_path)
         return True
 
     def _on_window_close(self) -> None:
@@ -403,6 +424,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                     parent=self,
                 )
                 return
+            clear_autosave(path)
             self._set_current_path(path)
 
     # ------------------------------------------------------------------
@@ -423,8 +445,13 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         if not Path(path).exists():
             messagebox.showerror("Open failed", f"File not found:\n{path}", parent=self)
             return
+        # If an autosave sits next to this project AND is newer than
+        # the saved file, the previous session crashed (or the user
+        # closed without saving) — offer to restore from it instead
+        # of loading the older saved copy.
+        load_target = self._maybe_swap_for_autosave(path)
         try:
-            load_project(self.project, path)
+            load_project(self.project, load_target)
         except ProjectLoadError as exc:
             messagebox.showerror("Open failed", str(exc), parent=self)
             return
@@ -433,6 +460,45 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             messagebox.showerror("Open failed", "Unexpected error — see console.", parent=self)
             return
         self._set_current_path(path)
+        # If we restored from autosave, drop the file now that the
+        # state is in memory — next explicit save writes it back to
+        # the real .ctkproj.
+        if load_target != path:
+            clear_autosave(path)
+            self._dirty = True
+            self.project.event_bus.publish("dirty_changed", True)
+            self._refresh_title()
+
+    def _maybe_swap_for_autosave(self, path: str) -> str:
+        autosave = autosave_path_for(path)
+        try:
+            if not autosave.exists():
+                return path
+            real_mtime = Path(path).stat().st_mtime
+            auto_mtime = autosave.stat().st_mtime
+        except OSError:
+            return path
+        if auto_mtime <= real_mtime:
+            return path
+        from datetime import datetime
+        ts = datetime.fromtimestamp(auto_mtime).strftime(
+            "%Y-%m-%d %H:%M",
+        )
+        choice = messagebox.askyesno(
+            "Restore from autosave?",
+            (
+                f"An autosave from {ts} is newer than the saved "
+                f"project file.\n\n"
+                f"This usually means the previous session ended "
+                f"without an explicit Save — for example after a "
+                f"crash or a forced close.\n\n"
+                f"Yes  → restore from the autosave\n"
+                f"No   → open the older saved copy "
+                f"(autosave is left untouched)"
+            ),
+            parent=self,
+        )
+        return str(autosave) if choice else path
 
     # ------------------------------------------------------------------
     # File menu commands
@@ -475,6 +541,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 parent=self,
             )
             return
+        clear_autosave(path)
         self._set_current_path(path)
 
     def _on_open(self) -> None:
@@ -489,6 +556,64 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             return
         self._open_path(path)
 
+    def _on_recover_from_backup(self) -> None:
+        """Open a ``.ctkproj.bak`` file as an untitled project so the
+        user must Save As before any further edits — prevents an
+        accidental Save from overwriting the (presumably damaged)
+        original next to the backup.
+        """
+        if not self._confirm_discard_if_dirty():
+            return
+        path = filedialog.askopenfilename(
+            parent=self,
+            title="Recover project from backup",
+            filetypes=[
+                ("CTk Builder backup", "*.ctkproj.bak"),
+                ("All files", "*.*"),
+            ],
+        )
+        if not path:
+            return
+        if not Path(path).exists():
+            messagebox.showerror(
+                "Recover failed",
+                f"File not found:\n{path}",
+                parent=self,
+            )
+            return
+        try:
+            load_project(self.project, path)
+        except ProjectLoadError as exc:
+            messagebox.showerror("Recover failed", str(exc), parent=self)
+            return
+        except Exception:
+            log_error("recover_from_backup")
+            messagebox.showerror(
+                "Recover failed",
+                "Unexpected error — see console.",
+                parent=self,
+            )
+            return
+        # Untitled — force Save As so the user can't blindly Ctrl+S
+        # over the original .ctkproj sitting next to the .bak.
+        self._current_path = None
+        self._clear_dirty()
+        self._refresh_title()
+        self.project.event_bus.publish(
+            "project_renamed", self.project.name,
+        )
+        messagebox.showinfo(
+            "Recovered from backup",
+            (
+                "Loaded the backup as an untitled project.\n\n"
+                "Use File → Save As to write it back as a real "
+                ".ctkproj — direct Save is disabled until then so "
+                "the original file (likely damaged) won't be "
+                "overwritten by accident."
+            ),
+            parent=self,
+        )
+
     def _on_save(self) -> None:
         if self._current_path:
             try:
@@ -497,6 +622,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 log_error("save_project")
                 messagebox.showerror("Save failed", "Could not write the project file.", parent=self)
                 return
+            clear_autosave(self._current_path)
             self._set_current_path(self._current_path)
         else:
             self._on_save_as()
@@ -516,6 +642,11 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             log_error("save_project")
             messagebox.showerror("Save failed", "Could not write the project file.", parent=self)
             return
+        # Save As may target a brand-new path, but also clear any stale
+        # autosave at the previous path so the next launch doesn't
+        # offer to "restore" content the user already moved over.
+        clear_autosave(self._current_path)
+        clear_autosave(path)
         self._set_current_path(path)
 
     def _on_new_untitled(self) -> None:
@@ -775,7 +906,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
 
     def _on_about(self) -> None:
         from app.ui.dialogs import AboutDialog
-        AboutDialog(self, app_version="v0.0.18")
+        AboutDialog(self, app_version="v0.0.18.2")
 
     def _on_inspect_widget(self) -> None:
         # Reuse a single Toplevel — clicking the menu while it's open

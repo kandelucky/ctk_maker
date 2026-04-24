@@ -38,13 +38,26 @@ def load_project(project: Project, path: str | Path) -> None:
             "program. Check the file exists and try again."
         ) from exc
     except json.JSONDecodeError as exc:
+        from app.io.project_saver import backup_path_for
+        bak = backup_path_for(path)
+        if bak.exists():
+            recovery = (
+                f"The previous save is kept at {bak.name} (sibling of "
+                f"this file). Rename it to {path.name} or open it "
+                "directly to recover the last good copy."
+            )
+        else:
+            recovery = (
+                "No backup file is sitting next to this one — the "
+                "project was likely saved only once before the corruption."
+            )
         raise ProjectLoadError(
             "The project file appears to be damaged.\n\n"
             f"File: {path.name}\n"
             f"Detail: {exc.msg} (line {exc.lineno})\n\n"
             "This can happen if the file was edited by hand or the save "
-            "was interrupted. If you have a backup, try opening that "
-            "instead."
+            "was interrupted.\n\n"
+            f"{recovery}"
         ) from exc
 
     if not isinstance(data, dict):

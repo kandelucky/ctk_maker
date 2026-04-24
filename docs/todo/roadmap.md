@@ -178,12 +178,13 @@ Currently a `.ctkproj` save is a plain overwrite — if the write is interrupted
 
 Four layers, ordered by effort:
 
-- [ ] **`.bak` on save** (minimal viable) — before writing the new JSON, rename the existing file to `<name>.ctkproj.bak`. One generation kept; next save overwrites the `.bak`. Zero UX change; recovery is manual (user renames `.bak` → `.ctkproj`).
+- [x] **`.bak` on save** (minimal viable, v0.0.18.1) — before writing the new JSON, atomically rotates the existing file to `<name>.ctkproj.bak` via `os.replace`. One generation kept; next save overwrites the `.bak`. Damaged-project dialog now points at the `.bak` sibling for recovery instead of the prior "polite fiction" message.
 - [ ] **Rotated backups** — keep `<name>.ctkproj.bak1` / `.bak2` / `.bak3` (ring buffer, newest first). Slightly more disk, survives two bad saves in a row.
-- [ ] **Autosave** — every N minutes while dirty, write `<name>.ctkproj.autosave` next to the real file. Clear on explicit Save. On startup, if an `.autosave` is newer than the matching `.ctkproj`, offer to restore.
+- [x] **Autosave** (v0.0.18.2) — every 5 minutes while dirty AND with a saved path, `AutosaveController` writes `<name>.ctkproj.autosave` next to the real file (atomic via `.tmp` + `os.replace`). Cleared on explicit Save and on the user's "Discard" answer to the unsaved-changes prompt. On open, the loader compares mtimes and offers to restore if `.autosave` is newer than `.ctkproj`. Untitled projects (no path) skipped — Phase 2 will spool them to `~/.ctk_visual_builder/autosave/`.
 - [ ] **Crash-recovery session** — detect when the builder was killed without closing the project cleanly (lock file in `~/.ctk_visual_builder/`). On next launch, if a lock file is orphaned, offer the autosave as a recovery option.
+- [ ] **Untitled-project autosave (Autosave Phase 2)** — current autosave (v0.0.18.2) is path-anchored: a brand-new project that has never been saved gets no `.autosave` file because there's no `.ctkproj` next to which to write it. A 4-hour edit on an untitled workspace is therefore lost on crash. Fix: spool untitled sessions to `~/.ctk_visual_builder/autosave/<session_id>.ctkproj.autosave` with a sidecar metadata file (start time, last edit time). On startup, scan the dir; if any orphaned sessions exist, present a "Recover untitled session?" dialog at the welcome screen. Discard / restore / preview options.
 
-Start with the `.bak` layer — one function change in `project_saver.py`, no UX work, closes the promise made in the damaged-file error dialog.
+Layer 1 (.bak) shipped v0.0.18.1; Layer 3 (autosave for saved projects) shipped v0.0.18.2. Layers 2 (rotated bak), 4 (crash-recovery lock file), and Autosave Phase 2 (untitled spool) deferred.
 
 - [ ] `appearance_mode` (system / light / dark) — currently global Settings only
 - [ ] Window icon (`iconbitmap` / `iconphoto`) — Phase 8-adjacent

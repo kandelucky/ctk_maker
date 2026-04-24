@@ -6,6 +6,18 @@
 
 ## 2026-04 — Area QA passes + refactors
 
+- **v0.0.18.2** (2026-04-24) — Autosave + Recover from Backup menu:
+  - **`AutosaveController`** in `app/core/autosave.py` — every 5 minutes (configurable via `autosave_interval_minutes` in settings) while the project is dirty AND has a saved path, writes the current state to `<path>.autosave` via atomic `.tmp` + `os.replace`. Skipped for untitled projects (no path = no autosave); Phase 2 will spool them to a per-user dir.
+  - **No-op tick skip** — controller snapshots the history's top marker after every successful write and compares it on the next tick; if the user hasn't edited (or has undone back to the last-autosaved state), the tick is a no-op so a long idle period doesn't rewrite the same `.autosave` content every minute. The marker is reset whenever `dirty_changed -> False` fires (explicit save or undo back to the saved marker) so the next dirty cycle starts fresh.
+  - **Cleared on explicit save** (`_on_save`, `_on_save_as`, `_on_new`) and on the user's "Discard" answer to the unsaved-changes prompt — so a deliberate throw-away doesn't reappear as a "restore from autosave?" prompt next launch.
+  - **`_open_path` recovery** — if a sibling `.autosave` exists AND its mtime is newer than the saved file, the loader prompts the user with the autosave timestamp; restoring loads the autosave content, marks the project dirty, and clears the autosave file so the next explicit save writes the recovered content back into the real `.ctkproj`.
+  - **File → Recover from Backup...** menu entry between Open and Recent Forms; opens a `.ctkproj.bak` directly via the standard load path, then forces an untitled state so a reflexive Ctrl+S can't blindly overwrite the (likely damaged) original sitting next to the backup. Info dialog explains the Save As requirement.
+
+- **v0.0.18.1** (2026-04-24) — `.bak` on save (minimal viable backup):
+  - **`save_project` rotates the previous file** via `os.replace(path, path.bak)` before writing the new JSON. Atomic on Windows + POSIX, overwrites any prior `.bak` so one generation is kept. If the new write fails (disk full, permission flip), the `.bak` still holds the last good copy.
+  - **Damaged-project dialog** now checks for the `.bak` sibling and tells the user where to recover from — replaces the previous "if you have a backup" hand-wave that was a polite fiction.
+  - **New helper `backup_path_for(path)`** in `project_saver` so callers (loader recovery message today, future Restore-from-Backup menu entry tomorrow) share one source of truth for the convention.
+
 - **v0.0.18** (2026-04-24) — ScrollableDropdown helper for ComboBox + OptionMenu:
   - **New `app/widgets/scrollable_dropdown.py`** — Toplevel-based popup that replaces CTk's character-width-based `DropdownMenu`. Width matches `attach.winfo_width()`, scrollbar appears past `max_visible`, popup frame is a full CTkFrame with configurable border / radius / fg.
   - **CTkOptionMenu two-click selection** — first click selects, follow-up click within 500 ms opens; afterwards plain clicks just keep the selection (no surprise popups). Wired in `_bind_widget_events` via a wrapped `_open_dropdown_menu`.

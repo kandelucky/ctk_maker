@@ -142,6 +142,10 @@ class MenuMixin:
         self._add_cmd(file_menu, "New...", self._on_new, icon="file-plus", accelerator="Ctrl+N")
         self._add_cmd(file_menu, "New Untitled", self._on_new_untitled, icon="file-plus-corner")
         self._add_cmd(file_menu, "Open...", self._on_open, icon="folder-open", accelerator="Ctrl+O")
+        self._add_cmd(
+            file_menu, "Recover from Backup...",
+            self._on_recover_from_backup, icon="rotate-ccw",
+        )
 
         self._recent_menu = tk.Menu(file_menu, tearoff=0, **MENU_STYLE)
         self._add_cascade(file_menu, "Recent Forms", self._recent_menu, icon="history")
