@@ -291,15 +291,19 @@ class CommitMixin:
             self._commit_prop(pname, hex_value)
 
     def _pick_image(self, pname: str) -> None:
-        path = filedialog.askopenfilename(
-            title="Select image",
-            filetypes=[
-                ("Image files", "*.png *.jpg *.jpeg *.gif *.bmp *.webp"),
-                ("All files", "*.*"),
-            ],
-        )
-        if path:
-            self._commit_prop(pname, path)
+        # Project-scoped picker — only shows images already in
+        # ``<project>/assets/images/``, with an "Import..." button
+        # that copies a file off-disk into the project's assets
+        # folder before selecting it. Keeps every Image reference
+        # inside the project so the .ctkproj stays portable.
+        from app.ui.image_picker_dialog import ImagePickerDialog
+        project_file = getattr(self.project, "path", None)
+        if not project_file:
+            return  # Untitled state shouldn't be reachable.
+        dialog = ImagePickerDialog(self.winfo_toplevel(), project_file)
+        dialog.wait_window()
+        if dialog.result:
+            self._commit_prop(pname, dialog.result)
 
     def _open_text_editor(self, pname: str, prop: dict) -> None:
         node = self.project.get_widget(self.current_id)

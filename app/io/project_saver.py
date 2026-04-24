@@ -31,6 +31,7 @@ import json
 import os
 from pathlib import Path
 
+from app.core.assets import absolute_to_token, is_asset_token
 from app.core.logger import log_error
 from app.core.project import Project
 
@@ -44,7 +45,7 @@ BAK_SUFFIX = ".bak"
 
 
 def project_to_dict(project: Project) -> dict:
-    return {
+    data = {
         "version": FILE_VERSION,
         "name": project.name,
         "active_document": project.active_document_id,
@@ -54,6 +55,31 @@ def project_to_dict(project: Project) -> dict:
         # project keeps unique names while every Dialog keeps its own
         # sequence.
     }
+    # Convert any in-assets absolute image paths to portable tokens
+    # so the saved JSON survives a project-folder move.
+    if project.path:
+        _tokenize_image_paths(data, project.path)
+    return data
+
+
+def _tokenize_image_paths(data: dict, project_file: str) -> None:
+    for doc in data.get("documents", []) or []:
+        for w in doc.get("widgets", []) or []:
+            _walk_widget_tokenize(w, project_file)
+
+
+def _walk_widget_tokenize(w: dict, project_file: str) -> None:
+    props = w.get("properties") or {}
+    img = props.get("image")
+    if (
+        img and isinstance(img, str)
+        and not is_asset_token(img)
+    ):
+        token = absolute_to_token(img, project_file)
+        if token:
+            props["image"] = token
+    for child in w.get("children") or []:
+        _walk_widget_tokenize(child, project_file)
 
 
 def save_project(project: Project, path: str | Path) -> None:

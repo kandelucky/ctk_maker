@@ -185,6 +185,13 @@ class Project:
         # "Main Window" that confuses users into thinking the field is
         # just an editor label.
         self.name: str = "Untitled"
+        # Disk path of the currently-loaded ``.ctkproj``, or ``None``
+        # while the project is fresh and unsaved. Mirrored from
+        # MainWindow's ``_current_path`` via ``set_path()``; needed by
+        # the asset system (token <-> absolute path resolution) and
+        # by anything that wants to compute paths inside the project
+        # folder without reaching into MainWindow.
+        self.path: str | None = None
         self.documents: list[Document] = [Document(name=self.name)]
         self.active_document_id: str = self.documents[0].id
         # Widget auto-name counters moved to Document.name_counters —

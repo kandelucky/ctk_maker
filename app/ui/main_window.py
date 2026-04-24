@@ -439,6 +439,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
     # ------------------------------------------------------------------
     def _set_current_path(self, path: str | None) -> None:
         self._current_path = path
+        self.project.path = path
         self._clear_dirty()
         if path:
             add_recent(path)
@@ -902,7 +903,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
 
     def _on_about(self) -> None:
         from app.ui.dialogs import AboutDialog
-        AboutDialog(self, app_version="v0.0.19.1")
+        AboutDialog(self, app_version="v0.0.20")
 
     def _on_inspect_widget(self) -> None:
         # Reuse a single Toplevel — clicking the menu while it's open

@@ -24,6 +24,7 @@ Per-widget convention (matches ``WidgetDescriptor.transform_properties``):
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 
 from app.core.document import Document
@@ -43,19 +44,43 @@ from app.widgets.registry import get_descriptor
 DEFAULT_APPEARANCE_MODE = "dark"
 INDENT = "    "
 
+# Module-level project-path stash so the per-image emit helpers can
+# rewrite an in-assets absolute path to a relative ``assets/...``
+# path without threading project context through every call site.
+# Set at the top of ``export_project`` and cleared on the way out.
+_CURRENT_PROJECT_PATH: str | None = None
+
 
 def export_project(
     project: Project, path: str | Path,
     preview_dialog_id: str | None = None,
     single_document_id: str | None = None,
 ) -> None:
-    source = generate_code(
-        project,
-        preview_dialog_id=preview_dialog_id,
-        single_document_id=single_document_id,
-    )
+    global _CURRENT_PROJECT_PATH
+    _CURRENT_PROJECT_PATH = project.path
+    try:
+        source = generate_code(
+            project,
+            preview_dialog_id=preview_dialog_id,
+            single_document_id=single_document_id,
+        )
+    finally:
+        _CURRENT_PROJECT_PATH = None
     out = Path(path)
     out.write_text(source, encoding="utf-8")
+    # Copy the project's `assets/` folder next to the exported file
+    # so the relative `assets/images/x.png` paths emitted in the
+    # generated code resolve correctly when the user runs it.
+    if project.path:
+        src_assets = Path(project.path).parent / "assets"
+        if src_assets.exists():
+            try:
+                shutil.copytree(
+                    src_assets, out.parent / "assets",
+                    dirs_exist_ok=True,
+                )
+            except OSError:
+                pass
     # Side-car the ScrollableDropdown helper next to the export when
     # any ComboBox / OptionMenu is in the project — the import in the
     # generated code resolves it via the export directory.
@@ -818,6 +843,23 @@ def _font_source(props: dict) -> str:
     return f"ctk.CTkFont({', '.join(parts)})"
 
 
+def _path_for_export(image_path: str) -> str:
+    """Convert an in-assets absolute path to ``assets/<rel>`` so the
+    exported file references the asset via the sibling ``assets/``
+    folder we copy next to it. Out-of-assets paths stay absolute.
+    """
+    if not image_path or not _CURRENT_PROJECT_PATH:
+        return str(image_path)
+    project_assets = Path(_CURRENT_PROJECT_PATH).parent / "assets"
+    try:
+        rel = Path(image_path).resolve().relative_to(
+            project_assets.resolve(),
+        )
+        return f"assets/{str(rel).replace(chr(92), '/')}"
+    except (OSError, ValueError):
+        return str(image_path).replace("\\", "/")
+
+
 def _image_source(props: dict, image_path: str) -> str:
     if "image_width" in props or "image_height" in props:
         iw = _safe_int(props.get("image_width"), 20)
@@ -830,7 +872,7 @@ def _image_source(props: dict, image_path: str) -> str:
     # filedialog (Unix-style on Windows) or was typed with backslashes.
     # Both work in Python on Windows, but mixing both in one file looks
     # sloppy and trips cross-platform readers.
-    normalised_path = str(image_path).replace("\\", "/")
+    normalised_path = _path_for_export(image_path)
     path_src = _py_literal(normalised_path)
     # image_color / image_color_disabled are builder-only PIL tints
     # (CTk doesn't expose a native image tint param). Pick between the
@@ -874,7 +916,7 @@ def _image_source_with_color(
     else:
         iw = _safe_int(props.get("width"), 64)
         ih = _safe_int(props.get("height"), 64)
-    normalised_path = str(image_path).replace("\\", "/")
+    normalised_path = _path_for_export(image_path)
     return (
         f"_tint_image({_py_literal(normalised_path)}, "
         f"{_py_literal(color)}, ({iw}, {ih}))"

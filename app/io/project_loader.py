@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from app.core.assets import is_asset_token, resolve_asset_token
 from app.core.document import (
     DEFAULT_WINDOW_PROPERTIES,
     Document,
@@ -88,6 +89,12 @@ def load_project(project: Project, path: str | Path) -> None:
     if not documents:
         raise ProjectLoadError("Project file has no documents.")
 
+    # Resolve any ``asset:images/x.png`` tokens to absolute paths
+    # against the loaded project's folder so descriptors keep seeing
+    # plain absolute strings in memory. Token form is restored on
+    # save by ``project_saver._tokenize_image_paths``.
+    _resolve_image_tokens(documents, path)
+
     # v0.0.10 shipped with ``layout_type == "pack"`` and a per-child
     # ``pack_side``. v0.0.11 split pack into ``vbox`` / ``hbox`` and
     # removed pack_side — rewrite both on load so older projects
@@ -153,6 +160,22 @@ def _clear_existing_widgets(project: Project) -> None:
     for doc in list(project.documents):
         for node in list(doc.root_widgets):
             project.remove_widget(node.id)
+
+
+def _resolve_image_tokens(documents, project_file) -> None:
+    for doc in documents:
+        for node in doc.root_widgets:
+            _resolve_token_in_node(node, project_file)
+
+
+def _resolve_token_in_node(node: WidgetNode, project_file) -> None:
+    img = node.properties.get("image")
+    if isinstance(img, str) and is_asset_token(img):
+        resolved = resolve_asset_token(img, project_file)
+        if resolved is not None:
+            node.properties["image"] = str(resolved)
+    for child in node.children:
+        _resolve_token_in_node(child, project_file)
 
 
 def _documents_from_v1(data: dict) -> list[Document]:
