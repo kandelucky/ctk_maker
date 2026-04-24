@@ -6,6 +6,14 @@
 
 ## 2026-04 — Area QA passes + refactors
 
+- **v0.0.19** (2026-04-24) — Project folder structure (Phase A — assets foundation):
+  - **New `app/core/paths.py`** with `get_default_projects_dir()` (returns `~/Documents/CTkMaker/`, auto-created), `project_folder()`, `project_file_in_folder()`, `assets_dir()`, and `ensure_project_folder()` (creates the folder + `assets/{images,fonts,sounds}/` skeleton).
+  - **New Project dialog** now defaults `Save to` to `~/Documents/CTkMaker/` instead of Desktop, and renders a live preview line right under the Save to row showing the resolved `<save_dir>/<name>/<name>.ctkproj` target so the user sees exactly where the project will land.
+  - **Form validation** now refuses to overwrite an existing folder (warning dialog instead of silent overwrite) and pre-creates the project folder + `assets/` skeleton before the first save lands.
+  - **`save_project` defensive `parent.mkdir(parents=True, exist_ok=True)`** so Save As to an arbitrary location doesn't fail on a missing parent.
+  - Legacy single-file projects keep loading unchanged — they just don't get the folder skeleton until the user moves them by hand.
+  - **Phase B (asset tokens, image copy on pick, exporter relative paths)** and **Phase C (Project panel UI — file tree, drag-to-canvas, sidebar dock)** scoped for upcoming iterations.
+
 - **v0.0.18.3** (2026-04-24) — Rename: CTk Visual Builder → CTkMaker:
   - **Display name** flipped across every user-facing surface — main window title, AboutDialog, StartupDialog, project_loader error messages, exported-code header comment, README, all `docs/*.md` pages, `run.bat` console title, `tools/text_editor_dialog.py` docstring.
   - **GitHub URLs** updated from `kandelucky/ctk_visual_builder` to `kandelucky/ctkmaker` (main_window's docs URL + Properties panel's wiki link). Repo rename to `ctkmaker` happens on github.com; the auto-redirect handles legacy links during transition.

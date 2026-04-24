@@ -59,6 +59,13 @@ def project_to_dict(project: Project) -> dict:
 def save_project(project: Project, path: str | Path) -> None:
     path = Path(path)
     data = project_to_dict(project)
+    # Project folders are created up-front by the New Project flow,
+    # but Save As to an arbitrary location might point at a missing
+    # parent — make sure it exists before opening for write.
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        log_error("save_project parent mkdir")
     # If a previous save exists at this path, atomically rotate it to
     # ``<name>.ctkproj.bak`` before overwriting. One generation only;
     # next save's rotation replaces the existing .bak. If the write

@@ -19,6 +19,10 @@ from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
+from app.core.paths import (
+    ensure_project_folder, get_default_projects_dir,
+    project_file_in_folder, project_folder,
+)
 from app.ui.icons import load_icon
 
 # ---- Style ------------------------------------------------------------------
@@ -104,15 +108,25 @@ class NewProjectForm(ctk.CTkFrame):
         self._device_var = tk.StringVar(value=DEFAULT_DEVICE)
         self._name_var = tk.StringVar(value=default_name)
         self._save_dir_var = tk.StringVar(
-            value=default_save_dir or str(Path.home() / "Desktop"),
+            value=default_save_dir or str(get_default_projects_dir()),
         )
+        self._preview_var = tk.StringVar()
 
         self._size_map: dict[str, tuple[int, int]] = {}
         self._screen_menu: ctk.CTkOptionMenu | None = None
         self._name_entry: ctk.CTkEntry | None = None
         self._rebuild_size_map(DEFAULT_DEVICE)
 
-        self._name_var.trace_add("write", lambda *_a: self._clear_name_error())
+        # Live-update the preview line whenever the name or save dir
+        # changes — user can see exactly where the project will land
+        # before clicking Create.
+        self._name_var.trace_add(
+            "write",
+            lambda *_a: (self._clear_name_error(), self._refresh_preview()),
+        )
+        self._save_dir_var.trace_add(
+            "write", lambda *_a: self._refresh_preview(),
+        )
 
         self._build()
 
@@ -128,6 +142,8 @@ class NewProjectForm(ctk.CTkFrame):
 
         self._add_row("Name", self._build_name_entry)
         self._add_row("Save to", self._build_save_dir_row)
+        self._build_preview_label()
+        self._refresh_preview()
         self._add_separator()
         self._add_row("Device", self._build_device_dropdown)
         self._add_row("Screen Size", self._build_screen_dropdown)
@@ -173,6 +189,30 @@ class NewProjectForm(ctk.CTkFrame):
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_pick_save_dir,
         ).pack(side="left")
+
+    def _build_preview_label(self) -> None:
+        # Hint line right under the Save to row — shows the resolved
+        # ``<save_dir>/<name>/<name>.ctkproj`` path live.
+        ctk.CTkLabel(
+            self, textvariable=self._preview_var,
+            font=("Segoe UI", 9, "italic"),
+            text_color=SUBTITLE_FG, anchor="w", justify="left",
+            wraplength=420,
+        ).pack(fill="x", padx=(102, 14), pady=(0, 2))
+
+    def _refresh_preview(self) -> None:
+        name = (self._name_var.get() or "").strip()
+        save_dir = self._save_dir_var.get() or ""
+        if not name or not save_dir:
+            self._preview_var.set("")
+            return
+        try:
+            target = project_file_in_folder(
+                project_folder(save_dir, name), name,
+            )
+            self._preview_var.set(f"→ {target}")
+        except (OSError, ValueError):
+            self._preview_var.set("")
 
     def _build_device_dropdown(self, row) -> None:
         ctk.CTkOptionMenu(
@@ -298,9 +338,29 @@ class NewProjectForm(ctk.CTkFrame):
         if not save_dir.exists():
             self._flag_name_error()
             return None
-        full_path = save_dir / f"{name}.ctkproj"
-        if full_path.exists():
+        # New project = new folder. Refuse if the folder already
+        # exists so we never overwrite an existing project's files.
+        target_folder = project_folder(save_dir, name)
+        if target_folder.exists():
             self._flag_name_error()
+            messagebox.showwarning(
+                "Folder exists",
+                f"A folder named '{name}' already exists at:\n\n"
+                f"{save_dir}\n\n"
+                "Pick a different project name or save location.",
+                parent=self.winfo_toplevel(),
+            )
             return None
-
+        try:
+            ensure_project_folder(target_folder)
+        except OSError:
+            self._flag_name_error()
+            messagebox.showerror(
+                "Save location unwritable",
+                f"Could not create:\n\n{target_folder}\n\n"
+                "Pick a different save location.",
+                parent=self.winfo_toplevel(),
+            )
+            return None
+        full_path = project_file_in_folder(target_folder, name)
         return name, str(full_path), w, h
