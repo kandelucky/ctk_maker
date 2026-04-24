@@ -25,12 +25,13 @@ from app.ui.main_menu import APPEARANCE_MODES, MenuMixin
 from app.ui.main_shortcuts import ShortcutsMixin
 from app.ui.object_tree_window import ObjectTreePanel, ObjectTreeWindow
 from app.ui.palette import Palette
+from app.ui.project_window import ProjectWindow
 from app.ui.properties_panel_v2 import PropertiesPanelV2 as PropertiesPanel
 from app.ui.startup_dialog import StartupDialog
 from app.ui.toolbar import Toolbar
 from app.ui.workspace import Workspace
 
-PROJECT_FILE_TYPES = [("CTk Builder project", "*.ctkproj"), ("All files", "*.*")]
+PROJECT_FILE_TYPES = [("CTkMaker project", "*.ctkproj"), ("All files", "*.*")]
 
 ABOUT_TEXT = (
     "CTkMaker\n"
@@ -106,6 +107,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         self._object_tree_var = tk.BooleanVar(value=False)
         self._history_window: HistoryWindow | None = None
         self._history_var = tk.BooleanVar(value=False)
+        self._project_window: ProjectWindow | None = None
+        self._project_var = tk.BooleanVar(value=False)
 
         settings = load_settings()
         initial_mode = settings.get("appearance_mode", "Dark")
@@ -120,7 +123,6 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         self.toolbar = Toolbar(
             self,
             on_new=self._on_new,
-            on_new_untitled=self._on_new_untitled,
             on_open=self._on_open,
             on_save=self._on_save,
             on_preview=self._on_preview,
@@ -405,6 +407,11 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         self.wait_window(dialog)
         result = dialog.result
         if result is None:
+            # No "untitled" fallback any more — every project lives
+            # inside a folder structure, which means it must be either
+            # opened from disk or freshly created via the New Project
+            # dialog. Cancelling the startup dialog quits the app.
+            self.destroy()
             return
         if result[0] == "open":
             self._open_path(result[1])
@@ -568,7 +575,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             parent=self,
             title="Recover project from backup",
             filetypes=[
-                ("CTk Builder backup", "*.ctkproj.bak"),
+                ("CTkMaker backup", "*.ctkproj.bak"),
                 ("All files", "*.*"),
             ],
         )
@@ -648,17 +655,6 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         clear_autosave(self._current_path)
         clear_autosave(path)
         self._set_current_path(path)
-
-    def _on_new_untitled(self) -> None:
-        if not self._confirm_discard_if_dirty():
-            return
-        self.project.clear()
-        self.project.name = "Untitled"
-        self.project.active_document.name = "Untitled"
-        self._current_path = None
-        self._clear_dirty()
-        self._refresh_title()
-        self.project.event_bus.publish("project_renamed", self.project.name)
 
     def _on_preview_active(self) -> None:
         doc = self.project.active_document
@@ -906,7 +902,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
 
     def _on_about(self) -> None:
         from app.ui.dialogs import AboutDialog
-        AboutDialog(self, app_version="v0.0.19")
+        AboutDialog(self, app_version="v0.0.19.1")
 
     def _on_inspect_widget(self) -> None:
         # Reuse a single Toplevel — clicking the menu while it's open
@@ -982,6 +978,33 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
     def _on_f9_history_window(self) -> None:
         self._history_var.set(not self._history_var.get())
         self._on_toggle_history_window()
+
+    def _on_toggle_project_window(self) -> None:
+        want_open = bool(self._project_var.get())
+        alive = (
+            self._project_window is not None
+            and self._project_window.winfo_exists()
+        )
+        if want_open and not alive:
+            self._project_window = ProjectWindow(
+                self, self.project,
+                path_provider=lambda: self._current_path,
+                on_close=self._on_project_window_closed,
+            )
+        elif not want_open and alive:
+            try:
+                self._project_window.destroy()
+            except tk.TclError:
+                pass
+            self._project_window = None
+
+    def _on_project_window_closed(self) -> None:
+        self._project_window = None
+        self._project_var.set(False)
+
+    def _on_f10_project_window(self) -> None:
+        self._project_var.set(not self._project_var.get())
+        self._on_toggle_project_window()
 
     def _on_run_script(self) -> None:
         """Pick any local .py file and run it as a subprocess. Useful

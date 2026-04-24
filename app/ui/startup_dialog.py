@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
@@ -133,12 +133,6 @@ class StartupDialog(ctk.CTkToplevel):
             footer, text="+ Create Project", width=160, height=32,
             corner_radius=4, command=self._on_create,
         ).pack(side="right")
-        ctk.CTkButton(
-            footer, text="Cancel", width=90, height=32,
-            corner_radius=4,
-            fg_color="#3c3c3c", hover_color="#4a4a4a",
-            command=self._on_close,
-        ).pack(side="right", padx=(0, 8))
 
     # ------------------------------------------------------------------
     # Callbacks
@@ -162,7 +156,7 @@ class StartupDialog(ctk.CTkToplevel):
             parent=self,
             title="Open project",
             filetypes=[
-                ("CTk Builder project", "*.ctkproj"),
+                ("CTkMaker project", "*.ctkproj"),
                 ("All files", "*.*"),
             ],
         )
@@ -180,5 +174,18 @@ class StartupDialog(ctk.CTkToplevel):
         self.destroy()
 
     def _on_close(self) -> None:
+        # The X / Escape paths are now the only ways to dismiss the
+        # startup dialog without picking a project. Without an
+        # untitled fallback in the main window, dismissing here will
+        # close the app — confirm first so a stray click on X doesn't
+        # silently quit.
+        confirm = messagebox.askyesno(
+            "Quit CTkMaker?",
+            "No project is open. Closing this dialog will quit "
+            "CTkMaker.\n\nQuit now?",
+            parent=self,
+        )
+        if not confirm:
+            return
         self.result = None
         self.destroy()

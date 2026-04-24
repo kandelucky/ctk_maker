@@ -134,6 +134,7 @@ class ShortcutsMixin:
         self.bind("<Control-w>", lambda e: self._on_close_project())
         self.bind("<F8>", lambda e: self._on_f8_object_tree())
         self.bind("<F9>", lambda e: self._on_f9_history_window())
+        self.bind("<F10>", lambda e: self._on_f10_project_window())
         self.bind("<Control-q>", lambda e: self._on_quit())
         # bind_all so undo/redo works when the Object Tree toplevel
         # has focus too — regular `self.bind` only fires for the

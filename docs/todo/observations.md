@@ -70,7 +70,7 @@ But **the exported `.py` does not actually open the dialog** — the commented i
 - Modal (`grab_set`) vs modeless? Default?
 
 Possible answers:
-- **Docs page** — "Dialogs in CTk Builder": explains the commented pattern, shows one working example of a button opening a dialog in the exported code, notes modal / modeless
+- **Docs page** — "Dialogs in CTkMaker": explains the commented pattern, shows one working example of a button opening a dialog in the exported code, notes modal / modeless
 - **Widget-side "On click → Open Dialog" property** — CTkButton + a few other command-widgets gain a `Command Target` row (see the "widget-to-widget binding" idea) with a special option "Open Dialog: <dialog_name>". Exporter emits `button.configure(command=lambda: LoginDialog(app))`.
 - **Wait** — deferring until the Variables + Event handlers phase where callbacks are first-class
 

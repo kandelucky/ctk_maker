@@ -34,7 +34,6 @@ class Toolbar(ctk.CTkFrame):
         master,
         *,
         on_new: Callable[[], None],
-        on_new_untitled: Callable[[], None],
         on_open: Callable[[], None],
         on_save: Callable[[], None],
         on_preview: Callable[[], None],

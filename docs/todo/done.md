@@ -6,6 +6,13 @@
 
 ## 2026-04 — Area QA passes + refactors
 
+- **v0.0.19.1** (2026-04-24) — Project window (Phase B-1) + untitled removal:
+  - **New `app/ui/project_window.py`** — `ProjectPanel` (embeddable) + `ProjectWindow` (floating, F10 / View → Project) showing the current project's name, folder path, and a tree view of `assets/{images,fonts,sounds}/`. Header has a "Reveal in Explorer" button (uses `os.startfile` on Windows, `open`/`xdg-open` elsewhere); footer has "+ Add Image..." (file picker → `assets/images/`, dedupe by SHA256 so re-adding the same file doesn't write a second copy, filename collision resolves with `_2`, `_3` suffixes).
+  - **Untitled-project state removed.** `New Untitled` menu entry, the `on_new_untitled` toolbar callback, and the corresponding `_on_new_untitled` MainWindow handler are all gone — every project must come from the New Project dialog (with folder structure) or be opened from disk. The startup dialog drops its `Cancel` button; closing it via X / Escape now triggers a "Quit CTkMaker?" confirmation that destroys the main window when confirmed.
+  - **Bug — Name entry growing on every typed char:** the live preview label below the Save to row was un-bounded, so each char typed extended the label width which dragged the dialog (and the Name entry's `fill="x"`) wider. Pinned the label to a fixed 58-char visual width and added a `len > 56 → mid-front truncation` rule on the preview text.
+  - **Bug — Screen Size dropdown out of sync with W / H defaults:** the form hardcoded the dropdown label to `Medium (1024×768)` regardless of the caller-supplied default_w / default_h. New `_label_for_size()` helper now finds the matching device + preset for a given W×H pair (falls back to `Custom`).
+  - **Bug — Open / Recover dialogs still labeled `CTk Builder project`** — flipped to `CTkMaker` in `main_window.PROJECT_FILE_TYPES` and `startup_dialog._on_browse`.
+
 - **v0.0.19** (2026-04-24) — Project folder structure (Phase A — assets foundation):
   - **New `app/core/paths.py`** with `get_default_projects_dir()` (returns `~/Documents/CTkMaker/`, auto-created), `project_folder()`, `project_file_in_folder()`, `assets_dir()`, and `ensure_project_folder()` (creates the folder + `assets/{images,fonts,sounds}/` skeleton).
   - **New Project dialog** now defaults `Save to` to `~/Documents/CTkMaker/` instead of Desktop, and renders a live preview line right under the Save to row showing the resolved `<save_dir>/<name>/<name>.ctkproj` target so the user sees exactly where the project will land.

@@ -84,6 +84,18 @@ def format_size_label(name: str, w: int, h: int) -> str:
     return f"{name}  ({w}×{h})"
 
 
+def _label_for_size(w: int, h: int) -> tuple[str, str]:
+    """Find the device + screen-preset label that matches a w/h, so
+    the dropdown stays in sync with caller-supplied dimensions.
+    Falls back to ``(Custom, Custom)`` when nothing matches.
+    """
+    for device, sizes in SCREEN_SIZES_BY_DEVICE.items():
+        for n, sw, sh in sizes:
+            if sw == w and sh == h:
+                return format_size_label(n, sw, sh), device
+    return "Custom", "Custom"
+
+
 class NewProjectForm(ctk.CTkFrame):
     """Reusable New Project form panel."""
 
@@ -99,13 +111,19 @@ class NewProjectForm(ctk.CTkFrame):
         super().__init__(master, fg_color=PANEL_BG, corner_radius=6)
 
         default_sizes = SCREEN_SIZES_BY_DEVICE[DEFAULT_DEVICE]
-        name_default, w_default, h_default = default_sizes[DEFAULT_SCREEN_INDEX]
-        self._w_var = tk.StringVar(value=str(default_w or w_default))
-        self._h_var = tk.StringVar(value=str(default_h or h_default))
-        self._screen_var = tk.StringVar(
-            value=format_size_label(name_default, w_default, h_default),
-        )
-        self._device_var = tk.StringVar(value=DEFAULT_DEVICE)
+        fallback_name, fallback_w, fallback_h = default_sizes[
+            DEFAULT_SCREEN_INDEX
+        ]
+        w_initial = default_w or fallback_w
+        h_initial = default_h or fallback_h
+        self._w_var = tk.StringVar(value=str(w_initial))
+        self._h_var = tk.StringVar(value=str(h_initial))
+        # If the caller's W/H matches one of the Desktop presets, pick
+        # that label so the Screen Size dropdown stays in sync; fall
+        # back to Custom (empty list) when nothing matches.
+        screen_label, device_label = _label_for_size(w_initial, h_initial)
+        self._screen_var = tk.StringVar(value=screen_label)
+        self._device_var = tk.StringVar(value=device_label)
         self._name_var = tk.StringVar(value=default_name)
         self._save_dir_var = tk.StringVar(
             value=default_save_dir or str(get_default_projects_dir()),
@@ -191,14 +209,19 @@ class NewProjectForm(ctk.CTkFrame):
         ).pack(side="left")
 
     def _build_preview_label(self) -> None:
-        # Hint line right under the Save to row — shows the resolved
-        # ``<save_dir>/<name>/<name>.ctkproj`` path live.
-        ctk.CTkLabel(
+        # Hint line right under the Save to row — shows where the
+        # project folder + file will land. Width is locked so a long
+        # path doesn't widen the label (and through it, the dialog +
+        # the Name entry).
+        lbl = tk.Label(
             self, textvariable=self._preview_var,
             font=("Segoe UI", 9, "italic"),
-            text_color=SUBTITLE_FG, anchor="w", justify="left",
-            wraplength=420,
-        ).pack(fill="x", padx=(102, 14), pady=(0, 2))
+            fg=SUBTITLE_FG, bg=PANEL_BG,
+            anchor="w", justify="left",
+            width=58,  # in chars; bounds the label visually
+        )
+        lbl.pack(fill="x", padx=(102, 14), pady=(0, 2))
+        self._preview_label = lbl
 
     def _refresh_preview(self) -> None:
         name = (self._name_var.get() or "").strip()
@@ -207,12 +230,20 @@ class NewProjectForm(ctk.CTkFrame):
             self._preview_var.set("")
             return
         try:
-            target = project_file_in_folder(
-                project_folder(save_dir, name), name,
+            target = str(
+                project_file_in_folder(
+                    project_folder(save_dir, name), name,
+                ),
             )
-            self._preview_var.set(f"→ {target}")
         except (OSError, ValueError):
             self._preview_var.set("")
+            return
+        # Truncate long paths from the front so the project file
+        # name (the part the user actually cares about) stays visible.
+        max_len = 56
+        if len(target) > max_len:
+            target = "..." + target[-(max_len - 3):]
+        self._preview_var.set(f"→ {target}")
 
     def _build_device_dropdown(self, row) -> None:
         ctk.CTkOptionMenu(
