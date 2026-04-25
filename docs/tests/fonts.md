@@ -256,6 +256,99 @@
 
 ---
 
+## Test 19 — Picker preview pane (live multi-size)
+
+**Setup**: Setup A. რამდენიმე ფონტი palette-ში.
+
+1. select Button → Properties → Font → ⋯
+2. picker dialog → ჩანს "Preview" section (header + entry + 2 size labels)
+3. click rows in the palette → preview labels update with the chosen family
+   ζι 13px + 24px sizes
+4. type custom text in entry (e.g. "Hello World") → both size labels update live
+5. ცალკე ფონტი (long script font) ცადე → dialog ZOMA არ შეიცვლება
+   (preview frame fixed height 110px, propagate=False)
+
+**Pass**: live preview, fixed dialog height.
+
+---
+
+## Test 20 — Picker right-click → Remove from project
+
+**Setup**: Setup A. რამდენიმე ფონტი palette-ში.
+
+1. ფონტ picker → right-click რომელიმე row
+2. Context menu: "Remove 'Comic Sans MS' from project..."
+3. Confirmation: "Remove 'X' from this project? File: ... Cannot be undone..."
+4. Yes → 
+   - imported font (in assets/fonts/) → file deleted from disk
+   - system_fonts entry → removed from project list
+   - cascade defaults pointing at this family → cleared
+5. picker palette refreshes → row გაქრა
+
+**Pass**: file deleted + references cleared.
+
+---
+
+## Test 21 — New button hierarchy (Reset / Cancel / Apply)
+
+**Setup**: Setup A.
+
+1. picker dialog → ბოლოში 3 ღილაკი (grid layout):
+   - **Reset** (small, leftmost) — drops the current scope's font_family
+   - **Cancel** (small, right) — closes without applying
+   - **Apply** (primary, widest, rightmost) — saves
+2. ვიზუალური hierarchy: Apply ყველაზე გამორჩეული + ცისფერი (primary)
+3. Reset / Cancel — gray (secondary)
+
+**Pass**: clear visual hierarchy, no clipping.
+
+---
+
+## Test 22 — Segmented scope control
+
+**Setup**: Setup A.
+
+1. picker dialog → "Apply to:" label + segmented control
+2. 3 segments: "Just this widget" / "All Buttons" / "Whole project"
+   (type-specific button label depends on selected widget kind)
+3. click segments → visual selection switches
+
+**Pass**: segmented control with 3 visible segments.
+
+---
+
+## Test 23 — Scope literalism (cascade simplification)
+
+**Setup**: Setup A. 3 Buttons; Button 2 has Impact override.
+
+1. select Button 1 → font picker → Comic Sans MS → "All Buttons" → Apply
+2. info dialog: "Apply 'Comic Sans MS' to every CTkButton in this project?
+   1 widget(s) currently use a custom font. Their override will be cleared."
+3. OK → ALL 3 Buttons → Comic Sans MS (Button 2's Impact also cleared)
+
+ცალკე — "Whole project" with no overrides:
+
+4. select Label → font picker → Verdana → "Whole project" → Apply
+5. NO confirmation dialog (no overrides to warn about)
+6. ყველა ვიჯეტი (Buttons + Labels + Entry + ...) → Verdana
+
+**Pass**: scope literal interpretation; informational dialog only when overrides exist.
+
+---
+
+## Test 24 — Reset button
+
+**Setup**: Setup A. Button-ზე Comic Sans set.
+
+1. picker → select Button 1 (currently Comic Sans MS row highlighted) → 
+   click "Reset" (without picking another row)
+2. font_family on Button 1 cleared → cascade falls back to Tk default
+3. dialog closes
+
+**Pass**: Reset clears scope-specific font_family.
+
+---
+
 ## Final cleanup
 
 - Quit project
