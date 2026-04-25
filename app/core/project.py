@@ -704,6 +704,15 @@ class Project:
         self.documents = [Document(name=self.name or "Untitled")]
         self.active_document_id = self.documents[0].id
         self.history.clear()
+        # Reset font cascade + system_fonts list — without this, the
+        # next New Project inherits the previous project's defaults
+        # and ImageFont-imported families, so widgets that reference
+        # nothing locally still get rendered with stale fonts.
+        # ``_set_current_path`` calls ``set_active_project_defaults``
+        # right after, which propagates this empty state to the
+        # module-level cache.
+        self.font_defaults = {}
+        self.system_fonts = []
         self.event_bus.publish(
             "active_document_changed", self.active_document_id,
         )

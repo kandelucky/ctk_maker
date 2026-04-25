@@ -1,427 +1,136 @@
-# Manual tests — Assets panel (v0.0.23 / v0.0.24)
+# Manual tests — Assets panel (v0.0.25+)
 
-რეგრესიის ხელით ტესტი. სცენარები ქართულად; technical terms (CTkLabel,
-picker, drag-drop...) ინგლისურად. ყოველი test ცარიელი სუფთა session-ით
-იწყება (Quit + relaunch) თუ არ არის სხვაგვარად მითითებული.
+რეგრესიის ხელით ტესტი. ქართული; technical terms (picker, drag-drop,
+event_bus...) ინგლისურად. ერთი project ყველა test-ზე — Quit + relaunch
+საჭიროა მხოლოდ Test 5-ის Save/Load-ისთვის.
 
-> Run: `python main.py` ფიქსურ ტერმინალში.
-
----
-
-## Setup A — Assets panel-ის გამოჩენა
-
-1. გახსენი builder → Quit-ით ჩაკეტე ნებისმიერი ღია სესია → relaunch
-2. New Project → Name: `AssetsTest` → Save to: default → Create
-3. Properties panel-ის ზედა ბარში ორი tab — **Properties** + **Assets**
-4. Save (Ctrl+S)
+> Run: `python main.py`.
 
 ---
 
-## Test 1 — Docked tab toggle
+## Setup — Project + Assets visible
 
-**Setup**: Setup A.
-
-1. Properties tab აქტიურია (default)
-2. click Assets tab → panel იცვლება → ხილვადია project name + path + tree
-3. click Properties tab → ისევ Properties (widget rows)
-
-**Pass**: ორი tab toggle მუშაობს, არ ხდება crash.
+1. relaunch builder → New Project `AssetsTest` → Create
+2. Properties / Assets tab toggle — click Assets → docked tree visible
 
 ---
 
-## Test 2 — Floating window (F10)
+## Test 1 — Panel basics
 
-**Setup**: Setup A.
+1. Properties ↔ Assets tab toggle (no crash)
+2. **F10** → floating Assets window გაიხსნა, contents იგივე
+3. F10 ისევ → იხურება. floating + docked ერთად → ორივე ღია, sync-ში
+4. Header: ერთ ხაზზე bold project name + dim front-truncated path
+   (`...Documents\CTkMaker\AssetsTest`); separate "Project" title არ არის
 
-1. F10 → ცალკე ფანჯარა "Assets" გაიხსნა (ProjectWindow)
-2. ფანჯარის contents იგივეა, რაც docked tab-ი
-3. F10 ისევ → ფანჯარა იხურება
-4. Both windows simultaneously: F10 (floating) + click Assets tab (docked)
-   → ორივე გახსნილია, ორივე იგივე state-ში
-
-**Pass**: დოკ + floating both work, in sync.
+**Pass**: docked + floating, compact header.
 
 ---
 
-## Test 3 — Compact header
+## Test 2 — + menu / Add ▶ submenu / right-click
 
-**Setup**: Setup A.
+1. **+ button** (Assets header) → menu order:
+   `Folder → —— → Lucide Icon... / Image... / Font... → —— → Python File / Text File`
+2. **right-click ცარიელი area** → menu: `New Folder / Add ▶ / —— / Open assets folder in Explorer`
+3. **right-click folder row** → `Open in Explorer / Add ▶ / —— / New Subfolder / Rename / Delete`
+4. **right-click file row** → `Open / Open in Explorer / Reimport / —— / Rename / Remove`
+5. Add ▶ submenu identical 3 ადგილას: `Lucide Icon / Image / Font / —— / Python / Text`
 
-1. Header-ში ერთ ხაზზე: bold project name (`AssetsTest`) + dim path
-2. Path is front-truncated (e.g. `...Documents\CTkMaker\AssetsTest`) —
-   width-კი არ აშლის dialog-ის ზომას
-3. ცალკე "Project" title არ არის
-4. ცალკე "Reveal in Explorer" ღილაკი არ არის (იხსნება მხოლოდ
-   right-click context menu-დან)
-
-**Pass**: header კომპაქტურია, ერთი row-ი.
+**Pass**: every entry icon-ით (Lucide-ის ხატებით — folder-plus, image-plus, type, file-code, file-text, etc).
 
 ---
 
-## Test 4 — + menu
+## Test 3 — Add image / font / folder + smart routing
 
-**Setup**: Setup A.
+1. + → Image → file picker → .png → file at `assets/images/X.png`, tree refresh
+2. + → Font → .ttf → at `assets/fonts/Y.ttf` + tkextrafont registered
+3. + → Folder → "icons" prompt → `assets/icons/` შეიქმნა
+4. select `icons/` → + → Folder → "ui" → `assets/icons/ui/` (subfolder)
+5. **smart routing**: right-click `icons/` → Add ▶ → Image → picker → file at `assets/icons/`, არა `images/`
+6. + menu (no selection) → Image → file at `assets/images/` (legacy fallback)
 
-1. Header-ის მარჯვნივ "+" ღილაკი
-2. Click → dropdown menu:
-   - Image...
-   - Font...
-   - ── (separator)
-   - Folder
-   - Text File (.md)
-   - Python File (.py)
-
-**Pass**: 5 punkt + 1 separator.
+**Pass**: ფაილები სწორ ფოლდერში, selected folder wins.
 
 ---
 
-## Test 5 — + Image / + Font
+## Test 4 — Add Python / Text + starter content
 
-**Setup**: Setup A.
+1. + → Text File (.md) → "LICENSE" → `LICENSE.md` შეიქმნა, **არ იხსნება ავტომატურად**
+2. + → Python File (.py) → "helpers" → `helpers.py` შეიქმნა, არ იხსნება
+3. double-click `helpers.py` → IDLE / VSCode (edit verb) starter content-ით:
+   v0.1 disclaimer + GitHub Issues + Buy me a Coffee links
+4. double-click `LICENSE.md` → text editor starter `# LICENSE`-ით
 
-1. + → Image... → file picker → .png file → 
-   → file copied to `assets/images/X.png` → 
-   → tree refreshes, ფაილი ჩანს
-2. + → Font... → file picker → .ttf → 
-   → file copied to `assets/fonts/Y.ttf` → 
-   → ფონტი registered with tkextrafont
-
-**Pass**: ფაილები assets/-ში, tree updated.
+**Pass**: no auto-open after creation, double-click → OS edit verb works.
 
 ---
 
-## Test 6 — + New Folder
+## Test 5 — File operations
 
-**Setup**: Setup A.
+```
+Setup: 1 .png + 1 .ttf imported, 1 custom folder `archive/`,
+       canvas-ზე CTkButton image=that .png-ი დაყენებულია.
+```
 
-1. select `images/` folder
-2. + → Folder → prompt "Folder name:" → type "icons" → OK
-3. tree refreshes → `assets/images/icons/` folder ჩანს
+1. **Open in Explorer** (file row) → Explorer გაიხსნა, file მონიშნულია
+2. **Reimport** → file picker → new content → file replaced in-place, references kept, widget visually განახლდა
+3. **Rename file** → "renamed.png" → tree updated
+4. **Rename folder** → "renamed_folder" → tree updated
+5. **Remove file** → confirm → deleted, widget renders empty (no crash)
+6. **Delete folder** (with read-only file inside) → "Delete '<name>' and N item(s)?" → Yes → recursive delete (`_force_remove_readonly` handles read-only attrs)
+7. **Save/Load roundtrip**: Save (Ctrl+S) → Quit → reopen → tree state persists
 
-ნაბიჯი 1-ის გარეშე (selection clear):
-4. + → Folder → "icons2" → OK
-5. `assets/icons2/` ფოლდერი (root-ში) ჩანს
-
-**Pass**: ფოლდერი იქმნება selected location-ში ან root-ში.
-
----
-
-## Test 7 — + New Text File (.md)
-
-**Setup**: Setup A.
-
-1. + → Text File (.md) → prompt "Filename:" → type "LICENSE" → OK
-2. tree → `LICENSE.md` ფაილი ჩანს
-3. ავტომატურად გაიხსნა OS default editor-ში starter content-ით:
-   `# LICENSE\n\n`
-
-**Pass**: ფაილი იქმნება + ავტო-open editor-ში.
+**Pass**: all ops work, references survive, read-only attrs handled.
 
 ---
 
-## Test 8 — + New Python File (.py)
+## Test 6 — Tree visualization + info panel
 
-**Setup**: Setup A.
+```
+Setup: 1 .png 200×100, 1 .ttf "Comic Sans MS", 1 .md, 1 .py, 1 folder.
+```
 
-1. + → Python File (.py) → prompt → "helpers" → OK
-2. tree → `helpers.py` ფაილი ჩანს
-3. ავტომატურად IDLE / VSCode-ში გაიხსნა starter docstring-ით:
-   `"""helpers.py — module description here."""`
+1. row icons by kind: folder / image / type / file-text / file-code / file (2-space gap before name)
+2. recursive nesting: parent folder count includes children
+3. **info panel** on selection:
+   - .png → filename + Size KB + Dimensions WxH + 140×140 thumbnail
+   - .ttf → filename + Size + Family + Format
+   - folder → name + size
+   - clear selection → info panel იცარიელდება
 
-**Pass**: .py ფაილი + automatic-ად editor-ში.
-
----
-
-## Test 9 — Right-click empty area
-
-**Setup**: Setup A.
-
-1. Right-click ცარიელი ფართობი (tree-ის ბოლოში)
-2. Context menu:
-   - Import Image...
-   - Import Font...
-   - ── 
-   - New Folder...
-   - New Text File...
-   - New Python File...
-
-**Pass**: 5 punkt + 1 separator.
+**Pass**: kind-specific icons + info, image preview thumbnail.
 
 ---
 
-## Test 10 — Right-click on folder
+## Test 7 — Multi-select + drag-and-drop
 
-**Setup**: Setup A. ერთი ფოლდერი (e.g. `images/`).
+```
+Setup: 3 .png in `images/` + custom `archive/` folder.
+```
 
-1. Right-click `images/` row
-2. Context menu:
-   - Reveal in Explorer
-   - ── 
-   - Import Image here...
-   - Import Font here...
-   - ── 
-   - New Subfolder...
-   - New Text File...
-   - New Python File...
-   - ── 
-   - Rename...
-   - Delete folder...
+1. **multi-select**: click → Ctrl+click → Ctrl+click (3 selected, ttk extended mode)
+2. drag → ghost Toplevel "3 items" (semi-transparent) cursor-ის გვერდით
+3. `archive/` highlights `#26486b` როცა cursor მასზეა → drop → all 3 move
+4. **single drag**: 1 file → drop on `archive/` → ghost "1 item"
+5. **empty area drop** = root: drag from `archive/` to ცარიელ space → file → `assets/`
+6. **invalid drop refused**: drag `parent` folder onto `parent/child` → no highlight, no move
+7. **conflict on drop**: drag `a.png` to folder that already has `a.png` → warning "already exists, skipping"
 
-**Pass**: 8 punkts (with separators).
+**Pass**: drag/drop with ghost + target highlight; invalid drops + conflicts handled.
 
 ---
 
-## Test 11 — Right-click on file
+## Test 8 — Sync between docked + floating
 
-**Setup**: Setup A. ერთი .png + ერთი .ttf imported.
+1. F10 → floating + docked ღია ერთად
+2. floating window → + → Image → file added
+3. docked tree should reflect the new file immediately (event_bus `dirty_changed`)
+4. ანალოგიურად: docked → + → Folder → floating refreshes
 
-1. Right-click .png row
-2. Context menu:
-   - Open
-   - Reveal in Explorer
-   - Reimport...
-   - ── 
-   - Rename...
-   - Remove from project...
-
-**Pass**: 5 punkts.
+**Pass**: event_bus keeps both panels in sync.
 
 ---
 
-## Test 12 — Reveal in Explorer
+## Cleanup
 
-**Setup**: Setup A. ერთი .png ფაილი.
-
-1. Right-click .png → Reveal in Explorer
-2. Windows Explorer გაიხსნა, file მონიშნულია (`/select,` flag)
-
-**Pass**: Explorer იხსნება და file highlighted.
-
----
-
-## Test 13 — Reimport
-
-**Setup**: Setup A. icon.png imported. ცალკე desktop-ზე new-icon.png
-(სხვა content, იგივე საქმე).
-
-1. Right-click icon.png → Reimport... → file picker → desktop/new-icon.png → OK
-2. icon.png-ის შინაარსი ცვლილდება new-icon-ის ცონტენტით (path არ შეიცვლება)
-3. ყველა ვიჯეტი რომელიც icon.png-ს იყენებდა, ავტომატურად განახლდება
-
-**Pass**: file replaced in-place, references kept.
-
----
-
-## Test 14 — Remove file
-
-**Setup**: Setup A. ერთი .png imported, რომელიმე ვიჯეტს მიცემული.
-
-1. Right-click .png → Remove from project...
-2. Confirmation dialog: "Remove 'X.png'? This deletes... cannot be undone..."
-3. Yes → file deleted from disk
-4. ვიჯეტის image=path → render-ში graceful (no image, no crash)
-
-**Pass**: File deleted, widget renders without image.
-
----
-
-## Test 15 — Rename file
-
-**Setup**: Setup A. ერთი .png ფაილი.
-
-1. Right-click .png → Rename → simpledialog
-2. Type "renamed.png" → OK
-3. tree refresh → ფაილი ცვლი სახელს
-
-**Pass**: file renamed on disk.
-
----
-
-## Test 16 — Rename folder
-
-**Setup**: Setup A. ფოლდერი `myfolder` (შექმნილი + Folder-ით).
-
-1. Right-click folder → Rename → "renamed"
-2. tree refresh → folder ცვლი სახელს
-
-**Pass**: folder renamed.
-
----
-
-## Test 17 — Delete folder (recursive count + warning)
-
-**Setup**: Setup A. folder `assets/test_dir/` 5 file-ით + 1 subfolder + 2 file ში.
-
-1. Right-click `test_dir/` → Delete folder...
-2. Confirmation: "Delete 'test_dir' and 8 item(s) inside it?\n\nPath: ...\n\nThis deletes the folder from disk..."
-3. Yes → ფოლდერი + ყველაფერი მის შიგნით წაიშლა (`shutil.rmtree`)
-
-**Pass**: count გვიჩვენებს ცადომდე, რეცურსიული წაშლა.
-
----
-
-## Test 18 — Double-click file → OS open
-
-**Setup**: Setup A.
-
-1. Double-click .png row → Windows Photos ან image viewer გახსნა
-2. Double-click .ttf row → Windows Font Viewer გახსნა
-3. Double-click .md row → text editor (default association)
-4. Double-click .py row → IDLE ან VSCode
-
-**Pass**: each kind → its OS default app.
-
----
-
-## Test 19 — Recursive tree (custom folders)
-
-**Setup**: Setup A.
-
-1. + Folder → "icons" → enter
-2. select `icons` → + Folder → "ui" → enter
-3. select `icons/ui` → + Image → some.png → enter
-4. tree-ში ხეხელად ჩანს:
-   ```
-   📁 fonts/  (0)
-   📁 icons/  (1)
-     📁 ui/  (1)
-        🖼 some.png
-   📁 images/  (0)
-   📁 sounds/  (0)
-   ```
-
-**Pass**: recursive levels work, custom folders alongside default skeleton.
-
----
-
-## Test 20 — Per-row icons (Lucide kinds)
-
-**Setup**: Setup A. ერთი .png + ერთი .ttf + ერთი .md + ერთი .py + ერთი folder.
-
-1. Tree row-ებში icon კი გამოვა kind-ის მიხედვით:
-   - folder → folder ხატი
-   - .png → image (პატარა სურათი)
-   - .ttf → type (Aa)
-   - .md → file-text
-   - .py → file-code
-2. სიცარიელე text-სა და icon-ს შორის — 2 leading space
-
-**Pass**: ცხადი ვიზუალური განცხდება.
-
----
-
-## Test 21 — Info panel (selection metadata)
-
-**Setup**: Setup A. ერთი .png 200×100 + ერთი .ttf "Comic Sans MS".
-
-1. select .png → info panel:
-   - filename
-   - Size: XX KB
-   - Dimensions: 200 × 100 px
-   - thumbnail preview (140×140 max)
-2. select .ttf → info panel:
-   - filename
-   - Size
-   - Family: Comic Sans MS
-   - Format: TTF
-3. select folder → info panel: name + size of folder (or empty)
-4. clear selection → info panel იცარიელდება
-
-**Pass**: each kind → kind-specific metadata + thumbnail for images.
-
----
-
-## Test 22 — Multi-select (Ctrl+click)
-
-**Setup**: Setup A. 3 ფაილი + 2 ფოლდერი.
-
-1. click first file → selected
-2. Ctrl+click second file → both selected (highlighted)
-3. Ctrl+click third file → 3 selected
-4. Shift+click first file → 1-3 range selected (depending on order)
-
-**Pass**: native ttk.Treeview multi-select works.
-
----
-
-## Test 23 — Drag move single file
-
-**Setup**: Setup A. `images/` folder + custom `icons/` folder + ერთი .png in `images/`.
-
-1. press + drag .png from `images/` to `icons/` 
-2. drag ghost: "1 item" Toplevel cursor-ის გვერდით (semi-transparent)
-3. `icons/` row highlights blue (`#26486b`) როცა cursor მასზეა
-4. release on `icons/` → file moves there
-5. tree refresh — file ჩანს `icons/`-ში, არა `images/`-ში
-
-**Pass**: drag-drop move, ghost ხილვადი, target highlight.
-
----
-
-## Test 24 — Drag move multiple files
-
-**Setup**: Setup A. 3 .png in `images/` + custom `archive/` folder.
-
-1. select first file → Ctrl+click second → Ctrl+click third (3 selected)
-2. drag → ghost shows "3 items"
-3. drop on `archive/` → all 3 move there
-
-**Pass**: multi-select drag.
-
----
-
-## Test 25 — Drop on empty area = root
-
-**Setup**: Setup A. subfolder `images/icons/` with one .png inside.
-
-1. drag .png from `images/icons/` → drop on tree-ის ცარიელ space (ბოლოში)
-2. file moves to `assets/` root
-
-**Pass**: empty-area drop = root drop.
-
----
-
-## Test 26 — Invalid drag refused
-
-**Setup**: Setup A. folder `parent` containing folder `child`.
-
-1. drag `parent` folder → try to drop on `child`
-2. drop target highlight არ შემოვა (legal check)
-3. release → არაფერი მოხდა (no shutil.move)
-
-**Pass**: descendant-drop refused.
-
----
-
-## Test 27 — Conflict on drop
-
-**Setup**: Setup A. file `a.png` in `images/` + same name `a.png` in `icons/`.
-
-1. drag `a.png` from `images/` → drop on `icons/`
-2. warning: "'a.png' already exists in 'icons'. Skipping."
-3. file stays in `images/`
-
-**Pass**: conflict detected, warning shown.
-
----
-
-## Test 28 — Smart routing on right-click import
-
-**Setup**: Setup A. custom `icons/` folder.
-
-1. Right-click `icons/` → Import Image here... → pick .png
-2. file copied to `assets/icons/`, არა `assets/images/`
-
-ანალოგიურად + menu without selection:
-
-3. + → Image (no selection) → pick .png
-4. file copied to `assets/images/` (legacy auto-route)
-
-**Pass**: context-aware routing.
-
----
-
-## Final cleanup
-
-- Quit project
-- Delete `~/Documents/CTkMaker/AssetsTest/` test data
+- Quit + delete `~/Documents/CTkMaker/AssetsTest/`

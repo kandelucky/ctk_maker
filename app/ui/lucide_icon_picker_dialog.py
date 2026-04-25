@@ -84,7 +84,11 @@ class LucideIconPickerDialog(tk.Toplevel):
         self._tint = DEFAULT_TINT
         self._output_size = DEFAULT_OUTPUT_SIZE
         self._search = ""
-        self._active_cat: str = "_all"
+        # Open on the first sorted category instead of "All" — "All"
+        # renders ~400 cells at once which is slow and unnecessary
+        # given the sidebar + search are right there.
+        sorted_cats = sorted(self._categories.keys())
+        self._active_cat: str = sorted_cats[0] if sorted_cats else "_all"
         self._selected: str | None = None
         self._thumb_cache: dict[tuple[str, str, int], tk.PhotoImage] = {}
         self._cat_buttons: dict[str, tk.Frame] = {}
@@ -206,7 +210,12 @@ class LucideIconPickerDialog(tk.Toplevel):
             tint_row, width=80, height=26,
         )
         self._tint_entry.insert(0, self._tint)
-        self._tint_entry.bind("<Return>", lambda _e: self._on_tint_commit())
+        # ``return "break"`` so Enter inside the entry only commits
+        # the tint — without it, the toplevel <Return> binding (Apply)
+        # would also fire and close the dialog.
+        self._tint_entry.bind(
+            "<Return>", lambda _e: (self._on_tint_commit(), "break")[1],
+        )
         self._tint_entry.bind(
             "<FocusOut>", lambda _e: self._on_tint_commit(),
         )

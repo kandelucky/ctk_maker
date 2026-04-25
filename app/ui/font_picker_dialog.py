@@ -477,25 +477,11 @@ class FontPickerDialog(tk.Toplevel):
                     parent=self,
                 )
                 return
-        if family in (self.project.system_fonts or []):
-            self.project.system_fonts = [
-                f for f in self.project.system_fonts if f != family
-            ]
-        # Drop cascade defaults that pointed at this family — Tk
-        # doesn't know the family anymore, so a stale entry would
-        # silently fall back to default for every widget anyway;
-        # better to clear it out so the user's intent is explicit.
-        new_defaults = {
-            k: v for k, v in self.project.font_defaults.items()
-            if v != family
-        }
-        if new_defaults != self.project.font_defaults:
-            from app.core.fonts import set_active_project_defaults
-            self.project.font_defaults = new_defaults
-            set_active_project_defaults(new_defaults)
-            self.project.event_bus.publish(
-                "font_defaults_changed", new_defaults,
-            )
+        from app.core.fonts import purge_family_from_project
+        purge_family_from_project(self.project, family)
+        self.project.event_bus.publish(
+            "font_defaults_changed", self.project.font_defaults,
+        )
         self.project.event_bus.publish("dirty_changed", True)
         # If the removed family was the picker's current selection,
         # drop it so OK doesn't try to commit a deleted family.
@@ -556,6 +542,10 @@ class FontPickerDialog(tk.Toplevel):
                 "extract a family name. The font may be unsupported.",
                 parent=self,
             )
+        # Wake up any docked / floating Assets panel that's listening —
+        # without this the new file lands on disk but the tree shows
+        # stale contents until the next manual refresh.
+        self.project.event_bus.publish("dirty_changed", True)
         self._refresh(select=family)
 
     def _on_add_system_font(self) -> None:
@@ -597,6 +587,10 @@ class FontPickerDialog(tk.Toplevel):
                 self.project.system_fonts = sorted(
                     set(self.project.system_fonts or []) | {family},
                 )
+        # Either a new file landed in assets/fonts/ (the copied path)
+        # or system_fonts grew — both move the project's "dirty" state
+        # and any listening Assets panel needs the nudge.
+        self.project.event_bus.publish("dirty_changed", True)
         self._refresh(select=family)
 
     def _on_ok(self) -> None:

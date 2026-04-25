@@ -1,199 +1,77 @@
-# Manual tests — Lucide Icon Picker (v0.0.25+)
+# Manual tests — Lucide Icon Picker (v0.0.26+)
 
-რეგრესიის ხელით ტესტი. სცენარები ქართულად; technical terms (dialog,
-picker, tint, hex...) ინგლისურად. ყოველი test ცარიელი სუფთა session-ით
-იწყება (Quit + relaunch) თუ არ არის სხვაგვარად მითითებული.
+რეგრესიის ხელით ტესტი. ქართული; technical terms (dialog, picker,
+tint, hex...) ინგლისურად. ერთი project ყველა test-ზე — Quit + relaunch
+საჭიროა მხოლოდ თუ სხვაგვარად მითითებულია.
 
 > Run: `python main.py`. Standalone harness — `python tools/test_icon_picker.py`.
 
 ---
 
-## Setup A — Project + ხილვადი Assets panel
+## Setup — Project + Assets tab
 
-1. Quit ნებისმიერი ღია session → relaunch
-2. New Project → Name: `IconTest` → Save to: default → Create
-3. click Assets tab (docked) → tree visible
-4. Save (Ctrl+S)
+1. relaunch builder → New Project `IconTest` (default save) → Create
+2. Assets tab → docked tree visible
 
 ---
 
-## Test 1 — Dialog ხსნა Project window-ის + menu-დან
+## Test 1 — Entry points (3 გზა)
 
-**Setup**: Setup A.
+1. **`+ menu`** (Assets header) → `Lucide Icon...` (layout-list icon, Folder-ის ქვევით) → dialog 760×580 იხსნა
+2. close → **right-click ცარიელ tree** → Add ▶ → `Lucide Icon...` → იგივე dialog
+3. close → drop CTkButton on canvas → image_path → ⋯ → Image picker (480×480) header-ში `+ Lucide icon...` → click → Lucide picker
 
-1. click `+` button → menu: Folder / —— / **Lucide Icon...** / Image... / Font... / —— / ...
-2. layout-list iconi ჩანს Lucide Icon entry-ის გვერდით
-3. click Lucide Icon → dialog 760×580 იხსნება
-4. Layout: Search bar (top) → Sidebar (left, 42 categories + "All") → Grid (center, 6 cols) → Preview (right, 64×64)
-5. Footer: Cancel + Apply (Apply disabled)
-
-**Pass**: dialog ხსნა, layout სრული.
+**Pass**: 3 entry points, dialog ყოველთვის ერთნაირი.
 
 ---
 
-## Test 2 — Dialog ხსნა right-click Add ▶ submenu-დან
+## Test 2 — Filter & select
 
-**Setup**: Setup A.
+dialog ღია, "All" active.
 
-1. right-click ცარიელ tree area-ზე → Add ▶ → **Lucide Icon...** (top entry)
-2. dialog იხსნება იგივე layout-ით
+1. type `home` in search → ~5 icons → clear → ისევ ყველა
+2. type `formatting` (tag search) → a-arrow icons
+3. click `Accessibility (30)` → 30 icons → click `Arrows` → ისრები
+4. click random cell → ლურჯი highlight + Apply enabled + preview pane updates (64×64 + name + tags)
+5. click another → previous unhighlights, new highlighted
 
-**Pass**: submenu integration.
-
----
-
-## Test 3 — Dialog ხსნა Image picker-დან (Properties panel)
-
-**Setup**: Setup A. canvas-ზე drop CTkButton → image_path property → ⋯ click.
-
-1. Image picker dialog იხსნება (480×480) → header-ში ორი ღილაკი: `+ Import image...` და `+ Lucide icon...`
-2. click `+ Lucide icon...` → Lucide picker იხსნება
-
-**Pass**: nested dialog, ორივე ღილაკი ჩანს.
+**Pass**: name+tag search, category switch, single-select with preview sync.
 
 ---
 
-## Test 4 — Category filter
+## Test 3 — Tint
 
-**Setup**: dialog ღია (any way).
-
-1. default: "All" highlighted (ლურჯი) → grid shows ~400 icons + count "showing 400 of 1699 — refine search"
-2. click "Accessibility (30)" → grid → 30 icons → count "30 icons"
-3. click "Arrows" → ისარების icons → count updates
-
-**Pass**: category click → grid refresh + count.
-
----
-
-## Test 5 — Search by name
-
-**Setup**: dialog ღია, "All" active.
-
-1. type `home` in Search → grid filter → ~5 icons (home, home-plus...)
-2. clear search → ისევ ყველა icon
-3. type `xyz123` → grid empty → "No icons match."
-
-**Pass**: name substring search.
-
----
-
-## Test 6 — Search by tag
-
-**Setup**: dialog ღია, "All" active.
-
-1. type `formatting` → icons with "formatting" tag (a-arrow-down, a-arrow-up...)
-2. type `magic` → sparkles, wand icons
-
-**Pass**: tag search.
-
----
-
-## Test 7 — Click select + Apply enable
-
-**Setup**: dialog ღია.
-
-1. click random icon cell → cell ლურჯად (#094771) → Apply enabled
-2. Preview pane: 64×64 icon + name + tags
-3. click another → previous unhighlights, new highlighted, preview updates
-
-**Pass**: single-select, preview sync.
-
----
-
-## Test 8 — Tint via hex entry
-
-**Setup**: dialog ღია, icon selected.
+icon selected.
 
 1. clear Tint entry → type `#ff8800` → Enter → swatch ნარინჯისფერი → grid + preview retint
-2. Type invalid `xyz` → Enter → entry reverts to last valid
+2. type `xyz` (invalid) → Enter → entry reverts to `#ff8800`
+3. click swatch → ColorPickerDialog (taskbar-ის ზევით ჯდება) → pick green → OK → ყველა მწვანე
 
-**Pass**: tint commit + invalid-input recovery.
-
----
-
-## Test 9 — Tint via color picker
-
-**Setup**: dialog ღია, icon selected.
-
-1. click swatch (24×24 colored box) → ColorPickerDialog იხსნება
-2. pick green → OK → swatch + entry + grid + preview ყველა მწვანე
-
-**Pass**: ColorPickerDialog integration.
+**Pass**: hex commit + invalid recovery + ColorPickerDialog integration.
 
 ---
 
-## Test 10 — Apply writes to target dir (Project window)
+## Test 4 — Size + Apply + smart routing
 
-**Setup**: Setup A, dialog opened from + menu.
+1. size dropdown: `64 px` → ცვლა `128 px` (preview pane არ იცვლება — output size-ია, არა preview)
+2. icon `home` selected, tint orange → Apply → dialog closes → file at `assets/images/home.png` (128×128, ნარინჯისფერი)
+3. + Folder → `icons` → right-click `icons/` → Add ▶ → Lucide Icon → pick + Apply → file at `assets/icons/<name>.png` (smart routing)
+4. CTkButton → ⋯ Image picker → + Lucide icon → pick + Apply → Lucide closes, Image picker refreshes, new file auto-selected → OK → property assigned
 
-1. select `home` icon → tint `#ff8800` → Apply
-2. dialog closes
-3. Assets tree: `images/home.png` row appeared (orange tint visible if you preview)
-
-**Pass**: tinted PNG saved + tree refreshes.
-
----
-
-## Test 11 — Apply writes to right-clicked folder
-
-**Setup**: Setup A. Create `assets/icons/` folder via + → Folder.
-
-1. right-click `icons/` row → Add ▶ → Lucide Icon → pick + Apply
-2. file lands at `assets/icons/<name>.png` (NOT `images/`)
-
-**Pass**: smart routing into right-clicked folder.
+**Pass**: size dropdown working, Apply writes correct size + tint, smart routing into right-clicked folder, nested Image picker flow.
 
 ---
 
-## Test 12 — Apply from Image picker writes to images + auto-select
+## Test 5 — Cancel + double-click + sync
 
-**Setup**: Setup A. canvas-ზე CTkButton + image picker → Lucide picker.
+1. Cancel → dialog closes → no file created, no property change
+2. ხელახლა გახსნა → double-click any cell → cell selects + Apply fires → dialog closes, file written
+3. floating F10 + docked Assets ერთად ღია → Image picker-დან Lucide-ით pick → ორივე panel-ში file ჩანს (event_bus sync)
 
-1. pick `star` → Apply
-2. Lucide picker closes → Image picker still open → tree refreshed → `star.png` selected (ლურჯი row)
-3. OK → property assigned → docked Assets panel-ში `images/star.png` ჩანს (sync via event_bus)
-
-**Pass**: nested-dialog flow + sync.
+**Pass**: Cancel discards, double-click shortcut, dual-panel sync.
 
 ---
 
-## Test 13 — Cancel returns nothing
+## Cleanup
 
-**Setup**: dialog ღია, icon selected, tint changed.
-
-1. Cancel → dialog closes
-2. no file created in target dir
-3. property unchanged (if from Image widget flow)
-
-**Pass**: Cancel discards.
-
----
-
-## Test 14 — Double-click = Apply
-
-**Setup**: dialog ღია.
-
-1. double-click any cell → cell selects + Apply fires immediately
-2. dialog closes, file written
-
-**Pass**: double-click shortcut.
-
----
-
-## Test 15 — Standalone harness
-
-**Setup**: Quit builder. Run `python tools/test_icon_picker.py`.
-
-1. small window: "Open Lucide Icon Picker" button + output folder label
-2. click → dialog opens → pick + Apply
-3. window shows 96×96 preview + path label
-4. file in `tools/test_output/<name>.png`
-
-**Pass**: harness works in isolation.
-
----
-
-## Final cleanup
-
-- Quit
-- Delete `~/Documents/CTkMaker/IconTest/` + `tools/test_output/` test data
+- Quit + delete `~/Documents/CTkMaker/IconTest/`

@@ -604,21 +604,44 @@ class ProjectPanel(ctk.CTkFrame):
                 pass
             self._refresh_info_panel()
             return
-        # Defer the snapshot to after Tk's selection handler fires —
-        # by-press selection gets included.
-        self.after_idle(lambda: self._stamp_drag(event, iid))
+        # Snapshot the selection BEFORE Tk's default Button-1 handler
+        # fires — when the press lands on an already-selected row in a
+        # multi-select state, Tk collapses the selection to just that
+        # row, which would lose the other items the user wanted to
+        # drag together.
+        prev_sel = list(self._tree.selection())
+        was_multi_press = iid in prev_sel and len(prev_sel) > 1
+        self.after_idle(
+            lambda: self._stamp_drag(
+                event, iid,
+                preserve_items=prev_sel if was_multi_press else None,
+            )
+        )
 
-    def _stamp_drag(self, event, iid: str) -> None:
-        sel = self._tree.selection()
-        # Only drag if the press landed on a row that's now selected.
-        # ``identify_row`` may return iid even if the user just
-        # clicked an inert region — guard against dragging "nothing".
-        if iid not in sel:
-            self._drag_state = None
-            return
+    def _stamp_drag(
+        self, event, iid: str,
+        preserve_items: list[str] | None = None,
+    ) -> None:
+        if preserve_items is not None:
+            # Pressed on a multi-selected row — keep all the previously
+            # selected items as the drag set even though Tk collapsed
+            # the visual selection to one. Selection itself will be
+            # restored on the actual drag start so a plain click that
+            # never moves still collapses to single (expected Tk UX).
+            items = preserve_items
+        else:
+            sel = self._tree.selection()
+            # Only drag if the press landed on a row that's now
+            # selected. ``identify_row`` may return iid even if the
+            # user just clicked an inert region — guard against
+            # dragging "nothing".
+            if iid not in sel:
+                self._drag_state = None
+                return
+            items = list(sel)
         self._drag_state = {
             "start_y": event.y, "start_x": event.x,
-            "items": list(sel), "active": False,
+            "items": items, "active": False,
         }
 
     def _on_tree_drag(self, event) -> None:
@@ -634,6 +657,14 @@ class ProjectPanel(ctk.CTkFrame):
             if max(dx, dy) < self._drag_threshold:
                 return
             state["active"] = True
+            # Restore the multi-selection visually now that we're
+            # genuinely dragging — the press handler intentionally
+            # leaves Tk's collapsed selection alone so a plain click
+            # without drag still behaves like a normal single-select.
+            try:
+                self._tree.selection_set(state["items"])
+            except tk.TclError:
+                pass
             self._show_drag_ghost(state["items"])
         # Update ghost position so the icon trails the cursor.
         self._move_drag_ghost(event)
@@ -916,10 +947,16 @@ class ProjectPanel(ctk.CTkFrame):
                     menu, "Open in Explorer", "folder-open",
                     self._on_context_reveal,
                 )
-                self._menu_command(
-                    menu, "Reimport...", "rotate-cw",
-                    self._on_context_reimport,
-                )
+                # Reimport is hidden for fonts because tkextrafont
+                # caches the registration in the running Tk
+                # interpreter — replacing the file on disk doesn't
+                # reload the glyphs until a relaunch. Users can drop
+                # a new font through the + menu instead.
+                if kind != "fonts":
+                    self._menu_command(
+                        menu, "Reimport...", "rotate-cw",
+                        self._on_context_reimport,
+                    )
                 menu.add_separator()
                 self._menu_command(
                     menu, "Rename...", "pencil", self._on_rename,
@@ -1365,7 +1402,16 @@ class ProjectPanel(ctk.CTkFrame):
             return
         file_path, kind = meta
         try:
-            size_bytes = file_path.stat().st_size
+            if kind == "folder":
+                # Path.stat().st_size on a directory returns the
+                # directory entry size on Windows (~4 KB block) — not
+                # the recursive content total. Sum file sizes manually.
+                size_bytes = sum(
+                    p.stat().st_size for p in file_path.rglob("*")
+                    if p.is_file()
+                )
+            else:
+                size_bytes = file_path.stat().st_size
         except OSError:
             size_bytes = 0
         lines = [
@@ -1436,6 +1482,13 @@ class ProjectPanel(ctk.CTkFrame):
             icon="warning",
         ):
             return
+        # Resolve the font family BEFORE unlinking — once the file is
+        # gone PIL can't read its name table and the cleanup pass
+        # below would silently skip system_fonts / cascade / per-widget
+        # references.
+        family_to_purge: str | None = None
+        if kind == "fonts":
+            family_to_purge = _read_font_family(file_path)
         try:
             file_path.unlink()
         except OSError:
@@ -1446,15 +1499,9 @@ class ProjectPanel(ctk.CTkFrame):
                 parent=self.winfo_toplevel(),
             )
             return
-        # Drop a matching system_fonts entry — that list pairs each
-        # name with a file in assets/fonts/ in the common case, and a
-        # bare reference reads as broken once the file is gone.
-        if kind == "fonts":
-            family = _read_font_family(file_path)
-            if family and family in self.project.system_fonts:
-                self.project.system_fonts = [
-                    f for f in self.project.system_fonts if f != family
-                ]
+        if family_to_purge:
+            from app.core.fonts import purge_family_from_project
+            purge_family_from_project(self.project, family_to_purge)
         self.project.event_bus.publish("dirty_changed", True)
         # Force a re-render so references that became stale (image
         # widgets pointing at a deleted file, font cascade entries

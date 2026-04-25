@@ -91,6 +91,34 @@ def resolve_effective_family(
     return _active_defaults.get(ALL_DEFAULT_KEY) or None
 
 
+def purge_family_from_project(project, family: str) -> None:
+    """Scrub every reference to ``family`` from the live project state
+    after the underlying font file has been deleted. Without this,
+    widgets keep pointing at a now-missing family and the canvas
+    silently keeps drawing the cached glyphs until the next reload.
+
+    - ``system_fonts`` entry removed
+    - cascade defaults (``font_defaults``) pointing at the family cleared
+    - per-widget ``font_family`` overrides cleared
+
+    Caller is responsible for publishing ``font_defaults_changed`` so
+    the workspace re-resolves cascades and rebuilds CTkFont objects.
+    """
+    if family in (project.system_fonts or []):
+        project.system_fonts = [
+            f for f in project.system_fonts if f != family
+        ]
+    new_defaults = {
+        k: v for k, v in project.font_defaults.items() if v != family
+    }
+    if new_defaults != project.font_defaults:
+        project.font_defaults = new_defaults
+        set_active_project_defaults(new_defaults)
+    for node in project.iter_all_widgets():
+        if node.properties.get("font_family") == family:
+            node.properties["font_family"] = None
+
+
 def _check_extrafont() -> bool:
     """Probe tkextrafont once and cache the result."""
     global _extrafont_available
