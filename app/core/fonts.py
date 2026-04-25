@@ -270,24 +270,25 @@ def list_project_fonts(
     project_file: str | Path | None,
     root: tk.Misc | None = None,
 ) -> list[tuple[str, Path]]:
-    """Return ``(family_name, file_path)`` for every font file in the
-    project's ``assets/fonts/`` folder. Lazily registers files that
-    landed there outside the regular ``register_project_fonts`` flow
-    (e.g. dropped in via the OS file manager between picker opens) so
-    the picker always reflects the on-disk state. Falls back to the
-    file stem when neither tkextrafont nor PIL can surface a family
-    name — the file still appears, the user can still pick it, and
-    rendering uses whatever Tk maps that string to.
+    """Return ``(family_name, file_path)`` for every font file
+    anywhere under the project's ``assets/`` folder. Recursive scan
+    so user-organised folders (``assets/icons/``,
+    ``assets/decorative/``) surface in the picker without needing the
+    legacy fixed ``fonts/`` subfolder. Lazily registers freshly
+    dropped-in files (drag-and-drop from the OS file manager between
+    picker opens) so the dialog always reflects on-disk state. Falls
+    back to the file stem when neither tkextrafont nor PIL can
+    surface a family name — the file still appears in the picker,
+    the user can still pick it, and rendering uses whatever Tk maps
+    that string to.
     """
     if not project_file:
         return []
-    fonts_dir = (
-        Path(project_file).parent / ASSETS_DIR_NAME / "fonts"
-    )
-    if not fonts_dir.exists():
+    a_dir = Path(project_file).parent / ASSETS_DIR_NAME
+    if not a_dir.exists():
         return []
     out: list[tuple[str, Path]] = []
-    for path in sorted(fonts_dir.iterdir()):
+    for path in sorted(a_dir.rglob("*")):
         if not path.is_file() or path.suffix.lower() not in FONT_EXTS:
             continue
         resolved = path.resolve()
@@ -295,7 +296,6 @@ def list_project_fonts(
         if not family:
             family = register_font_file(resolved, root=root) or path.stem
         out.append((family, path))
-    # Stable, case-insensitive order.
     return sorted(out, key=lambda t: t[0].lower())
 
 

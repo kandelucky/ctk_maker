@@ -6,6 +6,21 @@
 
 ## Major features
 
+### Detachable / dockable panels (universal)
+
+Every panel that's currently dock-only (Properties, Project, Palette) should be optionally detachable as a floating Toplevel — and reciprocally, every floating panel (History, Object Tree, Project F10) should be optionally dockable into the main window.
+
+Today the picture is split:
+- **Detachable** (have both modes): History, Object Tree, Project (F10 floating)
+- **Dock-only**: Properties, Palette
+- **Floating-only**: ColorPicker, FontPicker (modal dialogs — fine as-is)
+
+**Proposal:** uniform "panel" abstraction with a small detach button (⤴) in each panel's header. Click → pulls panel out into a Toplevel. The dock slot remembers which panel was there last so the user can re-dock by clicking the empty slot's switcher. State (selection, scroll, last-active tab) survives the swap.
+
+Cleaner alternative: pluggable panel slots, where each slot accepts any panel via a dropdown — Qt Designer / VSCode / JetBrains-style. More UI surface to design but more flexible.
+
+Out of scope for now — Phase A docked Project alongside Properties; Phase B folder organization in Project panel comes first. Revisit when we have a panel-management story.
+
 ### Dialog → reusable composite
 
 Convert an existing Dialog document into a **portable composite object** that can be dragged into another window's canvas as a single group — preserving the full widget tree, properties, layout, and relative positions.

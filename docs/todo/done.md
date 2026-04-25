@@ -6,6 +6,29 @@
 
 ## 2026-04 — Area QA passes + refactors
 
+- **v0.0.23** (2026-04-25) — Assets panel: docked tab + free-form folders + drag-and-drop:
+  - **Project panel docked alongside Properties** as a sibling tab (Properties / Assets toggle in the right pane). Floating ProjectWindow (F10) stays available for users who prefer it off to the side. Tab + window both renamed to "Assets".
+  - **Compact one-row header** — bold project name + dim front-truncated path on the same line, "+" menu button on the right replacing the four-button footer. Frees the tree's vertical space.
+  - **+ menu** — Image / Font / —— / Folder / Text File (.md) / Python File (.py).
+  - **Free-form folder organisation.** Tree walks `assets/` recursively; user can create / rename / delete custom folders alongside the legacy `images/` / `fonts/` / `sounds/` defaults. Token resolution unchanged — `asset:relative/path/to/file.png` still resolves against the project's `assets/` root.
+  - **+ New Folder** / **+ New Subfolder** at the selected location (or `assets/` root). Filename validation rejects forbidden chars + name collisions.
+  - **+ New Text File (.md)** / **+ New Python File (.py)** — both prompt for a base name, default extension auto-applied, file gets a tiny starter template (`# Heading` for Markdown, module-level docstring for Python), then opens via the OS default editor for the user to start typing immediately.
+  - **Right-click context menus** — full set of operations:
+    - Empty area: Import Image / Font / —— / New Folder / New Text / New Python.
+    - Folder row: Reveal in Explorer / —— / Import Image here / Import Font here / —— / New Subfolder / New Text / New Python / —— / Rename / Delete (recursive count + warning).
+    - File row: Open / Reveal / Reimport / —— / Rename / Remove.
+  - **Smart import routing** — right-click → Import Image lands in the right-clicked folder, while + menu without selection auto-routes to the legacy `images/` / `fonts/` subfolder.
+  - **Double-click → OS default app** — `os.startfile` Windows / `open` macOS / `xdg-open` Linux. Folder rows still toggle expand/collapse.
+  - **Reimport...** option on file rows — file picker (extension-matched) replaces the file in place; references project-wide automatically pick up the new content because the path stays the same. Useful for icon updates.
+  - **Recursive picker scan** — image + font pickers now walk the whole `assets/` tree (not just the legacy fixed subfolder) so reorganised assets surface in the dialog.
+  - **Multi-select + drag-and-drop** — `selectmode="extended"` (Ctrl+click / Shift+click) plus mouse-down + motion-threshold + release sequence moves files / folders between subfolders. Drop on the empty area below the tree drops into `assets/` root. Validation refuses self-drop, descendant-drop, and no-op moves to the same parent.
+  - **Drag ghost** — small overrideredirect Toplevel (semi-transparent) trails the cursor during drag with a folder/file Lucide icon + "N items" caption. Replaces the previous `cursor="exchange"` system-cursor swap which felt jarring.
+  - **Drop-target highlight** — legal target folder lights up in `#26486b` while the cursor is over it.
+  - **Per-row icons** — Lucide leading icon by row kind: folder, image, type (font), music, file-text, file-code, file. Two-space padding between icon and label gives a comfortable visual gap.
+  - **Image preview** in the info panel — selecting an image shows a thumbnail (140x140 max) below the metadata. Hidden for non-image rows.
+  - **Floor-plan info panel** — selected file → name + size + image dimensions / font family / file format. Multi-select shows the placeholder.
+  - **Detachable panels (universal)** captured in `ideas.md` as a major feature for later — every panel becoming both dockable and floating.
+
 - **v0.0.22** (2026-04-25) — Font system QA pass + cascade-conflict dialog + side bugs:
   - **Cascade conflict dialog gained type-default detection.** Picking "All in project" with a real family used to silently leave per-type defaults shadowing the new value (Buttons stayed Comic Sans because `font_defaults["CTkButton"]` outranked the just-set `font_defaults["_all"]`). The dialog now lists both per-widget overrides AND per-type defaults, and "All widgets" wipes both so the new project-wide family actually applies everywhere.
   - **Load-order fix — cascade + fonts primed before widget creation.** `load_project` reads `font_defaults` / `system_fonts` from the JSON, then calls `register_project_fonts(path, root=root)` and `set_active_project_defaults(...)` BEFORE replaying `widget_added` events. Previously the workspace built widgets against an empty cascade; the editor showed default fonts even though the preview (which registers fonts at the top of `__init__`) rendered correctly. Both `_open_path` + `_on_recover_from_backup` now pass `root=self`.

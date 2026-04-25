@@ -290,7 +290,7 @@ class MenuMixin:
             accelerator="F9",
         )
         view_menu.add_checkbutton(
-            label="Project",
+            label="Assets",
             variable=self._project_var,
             command=self._on_toggle_project_window,
             accelerator="F10",

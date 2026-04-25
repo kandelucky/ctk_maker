@@ -28,7 +28,7 @@ from app.ui.main_menu import APPEARANCE_MODES, MenuMixin
 from app.ui.main_shortcuts import ShortcutsMixin
 from app.ui.object_tree_window import ObjectTreePanel, ObjectTreeWindow
 from app.ui.palette import Palette
-from app.ui.project_window import ProjectWindow
+from app.ui.project_window import ProjectPanel, ProjectWindow
 from app.ui.properties_panel_v2 import PropertiesPanelV2 as PropertiesPanel
 from app.ui.startup_dialog import StartupDialog
 from app.ui.toolbar import Toolbar
@@ -226,7 +226,10 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         self._btn_tree.pack(side="left", expand=True, fill="both")
         self._btn_hist.pack(side="left", expand=True, fill="both")
 
-        # Bottom pane: Properties (+ future tabs via same header pattern).
+        # Bottom pane: Properties + Project share one slot, mirroring
+        # the Tree / History tab pattern in the top pane. The floating
+        # F10 ProjectWindow stays available for users who prefer the
+        # asset list off to the side.
         _props_wrap = tk.Frame(self.right_pane, bg="#1e1e1e")
 
         _phdr = tk.Frame(_props_wrap, bg="#2d2d2d", height=28)
@@ -242,15 +245,49 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             tool_setter=lambda t: self.workspace.controls.set_tool(t),
         )
         self.properties.pack(fill="both", expand=True)
+        # Docked Project panel — same component as the floating
+        # ProjectWindow, just packed into the right pane. Both
+        # instances refresh from the same event bus, so a save in
+        # one is visible in the other without extra plumbing.
+        self.docked_project = ProjectPanel(
+            _pcontent, self.project,
+            path_provider=lambda: self._current_path,
+        )
+
+        def _show_properties():
+            self.docked_project.pack_forget()
+            self.properties.pack(fill="both", expand=True)
+            self._btn_props.configure(
+                fg_color=_ACT_BG, text_color=_ACT_FG, hover_color=_ACT_BG,
+            )
+            self._btn_proj.configure(
+                fg_color="transparent", text_color=_INACT_FG,
+                hover_color="#2d2d2d",
+            )
+
+        def _show_project():
+            self.properties.pack_forget()
+            self.docked_project.pack(fill="both", expand=True)
+            self._btn_proj.configure(
+                fg_color=_ACT_BG, text_color=_ACT_FG, hover_color=_ACT_BG,
+            )
+            self._btn_props.configure(
+                fg_color="transparent", text_color=_INACT_FG,
+                hover_color="#2d2d2d",
+            )
 
         self._btn_props = ctk.CTkButton(
-            _phdr, text="Properties",
+            _phdr, text="Properties", command=_show_properties,
             fg_color=_ACT_BG, text_color=_ACT_FG,
-            hover_color=_ACT_BG,
-            height=28, corner_radius=0,
-            font=("Segoe UI", 10), border_width=0,
+            hover_color=_ACT_BG, **_btn_kw,
+        )
+        self._btn_proj = ctk.CTkButton(
+            _phdr, text="Assets", command=_show_project,
+            fg_color="transparent", text_color=_INACT_FG,
+            hover_color="#2d2d2d", **_btn_kw,
         )
         self._btn_props.pack(side="left", expand=True, fill="both")
+        self._btn_proj.pack(side="left", expand=True, fill="both")
 
         self.right_pane.add(
             _top_wrap, minsize=160, height=280, stretch="never",
@@ -922,7 +959,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
 
     def _on_about(self) -> None:
         from app.ui.dialogs import AboutDialog
-        AboutDialog(self, app_version="v0.0.22")
+        AboutDialog(self, app_version="v0.0.23")
 
     def _on_inspect_widget(self) -> None:
         # Reuse a single Toplevel — clicking the menu while it's open
