@@ -330,10 +330,10 @@ class NewProjectSizeDialog(ctk.CTkToplevel):
 # ---------------------------------------------------------------------------
 
 _BUILT_WITH = [
-    ("CustomTkinter",         "https://github.com/TomSchimansky/CustomTkinter", "MIT"),
-    ("Lucide Icons",          "https://lucide.dev",                              "MIT"),
-    ("Pillow",                "https://pypi.org/project/Pillow/",                "HPND"),
-    ("ctk-tint-color-picker", "https://pypi.org/project/ctk-tint-color-picker/", "MIT"),
+    ("CustomTkinter", "https://github.com/TomSchimansky/CustomTkinter", "MIT"),
+    ("Lucide Icons",  "https://lucide.dev",                             "MIT"),
+    ("Pillow",        "https://pypi.org/project/Pillow/",               "HPND"),
+    ("tkextrafont",   "https://pypi.org/project/tkextrafont/",          "MIT"),
 ]
 
 _ABT_BG   = "#1e1e1e"
@@ -341,6 +341,18 @@ _ABT_FG   = "#cccccc"
 _ABT_DIM  = "#888888"
 _ABT_LINK = "#5bc0f8"
 _ABT_SEP  = "#3a3a3a"
+
+
+_PROJECT_LINKS = [
+    ("Source", "https://github.com/kandelucky/ctk_maker"),
+    ("Issues", "https://github.com/kandelucky/ctk_maker/issues"),
+]
+_BMC_URL = "https://buymeacoffee.com/Kandelucky_dev"
+# BMC official button palette — copied off the embed snippet so the
+# in-app button reads as the same brand visual.
+_BMC_BG = "#FFDD00"
+_BMC_FG = "#000000"
+_BMC_OUTLINE = "#000000"
 
 
 class AboutDialog(tk.Toplevel):
@@ -351,8 +363,9 @@ class AboutDialog(tk.Toplevel):
         self.resizable(False, False)
         self.transient(parent)
         self._build(app_version)
-        # Fixed size — position centered on parent
-        W, H = 480, 320
+        # Fixed size — height bumped to accommodate the new Links
+        # section + Buy me a coffee button.
+        W, H = 480, 460
         px = parent.winfo_rootx() + parent.winfo_width() // 2
         py = parent.winfo_rooty() + parent.winfo_height() // 2
         self.geometry(f"{W}x{H}+{px - W // 2}+{py - H // 2}")
@@ -363,7 +376,7 @@ class AboutDialog(tk.Toplevel):
         import webbrowser
         pad = dict(padx=24)
 
-        tk.Frame(self, bg=_ABT_BG, height=20).pack()
+        tk.Frame(self, bg=_ABT_BG, height=16).pack()
         tk.Label(
             self, text="CTkMaker",
             bg=_ABT_BG, fg=_ABT_FG, font=("Segoe UI", 16, "bold"),
@@ -376,18 +389,18 @@ class AboutDialog(tk.Toplevel):
             self,
             text="Drag-and-drop designer for CustomTkinter\nthat exports clean Python code.",
             bg=_ABT_BG, fg=_ABT_DIM, font=("Segoe UI", 10), justify="center",
-        ).pack(padx=24, pady=(12, 0))
+        ).pack(padx=24, pady=(10, 0))
 
-        tk.Frame(self, bg=_ABT_SEP, height=1).pack(fill="x", padx=24, pady=16)
+        tk.Frame(self, bg=_ABT_SEP, height=1).pack(fill="x", padx=24, pady=12)
 
         tk.Label(
             self, text="Built with",
             bg=_ABT_BG, fg=_ABT_FG, font=("Segoe UI", 10, "bold"),
-        ).pack(**pad, pady=(0, 8))
+        ).pack(**pad, pady=(0, 6))
 
         for name, url, lic in _BUILT_WITH:
             row = tk.Frame(self, bg=_ABT_BG)
-            row.pack(fill="x", padx=24, pady=2)
+            row.pack(fill="x", padx=24, pady=1)
             tk.Label(
                 row, text=f"{name}  ", bg=_ABT_BG, fg=_ABT_FG,
                 font=("Segoe UI", 10), anchor="w",
@@ -403,14 +416,65 @@ class AboutDialog(tk.Toplevel):
                 font=("Segoe UI", 9),
             ).pack(side="left")
 
-        tk.Frame(self, bg=_ABT_SEP, height=1).pack(fill="x", padx=24, pady=16)
+        tk.Frame(self, bg=_ABT_SEP, height=1).pack(fill="x", padx=24, pady=12)
+
+        tk.Label(
+            self, text="Links",
+            bg=_ABT_BG, fg=_ABT_FG, font=("Segoe UI", 10, "bold"),
+        ).pack(**pad, pady=(0, 6))
+        for name, url in _PROJECT_LINKS:
+            row = tk.Frame(self, bg=_ABT_BG)
+            row.pack(fill="x", padx=24, pady=1)
+            tk.Label(
+                row, text=f"{name}  ", bg=_ABT_BG, fg=_ABT_FG,
+                font=("Segoe UI", 10), anchor="w",
+            ).pack(side="left")
+            link = tk.Label(
+                row, text=url, bg=_ABT_BG, fg=_ABT_LINK,
+                font=("Segoe UI", 10, "underline"), cursor="hand2",
+            )
+            link.pack(side="left")
+            link.bind("<Button-1>", lambda _e, u=url: webbrowser.open(u))
+
+        # Buy me a coffee button — official BMC palette so the
+        # in-app version visually matches the badge users see on
+        # the website. The ☕ emoji rendered as a missing-glyph
+        # box on some Windows default fonts; replaced with the
+        # Lucide ``coffee`` PNG so the cup is reliably visible.
+        # Tk doesn't have a Cookie-script font on Windows by
+        # default, so we emulate the chunky BMC text with bold
+        # Segoe UI.
+        tk.Frame(self, bg=_ABT_BG, height=14).pack()
+        bmc_row = tk.Frame(self, bg=_ABT_BG)
+        bmc_row.pack(pady=(0, 4))
+        from app.ui.icons import load_tk_icon
+        coffee_img = load_tk_icon("coffee", size=18, color=_BMC_FG)
+        bmc_btn = tk.Button(
+            bmc_row,
+            text="Buy me a coffee",
+            image=coffee_img if coffee_img else None,
+            compound="left",
+            bg=_BMC_BG, fg=_BMC_FG,
+            activebackground="#FFE54B", activeforeground=_BMC_FG,
+            relief="solid", bd=1,
+            highlightbackground=_BMC_OUTLINE,
+            font=("Segoe UI", 11, "bold"),
+            padx=18, pady=6, cursor="hand2",
+            command=lambda: webbrowser.open(_BMC_URL),
+        )
+        # Retain the PhotoImage on the button so Tk doesn't GC the
+        # icon when the local var goes out of scope.
+        bmc_btn.image = coffee_img
+        bmc_btn.pack()
+
+        tk.Frame(self, bg=_ABT_BG, height=10).pack()
         btn = tk.Button(
             self, text="Close", command=self.destroy,
             bg="#3a3a3a", fg=_ABT_FG, activebackground="#4a4a4a",
             activeforeground=_ABT_FG, relief="flat", bd=0,
             font=("Segoe UI", 10), padx=20, pady=4, cursor="hand2",
         )
-        btn.pack(pady=(0, 20))
+        btn.pack(pady=(0, 16))
 
 
 # ---------------------------------------------------------------------------

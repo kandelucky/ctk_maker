@@ -6,6 +6,26 @@
 
 ## 2026-04 — Area QA passes + refactors
 
+- **v0.0.25** (2026-04-25) — Assets panel polish + Lucide bundle + Support links:
+  - **Sounds folder removed from defaults** — `ASSET_SUBDIRS` now `("images", "fonts")`. No point shipping an empty folder users have to delete; will re-add when audio playback ships.
+  - **Properties-style header redesign** — `type_bar` (HEADER_BG #2a2a2a, height 26) with folder icon + bold project name + `square-plus` "+" button; path row below in dim text. Matches Properties panel's compact look.
+  - **Restructured + menu + Add ▶ submenus** — top-level: Folder / —— / Image / Font / —— / Python / Text. Folder + empty-area right-click context menus consolidated under cascading "Add ▶" submenu. Lucide icons attached to every menu entry (folder-plus, image-plus, type, file-code, file-text, pencil, trash-2, refresh-cw, square-arrow-out-up-right).
+  - **Per-row icons in tree** — `_kind_icons` cache renders kind-specific glyph (folder / image / type / music / file-code / file-text / file) on every row, with two-space padding between icon and name.
+  - **Empty-area click + right-click clears selection** — clicking blank tree area now deselects so the next "+ Folder" lands at root instead of inside a stale selection. Right-click also clears.
+  - **Drag-and-drop multi-select move** — ghost Toplevel preview with file/folder icon + count, drop-target highlight (#26486b), invalid-drop validation (no drop into self / descendant / current parent).
+  - **Open with OS hardened** — `subprocess.Popen(["explorer.exe", path])` for default verb (more reliable than `os.startfile` for UWP file associations); `.py` uses `os.startfile(path, "edit")` with idlelib fallback so double-click opens the editor instead of running the script.
+  - **Removed auto-open after file creation** — creating a `.md` / `.py` no longer immediately opens it. User opens via double-click when ready.
+  - **Python script template** — new `.py` files get a v0.1 disclaimer header + GitHub Issues + Buy me a Coffee links so any code shared back has feedback channels baked in.
+  - **Delete folder fix** — Windows read-only attrs broke `shutil.rmtree`. Added `_force_remove_readonly` onerror handler + post-delete `folder.exists()` verification.
+  - **Reveal → Open in Explorer** rename across all menus (more intuitive than "Reveal").
+  - **Open assets folder in Explorer** entry on empty-area right-click menu.
+  - **Sync between docked + floating Assets panels** — `dirty_changed` event emitted on `_add_asset` / `_on_new_folder` / `_create_text_file` so a font added in the floating window refreshes the docked view.
+  - **About dialog: Links + Buy me a coffee + tkextrafont** — Source / Issues link row, BMC button (Lucide coffee icon, official #FFDD00 / #000000 palette), Built with list updated: `ctk-tint-color-picker` removed (user's own work), `tkextrafont` added.
+  - **Lucide assets bundled** — `app/assets/lucide/categories.json` (1699 icons / 42 categories metadata), `png-icons/` (1943 PNGs at 24×24, ~3.3 MB), `LICENSE.txt` (ISC). Foundation for the upcoming Icon Picker UI.
+  - **`tools/build_lucide_categories.py`** — re-runnable script that aggregates per-icon `tags` + `categories` JSONs from a Lucide source checkout into the bundled `categories.json`.
+  - **README Support section** — buy-me-a-coffee link between Roadmap and License.
+  - **`.github/FUNDING.yml`** — GitHub sponsor button wired to BMC.
+
 - **v0.0.24** (2026-04-25) — Font picker UX redesign + scope literalism:
   - **Right-click row → Remove from project.** Imported fonts (file in `assets/fonts/`) get the file deleted from disk; bare `system_fonts` references just lose their entry. Cascade defaults pointing at the removed family also clear so a stale `font_defaults["CTkButton"] = "DeletedFamily"` doesn't keep widgets pointing at a missing font.
   - **Multi-size preview pane** between import buttons and palette list — `tk.Frame(height=110, pack_propagate=False)` keeps the dialog's overall height stable when swapping in a tall script font (the previous flow auto-grew, which felt jarring while clicking through families). Two sample sizes (13 / 24 px) render the live family. Editable text input on top — what the user types updates both rows immediately.

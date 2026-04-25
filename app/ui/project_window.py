@@ -14,7 +14,7 @@ Capabilities:
 - Toolbar: + Image, + Font, + Folder, + Text File (.md). The kind
   buttons preserve the legacy auto-routing (image picker imports
   go to ``images/``, font imports to ``fonts/``).
-- Right-click on a file → Reveal in Explorer, Reimport, Remove.
+- Right-click on a file → Open in Explorer, Reimport, Remove.
 - Right-click on a folder → New Subfolder, Rename, Delete (recursive).
 - Double-click → opens the file with the OS default application
   (``os.startfile`` Windows, ``open`` macOS, ``xdg-open`` Linux).
@@ -156,6 +156,12 @@ class ProjectPanel(ctk.CTkFrame):
         # populate; PhotoImage refs live on this dict so Tk doesn't
         # GC them between rebuilds.
         self._kind_icons: dict[str, tk.PhotoImage] = {}
+        # Menu icon cache — tk.Menu's ``image=`` needs a
+        # ``tk.PhotoImage`` (not a CTkImage) and Tk drops the
+        # PhotoImage reference as soon as the local var goes out
+        # of scope. Stash refs on self so the menu actually
+        # renders the glyph instead of a blank slot.
+        self._menu_icons: dict[str, tk.PhotoImage] = {}
 
         self._build_header()
         self._build_tree()
@@ -202,45 +208,96 @@ class ProjectPanel(ctk.CTkFrame):
     # ------- internal layout -------
 
     def _build_header(self) -> None:
-        # Compact one-row header: bold name + dim path + "+" menu
-        # button. The plus replaces the four-button footer — clicking
-        # it pops a menu (Image / Font / Folder / Text File) so the
-        # tree gets the freed-up vertical space and the panel reads
-        # cleaner on narrow docks.
-        body = tk.Frame(self, bg=PANEL_BG)
-        body.pack(fill="x", padx=10, pady=(6, 4))
+        # Mirrors PropertiesPanelV2's chrome shape so the docked
+        # Assets tab reads as a sibling of Properties: a dark
+        # ``type_bar``-like stripe with folder icon + project name
+        # bold (header foreground, NOT a coloured accent — Assets
+        # is descriptive metadata, not a typed selection like
+        # Properties' widget kind), then a thinner row underneath
+        # with the path.
+        type_bar = ctk.CTkFrame(
+            self, fg_color="#2a2a2a", height=26, corner_radius=0,
+        )
+        type_bar.pack(fill="x", pady=(0, 2))
+        type_bar.pack_propagate(False)
 
-        # ``+`` lives on the right; pack it FIRST so left-side labels
-        # get whatever horizontal space remains and don't push the
-        # button off the panel on a long path.
+        from app.ui.icons import load_icon
+        folder_icon = load_icon("folder", size=14, color="#cccccc")
+        ctk.CTkLabel(
+            type_bar, text="", fg_color="#2a2a2a",
+            image=folder_icon, width=16, height=18,
+        ).pack(side="left", padx=(10, 0))
+
+        ctk.CTkLabel(
+            type_bar, textvariable=self._name_var,
+            fg_color="#2a2a2a",
+            font=("Segoe UI", 11, "bold"),
+            text_color=HEADER_FG, height=18, anchor="w",
+        ).pack(side="left", padx=(6, 0))
+
+        # ``+`` button on the right of the type bar — same slot
+        # Properties' help button uses, so muscle memory carries
+        # between panels. Size 16 reads cleanly at 100% / 150% DPI
+        # scale; the standard ``#cccccc`` colour matches the rest
+        # of the chrome icons.
+        plus_icon = load_icon("square-plus", size=16, color="#cccccc")
         self._add_btn = ctk.CTkButton(
-            body, text="+", width=24, height=22,
-            corner_radius=4, font=("Segoe UI", 12, "bold"),
-            fg_color="#3c3c3c", hover_color="#4a4a4a",
+            type_bar, text="" if plus_icon else "+",
+            image=plus_icon,
+            width=24, height=20, corner_radius=3,
+            font=("Segoe UI", 12, "bold"),
+            fg_color="#2a2a2a", hover_color="#3a3a3a",
+            text_color="#cccccc",
             command=self._on_show_add_menu,
         )
-        self._add_btn.pack(side="right")
+        self._add_btn.pack(side="right", padx=(0, 8))
 
+        # Path row — similar height to Properties' name row but
+        # static text only (no edit affordance).
+        path_row = tk.Frame(self, bg=BG, height=22, highlightthickness=0)
+        path_row.pack(fill="x", pady=(0, 4), padx=6)
+        path_row.pack_propagate(False)
         tk.Label(
-            body, textvariable=self._name_var,
-            bg=PANEL_BG, fg=HEADER_FG,
-            font=("Segoe UI", 10, "bold"), anchor="w",
-        ).pack(side="left")
-        tk.Label(
-            body, text="·",
-            bg=PANEL_BG, fg=DIM_FG,
-            font=("Segoe UI", 10),
-        ).pack(side="left", padx=6)
-        tk.Label(
-            body, textvariable=self._path_var,
-            bg=PANEL_BG, fg=DIM_FG,
+            path_row, textvariable=self._path_var,
+            bg=BG, fg=DIM_FG,
             font=("Segoe UI", 9), anchor="w",
-        ).pack(side="left", fill="x", expand=True)
+        ).pack(side="left", padx=(6, 6), fill="x", expand=True)
+
+    def _menu_icon(self, name: str) -> tk.PhotoImage | None:
+        """Lazy-load + cache a Lucide icon for tk.Menu rows. Tk's
+        menu widget keeps a weak ref to the PhotoImage; without
+        the cache the icon vanishes on the second popup.
+        """
+        if name in self._menu_icons:
+            return self._menu_icons[name]
+        try:
+            from app.ui.icons import load_tk_icon
+            img = load_tk_icon(name, size=14, color="#cccccc")
+        except Exception:
+            img = None
+        if img is not None:
+            self._menu_icons[name] = img
+        return img
+
+    def _menu_command(self, menu, label, icon_name, command):
+        """Add a command to ``menu`` with a Lucide icon on the left.
+        Falls back to a plain text entry if the icon failed to load
+        so a missing PNG doesn't take the whole menu down with it.
+        """
+        img = self._menu_icon(icon_name) if icon_name else None
+        if img is not None:
+            menu.add_command(
+                label=label, image=img, compound="left", command=command,
+            )
+        else:
+            menu.add_command(label=label, command=command)
 
     def _on_show_add_menu(self) -> None:
-        """Pop the + menu anchored under the button. Mirrors the
-        old four-button footer one-for-one — no behaviour change,
-        just a UI consolidation.
+        """Pop the + menu anchored under the button. Order:
+        Folder (organise) → Image / Font (assets) → Python /
+        Text (text content). Same kind icons the tree uses so
+        the menu reads as a preview of what a new row would
+        look like.
         """
         menu = tk.Menu(
             self, tearoff=0,
@@ -248,18 +305,71 @@ class ProjectPanel(ctk.CTkFrame):
             activebackground="#094771", activeforeground="#ffffff",
             relief="flat", bd=0, font=("Segoe UI", 10),
         )
-        menu.add_command(label="Image...", command=self._on_add_image)
-        menu.add_command(label="Font...", command=self._on_add_font)
+        self._menu_command(menu, "Folder", "folder", self._on_new_folder)
         menu.add_separator()
-        menu.add_command(label="Folder", command=self._on_new_folder)
-        menu.add_command(label="Text File (.md)", command=self._on_new_text_file)
-        menu.add_command(label="Python File (.py)", command=self._on_new_python_file)
+        self._menu_command(menu, "Image...", "image", self._on_add_image)
+        self._menu_command(menu, "Font...", "type", self._on_add_font)
+        menu.add_separator()
+        self._menu_command(
+            menu, "Python File (.py)", "file-code",
+            self._on_new_python_file,
+        )
+        self._menu_command(
+            menu, "Text File (.md)", "file-text", self._on_new_text_file,
+        )
         try:
             x = self._add_btn.winfo_rootx()
             y = self._add_btn.winfo_rooty() + self._add_btn.winfo_height()
             menu.tk_popup(x, y)
         finally:
             menu.grab_release()
+
+    def _build_add_submenu(self, parent_menu: tk.Menu) -> tk.Menu:
+        """Reusable ``Add here ▶`` submenu — the four content-import
+        actions (Image / Font / Python / Text) packed into a single
+        cascade so the right-click menus stay short. ``parent_menu``
+        is the owner; tk requires the submenu to share the parent's
+        master.
+        """
+        sub = tk.Menu(
+            parent_menu, tearoff=0,
+            bg="#2d2d30", fg=HEADER_FG,
+            activebackground="#094771", activeforeground="#ffffff",
+            relief="flat", bd=0, font=("Segoe UI", 10),
+        )
+        self._menu_command(
+            sub, "Image...", "image", self._on_add_image,
+        )
+        self._menu_command(
+            sub, "Font...", "type", self._on_add_font,
+        )
+        sub.add_separator()
+        self._menu_command(
+            sub, "Python File (.py)", "file-code",
+            self._on_new_python_file,
+        )
+        self._menu_command(
+            sub, "Text File (.md)", "file-text",
+            self._on_new_text_file,
+        )
+        return sub
+
+    def _menu_cascade(
+        self, menu: tk.Menu, label: str, icon_name: str | None,
+        submenu: tk.Menu,
+    ) -> None:
+        """Add a cascade entry with a leading icon. tk.Menu.add_cascade
+        supports ``image=`` + ``compound=`` the same way ``add_command``
+        does — wrap with the same null-fallback shape so a missing
+        PNG doesn't break the menu.
+        """
+        img = self._menu_icon(icon_name) if icon_name else None
+        if img is not None:
+            menu.add_cascade(
+                label=label, image=img, compound="left", menu=submenu,
+            )
+        else:
+            menu.add_cascade(label=label, menu=submenu)
 
     def _build_tree(self) -> None:
         wrap = ctk.CTkFrame(self, fg_color=PANEL_BG, corner_radius=0)
@@ -416,6 +526,11 @@ class ProjectPanel(ctk.CTkFrame):
                     parent=self.winfo_toplevel(),
                 )
                 return False
+        # Emit so the docked tab + the floating F10 window stay in
+        # sync — without this, importing into one instance leaves
+        # the other showing stale tree contents until the user
+        # reopens it.
+        self.project.event_bus.publish("dirty_changed", True)
         self.refresh()
         return True
 
@@ -448,10 +563,20 @@ class ProjectPanel(ctk.CTkFrame):
         own ``Button-1`` handler run first means we get its updated
         selection — Ctrl-click / Shift-click multi-select works
         without us reimplementing the selection rules.
+
+        Empty-area click also clears the selection: ttk.Treeview
+        keeps the previous selection alive when the user clicks
+        below the last row, which made + Folder land inside the
+        previously-selected folder instead of at the assets root.
         """
         iid = self._tree.identify_row(event.y)
         if not iid:
             self._drag_state = None
+            try:
+                self._tree.selection_set([])
+            except tk.TclError:
+                pass
+            self._refresh_info_panel()
             return
         # Defer the snapshot to after Tk's selection handler fires —
         # by-press selection gets included.
@@ -686,7 +811,16 @@ class ProjectPanel(ctk.CTkFrame):
                 self._tree.selection_set(iid)
             except tk.TclError:
                 pass
-            self._refresh_info_panel()
+        else:
+            # Empty-area right-click clears the previous selection
+            # so + Folder / Add ▶ entries from the empty-area menu
+            # actually land at the assets root, not inside whatever
+            # folder was selected before.
+            try:
+                self._tree.selection_set([])
+            except tk.TclError:
+                pass
+        self._refresh_info_panel()
         # Empty-area right-click pops the same menu but with file-only
         # entries disabled — the user can still create a folder/text
         # file at the assets root.
@@ -708,91 +842,65 @@ class ProjectPanel(ctk.CTkFrame):
         )
         meta = self._iid_meta.get(iid)
         if meta is None:
-            # Right-clicked on the empty area below all rows — only
-            # creation actions make sense. Same set as the header
-            # "+" menu: import + create-new.
-            menu.add_command(
-                label="Import Image...",
-                command=self._on_add_image,
+            # Right-clicked on the empty area below all rows.
+            # Compact: New Folder + an "Add ▶" cascade for the
+            # four content-import actions, then Open in Explorer.
+            self._menu_command(
+                menu, "New Folder...", "folder", self._on_new_folder,
             )
-            menu.add_command(
-                label="Import Font...",
-                command=self._on_add_font,
+            self._menu_cascade(
+                menu, "Add", "square-plus",
+                self._build_add_submenu(menu),
             )
             menu.add_separator()
-            menu.add_command(
-                label="New Folder...",
-                command=self._on_new_folder,
-            )
-            menu.add_command(
-                label="New Text File...",
-                command=self._on_new_text_file,
-            )
-            menu.add_command(
-                label="New Python File...",
-                command=self._on_new_python_file,
+            self._menu_command(
+                menu, "Open assets folder in Explorer",
+                "folder-open", self._on_reveal_assets_root,
             )
         else:
             _, kind = meta
             if kind == "folder":
-                menu.add_command(
-                    label="Reveal in Explorer",
-                    command=self._on_context_reveal,
+                # Folder right-click — same compact shape:
+                # New Subfolder + Add here ▶ + actions.
+                self._menu_command(
+                    menu, "New Subfolder...", "folder",
+                    self._on_new_folder,
+                )
+                self._menu_cascade(
+                    menu, "Add here", "square-plus",
+                    self._build_add_submenu(menu),
                 )
                 menu.add_separator()
-                # Imports route into the right-clicked folder thanks
-                # to ``_resolve_target_dir`` (selected folder wins).
-                menu.add_command(
-                    label="Import Image here...",
-                    command=self._on_add_image,
+                self._menu_command(
+                    menu, "Open in Explorer", "folder-open",
+                    self._on_context_reveal,
                 )
-                menu.add_command(
-                    label="Import Font here...",
-                    command=self._on_add_font,
+                self._menu_command(
+                    menu, "Rename...", "pencil", self._on_rename,
                 )
-                menu.add_separator()
-                menu.add_command(
-                    label="New Subfolder...",
-                    command=self._on_new_folder,
-                )
-                menu.add_command(
-                    label="New Text File...",
-                    command=self._on_new_text_file,
-                )
-                menu.add_command(
-                    label="New Python File...",
-                    command=self._on_new_python_file,
-                )
-                menu.add_separator()
-                menu.add_command(
-                    label="Rename...",
-                    command=self._on_rename,
-                )
-                menu.add_command(
-                    label="Delete folder...",
-                    command=self._on_delete_folder,
+                self._menu_command(
+                    menu, "Delete folder...", "trash-2",
+                    self._on_delete_folder,
                 )
             else:
-                menu.add_command(
-                    label="Open",
-                    command=self._on_context_open,
+                self._menu_command(
+                    menu, "Open", "external-link", self._on_context_open,
                 )
-                menu.add_command(
-                    label="Reveal in Explorer",
-                    command=self._on_context_reveal,
+                self._menu_command(
+                    menu, "Open in Explorer", "folder-open",
+                    self._on_context_reveal,
                 )
-                menu.add_command(
-                    label="Reimport...",
-                    command=self._on_context_reimport,
+                self._menu_command(
+                    menu, "Reimport...", "rotate-cw",
+                    self._on_context_reimport,
                 )
                 menu.add_separator()
-                menu.add_command(
-                    label="Rename...",
-                    command=self._on_rename,
+                self._menu_command(
+                    menu, "Rename...", "pencil", self._on_rename,
                 )
-                menu.add_command(
-                    label="Remove from project...",
-                    command=self._on_context_remove,
+                self._menu_command(
+                    menu, "Remove from project...", "trash-2",
+                    self._on_context_remove,
                 )
         try:
             menu.tk_popup(x_root, y_root)
@@ -811,6 +919,28 @@ class ProjectPanel(ctk.CTkFrame):
         if meta is None:
             return
         self._reveal_file(meta[0])
+
+    def _on_reveal_assets_root(self) -> None:
+        """Empty-area menu hook → open the project's ``assets/``
+        folder in the OS file manager. Useful when the user wants
+        to drop in files via Explorer drag-drop or inspect the
+        on-disk layout the tree is mirroring.
+        """
+        path = self.path_provider()
+        if not path:
+            return
+        a_dir = assets_dir(path)
+        if not a_dir.exists():
+            return
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(a_dir))
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(a_dir)])
+            else:
+                subprocess.Popen(["xdg-open", str(a_dir)])
+        except OSError:
+            log_error("open assets root")
 
     def _on_context_remove(self) -> None:
         meta = self._selected_meta()
@@ -849,24 +979,84 @@ class ProjectPanel(ctk.CTkFrame):
         except OSError:
             log_error("reveal asset")
 
+    _TEXT_LIKE_EXTS = {
+        ".md", ".txt", ".py", ".json", ".yaml", ".yml",
+        ".toml", ".cfg", ".ini", ".log",
+    }
+
     def _open_with_os(self, file_path: Path) -> None:
         """Hand a file off to the OS default application — image
         viewer for .png, default font preview for .ttf, the user's
-        preferred Markdown editor for .md, etc. Falls back to a
-        Reveal-in-Explorer when the OS refuses (no association set).
+        preferred Markdown editor for .md, etc.
+
+        Fallback chain when the default association doesn't open:
+        1. text-like extensions (.md / .py / .txt / ...) → Notepad
+           on Windows, TextEdit on macOS, xdg-open on Linux. Most
+           users without an .md association still have a text
+           editor that handles the file fine.
+        2. otherwise: reveal in Explorer so the user sees the file.
         """
         if not file_path.exists():
             return
         try:
             if sys.platform == "win32":
-                os.startfile(str(file_path))
-            elif sys.platform == "darwin":
+                ext = file_path.suffix.lower()
+                # ``.py`` default Windows verb is "open" which RUNS
+                # the script through python.exe — opens a console
+                # that flashes and closes when the script ends.
+                # Use the explicit "edit" verb instead so the
+                # registered editor (IDLE / VSCode / Notepad++)
+                # gets called.
+                if ext == ".py":
+                    try:
+                        os.startfile(str(file_path), "edit")
+                        return
+                    except OSError:
+                        # ``edit`` verb missing on this user's
+                        # machine — fall back to IDLE bundled with
+                        # the running Python interpreter.
+                        try:
+                            subprocess.Popen(
+                                [sys.executable, "-m", "idlelib",
+                                 str(file_path)],
+                            )
+                            return
+                        except (OSError, FileNotFoundError):
+                            pass
+                # Everything else routes through ``explorer.exe``,
+                # which delegates to Windows' normal double-click
+                # path. Handles UWP / Microsoft Store associations
+                # cleanly.
+                subprocess.Popen(
+                    ["explorer.exe", str(file_path)],
+                )
+                return
+            if sys.platform == "darwin":
                 subprocess.Popen(["open", str(file_path)])
-            else:
-                subprocess.Popen(["xdg-open", str(file_path)])
-        except OSError:
-            log_error("open with os")
-            self._reveal_file(file_path)
+                return
+            subprocess.Popen(["xdg-open", str(file_path)])
+            return
+        except (OSError, FileNotFoundError):
+            log_error("open with os default")
+
+        # Default-app handler refused — usually means no
+        # association. Try a text-editor fallback for text-like
+        # extensions; everything else lands in the file manager.
+        if file_path.suffix.lower() in self._TEXT_LIKE_EXTS:
+            try:
+                if sys.platform == "win32":
+                    subprocess.Popen(["notepad.exe", str(file_path)])
+                    return
+                if sys.platform == "darwin":
+                    subprocess.Popen(
+                        ["open", "-a", "TextEdit", str(file_path)],
+                    )
+                    return
+                # Linux xdg-open already attempted; keep falling
+                # through to the file-manager reveal.
+            except (OSError, FileNotFoundError):
+                log_error("open with notepad fallback")
+        self._reveal_file(file_path)
 
     # ------- folder + text file creation -------
 
@@ -932,6 +1122,7 @@ class ProjectPanel(ctk.CTkFrame):
                 parent=self.winfo_toplevel(),
             )
             return
+        self.project.event_bus.publish("dirty_changed", True)
         self.refresh()
 
     def _on_new_text_file(self) -> None:
@@ -946,14 +1137,17 @@ class ProjectPanel(ctk.CTkFrame):
         )
 
     def _on_new_python_file(self) -> None:
+        # Starter docstring sets clear expectations about v0.1
+        # behaviour-layer status, points users at the issue tracker
+        # for prioritisation, and threads the support link. Plain
+        # text (no emoji) so Windows default fonts render it
+        # cleanly across every editor.
         self._create_text_file(
             kind="code",
             default_name="script",
             allowed_exts=(".py",),
             default_ext=".py",
-            initial_content_for=lambda stem: (
-                f'"""{stem}.py — module description here."""\n\n'
-            ),
+            initial_content_for=_python_starter_template,
             dialog_title="New Python file",
             error_label="Python file",
         )
@@ -1018,8 +1212,13 @@ class ProjectPanel(ctk.CTkFrame):
                 parent=self.winfo_toplevel(),
             )
             return
+        self.project.event_bus.publish("dirty_changed", True)
         self.refresh()
-        self._open_with_os(new_file)
+        # No auto-open. The user just typed a filename and clicked
+        # OK — they expect to see the file land in the tree, not
+        # for the OS to immediately steal focus into VSCode /
+        # Notepad. Double-click on the row opens it when the user
+        # is ready.
 
     # ------- rename / delete folder -------
 
@@ -1096,12 +1295,31 @@ class ProjectPanel(ctk.CTkFrame):
         ):
             return
         try:
-            shutil.rmtree(folder)
-        except OSError:
+            # ``onerror`` flips read-only attributes + retries —
+            # without it Windows refuses to delete folders that
+            # got marked read-only by tools like git or git-lfs,
+            # and shutil.rmtree errors out silently in some
+            # callers' eyes.
+            shutil.rmtree(folder, onerror=_force_remove_readonly)
+        except Exception:
             log_error("delete folder rmtree")
             messagebox.showerror(
                 "Delete failed",
-                f"Couldn't delete:\n{folder}",
+                f"Couldn't delete:\n{folder}\n\nThe folder may be open "
+                "in another program (Explorer window, terminal). "
+                "Close it and try again.",
+                parent=self.winfo_toplevel(),
+            )
+            return
+        # Confirm the folder is actually gone — rmtree can sometimes
+        # complete partially without raising on Windows.
+        if folder.exists():
+            log_error(f"delete folder still exists: {folder}")
+            messagebox.showerror(
+                "Delete failed",
+                f"The folder couldn't be removed:\n{folder}\n\n"
+                "It may be open in Explorer or a terminal. "
+                "Close those windows and try again.",
                 parent=self.winfo_toplevel(),
             )
             return
@@ -1516,6 +1734,64 @@ def _truncate_path(text: str, max_len: int = 32) -> str:
     if len(text) <= max_len:
         return text
     return "..." + text[-(max_len - 3):]
+
+
+def _python_starter_template(stem: str) -> str:
+    """Body of every newly-created ``.py`` in the Assets panel.
+    Sets v0.1 behaviour-layer expectations + threads issue tracker
+    and support links. Plain text, no emoji — survives every
+    Windows default font cleanly.
+    """
+    title = f"{stem}.py — Script file"
+    underline = "=" * len(title)
+    return (
+        f'"""\n'
+        f"{title}\n"
+        f"{underline}\n"
+        f"\n"
+        f"In v0.1, CTk Maker does not yet wire this script directly "
+        f"into your UI's\n"
+        f"behavior. After exporting, you can connect it to the "
+        f"generated code\n"
+        f"yourself.\n"
+        f"\n"
+        f'v0.2 will add a "behavior layer" — attaching actions to '
+        f"buttons, forms,\n"
+        f"and events directly inside the builder, so the whole app "
+        f"can be built\n"
+        f"visually end to end.\n"
+        f"\n"
+        f"Want this feature? Let me know:\n"
+        f"    https://github.com/kandelucky/ctk_maker/issues\n"
+        f"\n"
+        f"The more requests I get, the faster I'll prioritize it.\n"
+        f"\n"
+        f"---\n"
+        f"\n"
+        f"If CTk Maker saves you time, you can support development:\n"
+        f"    https://buymeacoffee.com/Kandelucky_dev\n"
+        f'"""\n'
+        f"\n"
+    )
+
+
+def _force_remove_readonly(func, path, _exc_info):
+    """``shutil.rmtree`` ``onerror`` hook — chmod-ω files Windows
+    has flagged read-only and retry. Without this, folders that
+    contain anything checked out by tools that set the read-only
+    bit (git-lfs pointers, some Windows installers) silently fail
+    to delete; the user clicks Delete and nothing happens.
+    """
+    try:
+        import os as _os
+        import stat
+        _os.chmod(path, stat.S_IWRITE)
+        func(path)
+    except Exception:
+        # Re-raise via shutil's normal path so the caller's
+        # try/except still sees a failure rather than silently
+        # leaving partial state.
+        raise
 
 
 def _read_image_size(path: Path) -> tuple[int, int] | None:

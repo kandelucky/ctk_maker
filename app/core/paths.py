@@ -22,7 +22,12 @@ from pathlib import Path
 
 PROJECTS_ROOT_NAME = "CTkMaker"
 ASSETS_DIR_NAME = "assets"
-ASSET_SUBDIRS = ("images", "fonts", "sounds")
+# Default folders auto-created on first save / project init. Sounds
+# was here for v0.0.x but pulled until the audio playback story is
+# real — no point shipping an empty folder users have to delete to
+# clean up. Re-add when a CTkAudioPlayer / sound widget actually
+# lands.
+ASSET_SUBDIRS = ("images", "fonts")
 
 
 def get_default_projects_dir() -> Path:

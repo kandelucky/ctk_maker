@@ -163,6 +163,10 @@ Widget documentation is being rewritten. The [per-version changelog](docs/todo/d
 - [ ] Custom user widgets, variables panel, event handlers, templates, plugin system
 - [ ] Distribution — PyInstaller bundles, Windows + macOS installers, auto-updater
 
+## Support
+
+If CTk Maker helps you, you can [buy me a coffee ☕](https://buymeacoffee.com/Kandelucky_dev).
+
 ## License
 
 MIT
