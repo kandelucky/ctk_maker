@@ -105,6 +105,21 @@ def load_project(project: Project, path: str | Path) -> None:
     if isinstance(name, str) and name.strip():
         project.name = name.strip()
 
+    # Project-level font cascade. Missing key → empty cascade
+    # (legacy / never-set state). The dict is straight-up applied;
+    # ``set_active_project_defaults`` is wired through main_window
+    # at ``_set_current_path`` time so listeners pick it up.
+    raw_defaults = data.get("font_defaults")
+    project.font_defaults = (
+        {str(k): str(v) for k, v in raw_defaults.items() if v}
+        if isinstance(raw_defaults, dict) else {}
+    )
+    raw_system = data.get("system_fonts")
+    project.system_fonts = (
+        sorted({str(f) for f in raw_system if f})
+        if isinstance(raw_system, list) else []
+    )
+
     # Tear down whatever is currently in the project so every
     # listener sees the old widgets removed one by one. Afterwards
     # replace the document list with the freshly-parsed set and

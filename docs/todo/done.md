@@ -6,6 +6,19 @@
 
 ## 2026-04 — Area QA passes + refactors
 
+- **v0.0.21** (2026-04-25) — Custom font system (Phase 1–4 + exporter integration):
+  - **`tkextrafont 0.6.3`** added to dependencies — registers .ttf / .otf with the running Tk interpreter so `CTkFont(family=...)` resolves bundled families.
+  - **`app/core/fonts.py`** — `register_font_file` / `register_project_fonts` / `list_project_fonts` / `list_system_families` / `resolve_system_font_path` (Windows registry lookup) / `resolve_effective_family` cascade helper. Graceful fallback when tkextrafont can't import. Handles tkextrafont's "already loaded" by reading family from .ttf metadata via PIL.
+  - **`font_family` schema property** added to 10 descriptors (Button / Label / Entry / Textbox / CheckBox / RadioButton / Switch / ComboBox / OptionMenu / SegmentedButton). Default `None` → use Tk default. transform_properties resolves via cascade.
+  - **`app/ui/font_picker_dialog.py`** — main project-palette picker (imported .ttf + added system fonts) with `+ Import file` and `+ Add system font` buttons. Help icon (`?`) with explainer tooltip. Scope selector: This widget / All [Type] / All in project.
+  - **`SystemFontPickerDialog`** secondary dialog — full OS font list with search box. Add → resolves via Windows registry → copies .ttf into `assets/fonts/` so the project stays portable. Falls back to a bare `system_fonts` ref entry if the file can't be located.
+  - **`FontEditor`** overlay (Properties panel) — Image-style ⋯ + ✕ buttons. Click ⋯ opens picker; click ✕ clears to default.
+  - **Cascade defaults** stored in `project.font_defaults` (`_all` key + per-type-name keys). Save/load round-trips via top-level `font_defaults` and `system_fonts` keys in the .ctkproj JSON. `font_defaults_changed` event triggers a workspace reapply that re-runs each widget's transform.
+  - **Bug fix — zoom override**: `ZoomController._build_scaled_font` was creating a CTkFont without `family=`, clobbering the descriptor's resolved family on every property edit. Now reads the existing `widget._font.cget("family")` and preserves it.
+  - **Bug fix — preview text fallback**: Georgian / CJK glyphs in the row preview text forced Tk to use a fallback font for Latin-only families, making every row look identical. Switched to `"AaBb 123"` and filtered out `@`-prefixed CJK vertical-text variants.
+  - **Bug fix — project_window crash**: stale `dirty_changed` subscriber survived after the floating Project window closed; refresh now early-returns when the panel doesn't exist anymore.
+  - **Code exporter** — `_project_uses_custom_fonts` detector triggers a `_register_project_fonts(root)` helper at the top of the generated `.py`, called from each main-class `__init__` so widget construction can resolve the bundled families. `_font_source` now takes the resolved family and emits `family='...'` as the first CTkFont kwarg. Helper soft-imports tkextrafont so generated apps still run when the dependency isn't installed.
+
 - **v0.0.20.1** (2026-04-24) — Indigo widget theme + README polish + competitor inspirations:
   - **Default widget colour** flipped from CTk's blue (`#1f6aa5` / `#144870`) to Tailwind Indigo 500 (`#6366f1` / Indigo 600 `#4f46e5` for hover) across every CTk descriptor that ships with `fg_color` / `hover_color` / `selected_color` / `progress_color` defaults — Button, CheckBox, RadioButton, Switch, Slider, SegmentedButton, Tabview, ProgressBar, OptionMenu. Builder UI chrome (toolbar, dialogs) still uses CTk's default blue — those render through CTk's own theme JSON, which would need a separate custom-theme pass.
   - **Builder-side accent colour** in `palette.py` (drag ghost), `dialogs.py` (RecentRow hover), `properties_panel_v2/panel_commit.py` (popup hover, color picker initial), `workspace/drag.py` (drop preview) flipped to the same Indigo so the design-time accents match the widgets being placed.

@@ -305,6 +305,80 @@ class CommitMixin:
         if dialog.result:
             self._commit_prop(pname, dialog.result)
 
+    def _pick_font(self, pname: str) -> None:
+        """Open the font picker for the focused widget. The picker
+        carries a scope selector — "this widget" commits via the
+        normal property path; "all [Type]" / "all in project" writes
+        into ``project.font_defaults`` and triggers a workspace
+        refresh so every text widget that doesn't have its own
+        override updates immediately.
+        """
+        if self.current_id is None:
+            return
+        node = self.project.get_widget(self.current_id)
+        if node is None:
+            return
+        descriptor = self._current_descriptor()
+        type_name = (
+            getattr(descriptor, "type_name", None) if descriptor else None
+        )
+        type_display = (
+            getattr(descriptor, "display_name", None) if descriptor else None
+        )
+        from app.ui.font_picker_dialog import (
+            FontPickerDialog, SCOPE_ALL, SCOPE_TYPE, SCOPE_WIDGET,
+        )
+        # Snapshot the system-fonts list so we can detect a "+ Add
+        # system font" mutation inside the picker and mark the
+        # project dirty accordingly — regardless of whether the user
+        # ends up changing the widget's font_family on top of that.
+        system_fonts_before = list(
+            getattr(self.project, "system_fonts", []) or [],
+        )
+        dialog = FontPickerDialog(
+            self.winfo_toplevel(), self.project,
+            current=node.properties.get(pname),
+            type_name=type_name,
+            type_display=type_display,
+        )
+        dialog.wait_window()
+        system_fonts_after = list(
+            getattr(self.project, "system_fonts", []) or [],
+        )
+        if system_fonts_after != system_fonts_before:
+            # The picker added a system font to the palette. That's a
+            # project-state change in its own right — even if the user
+            # cancels the font apply, the palette update should be
+            # remembered on next save.
+            self.project.event_bus.publish("dirty_changed", True)
+        result = getattr(dialog, "result", None)
+        if result is None:
+            return
+        family, scope = result
+        if scope == SCOPE_WIDGET:
+            self._commit_prop(pname, family)
+            return
+        # Scope = type / all-in-project — writes the cascade default
+        # rather than a per-widget override. Using ``family is None``
+        # as the "Use default" intent: drops the entry instead of
+        # storing an empty string.
+        from app.core.fonts import (
+            ALL_DEFAULT_KEY, set_active_project_defaults,
+        )
+        defaults = dict(self.project.font_defaults)
+        key = type_name if scope == SCOPE_TYPE else ALL_DEFAULT_KEY
+        if key is None:
+            return
+        if family:
+            defaults[key] = family
+        else:
+            defaults.pop(key, None)
+        self.project.font_defaults = defaults
+        set_active_project_defaults(defaults)
+        # Mark dirty so the new defaults make it into the next save.
+        self.project.event_bus.publish("dirty_changed", True)
+        self.project.event_bus.publish("font_defaults_changed", defaults)
+
     def _open_text_editor(self, pname: str, prop: dict) -> None:
         node = self.project.get_widget(self.current_id)
         if node is None:

@@ -50,6 +50,16 @@ def project_to_dict(project: Project) -> dict:
         "name": project.name,
         "active_document": project.active_document_id,
         "documents": [doc.to_dict() for doc in project.documents],
+        # Project-level font cascade. Empty dict by default, so most
+        # files won't have anything interesting here. Saved at the
+        # top level rather than inside a document so it applies
+        # across every form in the project.
+        "font_defaults": dict(project.font_defaults or {}),
+        # System fonts the user added to the project's font palette
+        # (those that show up alongside imported .ttf files in the
+        # font picker). Stored as a sorted, deduped list so file
+        # diffs stay stable when the project is committed to git.
+        "system_fonts": sorted(set(project.system_fonts or [])),
         # name_counters persist per-document now — each Document's
         # ``name_counters`` ends up in ``to_dict`` so reopening a
         # project keeps unique names while every Dialog keeps its own

@@ -48,6 +48,7 @@ class CTkTextboxDescriptor(WidgetDescriptor):
         "scrollbar_button_color": "#696969",
         "scrollbar_button_hover_color": "#878787",
         # Text content + style
+        "font_family": None,
         "font_size": 13,
         "font_bold": False,
         "font_italic": False,
@@ -114,6 +115,9 @@ class CTkTextboxDescriptor(WidgetDescriptor):
          "row_label": "Scrollbar Hover"},
 
         # --- Text --------------------------------------------------------
+        {"name": "font_family", "type": "font", "label": "",
+         "group": "Text", "row_label": "Font"},
+
         {"name": "font_size", "type": "number", "label": "",
          "group": "Text", "row_label": "Size", "min": 6, "max": 96},
 
@@ -135,6 +139,7 @@ class CTkTextboxDescriptor(WidgetDescriptor):
         "button_enabled", "border_enabled", "initial_text",
     }
     _FONT_KEYS = {
+        "font_family",
         "font_size", "font_bold", "font_italic",
         "font_underline", "font_overstrike",
     }
@@ -165,8 +170,13 @@ class CTkTextboxDescriptor(WidgetDescriptor):
         slant = "italic" if properties.get("font_italic") else "roman"
         underline = bool(properties.get("font_underline"))
         overstrike = bool(properties.get("font_overstrike"))
+        from app.core.fonts import resolve_effective_family
+        family = resolve_effective_family(
+            cls.type_name, properties.get("font_family"),
+        )
         try:
             result["font"] = ctk.CTkFont(
+                family=family,
                 size=size, weight=weight, slant=slant,
                 underline=underline, overstrike=overstrike,
             )

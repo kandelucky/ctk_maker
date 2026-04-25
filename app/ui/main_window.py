@@ -12,6 +12,9 @@ import customtkinter as ctk
 from app.core.autosave import (
     AutosaveController, autosave_path_for, clear_autosave,
 )
+from app.core.fonts import (
+    register_project_fonts, set_active_project_defaults,
+)
 from app.core.logger import log_error
 from app.core.project import Project
 from app.core.recent_files import add_recent
@@ -444,6 +447,15 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         if path:
             add_recent(path)
             self._rebuild_recent_menu()
+            # Load any project-bundled .ttf/.otf into Tk so descriptors
+            # that reference those families resolve them as real fonts
+            # instead of silently falling back to Tk's default.
+            register_project_fonts(path, root=self)
+        # Refresh the active font cascade from whatever the just-loaded
+        # (or just-saved-as) project carries. New projects start with
+        # an empty cascade; this also clears stale defaults left over
+        # from the previous project.
+        set_active_project_defaults(getattr(self.project, "font_defaults", {}))
         self._refresh_title()
         # Canvas chrome + anything else that mirrors project.name
         # needs a poke — New, Open and Save As all flow through here.
@@ -903,7 +915,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
 
     def _on_about(self) -> None:
         from app.ui.dialogs import AboutDialog
-        AboutDialog(self, app_version="v0.0.20.1")
+        AboutDialog(self, app_version="v0.0.21")
 
     def _on_inspect_widget(self) -> None:
         # Reuse a single Toplevel — clicking the menu while it's open

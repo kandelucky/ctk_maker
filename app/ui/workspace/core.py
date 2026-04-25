@@ -224,6 +224,10 @@ class Workspace(ctk.CTkFrame):
         bus = self.project.event_bus
         self.lifecycle.subscribe(bus)
         bus.subscribe("property_changed", self._on_property_changed)
+        bus.subscribe(
+            "font_defaults_changed",
+            lambda *_a, **_k: self._reapply_fonts_to_all_widgets(),
+        )
         bus.subscribe("selection_changed", self._on_selection_changed)
         bus.subscribe("palette_drop_request", self._on_palette_drop)
         bus.subscribe("document_resized", self._on_document_resized)
@@ -442,6 +446,31 @@ class Workspace(ctk.CTkFrame):
     def _redraw_document(self) -> None:
         if self.renderer is not None:
             self.renderer.redraw()
+
+    def _reapply_fonts_to_all_widgets(self) -> None:
+        """Walk every live CTk widget view and re-run the descriptor's
+        property transform so the cascade-resolved font_family lands
+        on each one. Triggered from ``font_defaults_changed`` —
+        per-widget overrides aren't touched (the descriptor's own
+        properties.get(\"font_family\") wins inside
+        ``resolve_effective_family``), only the inherit-from-default
+        cases pick up the new project / type default.
+        """
+        from app.widgets.registry import get_descriptor
+        for widget_id, (widget, window_id) in list(
+            self.widget_views.items(),
+        ):
+            node = self.project.get_widget(widget_id)
+            if node is None:
+                continue
+            descriptor = get_descriptor(node.widget_type)
+            if descriptor is None:
+                continue
+            self._apply_generic_configure(
+                widget_id, "font_family",
+                node.properties.get("font_family"),
+                node, descriptor, widget, window_id,
+            )
 
     def _update_widget_visibility_across_docs(self) -> None:
         if self.renderer is not None:

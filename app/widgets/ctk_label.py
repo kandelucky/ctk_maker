@@ -28,6 +28,7 @@ class CTkLabelDescriptor(WidgetDescriptor):
         "height": 28,
         # Text content + style
         "text": "CTkLabel",
+        "font_family": None,
         "font_size": 13,
         "font_autofit": False,
         "font_bold": False,
@@ -59,6 +60,9 @@ class CTkLabelDescriptor(WidgetDescriptor):
         # --- Text --------------------------------------------------------
         {"name": "text", "type": "multiline", "label": "",
          "group": "Text", "row_label": "Label"},
+
+        {"name": "font_family", "type": "font", "label": "",
+         "group": "Text", "row_label": "Font"},
 
         {"name": "font_size", "type": "number", "label": "",
          "group": "Text", "row_label": "Size", "min": 6, "max": 96,
@@ -99,6 +103,7 @@ class CTkLabelDescriptor(WidgetDescriptor):
 
     _NODE_ONLY_KEYS = {"x", "y"}
     _FONT_KEYS = {
+        "font_family",
         "font_size", "font_bold", "font_italic",
         "font_underline", "font_overstrike", "font_autofit",
         "font_wrap",
@@ -168,8 +173,13 @@ class CTkLabelDescriptor(WidgetDescriptor):
         slant = "italic" if properties.get("font_italic") else "roman"
         underline = bool(properties.get("font_underline"))
         overstrike = bool(properties.get("font_overstrike"))
+        from app.core.fonts import resolve_effective_family
+        family = resolve_effective_family(
+            cls.type_name, properties.get("font_family"),
+        )
         try:
             result["font"] = ctk.CTkFont(
+                family=family,
                 size=size, weight=weight, slant=slant,
                 underline=underline, overstrike=overstrike,
             )

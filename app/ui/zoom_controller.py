@@ -252,19 +252,27 @@ class ZoomController:
                 )
             except tk.TclError:
                 pass
-        scaled_font = self._build_scaled_font(properties)
+        scaled_font = self._build_scaled_font(properties, widget=widget)
         if scaled_font is not None:
             try:
                 widget.configure(font=scaled_font)
             except tk.TclError:
                 pass
 
-    def _build_scaled_font(self, properties: dict):
+    def _build_scaled_font(self, properties: dict, widget=None):
         """Return a CTkFont whose size is `font_size * zoom` (or None).
 
         Only applies to widgets whose descriptor carries a logical
         `font_size` property. Leaves widgets without text (e.g.
         CTkFrame) untouched.
+
+        Family preservation: the descriptor's ``transform_properties``
+        runs first and resolves the effective family via the cascade,
+        so the widget's current ``_font`` already carries the right
+        family. Reading it back here keeps zoom-driven font swaps
+        from clobbering it with Tk's default — without this, every
+        property edit reset the family because zoom's configure ran
+        last in the apply chain.
         """
         if "font_size" not in properties:
             return None
@@ -277,8 +285,18 @@ class ZoomController:
         slant = "italic" if properties.get("font_italic") else "roman"
         underline = bool(properties.get("font_underline"))
         overstrike = bool(properties.get("font_overstrike"))
+        family = None
+        existing = getattr(widget, "_font", None) if widget is not None else None
+        if isinstance(existing, ctk.CTkFont):
+            try:
+                fam = existing.cget("family")
+                if fam:
+                    family = fam
+            except Exception:
+                family = None
         try:
             return ctk.CTkFont(
+                family=family,
                 size=scaled, weight=weight, slant=slant,
                 underline=underline, overstrike=overstrike,
             )

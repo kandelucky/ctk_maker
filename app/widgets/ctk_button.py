@@ -45,6 +45,7 @@ class CTkButtonDescriptor(WidgetDescriptor):
         "hover_color": "#4f46e5",
         # Text content + style
         "text": "CTkButton",
+        "font_family": None,
         "font_size": 13,
         "font_autofit": False,
         "font_bold": False,
@@ -125,6 +126,9 @@ class CTkButtonDescriptor(WidgetDescriptor):
         # --- Text --------------------------------------------------------
         {"name": "text", "type": "multiline", "label": "",
          "group": "Text", "row_label": "Label"},
+
+        {"name": "font_family", "type": "font", "label": "",
+         "group": "Text", "row_label": "Font"},
 
         {"name": "font_size", "type": "number", "label": "",
          "group": "Text", "row_label": "Size", "min": 6, "max": 96,
@@ -210,6 +214,7 @@ class CTkButtonDescriptor(WidgetDescriptor):
     # Cache of image path -> native aspect ratio (width / height).
     _aspect_cache: dict[str, float] = {}
     _FONT_KEYS = {
+        "font_family",
         "font_size", "font_bold", "font_italic",
         "font_underline", "font_overstrike", "font_autofit",
     }
@@ -329,8 +334,13 @@ class CTkButtonDescriptor(WidgetDescriptor):
         slant = "italic" if properties.get("font_italic") else "roman"
         underline = bool(properties.get("font_underline"))
         overstrike = bool(properties.get("font_overstrike"))
+        from app.core.fonts import resolve_effective_family
+        family = resolve_effective_family(
+            cls.type_name, properties.get("font_family"),
+        )
         try:
             result["font"] = ctk.CTkFont(
+                family=family,
                 size=size, weight=weight, slant=slant,
                 underline=underline, overstrike=overstrike,
             )

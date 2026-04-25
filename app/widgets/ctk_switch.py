@@ -51,6 +51,7 @@ class CTkSwitchDescriptor(WidgetDescriptor):
         "button_hover_color": "#ffffff",
         # Text content + style
         "text": "CTkSwitch",
+        "font_family": None,
         "font_size": 13,
         "font_bold": False,
         "font_italic": False,
@@ -120,6 +121,9 @@ class CTkSwitchDescriptor(WidgetDescriptor):
         {"name": "text", "type": "multiline", "label": "",
          "group": "Text", "row_label": "Label"},
 
+        {"name": "font_family", "type": "font", "label": "",
+         "group": "Text", "row_label": "Font"},
+
         {"name": "font_size", "type": "number", "label": "",
          "group": "Text", "row_label": "Size", "min": 6, "max": 96},
 
@@ -150,6 +154,7 @@ class CTkSwitchDescriptor(WidgetDescriptor):
         "text_position", "text_spacing",
     }
     _FONT_KEYS = {
+        "font_family",
         "font_size", "font_bold", "font_italic",
         "font_underline", "font_overstrike",
     }
@@ -173,8 +178,13 @@ class CTkSwitchDescriptor(WidgetDescriptor):
         slant = "italic" if properties.get("font_italic") else "roman"
         underline = bool(properties.get("font_underline"))
         overstrike = bool(properties.get("font_overstrike"))
+        from app.core.fonts import resolve_effective_family
+        family = resolve_effective_family(
+            cls.type_name, properties.get("font_family"),
+        )
         try:
             result["font"] = ctk.CTkFont(
+                family=family,
                 size=size, weight=weight, slant=slant,
                 underline=underline, overstrike=overstrike,
             )

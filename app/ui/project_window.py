@@ -84,6 +84,16 @@ class ProjectPanel(ctk.CTkFrame):
     # ------- public API -------
 
     def refresh(self) -> None:
+        # Event-bus subscribers from a closed Project window can fire
+        # after their panel has been destroyed — the lambdas captured
+        # ``self`` and live on past the panel's lifetime. Guard with a
+        # widget-existence check so a stale dirty_changed publish
+        # doesn't surface a Tcl "invalid command name" traceback.
+        try:
+            if not self.winfo_exists():
+                return
+        except tk.TclError:
+            return
         path = self.path_provider()
         if path:
             p = Path(path)
@@ -96,7 +106,10 @@ class ProjectPanel(ctk.CTkFrame):
             self._path_var.set(
                 "Save the project first to enable assets.",
             )
-            self._tree.delete(*self._tree.get_children())
+            try:
+                self._tree.delete(*self._tree.get_children())
+            except tk.TclError:
+                pass
             self._set_buttons_enabled(False)
 
     # ------- internal layout -------

@@ -58,6 +58,7 @@ class CTkOptionMenuDescriptor(WidgetDescriptor):
         "dropdown_border_width": 1,
         "dropdown_border_color": "#3c3c3c",
         # Text content + style
+        "font_family": None,
         "font_size": 13,
         "font_bold": False,
         "font_italic": False,
@@ -144,6 +145,9 @@ class CTkOptionMenuDescriptor(WidgetDescriptor):
          "disabled_when": lambda p: not p.get("dropdown_border_enabled")},
 
         # --- Text --------------------------------------------------------
+        {"name": "font_family", "type": "font", "label": "",
+         "group": "Text", "row_label": "Font"},
+
         {"name": "font_size", "type": "number", "label": "",
          "group": "Text", "row_label": "Size", "min": 6, "max": 96},
 
@@ -175,6 +179,7 @@ class CTkOptionMenuDescriptor(WidgetDescriptor):
         "dropdown_border_width", "dropdown_border_color",
     }
     _FONT_KEYS = {
+        "font_family",
         "font_size", "font_bold", "font_italic",
         "font_underline", "font_overstrike",
     }
@@ -215,8 +220,13 @@ class CTkOptionMenuDescriptor(WidgetDescriptor):
         slant = "italic" if properties.get("font_italic") else "roman"
         underline = bool(properties.get("font_underline"))
         overstrike = bool(properties.get("font_overstrike"))
+        from app.core.fonts import resolve_effective_family
+        family = resolve_effective_family(
+            cls.type_name, properties.get("font_family"),
+        )
         try:
             result["font"] = ctk.CTkFont(
+                family=family,
                 size=size, weight=weight, slant=slant,
                 underline=underline, overstrike=overstrike,
             )

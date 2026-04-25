@@ -11,6 +11,7 @@ from .base import Editor
 from .boolean import BooleanEditor
 from .color import ColorEditor
 from .enum import EnumEditor
+from .font import FontEditor
 from .image import ImageEditor
 from .multiline import MultilineEditor
 from .number import NumberEditor
@@ -23,6 +24,7 @@ _EDITORS: dict[str, Editor] = {
     "color": ColorEditor(),
     "boolean": BooleanEditor(),
     "multiline": MultilineEditor(),
+    "font": FontEditor(),
     "image": ImageEditor(),
     "number": NumberEditor(),
     "anchor": _ENUM,

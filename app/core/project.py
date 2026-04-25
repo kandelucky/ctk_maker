@@ -192,6 +192,20 @@ class Project:
         # by anything that wants to compute paths inside the project
         # folder without reaching into MainWindow.
         self.path: str | None = None
+        # Project-level + per-widget-type font defaults. Keys:
+        # "_all" (every text widget) and widget type_name strings
+        # ("CTkButton", ...). Cascade order is per-widget override →
+        # per-type → "_all" → Tk default; resolved by
+        # ``app.core.fonts.resolve_effective_family``. Persisted as a
+        # top-level "font_defaults" object in the .ctkproj.
+        self.font_defaults: dict[str, str] = {}
+        # System fonts the user has explicitly added to the project's
+        # font palette. The font picker only lists these + the
+        # imported ``assets/fonts/`` files — opening every OS font is
+        # both slow and overwhelms the user with hundreds of rows.
+        # Adding goes through the secondary "+ Add system font"
+        # dialog. Persisted as ``system_fonts`` in the .ctkproj.
+        self.system_fonts: list[str] = []
         self.documents: list[Document] = [Document(name=self.name)]
         self.active_document_id: str = self.documents[0].id
         # Widget auto-name counters moved to Document.name_counters —

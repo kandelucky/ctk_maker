@@ -58,6 +58,12 @@ def export_project(
 ) -> None:
     global _CURRENT_PROJECT_PATH
     _CURRENT_PROJECT_PATH = project.path
+    # Sync the cascade module so ``resolve_effective_family`` returns
+    # the right family during export, even if the caller is operating
+    # on a project that isn't the one currently loaded into the
+    # main window (headless export, batch tooling).
+    from app.core.fonts import set_active_project_defaults
+    set_active_project_defaults(project.font_defaults)
     try:
         source = generate_code(
             project,
@@ -93,6 +99,28 @@ def export_project(
         out.with_name("scrollable_dropdown.py").write_text(
             helper_src, encoding="utf-8",
         )
+
+
+def _project_uses_custom_fonts(
+    project: Project, scoped_widgets,
+) -> bool:
+    """Trigger font-registration plumbing when the project bundles
+    custom font files OR any widget / cascade default points at a
+    family that isn't a built-in (Tk's defaults always work without
+    tkextrafont). Bundled files in ``assets/fonts/`` ship with the
+    export, so the runtime needs the helper to load them.
+    """
+    if project.path:
+        fonts_dir = Path(project.path).parent / "assets" / "fonts"
+        if fonts_dir.exists():
+            for f in fonts_dir.iterdir():
+                if f.is_file() and f.suffix.lower() in (".ttf", ".otf", ".ttc"):
+                    return True
+    if any(w.properties.get("font_family") for w in scoped_widgets):
+        return True
+    if any(project.font_defaults.values()):
+        return True
+    return False
 
 
 def _project_uses_scrollable_dropdown(
@@ -206,6 +234,7 @@ def generate_code(
         and str(w.properties.get("group") or "").strip()
         for w in scoped_widgets
     )
+    needs_font_register = _project_uses_custom_fonts(project, scoped_widgets)
 
     lines: list[str] = ["import customtkinter as ctk"]
     if needs_tk_import:
@@ -215,6 +244,10 @@ def generate_code(
     if needs_scrollable_dropdown:
         lines.append("from scrollable_dropdown import ScrollableDropdown")
     lines.append("")
+
+    if needs_font_register:
+        lines.extend(_font_register_helper_lines())
+        lines.append("")
 
     if needs_tint:
         lines.extend(_tint_helper_lines())
@@ -248,7 +281,10 @@ def generate_code(
     # source document is a CTkToplevel in the multi-doc project.
     force_main = bool(single_document_id)
     for doc, cls_name in class_names:
-        lines.extend(_emit_class(doc, cls_name, force_main=force_main))
+        lines.extend(_emit_class(
+            doc, cls_name, force_main=force_main,
+            register_fonts=needs_font_register,
+        ))
         lines.append("")
         lines.append("")
 
@@ -343,6 +379,7 @@ def _collect_radio_groups(
 
 def _emit_class(
     doc: Document, class_name: str, force_main: bool = False,
+    register_fonts: bool = False,
 ) -> list[str]:
     # ``force_main`` is True for single-document export: the class
     # subclasses ``ctk.CTk`` even when the source doc is a Toplevel,
@@ -358,6 +395,13 @@ def _emit_class(
     else:
         lines.append(f"{INDENT}def __init__(self):")
         lines.append(f"{INDENT}{INDENT}super().__init__()")
+        # Custom fonts must register against this Tk root before any
+        # widget's CTkFont(family=...) resolves — Toplevels share the
+        # parent root so they don't repeat the call.
+        if register_fonts:
+            lines.append(
+                f"{INDENT}{INDENT}_register_project_fonts(self)",
+            )
 
     title = str(doc.name or "Window").replace('"', '\\"')
     geometry = f"{doc.width}x{doc.height}"
@@ -651,7 +695,11 @@ def _emit_widget(
         ]
 
     if font_keys and any(k in props for k in font_keys):
-        kwargs.append(("font", _font_source(props)))
+        from app.core.fonts import resolve_effective_family
+        effective_family = resolve_effective_family(
+            node.widget_type, props.get("font_family"),
+        )
+        kwargs.append(("font", _font_source(props, effective_family)))
 
     image_path = props.get("image")
     pre_lines: list[str] = []
@@ -831,11 +879,17 @@ def _slug(value: str) -> str:
     return value.lower()
 
 
-def _font_source(props: dict) -> str:
+def _font_source(props: dict, family: str | None = None) -> str:
     size = _safe_int(props.get("font_size"), 13)
     weight = '"bold"' if props.get("font_bold") else '"normal"'
     slant = '"italic"' if props.get("font_italic") else '"roman"'
-    parts = [f"size={size}", f"weight={weight}", f"slant={slant}"]
+    parts: list[str] = []
+    if family:
+        # ``repr`` handles quote escaping for unusual family names —
+        # e.g. ``"Comic Sans MS"`` round-trips to a Python literal
+        # safely without manual escaping.
+        parts.append(f"family={family!r}")
+    parts.extend([f"size={size}", f"weight={weight}", f"slant={slant}"])
     if props.get("font_underline"):
         parts.append("underline=True")
     if props.get("font_overstrike"):
@@ -1065,6 +1119,37 @@ def _auto_hover_text_helper_lines() -> list[str]:
         "            lbl.configure(fg=colour)",
         '    button.bind("<Enter>", lambda e: _set(hover))',
         '    button.bind("<Leave>", lambda e: _set(normal))',
+    ]
+
+
+def _font_register_helper_lines() -> list[str]:
+    """Emit a module-level helper that loads every ``.ttf`` / ``.otf``
+    sitting in ``assets/fonts/`` next to the script via tkextrafont
+    so ``CTkFont(family=...)`` resolves the bundled families. Soft
+    dependency — if tkextrafont isn't installed, the helper logs and
+    falls back to Tk defaults so the rest of the app still runs.
+    """
+    return [
+        "def _register_project_fonts(root):",
+        '    """Load every .ttf / .otf in assets/fonts/ next to this',
+        "    script so widget CTkFont(family=...) lookups can find",
+        '    families bundled with the project."""',
+        "    from pathlib import Path",
+        '    fonts_dir = Path(__file__).resolve().parent / "assets" / "fonts"',
+        "    if not fonts_dir.exists():",
+        "        return",
+        "    try:",
+        "        from tkextrafont import Font",
+        "    except ImportError:",
+        "        # tkextrafont missing — bundled fonts won't load, but",
+        "        # system / Tk-default fonts still render.",
+        "        return",
+        '    for f in sorted(fonts_dir.iterdir()):',
+        '        if f.suffix.lower() in (".ttf", ".otf", ".ttc"):',
+        "            try:",
+        "                Font(root, file=str(f))",
+        "            except Exception:",
+        "                pass",
     ]
 
 
