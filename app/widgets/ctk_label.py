@@ -188,9 +188,37 @@ class CTkLabelDescriptor(WidgetDescriptor):
 
         return result
 
+    # Horizontal padding added to the inner tk.Label to absorb the
+    # slant overhang of italic / script fonts. Tk measures text via
+    # glyph advance widths, which under-counts the slant tail —
+    # without padding, the last character clips at the label's
+    # right edge. Tiny enough to be invisible on upright text.
+    _ITALIC_SAFE_PADX = 4
+
     @classmethod
     def create_widget(cls, master, properties: dict, init_kwargs=None):
         kwargs = cls.transform_properties(properties)
         if init_kwargs:
             kwargs.update(init_kwargs)
-        return ctk.CTkLabel(master, **kwargs)
+        widget = ctk.CTkLabel(master, **kwargs)
+        cls.apply_state(widget, properties)
+        return widget
+
+    @classmethod
+    def apply_state(cls, widget, properties: dict) -> None:
+        inner = getattr(widget, "_label", None)
+        if inner is None:
+            return
+        try:
+            inner.configure(padx=cls._ITALIC_SAFE_PADX)
+        except Exception:
+            log_error("CTkLabelDescriptor.apply_state padx")
+
+    @classmethod
+    def export_state(cls, var_name: str, properties: dict) -> list[str]:
+        # Mirror the builder-side italic-clip workaround so exported
+        # apps don't clip the last glyph of slanted / script fonts.
+        return [
+            f"{var_name}._label.configure("
+            f"padx={cls._ITALIC_SAFE_PADX})",
+        ]

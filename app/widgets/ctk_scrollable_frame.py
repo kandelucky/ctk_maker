@@ -43,6 +43,7 @@ class CTkScrollableFrameDescriptor(WidgetDescriptor):
         "label_text_align": "center",
         "label_fg_color": "#3a3a3a",
         "label_text_color": "#dce4ee",
+        "font_family": None,
         # Scrollbar
         "orientation": "vertical",
         "scrollbar_fg_color": "#1a1a1a",
@@ -98,6 +99,8 @@ class CTkScrollableFrameDescriptor(WidgetDescriptor):
          "group": "Label", "row_label": "Label Text"},
         {"name": "label_text_align", "type": "justify", "label": "",
          "group": "Label", "row_label": "Label Align"},
+        {"name": "font_family", "type": "font", "label": "",
+         "group": "Label", "row_label": "Label Font"},
         {"name": "label_fg_color", "type": "color", "label": "",
          "group": "Label", "row_label": "Label Background"},
         {"name": "label_text_color", "type": "color", "label": "",
@@ -123,6 +126,11 @@ class CTkScrollableFrameDescriptor(WidgetDescriptor):
         "x", "y", "border_enabled", "label_text_align",
         "layout_type", "layout_spacing",
     }
+    _FONT_KEYS = {"font_family"}
+    # ScrollableFrame's text knob is the header label, not a body
+    # CTkFont — exporter + transform must address ``label_font``
+    # rather than the generic ``font`` kwarg most widgets use.
+    font_kwarg = "label_font"
     init_only_keys = {"orientation"}
     recreate_triggers = frozenset({"orientation"})
 
@@ -148,6 +156,7 @@ class CTkScrollableFrameDescriptor(WidgetDescriptor):
         result = {
             k: v for k, v in properties.items()
             if k not in cls._NODE_ONLY_KEYS
+            and k not in cls._FONT_KEYS
             and k not in cls.init_only_keys
         }
         if not properties.get("border_enabled"):
@@ -156,6 +165,15 @@ class CTkScrollableFrameDescriptor(WidgetDescriptor):
         result["label_anchor"] = _LABEL_ALIGN_TO_ANCHOR.get(
             properties.get("label_text_align", "center"), "center",
         )
+        from app.core.fonts import resolve_effective_family
+        family = resolve_effective_family(
+            cls.type_name, properties.get("font_family"),
+        )
+        # Only override CTk's default label font when the user picked
+        # a family — otherwise leave ``label_font`` unset so CTk's
+        # theme picks size/weight to match the rest of the UI.
+        if family:
+            result["label_font"] = ctk.CTkFont(family=family)
         return result
 
     @classmethod

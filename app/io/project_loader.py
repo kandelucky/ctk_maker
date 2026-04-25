@@ -26,7 +26,9 @@ class ProjectLoadError(Exception):
     pass
 
 
-def load_project(project: Project, path: str | Path) -> None:
+def load_project(
+    project: Project, path: str | Path, root=None,
+) -> None:
     path = Path(path)
     try:
         with path.open("r", encoding="utf-8") as f:
@@ -119,6 +121,20 @@ def load_project(project: Project, path: str | Path) -> None:
         sorted({str(f) for f in raw_system if f})
         if isinstance(raw_system, list) else []
     )
+
+    # Prime the font system BEFORE any widget is added — otherwise
+    # CTkFont(family=...) calls inside widget construction resolve
+    # against an empty cascade (defaults stale from the previous
+    # project) and Tk hasn't yet been told about bundled .ttfs from
+    # this project's assets/fonts/. The exported runtime gets this
+    # right by registering fonts at the top of __init__; the
+    # in-builder load path needs the same ordering.
+    from app.core.fonts import (
+        register_project_fonts, set_active_project_defaults,
+    )
+    if root is not None:
+        register_project_fonts(path, root=root)
+    set_active_project_defaults(project.font_defaults)
 
     # Tear down whatever is currently in the project so every
     # listener sees the old widgets removed one by one. Afterwards

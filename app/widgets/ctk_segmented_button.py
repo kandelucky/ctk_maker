@@ -145,6 +145,13 @@ class CTkSegmentedButtonDescriptor(WidgetDescriptor):
     multiline_list_keys = {"values"}
 
     @classmethod
+    def export_kwarg_overrides(cls, properties: dict) -> dict:
+        # Pin total width to what the builder set — without
+        # ``dynamic_resizing=False`` the exported widget grows to fit
+        # its segments, ignoring the user's chosen width.
+        return {"dynamic_resizing": False}
+
+    @classmethod
     def transform_properties(cls, properties: dict) -> dict:
         result = {
             k: v for k, v in properties.items()

@@ -471,7 +471,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         # of loading the older saved copy.
         load_target = self._maybe_swap_for_autosave(path)
         try:
-            load_project(self.project, load_target)
+            load_project(self.project, load_target, root=self)
         except ProjectLoadError as exc:
             messagebox.showerror("Open failed", str(exc), parent=self)
             return
@@ -529,9 +529,16 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
     def _on_new(self) -> None:
         if not self._confirm_discard_if_dirty():
             return
+        # ``_current_path`` points at the .ctkproj inside its project
+        # folder, so ``.parent`` is the project folder itself —
+        # walking ONE more level up lands on the parent directory the
+        # user originally chose as ``Save to`` (e.g.
+        # ``Documents/CTkMaker/``). Without this the New Project dialog
+        # would default ``Save to`` to the previous project's folder
+        # and try to nest the next project inside it.
         default_dir = (
-            str(Path(self._current_path).parent) if self._current_path
-            else None
+            str(Path(self._current_path).parent.parent)
+            if self._current_path else None
         )
         dialog = NewProjectSizeDialog(
             self,
@@ -602,7 +609,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             )
             return
         try:
-            load_project(self.project, path)
+            load_project(self.project, path, root=self)
         except ProjectLoadError as exc:
             messagebox.showerror("Recover failed", str(exc), parent=self)
             return
@@ -915,7 +922,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
 
     def _on_about(self) -> None:
         from app.ui.dialogs import AboutDialog
-        AboutDialog(self, app_version="v0.0.21")
+        AboutDialog(self, app_version="v0.0.22")
 
     def _on_inspect_widget(self) -> None:
         # Reuse a single Toplevel — clicking the menu while it's open

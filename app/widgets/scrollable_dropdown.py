@@ -37,6 +37,7 @@ class ScrollableDropdown:
         border_width: int = 1,
         border_color: str = "#3c3c3c",
         corner_radius: int = 6,
+        font=None,
     ) -> None:
         self.attach = attach
         self.max_visible = max_visible
@@ -49,6 +50,10 @@ class ScrollableDropdown:
         self.border_width = border_width
         self.border_color = border_color
         self.corner_radius = corner_radius
+        # Item font — the dropdown buttons share the parent's font so
+        # cascade family selections land on popup items too. ``None``
+        # falls back to CTkButton's theme default.
+        self.font = font
 
         self._buttons: list[ctk.CTkButton] = []
         self._inner: tk.Misc | None = None
@@ -88,6 +93,10 @@ class ScrollableDropdown:
         root = attach.winfo_toplevel()
         root.bind("<Button-1>", self._on_root_click, add="+")
         root.bind("<Configure>", self._on_root_configure, add="+")
+        # Hide on app deactivate — without this, the topmost popup
+        # bleeds across the user's whole desktop (visible above other
+        # apps after they Alt+Tab away).
+        root.bind("<FocusOut>", self._on_root_focus_out, add="+")
         attach.bind("<Destroy>", lambda _e: self._destroy_top(), add="+")
 
     # ------- public API -------
@@ -121,6 +130,35 @@ class ScrollableDropdown:
         except tk.TclError:
             pass
 
+    def _on_root_focus_out(self, _event=None) -> None:
+        """Root toplevel just lost focus. FocusOut also fires for
+        intra-app focus changes (clicking a different widget),
+        so defer the check by one tick and use ``focus_get()`` to
+        distinguish "focus left this Tk app entirely" from "focus
+        moved to another widget in the app". The former hides;
+        the latter keeps the popup open so e.g. typing into a
+        sibling Entry while the dropdown is up isn't disrupted.
+        """
+        try:
+            if str(self.top.state()) == "withdrawn":
+                return
+        except tk.TclError:
+            return
+        self.top.after(50, self._maybe_hide_after_focus_loss)
+
+    def _maybe_hide_after_focus_loss(self) -> None:
+        try:
+            if str(self.top.state()) == "withdrawn":
+                return
+            # ``focus_get`` returns None when no Tk widget in this
+            # interpreter holds the keyboard focus — i.e. the user
+            # has switched to a different app or the desktop.
+            if self.top.focus_get() is None:
+                self.hide()
+        except (KeyError, tk.TclError):
+            # Defensive: focus_get can throw on torn-down widgets.
+            pass
+
     def configure_style(self, **kwargs) -> None:
         """Re-apply colours / border / layout. Called from the descriptor
         when the user edits dropdown_* / border_* properties so the
@@ -129,7 +167,7 @@ class ScrollableDropdown:
         for key in (
             "fg_color", "text_color", "hover_color",
             "border_width", "border_color", "corner_radius",
-            "max_visible", "button_align", "offset",
+            "max_visible", "button_align", "offset", "font",
         ):
             if key in kwargs:
                 setattr(self, key, kwargs[key])
@@ -206,8 +244,8 @@ class ScrollableDropdown:
         scrollbar_w = 16 if len(values) > self.max_visible else 0
         btn_w = max(attach_w - 2 * self.border_width - 8 - scrollbar_w, 40)
         for v in values:
-            btn = ctk.CTkButton(
-                inner, text=v, height=self.button_height,
+            kwargs = dict(
+                text=v, height=self.button_height,
                 width=btn_w,
                 fg_color="transparent",
                 text_color=self.text_color,
@@ -215,6 +253,9 @@ class ScrollableDropdown:
                 anchor=anchor, corner_radius=0,
                 command=lambda val=v: self._on_select(val),
             )
+            if self.font is not None:
+                kwargs["font"] = self.font
+            btn = ctk.CTkButton(inner, **kwargs)
             btn.pack(fill="x", padx=2, pady=1)
             self._buttons.append(btn)
         # If popup is visible during a rebuild (e.g. user changed

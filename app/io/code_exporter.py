@@ -644,6 +644,21 @@ def _emit_widget(
             kwargs.append((key, _py_literal(lines_list)))
             continue
         kwargs.append((key, _py_literal(val)))
+    # Override-only keys: descriptors can inject runtime-only kwargs
+    # (e.g. CTkSegmentedButton / CTkOptionMenu's
+    # ``dynamic_resizing=False`` that pins the widget's width to what
+    # the builder set) by returning them from ``export_kwarg_overrides``
+    # without an entry in ``properties``. Without this fan-out, the
+    # exported file would miss those kwargs and fall back to CTk's
+    # auto-resize default — visible bug: a 600px segmented button
+    # exported as 80px because CTk re-fits to content.
+    emitted = {k for k, _ in kwargs}
+    for key, val in overrides.items():
+        if key in emitted or key in node_only or key in font_keys:
+            continue
+        if key in LAYOUT_NODE_ONLY_KEYS:
+            continue
+        kwargs.append((key, _py_literal(val)))
 
     # CTkTabview: map node-only `tab_anchor` ("left"/"center"/"right")
     # onto CTk's `anchor` kwarg ("w"/"center"/"e"). Stored separately
@@ -699,7 +714,27 @@ def _emit_widget(
         effective_family = resolve_effective_family(
             node.widget_type, props.get("font_family"),
         )
-        kwargs.append(("font", _font_source(props, effective_family)))
+        # Most widgets attach the font to ``font``; CTkScrollableFrame
+        # exposes ``label_font`` for its header instead. Descriptors
+        # set ``font_kwarg`` to control which kwarg the exporter emits.
+        # Skip emitting altogether when no family resolved AND the
+        # descriptor only carries font_family (size/weight knobs would
+        # still want a default-sized CTkFont; ScrollableFrame doesn't).
+        font_kwarg_name = getattr(descriptor, "font_kwarg", "font")
+        if font_kwarg_name is None:
+            # Descriptor handles font emission itself (e.g. CTkTabview
+            # writes ``_segmented_button.configure(font=...)`` from
+            # export_state because its __init__ has no ``font`` kwarg).
+            pass
+        elif (
+            font_kwarg_name == "label_font"
+            and not effective_family
+        ):
+            pass  # leave label_font unset → CTk theme picks default
+        else:
+            kwargs.append(
+                (font_kwarg_name, _font_source(props, effective_family)),
+            )
 
     image_path = props.get("image")
     pre_lines: list[str] = []
@@ -800,6 +835,9 @@ def _scrollable_dropdown_lines(var_name: str, props: dict) -> list[str]:
     lines = [
         f"{var_name}._scrollable_dropdown = ScrollableDropdown(",
         f"    {var_name},",
+        # Reuse the parent's resolved CTkFont so popup items render
+        # with the cascade-selected family, not Tk's default.
+        f'    font={var_name}.cget("font"),',
     ]
     for k, v in kwargs:
         lines.append(f"    {k}={_py_literal(v)},")
@@ -880,20 +918,25 @@ def _slug(value: str) -> str:
 
 
 def _font_source(props: dict, family: str | None = None) -> str:
-    size = _safe_int(props.get("font_size"), 13)
-    weight = '"bold"' if props.get("font_bold") else '"normal"'
-    slant = '"italic"' if props.get("font_italic") else '"roman"'
     parts: list[str] = []
     if family:
         # ``repr`` handles quote escaping for unusual family names —
         # e.g. ``"Comic Sans MS"`` round-trips to a Python literal
         # safely without manual escaping.
         parts.append(f"family={family!r}")
-    parts.extend([f"size={size}", f"weight={weight}", f"slant={slant}"])
-    if props.get("font_underline"):
-        parts.append("underline=True")
-    if props.get("font_overstrike"):
-        parts.append("overstrike=True")
+    # Descriptors that don't expose ``font_size`` (e.g.
+    # CTkScrollableFrame's family-only label font) skip the
+    # size / weight / slant block so the generated CTkFont keeps
+    # CTk's theme defaults instead of forcing 13/normal/roman.
+    if "font_size" in props:
+        size = _safe_int(props.get("font_size"), 13)
+        weight = '"bold"' if props.get("font_bold") else '"normal"'
+        slant = '"italic"' if props.get("font_italic") else '"roman"'
+        parts.extend([f"size={size}", f"weight={weight}", f"slant={slant}"])
+        if props.get("font_underline"):
+            parts.append("underline=True")
+        if props.get("font_overstrike"):
+            parts.append("overstrike=True")
     return f"ctk.CTkFont({', '.join(parts)})"
 
 

@@ -186,6 +186,13 @@ class CTkOptionMenuDescriptor(WidgetDescriptor):
     multiline_list_keys = {"values"}
 
     @classmethod
+    def export_kwarg_overrides(cls, properties: dict) -> dict:
+        # Pin total width to what the builder set — same reason as
+        # CTkSegmentedButton: CTk's grow-to-longest-value is on by
+        # default and would otherwise discard the configured width.
+        return {"dynamic_resizing": False}
+
+    @classmethod
     def transform_properties(cls, properties: dict) -> dict:
         result = {
             k: v for k, v in properties.items()
@@ -264,7 +271,9 @@ class CTkOptionMenuDescriptor(WidgetDescriptor):
             kwargs.update(init_kwargs)
         widget = ctk.CTkOptionMenu(master, **kwargs)
         widget._scrollable_dropdown = ScrollableDropdown(
-            widget, **cls._dropdown_kwargs(properties),
+            widget,
+            font=getattr(widget, "_font", None),
+            **cls._dropdown_kwargs(properties),
         )
         cls.apply_state(widget, properties)
         return widget
@@ -279,7 +288,10 @@ class CTkOptionMenuDescriptor(WidgetDescriptor):
                 log_error("CTkOptionMenuDescriptor.apply_state set")
         sd = getattr(widget, "_scrollable_dropdown", None)
         if sd is not None:
-            sd.configure_style(**cls._dropdown_kwargs(properties))
+            sd.configure_style(
+                font=getattr(widget, "_font", None),
+                **cls._dropdown_kwargs(properties),
+            )
 
     @classmethod
     def export_state(cls, var_name: str, properties: dict) -> list[str]:

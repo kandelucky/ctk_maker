@@ -275,8 +275,12 @@ class CTkComboBoxDescriptor(WidgetDescriptor):
         if init_kwargs:
             kwargs.update(init_kwargs)
         widget = ctk.CTkComboBox(master, **kwargs)
+        # Share the parent's resolved CTkFont so popup items pick up
+        # the same family the cascade landed on for the field itself.
         widget._scrollable_dropdown = ScrollableDropdown(
-            widget, **cls._dropdown_kwargs(properties),
+            widget,
+            font=getattr(widget, "_font", None),
+            **cls._dropdown_kwargs(properties),
         )
         cls.apply_state(widget, properties)
         return widget
@@ -291,7 +295,13 @@ class CTkComboBoxDescriptor(WidgetDescriptor):
                 log_error("CTkComboBoxDescriptor.apply_state set")
         sd = getattr(widget, "_scrollable_dropdown", None)
         if sd is not None:
-            sd.configure_style(**cls._dropdown_kwargs(properties))
+            # Re-pin the dropdown's font to whatever the parent now
+            # holds — picks up cascade changes that came in through
+            # configure(font=...).
+            sd.configure_style(
+                font=getattr(widget, "_font", None),
+                **cls._dropdown_kwargs(properties),
+            )
 
     @classmethod
     def export_state(cls, var_name: str, properties: dict) -> list[str]:

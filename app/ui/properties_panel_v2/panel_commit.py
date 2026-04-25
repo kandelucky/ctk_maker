@@ -365,19 +365,112 @@ class CommitMixin:
         from app.core.fonts import (
             ALL_DEFAULT_KEY, set_active_project_defaults,
         )
+        # Setting a real family with a non-widget scope sometimes
+        # surprises users — the cascade keeps lower-priority entries
+        # (per-widget overrides AND, for scope=all, per-type defaults)
+        # so the new family doesn't visibly land everywhere. Show a
+        # confirmation listing the conflicting entries and let the
+        # user choose: keep them (cascade behaviour) or sweep them
+        # away. For ``family is None`` (Use default) we leave both
+        # alone — clearing the cascade entry never breaks intent.
+        widget_overrides = self._widgets_with_font_override(
+            scope, type_name,
+        )
+        # ``type_overrides`` only matters for scope=ALL: each non-_all
+        # entry in font_defaults shadows the new project-wide value
+        # for that widget type. Scope=TYPE never collides with sibling
+        # type defaults, so we skip the check there.
+        type_overrides: list[str] = []
+        if scope == SCOPE_ALL:
+            type_overrides = [
+                k for k in self.project.font_defaults
+                if k != ALL_DEFAULT_KEY
+            ]
+        clear_overrides = False
+        total_overrides = len(widget_overrides) + len(type_overrides)
+        if family and total_overrides > 0:
+            from app.ui.dialogs import ChoiceDialog
+            scope_label = (
+                f"all {type_display or type_name}s"
+                if scope == SCOPE_TYPE else "all widgets"
+            )
+            lines = [
+                f"Choose how the {family!r} default should land on "
+                f"{scope_label}:",
+                "",
+            ]
+            if widget_overrides:
+                lines.append(
+                    f"• {len(widget_overrides)} widget(s) carry a "
+                    f"per-widget font override.",
+                )
+            if type_overrides:
+                lines.append(
+                    f"• {len(type_overrides)} widget type(s) carry "
+                    f"their own default ({', '.join(type_overrides)}).",
+                )
+            lines.extend([
+                "",
+                "• Only default — keep those overrides intact.",
+                "• All widgets — drop the overrides too so every "
+                "widget falls back to the new default.",
+            ])
+            dlg = ChoiceDialog(
+                self.winfo_toplevel(),
+                "Apply font to all widgets?",
+                "\n".join(lines),
+                primary=("only", "Only default"),
+                secondary=("all", "All widgets"),
+                cancel_text="Cancel",
+            )
+            self.wait_window(dlg)
+            choice = dlg.result
+            if choice is None:
+                return
+            clear_overrides = (choice == "all")
         defaults = dict(self.project.font_defaults)
         key = type_name if scope == SCOPE_TYPE else ALL_DEFAULT_KEY
         if key is None:
             return
+        if clear_overrides and scope == SCOPE_ALL:
+            # Wipe sibling per-type defaults so the new "_all" entry
+            # actually applies project-wide instead of being shadowed
+            # by every existing type default.
+            defaults = {}
         if family:
             defaults[key] = family
         else:
             defaults.pop(key, None)
         self.project.font_defaults = defaults
         set_active_project_defaults(defaults)
+        if clear_overrides:
+            # Drop the per-widget font_family on every override so the
+            # cascade default takes effect. property_changed events
+            # propagate via update_property (workspace re-renders +
+            # Properties panel refreshes its row).
+            for w in widget_overrides:
+                self.project.update_property(w.id, "font_family", None)
         # Mark dirty so the new defaults make it into the next save.
         self.project.event_bus.publish("dirty_changed", True)
         self.project.event_bus.publish("font_defaults_changed", defaults)
+
+    def _widgets_with_font_override(
+        self, scope: str, type_name: str | None,
+    ) -> list:
+        """Return every widget the cascade scope would affect that
+        carries its own ``font_family`` value. Used by ``_pick_font``
+        to ask the user whether per-widget overrides should fall back
+        to the new default too.
+        """
+        from app.ui.font_picker_dialog import SCOPE_TYPE
+        out = []
+        for node in self.project.iter_all_widgets():
+            if not node.properties.get("font_family"):
+                continue
+            if scope == SCOPE_TYPE and node.widget_type != type_name:
+                continue
+            out.append(node)
+        return out
 
     def _open_text_editor(self, pname: str, prop: dict) -> None:
         node = self.project.get_widget(self.current_id)

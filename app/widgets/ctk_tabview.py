@@ -66,6 +66,7 @@ class CTkTabviewDescriptor(WidgetDescriptor):
         # Text
         "text_color": "#dce4ee",
         "text_color_disabled": "#737373",
+        "font_family": None,
     }
 
     property_schema = [
@@ -134,6 +135,8 @@ class CTkTabviewDescriptor(WidgetDescriptor):
          "row_label": "Tab Unselected Hover"},
 
         # --- Text --------------------------------------------------------
+        {"name": "font_family", "type": "font", "label": "",
+         "group": "Text", "row_label": "Tab Font"},
         {"name": "text_color", "type": "color", "label": "",
          "group": "Text", "row_label": "Normal Text Color"},
         {"name": "text_color_disabled", "type": "color", "label": "",
@@ -144,6 +147,13 @@ class CTkTabviewDescriptor(WidgetDescriptor):
         "x", "y", "border_enabled", "tab_names", "button_enabled",
         "initial_tab", "tab_anchor", "tab_position",
     }
+    _FONT_KEYS = {"font_family"}
+    # CTkTabview's __init__ has no ``font`` kwarg — the tab labels
+    # live on an internal ``_segmented_button`` that we configure
+    # post-construction. ``None`` tells the exporter to skip the
+    # constructor font emission; ``export_state`` writes the
+    # ``_segmented_button.configure(font=...)`` line instead.
+    font_kwarg = None
 
     # (position, align) → CTk anchor value. `stretch` keeps the base
     # anchor (center / s) and is re-gridded with sticky="nsew" via
@@ -164,6 +174,7 @@ class CTkTabviewDescriptor(WidgetDescriptor):
         result = {
             k: v for k, v in properties.items()
             if k not in cls._NODE_ONLY_KEYS
+            and k not in cls._FONT_KEYS
         }
         result["state"] = (
             "normal" if properties.get("button_enabled", True)
@@ -279,6 +290,28 @@ class CTkTabviewDescriptor(WidgetDescriptor):
         return widget
 
     @classmethod
+    def _apply_tab_font(cls, widget, properties: dict) -> None:
+        """Push the cascade-resolved font onto the inner segmented
+        button so tab labels follow the project / type / widget font
+        cascade. CTk bakes the segmented button's font as a tuple
+        from its theme; we replace it with a CTkFont so the family
+        actually changes — passing a tuple would only override size.
+        """
+        from app.core.fonts import resolve_effective_family
+        family = resolve_effective_family(
+            cls.type_name, properties.get("font_family"),
+        )
+        if not family:
+            return
+        sb = getattr(widget, "_segmented_button", None)
+        if sb is None:
+            return
+        try:
+            sb.configure(font=ctk.CTkFont(family=family))
+        except Exception:
+            log_error("CTkTabviewDescriptor._apply_tab_font")
+
+    @classmethod
     def apply_state(cls, widget, properties: dict) -> None:
         """Sync the widget's tabs with the `tab_names` property.
 
@@ -317,6 +350,7 @@ class CTkTabviewDescriptor(WidgetDescriptor):
         cls._apply_tab_stretch(
             widget, properties.get("tab_anchor") == "stretch",
         )
+        cls._apply_tab_font(widget, properties)
         # CTk bug workaround: `configure(anchor=...)` only re-grids the
         # segmented button — it skips `_set_grid_canvas` and
         # `_set_grid_current_tab`, so after a top→bottom flip the
@@ -350,5 +384,16 @@ class CTkTabviewDescriptor(WidgetDescriptor):
             lines.append(
                 f'{var_name}._segmented_button.grid('
                 f'row=1, rowspan=2, column=0, sticky="nsew")',
+            )
+        # Cascade-resolved tab font lands on the inner segmented
+        # button — Tabview's __init__ doesn't take a ``font`` kwarg.
+        from app.core.fonts import resolve_effective_family
+        family = resolve_effective_family(
+            cls.type_name, properties.get("font_family"),
+        )
+        if family:
+            lines.append(
+                f"{var_name}._segmented_button.configure("
+                f"font=ctk.CTkFont(family={family!r}))",
             )
         return lines

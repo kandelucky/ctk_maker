@@ -110,17 +110,26 @@ def register_font_file(
 ) -> str | None:
     """Register a single .ttf / .otf with the running Tk interpreter.
 
-    Returns the registered family name on success, or ``None`` if the
-    file couldn't be loaded. Same path passed twice in a session is
-    a no-op — cached family is returned without reloading.
+    Returns a family name to display in the picker. Resolution order:
+    tkextrafont's reported family → PIL metadata (covers the
+    ``already loaded`` case) → file stem as a last-resort label so
+    the file at least shows up in the picker, even if Tk's actual
+    family name for it can't be recovered. Same path passed twice in
+    a session is a no-op — the cached family is returned.
     """
     path = Path(path).resolve()
     if path in _loaded_files:
-        return _loaded_files[path]
+        cached = _loaded_files[path]
+        return cached if cached else None
     if not path.exists() or path.suffix.lower() not in FONT_EXTS:
         return None
     if not _check_extrafont():
-        return None
+        # No tkextrafont — fall back to PIL / stem so the file at
+        # least appears in the picker (rendering will use Tk default
+        # because the font isn't registered with the interpreter).
+        family = _read_ttf_family(path) or path.stem
+        _loaded_files[path] = family
+        return family
     try:
         from tkextrafont import Font
         # Font(root, file=path) attaches to the given Tk root; if
@@ -131,24 +140,24 @@ def register_font_file(
             ef = Font(file=str(path))
         families = list(getattr(ef, "families", []) or [])
         family = families[0] if families else None
-        if family:
-            _loaded_files[path] = family
+        if not family:
+            # tkextrafont registered the file but didn't surface a
+            # family — try metadata, then stem.
+            family = _read_ttf_family(path) or path.stem
+        _loaded_files[path] = family
         return family
     except Exception as exc:
         # tkextrafont raises ``Fontfile already loaded`` whenever the
         # exact file path was registered earlier this session — the
         # extension keeps its own registry independent of our cache,
         # and we can hit this on Save As / project re-open. The font
-        # is in Tk; we just need its family name. Read it directly
-        # from the .ttf metadata via PIL (already a project dep).
+        # is in Tk; we just need its family name. Read it from the
+        # .ttf metadata via PIL; if PIL also fails, use the file
+        # stem so the user still sees the file in the picker.
         if "already loaded" in str(exc).lower():
-            family = _read_ttf_family(path)
-            if family:
-                _loaded_files[path] = family
-                return family
-            # Cache an empty marker so we don't keep retrying.
-            _loaded_files[path] = ""
-            return None
+            family = _read_ttf_family(path) or path.stem
+            _loaded_files[path] = family
+            return family
         log_error(f"register_font_file({path.name})")
         return None
 
@@ -259,24 +268,34 @@ def register_project_fonts(
 
 def list_project_fonts(
     project_file: str | Path | None,
+    root: tk.Misc | None = None,
 ) -> list[tuple[str, Path]]:
-    """Return ``(family_name, file_path)`` for every registered project
-    font. Files in ``assets/fonts/`` that haven't been registered yet
-    won't appear — call ``register_project_fonts`` first if a fresh
-    scan is needed.
+    """Return ``(family_name, file_path)`` for every font file in the
+    project's ``assets/fonts/`` folder. Lazily registers files that
+    landed there outside the regular ``register_project_fonts`` flow
+    (e.g. dropped in via the OS file manager between picker opens) so
+    the picker always reflects the on-disk state. Falls back to the
+    file stem when neither tkextrafont nor PIL can surface a family
+    name — the file still appears, the user can still pick it, and
+    rendering uses whatever Tk maps that string to.
     """
     if not project_file:
         return []
     fonts_dir = (
         Path(project_file).parent / ASSETS_DIR_NAME / "fonts"
-    ).resolve()
+    )
+    if not fonts_dir.exists():
+        return []
     out: list[tuple[str, Path]] = []
-    for path, family in _loaded_files.items():
-        try:
-            path.relative_to(fonts_dir)
-        except ValueError:
+    for path in sorted(fonts_dir.iterdir()):
+        if not path.is_file() or path.suffix.lower() not in FONT_EXTS:
             continue
+        resolved = path.resolve()
+        family = _loaded_files.get(resolved)
+        if not family:
+            family = register_font_file(resolved, root=root) or path.stem
         out.append((family, path))
+    # Stable, case-insensitive order.
     return sorted(out, key=lambda t: t[0].lower())
 
 
