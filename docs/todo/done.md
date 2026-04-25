@@ -6,6 +6,16 @@
 
 ## 2026-04 — Area QA passes + refactors
 
+- **v0.0.24** (2026-04-25) — Font picker UX redesign + scope literalism:
+  - **Right-click row → Remove from project.** Imported fonts (file in `assets/fonts/`) get the file deleted from disk; bare `system_fonts` references just lose their entry. Cascade defaults pointing at the removed family also clear so a stale `font_defaults["CTkButton"] = "DeletedFamily"` doesn't keep widgets pointing at a missing font.
+  - **Multi-size preview pane** between import buttons and palette list — `tk.Frame(height=110, pack_propagate=False)` keeps the dialog's overall height stable when swapping in a tall script font (the previous flow auto-grew, which felt jarring while clicking through families). Two sample sizes (13 / 24 px) render the live family. Editable text input on top — what the user types updates both rows immediately.
+  - **Layout reordered top→bottom** — Header (Import / Add system) → Preview → Palette list → "Apply to:" segmented control → Reset / Cancel / Apply. Footer + scope packed `side="bottom"` first so they can never get pushed below the visible region by an oversize palette.
+  - **Segmented scope control** — three big buttons replace the cramped radio row. Labels: "Just this widget" / "All Buttons" / "Whole project". Wired to the existing scope StringVar via a CTkSegmentedButton command.
+  - **Hierarchy footer buttons** — `grid()`-based layout (column-with-spacer): Reset (70px tertiary) on the left, Cancel (90px) + Apply (140px primary) on the right with an 8px gap. Pack-based positioning was rendering Reset / Cancel cramped on the left at the dialog's actual width; grid removed the ambiguity.
+  - **Dialog width 460 → 540** so the segmented control + the three action buttons breathe.
+  - **Cascade dialog simplified.** Picking scope = type / all with a real family used to pop a 3-option ChoiceDialog ("Only default / All widgets / Cancel") that asked the user to re-decide a question their scope choice already answered. Now: scope is interpreted literally — "All Buttons" wipes per-button overrides, "Whole project" wipes per-widget AND per-type entries. A single info-icon `messagebox.askokcancel` warns when the new font will overwrite N existing per-widget customisations; otherwise apply silently.
+  - **`tools/test_picker_buttons.py`** — throwaway debug script comparing four footer-layout strategies (pack side= / grid + spacer / place absolute / grid + width report) side-by-side. Used to settle on the grid approach above; kept in `tools/` for future layout debugging.
+
 - **v0.0.23** (2026-04-25) — Assets panel: docked tab + free-form folders + drag-and-drop:
   - **Project panel docked alongside Properties** as a sibling tab (Properties / Assets toggle in the right pane). Floating ProjectWindow (F10) stays available for users who prefer it off to the side. Tab + window both renamed to "Assets".
   - **Compact one-row header** — bold project name + dim front-truncated path on the same line, "+" menu button on the right replacing the four-button footer. Frees the tree's vertical space.

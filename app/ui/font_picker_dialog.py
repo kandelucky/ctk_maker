@@ -64,9 +64,13 @@ ROW_HOVER = "#2a2a2a"
 ROW_SELECTED = "#094771"
 DIVIDER = "#3a3a3a"
 
-DIALOG_W = 460
-DIALOG_H = 560
+DIALOG_W = 540
+DIALOG_H = 720
 PREVIEW_TEXT = "AaBb 123"
+# Sizes used by the preview pane below the palette list. Two
+# rows kept narrow on purpose — every extra row risks pushing the
+# scope radios + OK / Cancel under tall script fonts.
+PREVIEW_SIZES = (13, 24)
 
 SCOPE_WIDGET = "widget"
 SCOPE_TYPE = "type"
@@ -102,10 +106,30 @@ class FontPickerDialog(tk.Toplevel):
         self._selected_family: str | None = current
         self._row_widgets: dict[str, dict] = {}
         self._scope_var = tk.StringVar(value=SCOPE_WIDGET)
+        # ``family -> Path`` cache populated by ``_refresh`` from
+        # ``list_project_fonts``. Used by the right-click "Remove
+        # from project" path so we know which file (if any) to delete.
+        self._family_paths: dict[str, Path] = {}
+        # Editable preview text — defaults to the row sample. The
+        # entry below the palette list lets the user type real
+        # content and see it in the chosen font live.
+        self._preview_var = tk.StringVar(value=PREVIEW_TEXT)
+        self._preview_var.trace_add(
+            "write", lambda *_a: self._refresh_preview(),
+        )
+        self._preview_labels: list[tk.Label] = []
 
+        # Layout order (top → bottom): header buttons, live preview
+        # (just under the action buttons so it's the first thing
+        # the eye lands on), palette list (absorbs the slack), scope
+        # segmented control, footer with Reset / Cancel / Apply.
+        # Footer + scope pack ``side="bottom"`` so they're always
+        # visible — the list shrinks before the action row gets
+        # pushed below the visible region.
         self._build_header()
-        self._build_list()
+        self._build_preview()
         self._build_footer()
+        self._build_list()
 
         self.bind("<Escape>", lambda _e: self._on_cancel())
         self.bind("<Return>", lambda _e: self._on_ok())
@@ -147,47 +171,144 @@ class FontPickerDialog(tk.Toplevel):
         wrap = ctk.CTkScrollableFrame(
             self, fg_color=PANEL_BG, corner_radius=0,
         )
-        wrap.pack(fill="both", expand=True, padx=8, pady=(8, 4))
+        # ``side="top"`` here (after footer/preview claim bottom
+        # space) means the list takes whatever's left between header
+        # and preview — exactly the slack we want it to absorb.
+        wrap.pack(side="top", fill="both", expand=True,
+                  padx=8, pady=(8, 4))
         self._list_wrap = wrap
 
-    def _build_footer(self) -> None:
-        scope = tk.Frame(self, bg=BG)
-        scope.pack(fill="x", padx=10, pady=(4, 4))
+    def _build_preview(self) -> None:
+        """Live preview directly under the import buttons — the user
+        sees how their currently-selected family looks before
+        scrolling through the list. Fixed pixel height with
+        ``pack_propagate(False)`` so swapping in a tall script font
+        doesn't grow the dialog (the previous flow auto-resized,
+        which felt jarring while clicking through families).
+        """
+        # tk.Frame instead of CTkFrame here so pack_propagate(False)
+        # is reliably supported — CTkFrame's geometry knobs can
+        # silently restore propagation on theme reapply.
+        wrap = tk.Frame(self, bg=PANEL_BG, height=110)
+        wrap.pack(side="top", fill="x", padx=8, pady=(8, 0))
+        wrap.pack_propagate(False)
+
+        head = tk.Frame(wrap, bg=PANEL_BG)
+        head.pack(fill="x", padx=6, pady=(4, 2))
         tk.Label(
-            scope, text="Apply to:", bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 10, "bold"),
-        ).pack(side="left", padx=(0, 8))
-        for value, label in (
-            (SCOPE_WIDGET, "This widget"),
-            (SCOPE_TYPE, f"All {self.type_display}s"),
-            (SCOPE_ALL, "All in project"),
-        ):
-            tk.Radiobutton(
-                scope, text=label, variable=self._scope_var, value=value,
-                bg=BG, fg=HEADER_FG, selectcolor=BG,
-                activebackground=BG, activeforeground="#ffffff",
-                font=("Segoe UI", 10), bd=0, highlightthickness=0,
-                cursor="hand2",
-            ).pack(side="left", padx=(0, 10))
+            head, text="Preview", bg=PANEL_BG, fg=HEADER_FG,
+            font=("Segoe UI", 9, "bold"),
+        ).pack(side="left")
+        entry = tk.Entry(
+            head, textvariable=self._preview_var,
+            bg="#1e1e1e", fg="#cccccc", insertbackground="#cccccc",
+            relief="flat", bd=1, font=("Segoe UI", 10),
+            highlightthickness=1, highlightbackground="#3a3a3a",
+            highlightcolor="#3b8ed0",
+        )
+        entry.pack(side="right", fill="x", expand=True, padx=(8, 0), ipady=2)
+
+        self._preview_body = tk.Frame(wrap, bg=PANEL_BG)
+        # Body also pinned — labels grow with font size, but the
+        # body frame's fixed height contains them so neighbours
+        # don't shift.
+        self._preview_body.pack(fill="x", padx=6, pady=(2, 6))
+        for size in PREVIEW_SIZES:
+            lbl = tk.Label(
+                self._preview_body,
+                text=PREVIEW_TEXT, bg=PANEL_BG, fg="#dddddd",
+                font=("Segoe UI", size), anchor="w", justify="left",
+            )
+            lbl.pack(fill="x", pady=1)
+            self._preview_labels.append(lbl)
+
+    def _refresh_preview(self) -> None:
+        """Push the current sample text + selected family into every
+        preview label. Falls back to a UI-default font for readable
+        empty-state when nothing's selected.
+        """
+        text = self._preview_var.get() or PREVIEW_TEXT
+        family = self._selected_family
+        for lbl, size in zip(self._preview_labels, PREVIEW_SIZES):
+            font_tuple = (family, size) if family else ("Segoe UI", size)
+            try:
+                lbl.configure(text=text, font=font_tuple)
+            except tk.TclError:
+                pass
+
+    def _build_footer(self) -> None:
+        # Pack ``foot`` (Reset / Cancel / Apply) BEFORE ``scope_wrap``
+        # — both pack ``side="bottom"`` and Tk's pack manager makes
+        # earlier ``bottom`` siblings sit lowest. Visually ends up
+        # top→bottom: scope segmented → action buttons.
+        scope_wrap = tk.Frame(self, bg=BG)
+        tk.Label(
+            scope_wrap, text="Apply to:", bg=BG, fg=HEADER_FG,
+            font=("Segoe UI", 10, "bold"), anchor="w",
+        ).pack(fill="x", pady=(0, 4))
+        scope_labels = (
+            "Just this widget",
+            f"All {self.type_display}s",
+            "Whole project",
+        )
+        scope_to_value = {
+            scope_labels[0]: SCOPE_WIDGET,
+            scope_labels[1]: SCOPE_TYPE,
+            scope_labels[2]: SCOPE_ALL,
+        }
+        self._scope_segmented = ctk.CTkSegmentedButton(
+            scope_wrap, values=list(scope_labels),
+            font=("Segoe UI", 10),
+            height=32,
+            # Match the dialog frame's rounded look — sharp 4px
+            # buttons inside a softer container felt off.
+            corner_radius=10,
+            command=lambda lbl: self._scope_var.set(
+                scope_to_value.get(lbl, SCOPE_WIDGET),
+            ),
+        )
+        self._scope_segmented.pack(fill="x")
+        # Initialise the segment from the StringVar default
+        # (SCOPE_WIDGET) so the visual state matches.
+        value_to_scope = {v: k for k, v in scope_to_value.items()}
+        self._scope_segmented.set(
+            value_to_scope.get(self._scope_var.get(), scope_labels[0]),
+        )
 
         foot = tk.Frame(self, bg=BG)
-        foot.pack(fill="x", padx=10, pady=(2, 10))
-        self._ok_btn = ctk.CTkButton(
-            foot, text="OK", width=90, height=30, corner_radius=4,
-            command=self._on_ok,
+        # Pack ``foot`` first → bottommost; ``scope_wrap`` packs
+        # second → sits just above the buttons.
+        foot.pack(side="bottom", fill="x", padx=10, pady=(10, 14))
+        scope_wrap.pack(side="bottom", fill="x", padx=10, pady=(6, 4))
+        # Grid layout — explicit column placement, no pack quirks.
+        # Column 1 is a flexible spacer that absorbs the gap between
+        # Reset (left) and Cancel + Apply (right). Each button keeps
+        # its declared pixel width regardless of dialog width changes.
+        foot.grid_columnconfigure(0, weight=0)  # Reset
+        foot.grid_columnconfigure(1, weight=1)  # flexible spacer
+        foot.grid_columnconfigure(2, weight=0)  # Cancel
+        foot.grid_columnconfigure(3, weight=0)  # Apply
+        # Hierarchy: Reset (tertiary, smallest) → Cancel (secondary)
+        # → Apply (primary, widest). Visual weight matches each
+        # action's importance.
+        btn_kw = dict(
+            height=32, corner_radius=10, font=("Segoe UI", 10),
         )
-        self._ok_btn.pack(side="right")
         ctk.CTkButton(
-            foot, text="Cancel", width=90, height=30, corner_radius=4,
+            foot, text="Reset", width=70,
             fg_color="#3c3c3c", hover_color="#4a4a4a",
-            command=self._on_cancel,
-        ).pack(side="right", padx=(0, 8))
+            command=self._on_use_default, **btn_kw,
+        ).grid(row=0, column=0, sticky="w")
         ctk.CTkButton(
-            foot, text="Use default", width=110, height=30,
-            corner_radius=4,
+            foot, text="Cancel", width=90,
             fg_color="#3c3c3c", hover_color="#4a4a4a",
-            command=self._on_use_default,
-        ).pack(side="left")
+            command=self._on_cancel, **btn_kw,
+        ).grid(row=0, column=2, padx=(0, 8))
+        self._ok_btn = ctk.CTkButton(
+            foot, text="Apply", width=140,
+            command=self._on_ok, **btn_kw,
+        )
+        self._ok_btn.grid(row=0, column=3, sticky="e")
 
     def _center_on_parent(self, parent) -> None:
         try:
@@ -209,9 +330,13 @@ class FontPickerDialog(tk.Toplevel):
         registered with Tk via ``register_project_fonts``) plus
         ``project.system_fonts``. Empty list when neither path has
         entries — the picker shows an empty-state hint instead.
+        Side effect: refreshes ``self._family_paths`` so the
+        right-click "Remove" path knows which families have a
+        backing file in ``assets/fonts/``.
         """
         proj = list_project_fonts(self.project_file)
-        out: set[str] = {fam for fam, _ in proj}
+        self._family_paths = {fam: path for fam, path in proj}
+        out: set[str] = set(self._family_paths.keys())
         out.update(self.project.system_fonts or [])
         return sorted(out, key=str.lower)
 
@@ -273,6 +398,10 @@ class FontPickerDialog(tk.Toplevel):
                 "<Double-Button-1>",
                 lambda _e, f=family: self._on_double_click(f),
             )
+            w.bind(
+                "<Button-3>",
+                lambda e, f=family: self._on_row_right_click(e, f),
+            )
 
         self._row_widgets[family] = {
             "row": row, "name": name_lbl, "preview": preview_lbl,
@@ -290,6 +419,89 @@ class FontPickerDialog(tk.Toplevel):
                     w.configure(bg=bg)
                 except tk.TclError:
                     pass
+        self._refresh_preview()
+
+    # ------- row context menu (Remove from project) -------
+
+    def _on_row_right_click(self, event, family: str) -> None:
+        self._set_selected(family)
+        menu = tk.Menu(
+            self, tearoff=0,
+            bg="#2d2d30", fg=HEADER_FG,
+            activebackground="#094771", activeforeground="#ffffff",
+            relief="flat", bd=0, font=("Segoe UI", 10),
+        )
+        menu.add_command(
+            label=f"Remove '{family}' from project...",
+            command=lambda: self._remove_palette_family(family),
+        )
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _remove_palette_family(self, family: str) -> None:
+        """Drop a family from the project palette. Imported fonts
+        (have a file in ``assets/fonts/``) get the file deleted —
+        Asset panel + filesystem stay in sync. Bare references in
+        ``project.system_fonts`` just lose the entry. Picker
+        refreshes immediately; widgets that pointed at this family
+        fall back to Tk default at next render.
+        """
+        file_path = self._family_paths.get(family)
+        if not messagebox.askyesno(
+            "Remove from project",
+            f"Remove '{family}' from this project?\n\n"
+            + (
+                f"File: {file_path}\n\n"
+                "The .ttf/.otf is deleted from disk."
+                if file_path else
+                "Reference only — no file to delete.\n"
+            )
+            + "\nThis cannot be undone. Widgets that referenced "
+            "this family fall back to a default at next render.",
+            parent=self,
+            icon="warning",
+        ):
+            return
+        # Delete the file (if any) before scrubbing references so a
+        # later "still in fonts list" check doesn't see a phantom.
+        if file_path and file_path.exists():
+            try:
+                file_path.unlink()
+            except OSError:
+                log_error("font picker remove unlink")
+                messagebox.showerror(
+                    "Remove failed",
+                    f"Couldn't delete:\n{file_path}",
+                    parent=self,
+                )
+                return
+        if family in (self.project.system_fonts or []):
+            self.project.system_fonts = [
+                f for f in self.project.system_fonts if f != family
+            ]
+        # Drop cascade defaults that pointed at this family — Tk
+        # doesn't know the family anymore, so a stale entry would
+        # silently fall back to default for every widget anyway;
+        # better to clear it out so the user's intent is explicit.
+        new_defaults = {
+            k: v for k, v in self.project.font_defaults.items()
+            if v != family
+        }
+        if new_defaults != self.project.font_defaults:
+            from app.core.fonts import set_active_project_defaults
+            self.project.font_defaults = new_defaults
+            set_active_project_defaults(new_defaults)
+            self.project.event_bus.publish(
+                "font_defaults_changed", new_defaults,
+            )
+        self.project.event_bus.publish("dirty_changed", True)
+        # If the removed family was the picker's current selection,
+        # drop it so OK doesn't try to commit a deleted family.
+        if self._selected_family == family:
+            self._selected_family = None
+        self._refresh()
 
     def _on_double_click(self, family: str) -> None:
         self._selected_family = family
