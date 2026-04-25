@@ -300,7 +300,10 @@ class CommitMixin:
         project_file = getattr(self.project, "path", None)
         if not project_file:
             return  # Untitled state shouldn't be reachable.
-        dialog = ImagePickerDialog(self.winfo_toplevel(), project_file)
+        dialog = ImagePickerDialog(
+            self.winfo_toplevel(), project_file,
+            event_bus=getattr(self.project, "event_bus", None),
+        )
         dialog.wait_window()
         if dialog.result:
             self._commit_prop(pname, dialog.result)

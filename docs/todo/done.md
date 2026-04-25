@@ -6,6 +6,19 @@
 
 ## 2026-04 — Area QA passes + refactors
 
+- **v0.0.26** (2026-04-25) — Lucide Icon Picker:
+  - **`LucideIconPickerDialog`** (760×580). Layout: search bar + count, sidebar (`All` + 42 categories with counts), 6-column scrollable grid with hover + selection states, preview pane (64×64 + name + tags + tint hex entry + swatch + size dropdown), footer (Cancel / Apply). Search filters by icon name and tags across the active category (or `All`); 400-icon cap with "showing N of M — refine search" notice when "All" is unfiltered.
+  - **128×128 PNG bundle** — 24×24 source replaced with 128×128 (1943 PNGs, ~8.3 MB). Higher source ⇒ sharp output at any user-selected output size; thumbnails downscale to 28 px in the grid and 64 px in the preview via PIL `LANCZOS`.
+  - **Size dropdown in picker** — 24 / 32 / 48 / 64 / 96 / 128 px (default 64). Apply renders the tinted icon at this size from the 128 source instead of the previous fixed source size.
+  - **Default tint `#ffffff`** — picker opens white (matches the source PNGs); user re-tints via the hex entry or the swatch (opens `ColorPickerDialog`).
+  - **Project window integration** — `+ menu` and right-click `Add ▶` submenu both gain a `Lucide Icon...` entry with the `layout-list` icon, sitting above `Image...`. Smart routing — the picker's `target_dir` resolves to the right-clicked folder when present, or `assets/images/` otherwise.
+  - **Image picker integration** — `+ Lucide icon...` button next to `+ Import image...` in the picker header (dialog 420 → 480 wide). On Apply, the new file lands in `assets/images/`, the picker list refreshes and auto-selects it.
+  - **Sync fix — event_bus through Image picker.** `ImagePickerDialog.__init__` now takes an optional `event_bus`; `panel_commit._pick_image` passes `self.project.event_bus`. Both `_on_import` and `_on_pick_lucide` call `_notify_assets_changed()` so the docked Assets panel refreshes the moment a new file is created (previously the docked tree stayed stale until the property commit fired).
+  - **Standalone test harness `tools/test_icon_picker.py`** — opens a tiny CTk window with one button that launches the picker against `tools/test_output/`, then renders a 96×96 preview + path label of whatever was picked. Lets the dialog be iterated on without needing a real `.ctkproj`. Output dir + the harness file itself are gitignored.
+  - **`tools/build_lucide_categories.py` + `download-128.mjs`** — categories metadata regenerator already shipped in v0.0.25; the 128 px PNG re-render uses the existing `download.mjs` infrastructure (`sharp` + `lucide-static`) with `SIZE = 128` and `OUT_DIR = './png-icons-128'`.
+  - **Test docs `docs/tests/icon_picker.md`** — 15 manual scenarios covering each entry point, search by name and tag, category filter, click + double-click select, tint commit + invalid-input recovery, color picker integration, smart routing, sync, Cancel discards, harness.
+  - **`ctk-tint-color-picker` 0.3.2 → 0.3.3** — fixed bottom-edge clamp in `_center_on_parent`. The pre-map measurement was returning `1×1` so `y` could land below the visible screen / behind the taskbar; two-phase clamp + `after_idle` re-run + 80 px taskbar reserve. Library bump shipped to PyPI; `pip install --upgrade ctk-tint-color-picker` brings 0.3.3 into the builder.
+
 - **v0.0.25** (2026-04-25) — Assets panel polish + Lucide bundle + Support links:
   - **Sounds folder removed from defaults** — `ASSET_SUBDIRS` now `("images", "fonts")`. No point shipping an empty folder users have to delete; will re-add when audio playback ships.
   - **Properties-style header redesign** — `type_bar` (HEADER_BG #2a2a2a, height 26) with folder icon + bold project name + `square-plus` "+" button; path row below in dim text. Matches Properties panel's compact look.

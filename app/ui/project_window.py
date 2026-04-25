@@ -307,6 +307,9 @@ class ProjectPanel(ctk.CTkFrame):
         )
         self._menu_command(menu, "Folder", "folder", self._on_new_folder)
         menu.add_separator()
+        self._menu_command(
+            menu, "Lucide Icon...", "layout-list", self._on_add_lucide_icon,
+        )
         self._menu_command(menu, "Image...", "image", self._on_add_image)
         self._menu_command(menu, "Font...", "type", self._on_add_font)
         menu.add_separator()
@@ -336,6 +339,9 @@ class ProjectPanel(ctk.CTkFrame):
             bg="#2d2d30", fg=HEADER_FG,
             activebackground="#094771", activeforeground="#ffffff",
             relief="flat", bd=0, font=("Segoe UI", 10),
+        )
+        self._menu_command(
+            sub, "Lucide Icon...", "layout-list", self._on_add_lucide_icon,
         )
         self._menu_command(
             sub, "Image...", "image", self._on_add_image,
@@ -448,6 +454,26 @@ class ProjectPanel(ctk.CTkFrame):
         return
 
     # ------- actions -------
+
+    def _on_add_lucide_icon(self) -> None:
+        """Open the bundled Lucide icon picker. Saves the tinted PNG
+        into the right-clicked folder (or ``assets/images/`` by
+        default), then refreshes the tree so the new file appears.
+        """
+        path = self.path_provider()
+        if not path:
+            return
+        ensure_project_folder(Path(path).parent)
+        target_dir = self._resolve_target_dir(fallback_subdir="images")
+        if target_dir is None:
+            target_dir = assets_dir(path) / "images"
+        from app.ui.lucide_icon_picker_dialog import LucideIconPickerDialog
+        dlg = LucideIconPickerDialog(self.winfo_toplevel(), target_dir)
+        dlg.wait_window()
+        if not dlg.result:
+            return
+        self.project.event_bus.publish("dirty_changed", True)
+        self.refresh()
 
     def _on_add_image(self) -> None:
         self._add_asset(

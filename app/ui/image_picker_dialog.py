@@ -46,7 +46,7 @@ ROW_HOVER = "#2a2a2a"
 ROW_SELECTED = "#094771"
 DIVIDER = "#3a3a3a"
 
-DIALOG_W = 420
+DIALOG_W = 480
 DIALOG_H = 480
 THUMB = 40
 
@@ -54,9 +54,10 @@ IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico"}
 
 
 class ImagePickerDialog(tk.Toplevel):
-    def __init__(self, parent, project_file: str):
+    def __init__(self, parent, project_file: str, event_bus=None):
         super().__init__(parent)
         self.project_file = project_file
+        self._event_bus = event_bus
         self.result: str | None = None
 
         self.title("Select image")
@@ -91,10 +92,15 @@ class ImagePickerDialog(tk.Toplevel):
         bar = tk.Frame(self, bg=HEADER_BG)
         bar.pack(fill="x")
         ctk.CTkButton(
-            bar, text="+ Import image...", width=160, height=30,
+            bar, text="+ Import image...", width=140, height=30,
             corner_radius=4,
             command=self._on_import,
-        ).pack(side="left", padx=10, pady=10)
+        ).pack(side="left", padx=(10, 4), pady=10)
+        ctk.CTkButton(
+            bar, text="+ Lucide icon...", width=140, height=30,
+            corner_radius=4, fg_color="#3c3c3c", hover_color="#4a4a4a",
+            command=self._on_pick_lucide,
+        ).pack(side="left", padx=(0, 4), pady=10)
 
         # Hover-help icon, pinned to the right edge of the bar.
         # tk.Label needs a tk.PhotoImage; CTkImage from load_icon()
@@ -300,6 +306,37 @@ class ImagePickerDialog(tk.Toplevel):
         resolved = resolve_asset_token(token, self.project_file)
         # Refresh + auto-select the newly imported image.
         self._refresh(select=resolved if resolved else None)
+        self._notify_assets_changed()
+
+    def _on_pick_lucide(self) -> None:
+        # Bundled Lucide picker writes the tinted PNG straight into
+        # ``<project>/assets/images/`` so the result file is already
+        # part of the project — no extra copy step.
+        from app.ui.lucide_icon_picker_dialog import LucideIconPickerDialog
+        target_dir = self._images_dir()
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            log_error("image picker lucide target dir")
+            return
+        dlg = LucideIconPickerDialog(self, target_dir)
+        dlg.wait_window()
+        if not dlg.result:
+            return
+        self._refresh(select=Path(dlg.result))
+        self._notify_assets_changed()
+
+    def _notify_assets_changed(self) -> None:
+        # Wake up any docked Assets panel that's listening to the
+        # project's event bus. Without this, importing through this
+        # dialog leaves the docked tree showing stale contents until
+        # the next manual refresh.
+        if self._event_bus is None:
+            return
+        try:
+            self._event_bus.publish("dirty_changed", True)
+        except Exception:
+            pass
 
     def _on_ok(self) -> None:
         if self._selected_path is None:
