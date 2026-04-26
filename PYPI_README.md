@@ -1,31 +1,20 @@
 # CTkMaker
 
-> **Visual UI designer for [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter)** — drag and drop widgets, edit properties live, export as clean Python code.
+> **A free, professional visual UI designer for [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter)** — drag-and-drop canvas, multi-document workspace, asset system (fonts / images / 1700+ Lucide icons), enhanced and original widgets, and clean Python code export.
 
-🚧 **This is a placeholder release (v0.0.1) reserving the PyPI name.**
-The full v1.0.0 release is under active development.
+📦 **This package reserves the PyPI name.**
+The full builder lives in the source tree at [github.com/kandelucky/ctk_maker](https://github.com/kandelucky/ctk_maker) and launches via `python main.py`.
 
 ## What it is
-
-A desktop visual designer for CustomTkinter. Drop widgets onto a canvas, edit their properties live, and export the result as runnable Python code.
 
 - **Preview = Reality** — real CTk widgets rendered on the canvas, not a simulation
 - **Multi-document canvas** — one project holds a Main Window plus any number of Dialogs
 - **Layout managers** — `place` / `vbox` / `hbox` / `grid` with WYSIWYG rendering
+- **Asset system** — bundled fonts, images, and 1700+ Lucide icons addressable from any widget
 - **Full undo / redo** — every mutation tracked
-- **19+ widget descriptors** — buttons, labels, frames, entries, sliders, and more
+- **19+ widget descriptors** — buttons, labels, frames, entries, sliders, scrollable dropdowns, and more
 
-## Installation (when v1.0.0 lands)
-
-```bash
-pip install ctkmaker
-ctkmaker
-```
-
-## Current status
-
-The source code lives at [github.com/kandelucky/ctk_maker](https://github.com/kandelucky/ctk_maker).
-You can run the development version directly:
+## Run from source
 
 ```bash
 git clone https://github.com/kandelucky/ctk_maker.git

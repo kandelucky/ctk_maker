@@ -1,19 +1,19 @@
 """CTkMaker — Visual UI designer for CustomTkinter.
 
-This is a placeholder release reserving the PyPI name.
-Full v1.0.0 release coming soon.
+This package reserves the PyPI name. The full builder lives in
+``app/`` of the source tree and launches via ``python main.py``.
 
 See: https://github.com/kandelucky/ctk_maker
 """
 
-__version__ = "0.0.1"
+__version__ = "1.0.0"
 
 
 def main() -> None:
     print(
-        "CTkMaker v0.0.1 — placeholder release.\n"
-        "The full visual UI designer is under active development.\n"
-        "Follow progress at: https://github.com/kandelucky/ctk_maker"
+        "CTkMaker v1.0.0\n"
+        "Run the builder from the source tree: python main.py\n"
+        "Source + releases: https://github.com/kandelucky/ctk_maker"
     )
 
 

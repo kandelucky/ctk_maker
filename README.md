@@ -1,10 +1,10 @@
 # CTkMaker
 
-A desktop visual designer for **CustomTkinter** — drag and drop widgets onto a canvas, edit their properties live, and export the result as clean runnable Python.
+A free, professional visual UI designer for **CustomTkinter** — drag-and-drop canvas, multi-document workspace, asset system (fonts / images / 1700+ Lucide icons), enhanced and original widgets, and clean Python code export.
 
-> **Status:** v0.0.18 — full widget core stable. CTkScrollableFrame and CTkTabview are now real containers (drop children straight inside, per-tab assignment for Tabview), and CTkComboBox / CTkOptionMenu ship a Toplevel-based scrollable dropdown that matches the parent width. Widget docs are being rewritten — see [docs/todo/done.md](docs/todo/done.md) for the per-version changelog in the meantime.
+> **Status:** v1.0.0 — first stable release. Full widget core, multi-document canvas, font + image + icon asset systems, Lucide Icon Picker, Preferences + Export dialogs.
 
-[![v0.0.18](docs/history/v0.0.18.png)](docs/history/v0.0.18.png)
+[![v1.0.0](docs/history/v0.0.18.png)](docs/history/v0.0.18.png)
 
 ## Features
 
