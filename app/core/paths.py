@@ -31,12 +31,28 @@ ASSET_SUBDIRS = ("images", "fonts")
 
 
 def get_default_projects_dir() -> Path:
-    """Return ``~/Documents/CTkMaker/``. Ensures the directory exists.
+    """Return the user's preferred default project root.
 
-    Used as the default ``Save to`` location in the New Project
-    dialog. Existing legacy projects on Desktop / elsewhere keep
-    working — this path is just the suggested home for new ones.
+    Reads ``default_projects_dir`` from
+    ``~/.ctk_visual_builder/settings.json`` first (set via the
+    Preferences dialog); falls back to ``~/Documents/CTkMaker/``.
+    Ensures the chosen directory exists. If the custom path can't
+    be created (permission flip, missing parent), falls through to
+    Documents; if Documents itself isn't writable, lands on
+    ``~/CTkMaker/``.
     """
+    try:
+        from app.core.settings import load_settings
+        custom = (load_settings().get("default_projects_dir") or "").strip()
+    except Exception:
+        custom = ""
+    if custom:
+        candidate = Path(custom).expanduser()
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            return candidate
+        except OSError:
+            pass
     docs = Path.home() / "Documents"
     root = docs / PROJECTS_ROOT_NAME
     try:

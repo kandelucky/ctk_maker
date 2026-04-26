@@ -307,23 +307,12 @@ class MenuMixin:
 
         # ---- Settings ----
         settings_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
-        appearance_menu = tk.Menu(settings_menu, tearoff=0, **MENU_STYLE)
-        for mode in APPEARANCE_MODES:
-            appearance_menu.add_radiobutton(
-                label=mode,
-                variable=self._appearance_var,
-                value=mode,
-                command=self._on_appearance_change,
-            )
-        self._add_cascade(settings_menu, "Appearance Mode", appearance_menu, icon="palette")
-        settings_menu.add_separator()
         self._add_cmd(
-            settings_menu, "Reset Dismissed Warnings",
-            self._on_reset_advisories, icon="bell",
+            settings_menu, "Preferences...",
+            self._on_open_preferences, icon="settings",
+            accelerator="Ctrl+,",
         )
-        menubar.add_cascade(
-            label="Settings", menu=settings_menu, state="disabled",
-        )
+        menubar.add_cascade(label="Settings", menu=settings_menu)
 
         # ---- Help ----
         help_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
@@ -558,6 +547,41 @@ class MenuMixin:
     # Advisory-dialog reset — clears every "don't show again" setting
     # so the dismissable warnings pop up again on their triggers.
     # ------------------------------------------------------------------
+    def _on_open_preferences(self) -> None:
+        from app.ui.settings_dialog import SettingsDialog
+        SettingsDialog(
+            self,
+            on_appearance_change=self._apply_appearance,
+            on_workspace_changed=self._redraw_workspace,
+        )
+
+    def _redraw_workspace(self) -> None:
+        # Trigger a full canvas redraw so the new grid settings take
+        # effect across every document without needing a relaunch.
+        workspace = getattr(self, "workspace", None)
+        renderer = getattr(workspace, "renderer", None)
+        if renderer is not None:
+            try:
+                renderer.redraw()
+            except Exception:
+                pass
+
+    def _apply_appearance(self, mode: str) -> None:
+        # Live-apply the picked theme without waiting for OK so the
+        # SettingsDialog reflects the change as the user clicks. Mirrors
+        # what ``_on_appearance_change`` does for the radio menu (CTk
+        # wants the lowercase form, our settings store the capitalized
+        # one).
+        import customtkinter as ctk
+        try:
+            ctk.set_appearance_mode(mode.lower())
+        except Exception:
+            pass
+        try:
+            self._appearance_var.set(mode)
+        except (AttributeError, tk.TclError):
+            pass
+
     def _on_reset_advisories(self) -> None:
         from app.core.settings import load_settings, save_setting
         settings = load_settings()

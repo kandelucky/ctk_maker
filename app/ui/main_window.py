@@ -1105,21 +1105,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             )
 
     def _on_export(self) -> None:
-        path = filedialog.asksaveasfilename(
-            parent=self,
-            title="Export to Python",
-            defaultextension=".py",
-            filetypes=[("Python", "*.py"), ("All files", "*.*")],
-        )
-        if not path:
-            return
-        try:
-            export_project(self.project, path)
-        except OSError:
-            log_error("export_project")
-            messagebox.showerror("Export failed", "Could not write the file.", parent=self)
-            return
-        messagebox.showinfo("Export", f"Saved to:\n{path}", parent=self)
+        from app.ui.export_dialog import ExportDialog
+        ExportDialog(self, self.project)
 
     def _on_export_active_document(
         self, doc_id: str | None = None,
@@ -1139,30 +1126,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         doc = self.project.get_document(target_id)
         if doc is None:
             return
-        default_name = f"{doc.name or 'document'}.py"
-        path = filedialog.asksaveasfilename(
-            parent=self,
-            title=f"Export '{doc.name}' to Python",
-            defaultextension=".py",
-            initialfile=default_name,
-            filetypes=[("Python", "*.py"), ("All files", "*.*")],
-        )
-        if not path:
-            return
-        try:
-            export_project(
-                self.project, path, single_document_id=target_id,
-            )
-        except OSError:
-            log_error("export_active_document")
-            messagebox.showerror(
-                "Export failed", "Could not write the file.",
-                parent=self,
-            )
-            return
-        messagebox.showinfo(
-            "Export", f"Saved to:\n{path}", parent=self,
-        )
+        from app.ui.export_dialog import ExportDialog
+        ExportDialog(self, self.project, preselected_doc_id=target_id)
 
     # ------------------------------------------------------------------
     # Undo / redo

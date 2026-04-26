@@ -99,7 +99,11 @@ class StartupDialog(ctk.CTkToplevel):
 
         self._build_recent_buttons()
 
-        self._form = NewProjectForm(body)
+        from app.ui.settings_dialog import get_default_project_size
+        default_w, default_h = get_default_project_size()
+        self._form = NewProjectForm(
+            body, default_w=default_w, default_h=default_h,
+        )
         self._form.grid(row=0, column=2, sticky="nsew")
 
     def _build_recent_buttons(self) -> None:

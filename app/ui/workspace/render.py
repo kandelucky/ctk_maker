@@ -163,15 +163,31 @@ class Renderer:
     ) -> None:
         if zoom <= 0 or dw <= 0 or dh <= 0:
             return
-        style = doc.window_properties.get("grid_style", "dots")
+        # Global Preferences overrides win over per-document Window
+        # Settings — set the grid once in Settings → Workspace and it
+        # applies to every document in every project. Falls back to
+        # the doc's own properties when settings.json is silent.
+        try:
+            from app.core.settings import load_settings
+            global_grid = load_settings()
+        except Exception:
+            global_grid = {}
+        style = (
+            global_grid.get("grid_style")
+            or doc.window_properties.get("grid_style", "dots")
+        )
         if style == "none":
             return
-        color = doc.window_properties.get("grid_color", GRID_DOT_COLOR)
+        color = (
+            global_grid.get("grid_color")
+            or doc.window_properties.get("grid_color", GRID_DOT_COLOR)
+        )
         if not (isinstance(color, str) and color.startswith("#")):
             color = GRID_DOT_COLOR
         try:
             logical_spacing = int(
-                doc.window_properties.get("grid_spacing", GRID_SPACING),
+                global_grid.get("grid_spacing")
+                or doc.window_properties.get("grid_spacing", GRID_SPACING),
             )
         except (TypeError, ValueError):
             logical_spacing = GRID_SPACING
