@@ -20,6 +20,7 @@ _TYPE_ICON_NAMES = {
     "CTkTabview": "layout-panel-top",
     "CTkProgressBar": "loader",
     "Image": "image",
+    "Shape": "square",
 }
 
 

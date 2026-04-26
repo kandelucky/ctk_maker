@@ -16,10 +16,10 @@ class WindowDescriptor(WidgetDescriptor):
     display_name = "Window"
     is_container = False
 
-    # Window is a pure absolute-positioning surface — Qt Designer
-    # applies layouts to inner containers (QWidget / QGroupBox),
-    # never to the top-level window, and we follow the same rule.
-    # Users get alignment tools on the canvas (Phase 7) instead.
+    # Window is a pure absolute-positioning surface — layouts apply
+    # to inner containers (Frame, ScrollableFrame, Tabview), never
+    # to the top-level window. Users get alignment tools on the
+    # canvas (Phase 7) instead.
     default_properties = {
         **DEFAULT_WINDOW_PROPERTIES,
         "width": 800,

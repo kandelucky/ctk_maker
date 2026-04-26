@@ -47,7 +47,11 @@ ABOUT_TEXT = (
     "  • ctk-tint-color-picker"
 )
 
-GITHUB_DOCS_URL = "https://github.com/kandelucky/ctk_maker/blob/main/docs/widgets/README.md"
+WIKI_BASE_URL = "https://github.com/kandelucky/ctk_maker/wiki"
+WIKI_USER_GUIDE_URL = f"{WIKI_BASE_URL}/User-Guide"
+WIKI_WIDGETS_URL = f"{WIKI_BASE_URL}/Widgets"
+WIKI_SHORTCUTS_URL = f"{WIKI_BASE_URL}/Keyboard-Shortcuts"
+GITHUB_ISSUES_URL = "https://github.com/kandelucky/ctk_maker/issues"
 
 
 class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
@@ -64,15 +68,33 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
     """
     def __init__(self):
         super().__init__()
+        # Set the default window icon BEFORE any Toplevels (dialogs,
+        # floating panels, palette popups) are constructed below — Tk
+        # only inherits ``default=`` onto Toplevels created AFTER this
+        # call, so a late hookup leaves the docked panels using the
+        # plain Tk feather instead of our logo.
+        try:
+            _assets = Path(__file__).resolve().parents[2] / "app" / "assets"
+            _ico = _assets / "icon.ico"
+            _png = _assets / "icon.png"
+            if sys.platform == "win32" and _ico.exists():
+                self.iconbitmap(default=str(_ico))
+            elif _png.exists():
+                self.iconphoto(
+                    True, tk.PhotoImage(file=str(_png), master=self),
+                )
+        except Exception:
+            pass
         self.title("CTkMaker")
         self.minsize(900, 600)
         self._set_centered_geometry(1280, 800)
         self.configure(fg_color="#252526")
 
-        # Reconfigure every named Tk font to Segoe UI so Georgian (and
-        # other non-Latin scripts) renders instead of "?" placeholders.
-        # Empty-family tuples like `font=("", 11)` resolve through these
-        # named fonts, so this single change covers most call sites.
+        # Reconfigure every named Tk font to Segoe UI so non-Latin
+        # scripts (Cyrillic, Greek, Arabic, CJK, ...) render instead of
+        # "?" placeholders. Empty-family tuples like ``font=("", 11)``
+        # resolve through these named fonts, so this single change
+        # covers most call sites.
         if sys.platform == "win32":
             for _font_name in (
                 "TkDefaultFont", "TkTextFont", "TkFixedFont",
@@ -85,10 +107,10 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                     pass
         self.option_add("*Font", "{Segoe UI} 11")
 
-        # Non-Latin keyboard layouts (Georgian, Russian, ...) remap the
-        # V/C/X/A keysyms, so tk's default <Control-v> etc. never fire
-        # and clipboard shortcuts break. Fall back to the hardware
-        # keycode (Windows VK) and emit the corresponding virtual event.
+        # Non-Latin keyboard layouts remap the V/C/X/A keysyms, so
+        # tk's default <Control-v> etc. never fire and clipboard
+        # shortcuts break. Fall back to the hardware keycode (Windows
+        # VK) and emit the corresponding virtual event.
         self.bind_all("<Control-KeyPress>", self._on_control_keypress)
 
         self.project = Project()
@@ -951,15 +973,33 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         ctk.set_appearance_mode(mode.lower())
         save_setting("appearance_mode", mode)
 
-    def _on_widget_docs(self) -> None:
+    def _open_url(self, url: str) -> None:
         try:
-            webbrowser.open(GITHUB_DOCS_URL)
+            webbrowser.open(url)
         except Exception:
-            log_error("widget docs open")
+            log_error(f"open url {url}")
+
+    def _on_widget_docs(self) -> None:
+        # Help → Documentation entry — points at the wiki landing page
+        # so users can navigate to whichever section they need.
+        self._open_url(WIKI_BASE_URL)
+
+    def _on_user_guide(self) -> None:
+        self._open_url(WIKI_USER_GUIDE_URL)
+
+    def _on_widget_catalog(self) -> None:
+        self._open_url(WIKI_WIDGETS_URL)
+
+    def _on_keyboard_shortcuts(self) -> None:
+        self._open_url(WIKI_SHORTCUTS_URL)
+
+    def _on_report_bug(self) -> None:
+        self._open_url(GITHUB_ISSUES_URL)
 
     def _on_about(self) -> None:
         from app.ui.dialogs import AboutDialog
-        AboutDialog(self, app_version="v0.0.24")
+        from app import __version__ as app_version
+        AboutDialog(self, app_version=f"v{app_version}")
 
     def _on_inspect_widget(self) -> None:
         # Reuse a single Toplevel — clicking the menu while it's open

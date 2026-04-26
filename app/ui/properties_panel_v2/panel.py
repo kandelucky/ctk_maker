@@ -226,14 +226,33 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
 
     def _open_widget_docs(self) -> None:
         # Best-effort: open the widget's wiki page if we have a selection.
+        # Falls back to the display name for descriptors whose
+        # ``type_name`` is a private marker (e.g. ``__window__``) so
+        # the URL stays human-readable. CTkFrame routes to the
+        # layout-specific page when the node carries ``layout_type``
+        # vbox / hbox / grid — those have dedicated wiki pages.
         import webbrowser
         descriptor = self._current_descriptor()
         if descriptor is None:
             return
-        url = (
-            "https://github.com/kandelucky/ctk_maker/"
-            f"wiki/{descriptor.type_name}"
-        )
+        page = descriptor.type_name
+        if not page or page.startswith("__"):
+            page = (
+                getattr(descriptor, "display_name", None) or "Home"
+            )
+        if page == "CTkFrame" and self.current_id is not None:
+            node = self.project.get_widget(self.current_id)
+            layout = (
+                node.properties.get("layout_type") if node else None
+            )
+            page = {
+                "vbox": "Vertical-Layout",
+                "hbox": "Horizontal-Layout",
+                "grid": "Grid-Layout",
+            }.get(layout, page)
+        # Wiki page slugs use hyphens for spaces.
+        page = page.replace(" ", "-")
+        url = f"https://github.com/kandelucky/ctk_maker/wiki/{page}"
         try:
             webbrowser.open(url)
         except Exception:

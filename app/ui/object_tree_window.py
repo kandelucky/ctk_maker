@@ -1,4 +1,4 @@
-"""Object Tree inspector — Qt Designer-style hierarchical widget list.
+"""Object Tree inspector — hierarchical widget list.
 
 A floating Toplevel that shows the entire project tree with each
 widget's display name, type, short ID, and sibling layer index.
@@ -196,7 +196,7 @@ class ObjectTreePanel(ctk.CTkFrame):
         self.tree.bind("<Control-C>", self._on_copy_shortcut)
         self.tree.bind("<Control-v>", self._on_paste_shortcut)
         self.tree.bind("<Control-V>", self._on_paste_shortcut)
-        # Non-Latin layout fallback (Georgian, Russian, ...): MainWindow's
+        # Non-Latin layout fallback: MainWindow's
         # bind_all("<Control-KeyPress>") routes by hardware keycode and
         # emits <<Copy>>/<<Paste>> virtual events on the focused widget
         # — when the tree has focus, that's the tree.

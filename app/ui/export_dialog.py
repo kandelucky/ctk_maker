@@ -31,7 +31,7 @@ from app.io.code_exporter import export_project
 from app.ui.icons import load_icon
 
 DIALOG_W = 560
-DIALOG_H = 360
+DIALOG_H = 410
 
 PANEL_BG = "#252526"
 SUBTITLE_FG = "#888888"
@@ -98,6 +98,9 @@ class ExportDialog(ctk.CTkToplevel):
         self._preview_var = tk.StringVar()
         self._open_editor_var = tk.BooleanVar(value=False)
         self._run_preview_var = tk.BooleanVar(value=False)
+        self._as_zip_var = tk.BooleanVar(value=False)
+        self._open_editor_cb: ctk.CTkCheckBox | None = None
+        self._run_preview_cb: ctk.CTkCheckBox | None = None
         self._user_edited_name = False
 
         self._build()
@@ -119,6 +122,9 @@ class ExportDialog(ctk.CTkToplevel):
         )
         self._dir_var.trace_add(
             "write", lambda *_: self._refresh_preview(),
+        )
+        self._as_zip_var.trace_add(
+            "write", lambda *_: self._on_zip_toggle(),
         )
 
         self.bind("<Return>", lambda _e: self._on_export())
@@ -166,6 +172,8 @@ class ExportDialog(ctk.CTkToplevel):
         self._build_preview_label()
         self._add_separator()
         self._add_row("Scope", self._build_scope_row)
+        self._add_separator()
+        self._add_row("Format", self._build_format_checkbox)
         self._add_separator()
         self._add_row("After", self._build_after_checkbox)
         # Sub-hint pinned under the After row, indented past the
@@ -248,27 +256,49 @@ class ExportDialog(ctk.CTkToplevel):
             font=("Segoe UI", 9, "italic"),
         ).pack(side="left", padx=(10, 0))
 
+    def _build_format_checkbox(self, row) -> None:
+        # ZIP output bundles the .py + assets/ + helper modules into
+        # one archive — convenient for sharing the export by email or
+        # chat. Toggling it disables the After checkboxes (editor /
+        # preview don't apply to a .zip).
+        ctk.CTkCheckBox(
+            row, text="Export as ZIP archive",
+            variable=self._as_zip_var,
+            checkbox_width=18, checkbox_height=18,
+            font=("Segoe UI", 11),
+            text_color=FIELD_FG,
+            fg_color="#0e639c", hover_color="#1177bb",
+        ).pack(side="left")
+        tk.Label(
+            row,
+            text="Python code + assets bundled into one .zip — easy to share",
+            bg=PANEL_BG, fg=PREVIEW_FG,
+            font=("Segoe UI", 9, "italic"),
+        ).pack(side="left", padx=(10, 0))
+
     def _build_after_checkbox(self, row) -> None:
         # Two independent toggles. "Open in editor" routes through the
         # OS edit verb (IDLE / VSCode / Notepad++) — for code review.
         # "Run preview" launches the exported .py exactly like Preview
         # ▶ does — for verifying the result visually.
-        ctk.CTkCheckBox(
+        self._open_editor_cb = ctk.CTkCheckBox(
             row, text="Open in editor",
             variable=self._open_editor_var,
             checkbox_width=18, checkbox_height=18,
             font=("Segoe UI", 11),
             text_color=FIELD_FG,
             fg_color="#0e639c", hover_color="#1177bb",
-        ).pack(side="left")
-        ctk.CTkCheckBox(
+        )
+        self._open_editor_cb.pack(side="left")
+        self._run_preview_cb = ctk.CTkCheckBox(
             row, text="Run preview",
             variable=self._run_preview_var,
             checkbox_width=18, checkbox_height=18,
             font=("Segoe UI", 11),
             text_color=FIELD_FG,
             fg_color="#0e639c", hover_color="#1177bb",
-        ).pack(side="left", padx=(20, 0))
+        )
+        self._run_preview_cb.pack(side="left", padx=(20, 0))
 
     def _build_footer(self) -> None:
         footer = ctk.CTkFrame(self, fg_color="transparent")
@@ -315,13 +345,17 @@ class ExportDialog(ctk.CTkToplevel):
         directory = self._dir_var.get().strip()
         if not name or not directory:
             return None
-        # Strip a redundant .py the user might've typed — we always
-        # add it back in ``_on_export``.
-        if name.lower().endswith(".py"):
+        # Strip a redundant extension the user might've typed — we
+        # always add the right one back below based on the ZIP toggle.
+        lowered = name.lower()
+        if lowered.endswith(".py"):
             name = name[:-3]
+        elif lowered.endswith(".zip"):
+            name = name[:-4]
         if not name:
             return None
-        return Path(directory) / f"{name}.py"
+        ext = ".zip" if self._as_zip_var.get() else ".py"
+        return Path(directory) / f"{name}{ext}"
 
     def _on_scope_change(self) -> None:
         # Only refresh the name when the user hasn't typed a custom
@@ -354,6 +388,21 @@ class ExportDialog(ctk.CTkToplevel):
         if len(display) > max_len:
             display = "..." + display[-(max_len - 3):]
         self._preview_var.set(f"→ {display}")
+
+    def _on_zip_toggle(self) -> None:
+        # ZIP output: editor + preview don't apply to an archive, so
+        # disable both checkboxes (also force them off so a stale
+        # checked state doesn't survive when the user toggles ZIP back
+        # off and on). Refresh the preview so the path extension flips.
+        is_zip = self._as_zip_var.get()
+        new_state = "disabled" if is_zip else "normal"
+        if is_zip:
+            self._open_editor_var.set(False)
+            self._run_preview_var.set(False)
+        for cb in (self._open_editor_cb, self._run_preview_cb):
+            if cb is not None:
+                cb.configure(state=new_state)
+        self._refresh_preview()
 
     def _on_browse_folder(self) -> None:
         current = self._dir_var.get().strip()
@@ -397,6 +446,7 @@ class ExportDialog(ctk.CTkToplevel):
             export_project(
                 self.project, str(target),
                 single_document_id=single_id,
+                as_zip=self._as_zip_var.get(),
             )
         except OSError as exc:
             log_error("export dialog export_project")

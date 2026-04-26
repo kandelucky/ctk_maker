@@ -229,10 +229,72 @@ class ImagePickerDialog(tk.Toplevel):
                 "<Double-Button-1>",
                 lambda _e, p=path: self._on_double_click(p),
             )
+            w.bind(
+                "<Button-3>",
+                lambda e, p=path: self._on_row_right_click(e, p),
+            )
 
         self._row_widgets[str(path)] = {
             "row": row, "thumb": thumb_lbl, "name": name_lbl,
         }
+
+    # ------- row context menu (Remove from project) -------
+
+    def _on_row_right_click(self, event, path: Path) -> None:
+        self._set_selected(path)
+        menu = tk.Menu(
+            self, tearoff=0,
+            bg="#2d2d30", fg="#cccccc",
+            activebackground="#094771", activeforeground="#ffffff",
+            relief="flat", bd=0, font=("Segoe UI", 10),
+        )
+        menu.add_command(
+            label=f"Remove '{path.name}' from project...",
+            command=lambda: self._remove_image(path),
+        )
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _remove_image(self, path: Path) -> None:
+        """Delete an image from ``assets/images/``. Widgets that still
+        reference the file render a missing-image placeholder at next
+        re-paint — the user is responsible for swapping in another
+        image afterwards. Save layer turns dangling tokens into broken
+        paths the same way fonts handle a removed family.
+        """
+        if not messagebox.askyesno(
+            "Remove from project",
+            f"Remove '{path.name}' from this project?\n\n"
+            f"File: {path}\n\n"
+            "The image file is deleted from disk. This cannot be "
+            "undone. Widgets that referenced this image will render a "
+            "broken-image placeholder at next paint.",
+            parent=self,
+            icon="warning",
+        ):
+            return
+        try:
+            if path.exists():
+                path.unlink()
+        except OSError:
+            log_error("image picker remove unlink")
+            messagebox.showerror(
+                "Remove failed",
+                f"Couldn't delete:\n{path}",
+                parent=self,
+            )
+            return
+        # Drop selection if we just removed the picked image so OK
+        # doesn't try to commit a deleted file.
+        if self._selected_path == path:
+            self._selected_path = None
+        # Drop the cached thumbnail so a future reimport with the same
+        # filename gets a fresh PhotoImage instead of the dead handle.
+        self._thumb_cache.pop(str(path), None)
+        self._notify_assets_changed()
+        self._refresh()
 
     def _thumb_for(self, path: Path) -> tk.PhotoImage | None:
         # Cache thumbnails per session — ttk treeview-style preview.

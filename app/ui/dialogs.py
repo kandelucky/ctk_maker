@@ -387,8 +387,9 @@ class AboutDialog(tk.Toplevel):
         ).pack(**pad, pady=(2, 0))
         tk.Label(
             self,
-            text="Drag-and-drop designer for CustomTkinter\nthat exports clean Python code.",
-            bg=_ABT_BG, fg=_ABT_DIM, font=("Segoe UI", 10), justify="center",
+            text="Design CustomTkinter, visually — for free.",
+            bg=_ABT_BG, fg=_ABT_DIM, font=("Segoe UI", 10),
+            justify="center",
         ).pack(padx=24, pady=(10, 0))
 
         tk.Frame(self, bg=_ABT_SEP, height=1).pack(fill="x", padx=24, pady=12)

@@ -1,4 +1,4 @@
-"""Top toolbar — Qt Designer-style icon-only buttons for quick access.
+"""Top toolbar — icon-only buttons for quick access.
 
 Lives between the menu bar and the three-panel paned window in
 MainWindow. Buttons carry a Lucide icon only (no text label), grouped

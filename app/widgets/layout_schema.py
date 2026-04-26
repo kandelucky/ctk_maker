@@ -6,11 +6,11 @@ A container widget (Frame, Window, ScrollableFrame, …) carries a
 exporter through the matching geometry manager, and the Properties
 panel shows the matching child-layout rows on every selected child.
 
-Qt Designer split QBoxLayout into QVBoxLayout + QHBoxLayout for a
-reason — 95% of real layouts pick one direction and stick with it,
-and a per-child ``pack_side`` row created more confusion than
-flexibility. We mirror that split: ``vbox`` hardcodes ``side="top"``
-and ``hbox`` hardcodes ``side="left"`` at export time.
+``vbox`` and ``hbox`` are split rather than fused into one
+direction-aware container — 95% of real layouts pick one direction
+and stick with it, and a per-child ``pack_side`` row created more
+confusion than flexibility. ``vbox`` hardcodes ``side="top"`` and
+``hbox`` hardcodes ``side="left"`` at export time.
 
 The properties panel reads ``LAYOUT_TYPE_ROW`` directly when it
 builds a container's schema, and calls ``child_layout_schema``
@@ -217,9 +217,9 @@ MANAGED_LAYOUT_TYPES = ("vbox", "hbox", "grid")
 def is_layout_container(properties: dict) -> bool:
     """True when the widget's own ``layout_type`` is one of the
     managed layouts (``vbox`` / ``hbox`` / ``grid``). Used to block
-    layout-in-layout nesting at drop time — Qt Designer allows it
-    but our rendering of nested grids on canvas is fragile (see
-    backlog) so we disallow it until it's worth the engineering.
+    layout-in-layout nesting at drop time — our rendering of nested
+    grids on canvas is fragile (see backlog) so we disallow it until
+    it's worth the engineering.
     """
     return normalise_layout_type(
         properties.get("layout_type", "place"),

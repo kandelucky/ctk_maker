@@ -316,8 +316,28 @@ class MenuMixin:
 
         # ---- Help ----
         help_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
-        self._add_cmd(help_menu, "Documentation", self._on_widget_docs,
-                      icon="book-open", accelerator="Ctrl+Shift+I")
+        self._add_cmd(
+            help_menu, "Documentation", self._on_widget_docs,
+            icon="book-open", accelerator="Ctrl+Shift+I",
+        )
+        help_menu.add_separator()
+        self._add_cmd(
+            help_menu, "User Guide", self._on_user_guide,
+            icon="book-open",
+        )
+        self._add_cmd(
+            help_menu, "Widgets", self._on_widget_catalog,
+            icon="layout-list",
+        )
+        self._add_cmd(
+            help_menu, "Keyboard Shortcuts", self._on_keyboard_shortcuts,
+            icon="square-arrow-out-up-right",
+        )
+        help_menu.add_separator()
+        self._add_cmd(
+            help_menu, "Report a Bug", self._on_report_bug,
+            icon="bell",
+        )
         help_menu.add_separator()
         self._add_cmd(help_menu, "About...", self._on_about, icon="info")
         menubar.add_cascade(label="Help", menu=help_menu)

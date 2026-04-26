@@ -5,7 +5,7 @@ A modal Toplevel with a `tk.Text` editor. Features:
     - Undo / redo (Ctrl+Z / Ctrl+Y + toolbar icon buttons)
     - Cut / Copy / Paste / Select All (Ctrl+X / C / V / A)
     - Right-click context menu
-    - Georgian keyboard layout fallback (routes Ctrl shortcuts by
+    - Non-Latin keyboard layout fallback (routes Ctrl shortcuts by
       hardware keycode)
 
 Result contract:

@@ -1,120 +1,28 @@
 # CTkMaker
 
-A free, professional visual UI designer for **CustomTkinter** — drag-and-drop canvas, multi-document workspace, asset system (fonts / images / 1700+ Lucide icons), enhanced and original widgets, and clean Python code export.
+Drag-and-drop visual designer for **CustomTkinter** — design Python GUIs without writing layout code by hand.
 
-> **Status:** v1.0.0 — first stable release. Full widget core, multi-document canvas, font + image + icon asset systems, Lucide Icon Picker, Preferences + Export dialogs.
+> **v1.0.0** — first stable release. Free and open source.
+>
+> ⚠️ **Tested on Windows only.** macOS and Linux are not verified for this release — feedback and contributions welcome.
 
-[![v1.0.0](docs/history/v0.0.18.png)](docs/history/v0.0.18.png)
+[![CTkMaker canvas](docs/history/v0.0.18.png)](docs/history/v0.0.18.png)
 
-## Features
+## What it does
 
-### Canvas + editing
-- Real CTk widgets rendered on a tk Canvas (preview = reality)
-- Drag to move, resize via 8 handles, arrow-key nudge (1 px / 10 px with Shift)
-- Nested containers — drop widgets inside `CTkFrame`, `CTkScrollableFrame`, or any tab of a `CTkTabview`
-- Reparent by dragging a widget from one container to another, including across documents
-- Multi-select from the Object Tree with sync'd workspace highlighting
-- Zoom controls + dot grid, hand-tool pan, middle-mouse pan
+- **Visual canvas** — real CTk widgets on a zoomable workspace. What you see is what you get. Multi-document: main window + dialogs in one project.
+- **Widgets** — all 19 CustomTkinter widgets (Button, Entry, Slider, Switch, ProgressBar, Frame, ScrollableFrame, Tabview, Image, ComboBox, OptionMenu, …) with richer property editing than raw CTk: drag-scrub numbers, paired font family + size, multiline text overlays, segmented value editor, scrollable dropdown for ComboBox / OptionMenu, color swatches with eyedropper. Open **Tools → Inspect CTk Widget** to see every property side-by-side — native CTk parameters vs builder-added helpers.
+- **Layout managers** — `place`, `vbox`, `hbox`, `grid` rendered with the actual Tk pack/grid managers. Drop into cells, drag to reparent, even across documents.
+- **Asset system** — fonts, images, and 1700+ Lucide icons managed inside the project folder. Tinted PNGs, system-font auto-import, portable references.
+- **Clean code export** — one runnable Python file per project. Optional `.zip` bundle (Python code + assets) for sharing.
 
-### Multi-document canvas
-- One `.ctkproj` holds a Main Window plus any number of Dialogs, all visible on the same canvas
-- Per-document chrome (title bar, settings, close) with drag-to-move, active highlight, stacking when forms overlap
-- `+ Add Dialog` on the workspace toolbar with preset picker (Alert / Compact / Medium / Settings / Wizard / Same as Main)
-- Smart widget masking — widgets behind another form are hidden so the active form reads cleanly
-- Cross-document widget drag
+## Screenshots
 
-### Layout managers
-- Every container carries a `layout_type`: `place` / `vbox` / `hbox` / `grid`
-- `vbox` / `hbox` render children through real `pack()` on canvas
-- `grid` renders children in real cells with drag-to-cell snap, palette-drop targeting, and auto-next-free-cell assignment
-- Child layout controls collapse to a single `stretch` (fixed / fill / grow) or `grid_sticky`
-- Canvas preview and exported runtime always match
+<!-- screenshot: canvas + properties panel + object tree -->
+<!-- screenshot: Lucide icon picker with tint -->
+<!-- screenshot: Preferences dialog -->
 
-### Window Settings
-- Title, size, `fg_color` live preview, resizable, frameless
-- Builder Grid: style (`none / dots / lines`), colour, spacing — design-time only
-- Project name → Main Window title (Save As renames both)
-
-### Properties panel
-- Grouped sections with paired rows (X+Y, W+H, etc.)
-- Modular editors: number, color, boolean, multiline, anchor, compound, enum, image, orientation, segment values
-- Drag-scrub on number rows (Photoshop-style), Alt = fine-scrub
-- Live color picker with eyedropper
-
-### Full Undo / Redo
-- **History panel** (`F9`) — live-updating stack view
-- **Edit menu** with smart enable/disable
-- Every mutation tracked: add, delete, move, resize, rename, paste, duplicate, z-order, reparent, visibility, lock
-- Rapid sequences collapse into single undo steps
-
-### Project lifecycle
-- `.ctkproj` save / load (JSON, versioned)
-- Recent files menu
-- Code export to runnable Python
-- Preview button (`Ctrl+R`) — spawns the exported file in a subprocess
-- Dirty tracking + unsaved-changes prompt
-
-### Inspectors
-- **Object Tree** (`F8`) — hierarchical widget list with visibility/lock icons, search + filter, drag-to-reparent, multi-select
-- **History** (`F9`) — undo / redo stack
-- **Properties panel** — per-widget editors
-- **Tools → Inspect CTk Widget…** — side-by-side comparison of every palette widget against the actual CTk constructor signature, flagging exposed / CTk-only / builder-helper rows
-
-### Keyboard shortcuts
-
-All shortcuts work with Latin and non-Latin keyboard layouts.
-
-| Shortcut | Action |
-|---|---|
-| `Ctrl+N` | New project (dialog) |
-| `Ctrl+O` | Open project |
-| `Ctrl+S` | Save |
-| `Ctrl+Shift+S` | Save As |
-| `Ctrl+Q` | Quit |
-| `Ctrl+Z` | Undo |
-| `Ctrl+Y` | Redo |
-| `Ctrl+C` | Copy selected |
-| `Ctrl+V` | Paste |
-| `Ctrl+X` | Cut |
-| `Ctrl+D` | Duplicate |
-| `Ctrl+I` | Rename selected |
-| `Ctrl+A` | Select all (active document) |
-| `Delete` | Delete selected |
-| `Arrow keys` | Nudge 1 px |
-| `Shift+Arrow` | Nudge 10 px |
-| `Ctrl+R` | Preview whole project |
-| `Ctrl+P` | Preview active dialog |
-| `Ctrl+M` | Add Dialog |
-| `Ctrl+Shift+I` | Documentation |
-| `F8` | Toggle Object Tree (floating) |
-| `F9` | Toggle History (floating) |
-| `F10` | Toggle Project (floating) |
-| `Escape` | Deselect |
-
-### Mouse actions
-
-| Action | Effect |
-|---|---|
-| Middle-mouse drag | Pan canvas |
-| `Ctrl+Wheel` | Zoom in / out |
-| Click | Select widget |
-| `Ctrl`+click | Toggle widget in selection |
-| Right-click | Context menu |
-
-### Run Python Script
-- File menu + toolbar entry (`tv-minimal-play` icon) launches any `.py` / `.pyw` as a subprocess — quick way to test exported builds without leaving the builder. Last-used directory persists.
-
-### Widgets (19 palette entries)
-12 leaf widgets — `CTkButton`, `CTkLabel`, `CTkEntry`, `CTkTextbox`, `CTkCheckBox`, `CTkRadioButton`, `CTkSwitch`, `CTkSegmentedButton`, `CTkSlider`, `CTkProgressBar`, `CTkComboBox`, `CTkOptionMenu` — plus 4 layout-preset Frames (`place` / `vbox` / `hbox` / `grid`), 2 nested-children containers (`CTkScrollableFrame`, `CTkTabview`), and an `Image` composite (`CTkLabel + CTkImage`).
-
-## Tech stack
-
-- **Python 3.12+** (tested on 3.14)
-- **CustomTkinter** 5.2.2+
-- **Pillow** (icon tinting)
-- **ctk-tint-color-picker** (color picker dialog)
-
-## Install
+## Quick start
 
 ```bash
 git clone https://github.com/kandelucky/ctk_maker.git
@@ -125,47 +33,28 @@ python main.py
 
 ## Documentation
 
-Widget documentation is being rewritten. The [per-version changelog](docs/todo/done.md) is the most up-to-date reference until the new docs land.
+Full docs live in the [Wiki](https://github.com/kandelucky/ctk_maker/wiki):
 
-## Roadmap
+- [User Guide](https://github.com/kandelucky/ctk_maker/wiki/User-Guide) — workflow walkthrough
+- [Widgets](https://github.com/kandelucky/ctk_maker/wiki/Widgets) — every supported widget + properties
+- [Keyboard Shortcuts](https://github.com/kandelucky/ctk_maker/wiki/Keyboard-Shortcuts) — full reference
 
-### Done
-- [x] Three-panel layout + toolbar
-- [x] Drag to move / resize / arrow nudge
-- [x] Widget palette with drag + click to add
-- [x] Properties panel (Treeview-based, modular editors, drag-scrub)
-- [x] Object Tree inspector with hierarchy, drag-to-reparent, multi-select
-- [x] Save / Load + recent files
-- [x] Code export to runnable Python
-- [x] Live preview (`Ctrl+R`)
-- [x] All 19 widget descriptors (12 leaf + 4 frame variants + 2 containers + Image)
-- [x] Full Undo / Redo with History panel
-- [x] Copy / Paste / Duplicate / Bring-to-Front / Send-to-Back
-- [x] Reparent via drag — including across documents
-- [x] Visibility / Lock toggles
-- [x] Light / Dark theme toggle
-- [x] Window Settings — title, size, fg_color, resizable, frameless, builder grid
-- [x] Multi-document canvas — Main Window + N Dialogs per project
-- [x] Layout managers — `place` / `vbox` / `hbox` / `grid` with WYSIWYG canvas rendering
-- [x] Grid drag-to-cell + cursor-cell snap + auto-next-free-cell assignment
-- [x] **Select / Edit tool split** — Edit mode shows resize handles and rebuilds the Properties panel on every selection; Select mode stays lightweight (chrome only) for fast pick-and-move work
-- [x] **Multi-select** — `Ctrl`+click toggles a widget in / out of the selection; click-and-drag any selected widget moves the whole group (same delta for every place-managed widget, including across documents)
-- [x] **Unity-style drill-down selection** — the first click on a nested hierarchy lands on the outermost container, subsequent clicks descend one level; sibling clicks inside an already-entered container select directly
-- [x] **Drag safety** — drops outside a document are rejected with red-tinted ghost feedback; container children extract-only (dropping one elsewhere hops to the source document's root at the cursor, not to another container)
-- [x] **Inspectors & Dialogs (Area 8)** — Object Tree + History panels docked, Form menu redesign, About dialog, per-dialog Preview, 7 keyboard shortcuts
-- [x] **CTkScrollableFrame + CTkTabview as real containers** — drop children directly inside, per-tab `parent_slot` for Tabview (drag / reparent / undo all preserve it), Tab Bar Position + Align controls
-- [x] **Scrollable dropdown popup** for `CTkComboBox` + `CTkOptionMenu` — Toplevel-based popup that matches the parent width, scrolls past `max_visible` items, configurable border / radius / item align / offset; OptionMenu also gains a two-click selection model in the builder
+## Tech stack
 
-### Next
-- [ ] Portable assets — package fonts / icons / images alongside `.ctkproj`
-- [ ] Alignment tools — align left/right/center + distribute
-- [ ] Marquee selection, snap-to-grid, alignment guides, asset manager
-- [ ] Custom user widgets, variables panel, event handlers, templates, plugin system
-- [ ] Distribution — PyInstaller bundles, Windows + macOS installers, auto-updater
+- **Python 3.12+** (tested on 3.14)
+- **CustomTkinter** 5.2.2+
+- **Pillow**, **tkextrafont**, **ctk-tint-color-picker**
+
+## What's next
+
+- Alignment tools, marquee selection, snap-to-guides
+- Variables panel + event handlers
+- Custom user widgets + plugin system
+- Distribution: PyInstaller bundles, installers, auto-updater
 
 ## Support
 
-If CTk Maker helps you, you can [buy me a coffee ☕](https://buymeacoffee.com/Kandelucky_dev).
+If CTkMaker helps you, [buy me a coffee ☕](https://buymeacoffee.com/Kandelucky_dev).
 
 ## License
 

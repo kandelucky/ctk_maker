@@ -55,7 +55,33 @@ def export_project(
     project: Project, path: str | Path,
     preview_dialog_id: str | None = None,
     single_document_id: str | None = None,
+    as_zip: bool = False,
 ) -> None:
+    if as_zip:
+        # Run the normal export into a tempdir, then zip the whole
+        # tree (Python file + bundled assets/ + scrollable_dropdown
+        # helper if present) into the user's chosen .zip path.
+        import tempfile
+        import zipfile
+        out_zip = Path(path)
+        if out_zip.suffix.lower() != ".zip":
+            out_zip = out_zip.with_suffix(".zip")
+        py_name = out_zip.with_suffix(".py").name
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            export_project(
+                project, tmp_path / py_name,
+                preview_dialog_id=preview_dialog_id,
+                single_document_id=single_document_id,
+                as_zip=False,
+            )
+            with zipfile.ZipFile(
+                out_zip, "w", zipfile.ZIP_DEFLATED,
+            ) as zf:
+                for entry in sorted(tmp_path.rglob("*")):
+                    if entry.is_file():
+                        zf.write(entry, entry.relative_to(tmp_path))
+        return
     global _CURRENT_PROJECT_PATH
     _CURRENT_PROJECT_PATH = project.path
     # Sync the cascade module so ``resolve_effective_family`` returns
@@ -944,9 +970,19 @@ def _path_for_export(image_path: str) -> str:
     """Convert an in-assets absolute path to ``assets/<rel>`` so the
     exported file references the asset via the sibling ``assets/``
     folder we copy next to it. Out-of-assets paths stay absolute.
+
+    Asset tokens (``asset:images/foo.png``) survive a save/load cycle
+    and may also appear after edge cases — handle them up front by
+    parsing straight to the ``assets/<rel>`` form, since the token
+    already encodes the relative path inside the project's assets.
     """
-    if not image_path or not _CURRENT_PROJECT_PATH:
-        return str(image_path)
+    if not image_path:
+        return ""
+    from app.core.assets import is_asset_token, parse_asset_token
+    if is_asset_token(image_path):
+        return f"assets/{parse_asset_token(image_path)}"
+    if not _CURRENT_PROJECT_PATH:
+        return str(image_path).replace("\\", "/")
     project_assets = Path(_CURRENT_PROJECT_PATH).parent / "assets"
     try:
         rel = Path(image_path).resolve().relative_to(

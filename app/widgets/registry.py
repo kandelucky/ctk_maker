@@ -15,6 +15,7 @@ from app.widgets.ctk_switch import CTkSwitchDescriptor
 from app.widgets.ctk_tabview import CTkTabviewDescriptor
 from app.widgets.ctk_textbox import CTkTextboxDescriptor
 from app.widgets.image import ImageDescriptor
+from app.widgets.shape import ShapeDescriptor
 from app.widgets.window_descriptor import WindowDescriptor
 
 
@@ -36,6 +37,7 @@ _REGISTRY: dict[str, type[WidgetDescriptor]] = {
     CTkTabviewDescriptor.type_name: CTkTabviewDescriptor,
     CTkTextboxDescriptor.type_name: CTkTextboxDescriptor,
     ImageDescriptor.type_name: ImageDescriptor,
+    ShapeDescriptor.type_name: ShapeDescriptor,
 }
 
 

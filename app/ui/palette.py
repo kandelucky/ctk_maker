@@ -1,6 +1,6 @@
 ﻿"""Widget Box — palette of CTk widgets grouped by category.
 
-Qt Designer-inspired layout:
+Layout:
     [ Widget Box ]            — title
     [ Filter....... ]         — realtime name filter
     ▼ Buttons                 — collapsible group header
@@ -54,9 +54,9 @@ class WidgetEntry:
     icon: str
     # Preset property overrides — tuple of (key, value) pairs merged
     # on top of ``descriptor.default_properties`` when this palette
-    # item creates a new node. Used to expose Qt Designer-style
-    # ready-made layout containers (Vertical / Horizontal / Grid /
-    # Group) as distinct palette entries backed by the same CTkFrame
+    # item creates a new node. Used to expose ready-made layout
+    # containers (Vertical / Horizontal / Grid / Group) as distinct
+    # palette entries backed by the same CTkFrame
     # descriptor but with different default layout_type / border.
     preset_overrides: tuple[tuple[str, object], ...] = ()
     # Auto-assigned ``node.name`` on creation. None falls back to
@@ -112,6 +112,7 @@ CATALOG: tuple[WidgetGroup, ...] = (
     WidgetGroup("Display", (
         WidgetEntry("CTkLabel", "Label", "type"),
         WidgetEntry("Image", "Image", "image"),
+        WidgetEntry("Shape", "Shape", "square"),
         WidgetEntry("CTkProgressBar", "Progress Bar", "loader"),
     )),
     WidgetGroup("Selection", (

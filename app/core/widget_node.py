@@ -24,11 +24,17 @@ class WidgetNode:
         self.locked: bool = False
 
     def to_dict(self) -> dict:
+        # Shallow-copy ``properties`` so callers (project_saver
+        # tokenisation, copy/paste snapshot, undo recording) can mutate
+        # the returned dict without aliasing back into the live
+        # widget. Without this, ``_walk_widget_tokenize`` rewrote
+        # ``props["image"]`` to an ``asset:images/...`` token and the
+        # canvas's PIL.open then choked on a path it couldn't read.
         result = {
             "id": self.id,
             "name": self.name,
             "widget_type": self.widget_type,
-            "properties": self.properties,
+            "properties": dict(self.properties),
             "visible": self.visible,
             "locked": self.locked,
             "children": [c.to_dict() for c in self.children],

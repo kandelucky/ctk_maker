@@ -6,9 +6,8 @@ Covers every piece of global keyboard handling:
 - ``<Control-n>`` / ``<Control-o>`` / ``<Control-s>`` ... app-level
   accelerators routed to the corresponding ``MainWindow._on_*`` method
 - ``<Control-KeyPress>`` fallback that routes by hardware keycode so
-  Ctrl+V / C / X / S / Z ... still fire on Georgian / Russian keyboard
-  layouts (bpo-46052 — Tk can't match the Latin keysym on non-Latin
-  layouts)
+  Ctrl+V / C / X / S / Z ... still fire on non-Latin keyboard layouts
+  (bpo-46052 — Tk can't match the Latin keysym on non-Latin layouts)
 - ``<KeyPress-z/y>`` + ``<KeyRelease>`` guards that kill OS key-repeat
   on Ctrl+Z / Ctrl+Y — one press = one undo step
 - ``<<Copy>>`` / ``<<Paste>>`` virtual events so Object Tree's own
@@ -154,9 +153,10 @@ class ShortcutsMixin:
         self.bind_all("<KeyRelease-y>", self._on_redo_keyrelease)
         self.bind_all("<KeyPress-Z>", self._on_redo_keypress)
         self.bind_all("<KeyRelease-Z>", self._on_redo_keyrelease)
-        # Non-Latin keyboard layouts send Georgian/Russian keysyms, so
-        # the z/y KeyRelease bindings above never fire. Catch by
-        # hardware keycode instead so the held flags clear on release.
+        # Non-Latin keyboard layouts send their own keysyms instead of
+        # the Latin z/y, so the KeyRelease bindings above never fire.
+        # Catch by hardware keycode instead so the held flags clear on
+        # release.
         self.bind_all("<KeyRelease>", self._on_any_keyrelease)
         # Copy / Paste at the main-window level so they work regardless
         # of which panel has focus. Widget bindings fire first in tk's
