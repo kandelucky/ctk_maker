@@ -1,26 +1,30 @@
+<p align="center">
+  <img src="docs/screenshots/logo.png" alt="CTkMaker" width="160">
+</p>
+
 # CTkMaker
 
 Drag-and-drop visual designer for **CustomTkinter** — design Python GUIs without writing layout code by hand.
 
-> **v1.0.0** — first stable release. Free and open source.
+> **v1.0.1** — Card widget + bug sweep on top of the first stable release. Free and open source.
 >
 > ⚠️ **Tested on Windows only.** macOS and Linux are not verified for this release — feedback and contributions welcome.
 
-[![CTkMaker canvas](docs/history/v0.0.18.png)](docs/history/v0.0.18.png)
+[![CTkMaker canvas](docs/screenshots/canvas.png)](docs/screenshots/canvas.png)
 
 ## What it does
 
 - **Visual canvas** — real CTk widgets on a zoomable workspace. What you see is what you get. Multi-document: main window + dialogs in one project.
-- **Widgets** — all 19 CustomTkinter widgets (Button, Entry, Slider, Switch, ProgressBar, Frame, ScrollableFrame, Tabview, Image, ComboBox, OptionMenu, …) with richer property editing than raw CTk: drag-scrub numbers, paired font family + size, multiline text overlays, segmented value editor, scrollable dropdown for ComboBox / OptionMenu, color swatches with eyedropper. Open **Tools → Inspect CTk Widget** to see every property side-by-side — native CTk parameters vs builder-added helpers.
+- **Widgets** — all 19 CustomTkinter widgets (Button, Entry, Slider, Switch, ProgressBar, Frame, ScrollableFrame, Tabview, Image, ComboBox, OptionMenu, …) plus a `Card` decoration widget with embedded image (9-point alignment, tint, aspect-preserve). Richer property editing than raw CTk: drag-scrub numbers, paired font family + size, multiline overlays, segmented value editor, scrollable dropdown for ComboBox / OptionMenu, color swatches with eyedropper. Open **Tools → Inspect CTk Widget** to see every property side-by-side — native CTk parameters vs builder-added helpers.
 - **Layout managers** — `place`, `vbox`, `hbox`, `grid` rendered with the actual Tk pack/grid managers. Drop into cells, drag to reparent, even across documents.
 - **Asset system** — fonts, images, and 1700+ Lucide icons managed inside the project folder. Tinted PNGs, system-font auto-import, portable references.
 - **Clean code export** — one runnable Python file per project. Optional `.zip` bundle (Python code + assets) for sharing.
 
 ## Screenshots
 
-<!-- screenshot: canvas + properties panel + object tree -->
-<!-- screenshot: Lucide icon picker with tint -->
-<!-- screenshot: Preferences dialog -->
+[![Startup screen](docs/screenshots/startup.png)](docs/screenshots/startup.png)
+
+*Startup — recent projects on the left, new-project form on the right with device + screen-size presets.*
 
 ## Quick start
 
