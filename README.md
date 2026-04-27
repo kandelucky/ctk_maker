@@ -2,7 +2,7 @@
 
 Drag-and-drop visual designer for **CustomTkinter** — design Python GUIs without writing layout code by hand.
 
-> **v1.0.2** — Multi-page projects: one project, multiple Page designs sharing the asset pool. Plus quick-export, Save As scopes, and per-page export filtering.
+> **v1.0.3** — Alignment tools: 6 align buttons (Left / Center / Right + Top / Middle / Bottom) + Distribute Horizontally / Vertically. Auto-detects intent — single widget aligns to its container, multiple widgets align to each other.
 >
 > ⚠️ **Tested on Windows only.** macOS and Linux are not verified for this release — feedback and contributions welcome.
 

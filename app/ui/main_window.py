@@ -156,6 +156,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             on_undo=self._on_undo,
             on_redo=self._on_redo,
             on_run_script=self._on_run_script,
+            on_align=self._on_align_action,
         )
         self.toolbar.pack(side="top", fill="x")
 
@@ -349,7 +350,16 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         bus.subscribe(
             "request_export_document", self._on_export_active_document,
         )
+        # Alignment toolbar buttons enable/disable on selection
+        # change — also fire on widget add/remove since the same
+        # selection might gain or lose siblings.
+        for evt in (
+            "selection_changed", "widget_added", "widget_removed",
+            "widget_reparented", "active_document_changed",
+        ):
+            bus.subscribe(evt, lambda *_a, **_k: self._refresh_align_buttons())
         self._refresh_undo_redo_buttons()
+        self._refresh_align_buttons()
 
         self.protocol("WM_DELETE_WINDOW", self._on_window_close)
 
@@ -1670,6 +1680,100 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             return
         self.toolbar.set_undo_enabled(self.project.history.can_undo())
         self.toolbar.set_redo_enabled(self.project.history.can_redo())
+
+    # ------------------------------------------------------------------
+    # Alignment + distribution
+    # ------------------------------------------------------------------
+    def _resolve_align_targets(self) -> tuple[list, object | None, tuple[int, int] | None]:
+        """Resolve which widgets (if any) the alignment buttons
+        currently operate on, plus the container reference.
+
+        Returns ``(nodes, parent_node, container_size)`` where:
+          - ``nodes`` is the moveable widget list (empty disables all
+            buttons; widgets in a layout-managed parent are dropped
+            since the layout owns positioning)
+          - ``parent_node`` is the shared parent (``None`` for
+            top-level / mixed-parent selections)
+          - ``container_size`` is ``(width, height)`` for the parent
+            container, or ``None`` when aligning to selection bbox
+        """
+        from app.widgets.layout_schema import is_layout_container
+        sel_ids = list(self.project.selected_ids or [])
+        if not sel_ids:
+            return [], None, None
+        nodes = [
+            self.project.get_widget(wid)
+            for wid in sel_ids
+        ]
+        nodes = [n for n in nodes if n is not None and getattr(n, "id", None) is not None]
+        if not nodes:
+            return [], None, None
+        # All selected nodes must share a parent — mixed-parent
+        # selections don't have a coherent coordinate space.
+        parents = {id(n.parent) for n in nodes}
+        if len(parents) != 1:
+            return [], None, None
+        parent = nodes[0].parent
+        # Layout-managed children: layout manager owns x/y, so
+        # alignment is meaningless. Block the whole action.
+        if parent is not None and is_layout_container(parent.properties):
+            return [], parent, None
+        # Container size: for top-level widgets use the document
+        # bounds; for nested widgets use the parent's width/height.
+        if parent is None:
+            doc = self.project.find_document_for_widget(nodes[0].id)
+            if doc is None:
+                doc = self.project.active_document
+            container_size = (doc.width, doc.height)
+        else:
+            container_size = (
+                int(parent.properties.get("width", 0) or 0),
+                int(parent.properties.get("height", 0) or 0),
+            )
+        # When 2+ selected, switch reference to selection bbox so
+        # the buttons mean "align to each other".
+        use_container = len(nodes) == 1
+        return nodes, parent, container_size if use_container else None
+
+    def _refresh_align_buttons(self) -> None:
+        if not hasattr(self, "toolbar"):
+            return
+        from app.core.alignment import (
+            ALIGN_MODES, MODE_DISTRIBUTE_H, MODE_DISTRIBUTE_V,
+        )
+        nodes, _parent, _container = self._resolve_align_targets()
+        # Align-to-selection needs 2+ to be useful; align-to-container
+        # works with 1. Distribute always needs 3+.
+        align_on = bool(nodes)
+        distribute_on = len(nodes) >= 3
+        states: dict[str, bool] = {
+            mode: align_on for mode in ALIGN_MODES
+        }
+        states[MODE_DISTRIBUTE_H] = distribute_on
+        states[MODE_DISTRIBUTE_V] = distribute_on
+        self.toolbar.set_align_enabled(states)
+
+    def _on_align_action(self, mode: str) -> None:
+        from app.core.alignment import (
+            DISTRIBUTE_MODES, compute_align, compute_distribute,
+        )
+        nodes, _parent, container_size = self._resolve_align_targets()
+        if not nodes:
+            return
+        if mode in DISTRIBUTE_MODES:
+            moves = compute_distribute(nodes, mode)
+        else:
+            moves = compute_align(nodes, mode, container_size=container_size)
+        # Drop no-op tuples so the history entry doesn't show the
+        # widgets that were already aligned. If everything was
+        # already aligned, do nothing.
+        moves = [(wid, b, a) for wid, b, a in moves if b != a]
+        if not moves:
+            return
+        from app.core.commands import BulkMoveCommand
+        cmd = BulkMoveCommand(moves)
+        cmd.redo(self.project)
+        self.project.history.push(cmd)
 
 
     def _on_theme_toggle(self) -> None:

@@ -42,6 +42,7 @@ class Toolbar(ctk.CTkFrame):
         on_undo: Callable[[], None],
         on_redo: Callable[[], None],
         on_run_script: Callable[[], None] | None = None,
+        on_align: Callable[[str], None] | None = None,
     ):
         super().__init__(
             master, fg_color=BAR_BG, corner_radius=0, height=BAR_HEIGHT,
@@ -79,6 +80,88 @@ class Toolbar(ctk.CTkFrame):
         )
         self._undo_enabled = False
         self._redo_enabled = False
+
+        # Alignment buttons — appear after a separator and stay
+        # disabled until the selection has at least one moveable
+        # widget on a place-managed parent. ``on_align(mode)`` is
+        # the dispatcher MainWindow wires up.
+        self._align_buttons: dict[str, ctk.CTkButton] = {}
+        self._align_enabled: dict[str, bool] = {}
+        if on_align is not None:
+            self._add_separator()
+            self._build_align_group(on_align)
+
+    def _build_align_group(self, on_align: Callable[[str], None]) -> None:
+        """Pack the 6 align + 2 distribute icon buttons. Each entry
+        in ``specs`` is ``(mode, icon_name, tooltip)`` and all start
+        disabled (no selection on first paint)."""
+        from app.core.alignment import (
+            MODE_LEFT, MODE_CENTER_H, MODE_RIGHT,
+            MODE_TOP, MODE_CENTER_V, MODE_BOTTOM,
+            MODE_DISTRIBUTE_H, MODE_DISTRIBUTE_V,
+        )
+        specs: list[tuple[str, str, str]] = [
+            (MODE_LEFT, "align-start-vertical", "Align Left"),
+            (MODE_CENTER_H, "align-center-vertical", "Align Center (Horizontal)"),
+            (MODE_RIGHT, "align-end-vertical", "Align Right"),
+            (MODE_TOP, "align-start-horizontal", "Align Top"),
+            (MODE_CENTER_V, "align-center-horizontal", "Align Middle (Vertical)"),
+            (MODE_BOTTOM, "align-end-horizontal", "Align Bottom"),
+        ]
+        for mode, icon_name, tooltip in specs:
+            btn = self._add_align_button(icon_name, mode, on_align, tooltip)
+            self._align_buttons[mode] = btn
+            self._align_enabled[mode] = False
+        # Subtle separator before distribute — the two icons look
+        # similar to align so the gap helps the eye chunk them.
+        self._add_separator()
+        for mode, icon_name, tooltip in (
+            (MODE_DISTRIBUTE_H, "align-horizontal-distribute-center",
+             "Distribute Horizontally"),
+            (MODE_DISTRIBUTE_V, "align-vertical-distribute-center",
+             "Distribute Vertically"),
+        ):
+            btn = self._add_align_button(icon_name, mode, on_align, tooltip)
+            self._align_buttons[mode] = btn
+            self._align_enabled[mode] = False
+
+    def _add_align_button(
+        self, icon_name: str, mode: str,
+        dispatch: Callable[[str], None], tooltip: str,
+    ) -> ctk.CTkButton:
+        """Same shape as ``_add_button`` but caches both color
+        variants of the icon so set_align_enabled can swap the
+        glyph without rebuilding the button."""
+        on_icon = load_icon(icon_name, size=ICON_SIZE, color=ICON_TINT)
+        off_icon = load_icon(
+            icon_name, size=ICON_SIZE, color=ICON_TINT_DISABLED,
+        )
+        btn = ctk.CTkButton(
+            self, text="", image=off_icon,
+            width=BTN_SIZE, height=BTN_SIZE,
+            corner_radius=4, fg_color="transparent",
+            hover_color=BTN_HOVER,
+            command=lambda m=mode: dispatch(m),
+        )
+        btn.pack(side="left", padx=0, pady=3)
+        btn._icon_on = on_icon
+        btn._icon_off = off_icon
+        if tooltip:
+            _attach_tooltip(btn, tooltip)
+        return btn
+
+    def set_align_enabled(self, mode_states: dict[str, bool]) -> None:
+        """Update the on/off glyph for each align button. ``mode_states``
+        is the full ``{mode: bool}`` map from the dispatcher; missing
+        modes default to disabled."""
+        for mode, btn in self._align_buttons.items():
+            enabled = bool(mode_states.get(mode, False))
+            if enabled == self._align_enabled.get(mode, False):
+                continue
+            self._align_enabled[mode] = enabled
+            btn.configure(
+                image=btn._icon_on if enabled else btn._icon_off,
+            )
 
     def set_undo_enabled(self, enabled: bool) -> None:
         if enabled == self._undo_enabled:
