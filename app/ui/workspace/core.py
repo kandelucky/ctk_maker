@@ -141,6 +141,12 @@ class Workspace(ctk.CTkFrame):
         # entries mean "outer == inner" (the default).
         self._anchor_views: dict[str, tk.Widget] = {}
 
+        # Marquee selection (drag-rect on empty canvas) state. ``None``
+        # when no marquee is in progress; otherwise carries start
+        # coords, the dashed rect canvas item id, and the modifier
+        # flags so the release handler can apply the right action.
+        self._marquee_state: dict | None = None
+
     def _build_canvas(self) -> None:
         container = ctk.CTkFrame(self, fg_color="transparent", corner_radius=0)
         container.pack(fill="both", expand=True, padx=10, pady=(10, 4))
@@ -1578,6 +1584,19 @@ class Workspace(ctk.CTkFrame):
         doc = self._find_document_at_canvas(cx, cy)
         if doc is not None and doc.id != self.project.active_document_id:
             self.project.set_active_document(doc.id)
+        # Marquee selection on either Select or Edit tool. Don't
+        # deselect immediately — defer to release so a drag past the
+        # threshold can define a new selection. State 0x0001 is the
+        # Tk Shift-pressed bitmask.
+        from app.ui.workspace.controls import TOOL_EDIT, TOOL_SELECT
+        if self._tool in (TOOL_SELECT, TOOL_EDIT):
+            self._marquee_state = {
+                "start_x": cx, "start_y": cy,
+                "shift": bool(event.state & 0x0001),
+                "rect_id": None,
+                "active": False,
+            }
+            return None
         self.project.select_widget(None)
         return None
 
@@ -1590,6 +1609,8 @@ class Workspace(ctk.CTkFrame):
         if self._tool == TOOL_HAND and self._pan_state is not None:
             self._update_pan(event)
             return "break"
+        if self._marquee_state is not None:
+            return self._update_marquee(event)
         return None
 
     def _on_canvas_release(self, event) -> str | None:
@@ -1602,4 +1623,123 @@ class Workspace(ctk.CTkFrame):
         if self._tool == TOOL_HAND:
             self._end_pan(event)
             return "break"
+        if self._marquee_state is not None:
+            return self._finish_marquee(event)
         return None
+
+    # ------------------------------------------------------------------
+    # Marquee selection (drag-rect on empty canvas → multi-select)
+    # ------------------------------------------------------------------
+    _MARQUEE_THRESHOLD_PX = 5
+
+    def _update_marquee(self, event) -> str | None:
+        state = self._marquee_state
+        if state is None:
+            return None
+        cx, cy = self._screen_to_canvas(event.x_root, event.y_root)
+        sx, sy = state["start_x"], state["start_y"]
+        if not state["active"]:
+            # Threshold guard so a plain click doesn't draw a
+            # zero-pixel rect or trigger the marquee branch in
+            # release.
+            if max(abs(cx - sx), abs(cy - sy)) < self._MARQUEE_THRESHOLD_PX:
+                return None
+            state["active"] = True
+            state["rect_id"] = self.canvas.create_rectangle(
+                sx, sy, cx, cy,
+                outline="#5bc0f8", dash=(5, 4), width=2,
+                tags=("marquee_rect",),
+            )
+        else:
+            try:
+                self.canvas.coords(state["rect_id"], sx, sy, cx, cy)
+            except tk.TclError:
+                pass
+        return None
+
+    def _finish_marquee(self, event) -> str | None:
+        state = self._marquee_state
+        self._marquee_state = None
+        if state is None:
+            return None
+        was_drag = state["active"]
+        # Tear down the dashed rect first regardless of outcome —
+        # leaving it on a corrupted state would confuse the next
+        # selection cycle.
+        rect_id = state.get("rect_id")
+        if rect_id is not None:
+            try:
+                self.canvas.delete(rect_id)
+            except tk.TclError:
+                pass
+        if not was_drag:
+            # Plain click on empty area — match legacy behaviour:
+            # clear the selection (Shift-click on empty preserves
+            # the existing set so the user can keep building it).
+            if not state["shift"]:
+                self.project.select_widget(None)
+            return None
+        # Drag completed past the threshold — compute the rect, find
+        # widgets it overlaps, and apply the selection.
+        cx, cy = self._screen_to_canvas(event.x_root, event.y_root)
+        sx, sy = state["start_x"], state["start_y"]
+        rect = (
+            min(sx, cx), min(sy, cy),
+            max(sx, cx), max(sy, cy),
+        )
+        hit_ids = self._marquee_intersected_widgets(rect)
+        if state["shift"]:
+            # Add to the existing selection — same modifier
+            # convention as Object Tree multi-select.
+            ids = set(self.project.selected_ids or set()) | hit_ids
+        else:
+            ids = hit_ids
+        if ids:
+            primary = (
+                self.project.selected_id
+                if state["shift"] and self.project.selected_id in ids
+                else next(iter(ids))
+            )
+            self.project.set_multi_selection(ids, primary=primary)
+            # Multi-select in Edit mode is ambiguous (resize handles
+            # only target one widget), so flip to Select tool when
+            # the marquee picked up more than one widget — mirrors
+            # the existing _select_all_in_doc auto-switch.
+            from app.ui.workspace.controls import TOOL_EDIT, TOOL_SELECT
+            if len(ids) > 1 and self.controls.tool == TOOL_EDIT:
+                self.controls.set_tool(TOOL_SELECT)
+        elif not state["shift"]:
+            self.project.select_widget(None)
+        return None
+
+    def _marquee_intersected_widgets(
+        self, rect: tuple[float, float, float, float],
+    ) -> set[str]:
+        """Top-level widgets in the active document whose canvas
+        bbox overlaps ``rect`` (touch mode — any overlap counts).
+        Children stay out of the result so a marquee picks the
+        whole Frame, not its inner pieces; users still drill in
+        with a click for individual children.
+        """
+        rl, rt, rr, rb = rect
+        hits: set[str] = set()
+        doc = self.project.active_document
+        if doc is None:
+            return hits
+        for node in doc.root_widgets:
+            if not getattr(node, "visible", True):
+                continue
+            view = self.widget_views.get(node.id)
+            if view is None:
+                continue
+            widget, _wid = view
+            bbox = self._widget_canvas_bbox(widget)
+            if bbox is None:
+                continue
+            wl, wt, wr, wb = bbox
+            # Touch test — any overlap (Photoshop / Illustrator
+            # convention; Figma uses fully-contained instead).
+            if wr < rl or wl > rr or wb < rt or wt > rb:
+                continue
+            hits.add(node.id)
+        return hits

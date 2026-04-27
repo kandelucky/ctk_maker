@@ -2,7 +2,7 @@
 
 Drag-and-drop visual designer for **CustomTkinter** — design Python GUIs without writing layout code by hand.
 
-> **v1.0.3** — Alignment tools: 6 align buttons (Left / Center / Right + Top / Middle / Bottom) + Distribute Horizontally / Vertically. Auto-detects intent — single widget aligns to its container, multiple widgets align to each other.
+> **v1.0.4** — Marquee selection (drag a rectangle on empty canvas to multi-select) + smart snap guides (cyan lines snap a dragged widget to its siblings' or container's edges and centres). Hold Alt during drag to bypass snap.
 >
 > ⚠️ **Tested on Windows only.** macOS and Linux are not verified for this release — feedback and contributions welcome.
 
@@ -23,6 +23,7 @@ A CTkMaker project is organised in four levels:
 - **Widgets — 20 in the palette:** Button, Segmented Button, Label, Image, Card, Progress Bar, Check Box, Radio Button, Switch, Entry, Textbox, Combo Box, Option Menu, Slider, Frame, Scrollable Frame, Tab View, Vertical Layout, Horizontal Layout, Grid Layout. Richer property editing than raw CTk: drag-scrub numbers, paired font family + size, multiline overlays, segmented value editor, scrollable dropdown for ComboBox / OptionMenu, color swatches with eyedropper. Open **Tools → Inspect CTk Widget** to see every property side-by-side — native CTk parameters vs builder-added helpers.
 - **Layout managers** — `place`, `vbox`, `hbox`, `grid` rendered with the actual Tk pack/grid managers. Drop into cells, drag to reparent, even across windows.
 - **Alignment & distribution** — toolbar buttons to align widgets (Left / Center / Right + Top / Middle / Bottom) and distribute them evenly. Auto-detects intent: a single widget aligns to its container, multiple widgets align to each other.
+- **Marquee selection + smart snap guides** — drag a rectangle on empty canvas to multi-select; while dragging a widget, cyan guide lines snap its edges / centre to siblings and to the container. Hold Alt to bypass.
 - **Asset system** — fonts, images, and 1700+ Lucide icons managed inside the project folder. Tinted PNGs, system-font auto-import, portable references.
 - **Clean code export** — one runnable Python file per window. Optional `.zip` bundle (Python code + assets) for sharing. Per-page export ships only the assets that page actually references.
 
@@ -57,7 +58,6 @@ Full docs live in the [Wiki](https://github.com/kandelucky/ctk_maker/wiki):
 
 ## What's next
 
-- Marquee selection, snap-to-guides
 - Variables panel + event handlers
 - Custom user widgets + plugin system
 - Distribution: PyInstaller bundles, installers, auto-updater

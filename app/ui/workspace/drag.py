@@ -610,6 +610,163 @@ class WidgetDragController:
                 best_depth = depth
         return best
 
+    # ------------------------------------------------------------------
+    # Snap-to-siblings + container guides (motion-time helpers)
+    # ------------------------------------------------------------------
+    def _compute_drag_snap(
+        self, primary_node, dx_logical: int, dy_logical: int,
+    ) -> tuple[int, int, list[int], list[int]]:
+        """Resolve snap deltas for the current motion tick.
+
+        Snaps the primary widget's would-be bbox against its
+        siblings' bboxes plus the parent container's edges /
+        centre. Multi-widget drags skip snap (group cohesion is
+        more important than aligning an arbitrary primary).
+        Returns ``(snap_dx, snap_dy, guide_xs, guide_ys)`` — all
+        in logical (parent-local) coordinates.
+        """
+        if len(self._drag.get("group_starts") or {}) != 1:
+            return 0, 0, [], []
+        sx, sy = self._drag["group_starts"][primary_node.id]
+        try:
+            w = int(primary_node.properties.get("width", 0) or 0)
+            h = int(primary_node.properties.get("height", 0) or 0)
+        except (TypeError, ValueError):
+            return 0, 0, [], []
+        new_x = sx + dx_logical
+        new_y = sy + dy_logical
+        bbox = (new_x, new_y, new_x + w, new_y + h)
+        parent = primary_node.parent
+        if parent is None:
+            siblings = [
+                n for n in self.project.active_document.root_widgets
+                if n.id != primary_node.id
+            ]
+            doc = self.project.active_document
+            container_size = (doc.width, doc.height)
+        else:
+            siblings = [
+                n for n in parent.children
+                if n.id != primary_node.id
+            ]
+            container_size = (
+                int(parent.properties.get("width", 0) or 0),
+                int(parent.properties.get("height", 0) or 0),
+            )
+        sibling_bboxes: list[tuple[int, int, int, int]] = []
+        for s in siblings:
+            try:
+                sxx = int(s.properties.get("x", 0) or 0)
+                syy = int(s.properties.get("y", 0) or 0)
+                sww = int(s.properties.get("width", 0) or 0)
+                shh = int(s.properties.get("height", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            sibling_bboxes.append((sxx, syy, sxx + sww, syy + shh))
+        from app.core.snap import compute_snap_offsets
+        return compute_snap_offsets(
+            bbox, sibling_bboxes, container_size,
+        )
+
+    def _draw_snap_guides(
+        self, primary_node, guide_xs: list[int], guide_ys: list[int],
+    ) -> None:
+        """Render the pink alignment lines for the active snap targets.
+
+        Tk canvas line items always sit BELOW any window items
+        (frame widgets), so the guides would be hidden inside the
+        document frame. Use plain ``tk.Frame`` widgets placed
+        directly on the canvas instead — those stack with the
+        document frames and ``.lift()`` floats them on top.
+        Lines span the primary widget's parent (or doc, when
+        top-level) so the user sees clearly which container
+        reference they hit.
+        """
+        self._clear_snap_guides()
+        if not guide_xs and not guide_ys:
+            return
+        entry = self.widget_views.get(primary_node.id)
+        if entry is None:
+            return
+        widget, _wid = entry
+        bbox = self.workspace._widget_canvas_bbox(widget)
+        if bbox is None:
+            return
+        canvas_scale = self.zoom.canvas_scale or 1.0
+        try:
+            px = int(primary_node.properties.get("x", 0) or 0)
+            py = int(primary_node.properties.get("y", 0) or 0)
+        except (TypeError, ValueError):
+            return
+        # Parent origin in canvas coords — derived from the widget's
+        # known canvas bbox + its known logical position; saves a
+        # second lookup for the parent's canvas item.
+        parent_cx = bbox[0] - int(px * canvas_scale)
+        parent_cy = bbox[1] - int(py * canvas_scale)
+        parent = primary_node.parent
+        if parent is None:
+            doc = self.project.active_document
+            cw_logical = doc.width
+            ch_logical = doc.height
+        else:
+            cw_logical = int(parent.properties.get("width", 0) or 0)
+            ch_logical = int(parent.properties.get("height", 0) or 0)
+        cw_canvas = int(cw_logical * canvas_scale)
+        ch_canvas = int(ch_logical * canvas_scale)
+        guides: list[tk.Frame] = []
+        # Guide widgets are children of the canvas, so place() coords
+        # use canvas-internal pixels — convert canvas-coordinate
+        # values via canvasx/canvasy inverse: we already have the
+        # absolute canvas coords from _widget_canvas_bbox, but
+        # ``place`` uses canvas widget-local coords (without scroll
+        # offset). The canvas's scroll offset is the difference.
+        try:
+            scroll_off_x = int(self.canvas.canvasx(0))
+            scroll_off_y = int(self.canvas.canvasy(0))
+        except tk.TclError:
+            scroll_off_x, scroll_off_y = 0, 0
+        for gx in guide_xs:
+            xc = parent_cx + int(gx * canvas_scale)
+            try:
+                f = tk.Frame(
+                    self.canvas, bg="#5bc0f8",
+                    borderwidth=0, highlightthickness=0,
+                )
+                f.place(
+                    x=xc - scroll_off_x,
+                    y=parent_cy - scroll_off_y,
+                    width=1, height=ch_canvas,
+                )
+                f.lift()
+                guides.append(f)
+            except tk.TclError:
+                pass
+        for gy in guide_ys:
+            yc = parent_cy + int(gy * canvas_scale)
+            try:
+                f = tk.Frame(
+                    self.canvas, bg="#5bc0f8",
+                    borderwidth=0, highlightthickness=0,
+                )
+                f.place(
+                    x=parent_cx - scroll_off_x,
+                    y=yc - scroll_off_y,
+                    width=cw_canvas, height=1,
+                )
+                f.lift()
+                guides.append(f)
+            except tk.TclError:
+                pass
+        self._snap_guide_widgets = guides
+
+    def _clear_snap_guides(self) -> None:
+        for guide in getattr(self, "_snap_guide_widgets", []) or []:
+            try:
+                guide.destroy()
+            except (tk.TclError, AttributeError):
+                pass
+        self._snap_guide_widgets = []
+
     def _motion_place_group(
         self, event, dx_root: int, dy_root: int,
     ) -> None:
@@ -640,6 +797,45 @@ class WidgetDragController:
         dx_tick = event.x_root - self._drag["last_mx"]
         dy_tick = event.y_root - self._drag["last_my"]
         hidden_mode = self._drag.get("hidden_mode", False)
+        # Snap-to-siblings + container guides. Single-widget place
+        # drags only — multi-widget snap would have to pick which
+        # group member's edge counts and tends to fight the user.
+        # Hold Alt to bypass snap (mask 0x20000 on Windows / Linux).
+        primary_node = self.project.get_widget(self._drag["nid"])
+        snap_dx_logical = 0
+        snap_dy_logical = 0
+        prev_snap_dx = self._drag.get("snap_dx_logical", 0)
+        prev_snap_dy = self._drag.get("snap_dy_logical", 0)
+        alt_held = bool(event.state & 0x20000)
+        if (
+            primary_node is not None
+            and not hidden_mode
+            and not alt_held
+        ):
+            snap_dx_logical, snap_dy_logical, gxs, gys = (
+                self._compute_drag_snap(
+                    primary_node, dx_logical, dy_logical,
+                )
+            )
+            self._draw_snap_guides(primary_node, gxs, gys)
+        else:
+            self._clear_snap_guides()
+        # Apply snap to the model coords; visual canvas item move
+        # also gets the snap delta on top of the raw cursor tick so
+        # the widget on canvas tracks the snapped logical position
+        # (otherwise the visual would drift off the snapped edge).
+        dx_logical += snap_dx_logical
+        dy_logical += snap_dy_logical
+        snap_visual_dx = int(
+            (snap_dx_logical - prev_snap_dx) * canvas_scale,
+        )
+        snap_visual_dy = int(
+            (snap_dy_logical - prev_snap_dy) * canvas_scale,
+        )
+        dx_tick += snap_visual_dx
+        dy_tick += snap_visual_dy
+        self._drag["snap_dx_logical"] = snap_dx_logical
+        self._drag["snap_dy_logical"] = snap_dy_logical
         if dx_tick or dy_tick:
             if hidden_mode:
                 pid = self._drag.get("placeholder_id")
@@ -703,6 +899,10 @@ class WidgetDragController:
         if ws._tool == "hand":
             ws._end_pan(event)
             return
+        # Snap guides only live for the duration of the gesture —
+        # release tears them down regardless of how the drag ends
+        # (drop / snap-back / no-op click).
+        self._clear_snap_guides()
         drag = self._drag
         # Clear drag state BEFORE firing any project mutations so
         # ``_schedule_selection_redraw`` stops short-circuiting on
