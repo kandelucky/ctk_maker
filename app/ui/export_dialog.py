@@ -41,6 +41,8 @@ PREVIEW_FG = "#888888"
 SEPARATOR_BG = "#333333"
 
 ALL_FORMS_VALUE = "__all__"
+ALL_PAGES_VALUE = "__all_pages__"
+PAGE_SCOPE_PREFIX = "page:"
 LABEL_WIDTH = 80
 
 # Dark dropdown palette so the option menu sits coherently on the
@@ -99,6 +101,12 @@ class ExportDialog(ctk.CTkToplevel):
         self._open_editor_var = tk.BooleanVar(value=False)
         self._run_preview_var = tk.BooleanVar(value=False)
         self._as_zip_var = tk.BooleanVar(value=False)
+        # Asset filter: default ON for multi-page projects (avoid
+        # shipping unused assets per page); OFF for legacy projects
+        # to preserve the historical "everything in assets/" behaviour.
+        self._only_used_assets_var = tk.BooleanVar(
+            value=bool(project.folder_path),
+        )
         self._open_editor_cb: ctk.CTkCheckBox | None = None
         self._run_preview_cb: ctk.CTkCheckBox | None = None
         self._user_edited_name = False
@@ -137,8 +145,41 @@ class ExportDialog(ctk.CTkToplevel):
     # Scope list
     # ------------------------------------------------------------------
     def _build_scope_list(self) -> list[tuple[str, str]]:
-        docs = list(self.project.documents)
+        """Build scope dropdown options. Multi-page projects list
+        every page first (with the user-facing names from project.json),
+        then the active page's documents underneath. Legacy single-
+        file projects keep the original "Whole project + per-doc" set.
+        """
         out: list[tuple[str, str]] = []
+        docs = list(self.project.documents)
+        pages = list(self.project.pages or [])
+        is_multi_page = bool(self.project.folder_path) and bool(pages)
+
+        if is_multi_page:
+            # Top entry: every page as separate .py.
+            n = len(pages)
+            out.append((
+                f"All pages ({n} page{'s' if n != 1 else ''})",
+                ALL_PAGES_VALUE,
+            ))
+            # Per-page scopes — one .py per pick.
+            for entry in pages:
+                if not isinstance(entry, dict):
+                    continue
+                name = (entry.get("name") or "").strip() or "Untitled"
+                out.append((
+                    f"Page: {name}",
+                    f"{PAGE_SCOPE_PREFIX}{entry.get('id')}",
+                ))
+            # Active page's documents — kept under the page list so
+            # the user can still emit a single dialog from a multi-
+            # document page.
+            if len(docs) > 1:
+                for doc in docs:
+                    dname = (doc.name or "Untitled").strip() or "Untitled"
+                    out.append((f"Document: {dname}", doc.id))
+            return out
+
         if len(docs) > 1:
             n = len(docs) - 1
             label = f"All forms (Main + {n} Dialog{'s' if n != 1 else ''})"
@@ -261,8 +302,12 @@ class ExportDialog(ctk.CTkToplevel):
         # one archive — convenient for sharing the export by email or
         # chat. Toggling it disables the After checkboxes (editor /
         # preview don't apply to a .zip).
+        wrap = ctk.CTkFrame(row, fg_color="transparent")
+        wrap.pack(side="left", fill="x", expand=True)
+        zip_row = ctk.CTkFrame(wrap, fg_color="transparent")
+        zip_row.pack(fill="x", anchor="w")
         ctk.CTkCheckBox(
-            row, text="Export as ZIP archive",
+            zip_row, text="Export as ZIP archive",
             variable=self._as_zip_var,
             checkbox_width=18, checkbox_height=18,
             font=("Segoe UI", 11),
@@ -270,11 +315,30 @@ class ExportDialog(ctk.CTkToplevel):
             fg_color="#0e639c", hover_color="#1177bb",
         ).pack(side="left")
         tk.Label(
-            row,
+            zip_row,
             text="Python code + assets bundled into one .zip — easy to share",
             bg=PANEL_BG, fg=PREVIEW_FG,
             font=("Segoe UI", 9, "italic"),
         ).pack(side="left", padx=(10, 0))
+        # Asset filter — only meaningful for multi-page projects
+        # (legacy projects always copy the whole asset pool).
+        if self.project.folder_path:
+            filter_row = ctk.CTkFrame(wrap, fg_color="transparent")
+            filter_row.pack(fill="x", anchor="w", pady=(4, 0))
+            ctk.CTkCheckBox(
+                filter_row, text="Include only used assets",
+                variable=self._only_used_assets_var,
+                checkbox_width=18, checkbox_height=18,
+                font=("Segoe UI", 11),
+                text_color=FIELD_FG,
+                fg_color="#0e639c", hover_color="#1177bb",
+            ).pack(side="left")
+            tk.Label(
+                filter_row,
+                text="Skip fonts / images / icons not referenced by the exported pages",
+                bg=PANEL_BG, fg=PREVIEW_FG,
+                font=("Segoe UI", 9, "italic"),
+            ).pack(side="left", padx=(10, 0))
 
     def _build_after_checkbox(self, row) -> None:
         # Two independent toggles. "Open in editor" routes through the
@@ -320,15 +384,32 @@ class ExportDialog(ctk.CTkToplevel):
     def _defaults_for_scope(self, scope_label: str) -> tuple[str, str]:
         """Return ``(name_stem, save_dir)`` defaults for a scope label."""
         scope_id = self._scope_id_for(scope_label)
-        if scope_id == ALL_FORMS_VALUE:
+        if scope_id in (ALL_FORMS_VALUE, ALL_PAGES_VALUE):
             stem = (self.project.name or "project").strip() or "project"
+        elif scope_id.startswith(PAGE_SCOPE_PREFIX):
+            page_id = scope_id[len(PAGE_SCOPE_PREFIX):]
+            entry = next(
+                (
+                    p for p in (self.project.pages or [])
+                    if isinstance(p, dict) and p.get("id") == page_id
+                ),
+                None,
+            )
+            stem = (
+                (entry.get("name") if entry else None) or "page"
+            ).strip() or "page"
         else:
             doc = self.project.get_document(scope_id)
             stem = (doc.name if doc else None) or "document"
         stem = "".join(c for c in stem if c not in '\\/:*?"<>|').strip()
         if not stem:
             stem = "project"
-        if self.project.path:
+        # Default export folder: project root for multi-page (so
+        # each export lands in <project>/exports/), else the legacy
+        # sibling of the .ctkproj.
+        if self.project.folder_path:
+            base = Path(self.project.folder_path) / "exports"
+        elif self.project.path:
             base = Path(self.project.path).parent / "exports"
         else:
             base = Path.home() / "exports"
@@ -441,13 +522,8 @@ class ExportDialog(ctk.CTkToplevel):
             )
             return
         scope_id = self._scope_id_for(self._scope_label_var.get())
-        single_id = None if scope_id == ALL_FORMS_VALUE else scope_id
         try:
-            export_project(
-                self.project, str(target),
-                single_document_id=single_id,
-                as_zip=self._as_zip_var.get(),
-            )
+            self._dispatch_export(scope_id, target)
         except OSError as exc:
             log_error("export dialog export_project")
             messagebox.showerror(
@@ -468,6 +544,142 @@ class ExportDialog(ctk.CTkToplevel):
                 "Export", f"Saved to:\n{target}", parent=self,
             )
         self.destroy()
+
+    def _dispatch_export(self, scope_id: str, target: Path) -> None:
+        """Route the chosen scope to the right export call:
+          - ALL_PAGES_VALUE → iterate every page in project.json,
+            emit one .py per page into ``target.parent``
+          - PAGE_SCOPE_PREFIX + id → load that page off disk,
+            export it as ``target``
+          - doc_id (active page document) → existing single-doc export
+          - ALL_FORMS_VALUE → existing whole-project export
+        """
+        as_zip = self._as_zip_var.get()
+        use_filter = self._only_used_assets_var.get()
+
+        if scope_id == ALL_PAGES_VALUE:
+            self._export_all_pages(target.parent, target.suffix, as_zip, use_filter)
+            return
+        if scope_id.startswith(PAGE_SCOPE_PREFIX):
+            page_id = scope_id[len(PAGE_SCOPE_PREFIX):]
+            self._export_single_page(page_id, target, as_zip, use_filter)
+            return
+        # Active-page scope (legacy / per-document or whole project).
+        single_id = None if scope_id == ALL_FORMS_VALUE else scope_id
+        asset_filter: set[Path] | None = None
+        if use_filter and self.project.folder_path:
+            from app.core.project_folder import collect_used_assets
+            asset_filter = collect_used_assets(self.project)
+        export_project(
+            self.project, str(target),
+            single_document_id=single_id,
+            as_zip=as_zip,
+            asset_filter=asset_filter,
+        )
+
+    def _export_single_page(
+        self, page_id: str, target: Path,
+        as_zip: bool, use_filter: bool,
+    ) -> None:
+        """Load a non-active page from disk into a temporary Project
+        clone and export it. Avoids switching the live project's
+        active page (the user just wanted a .py, not a context flip).
+        """
+        # Active page exports through the in-memory project — fall
+        # back to the cheap path when the user picked the page they
+        # already have loaded.
+        if page_id == self.project.active_page_id:
+            asset_filter: set[Path] | None = None
+            if use_filter:
+                from app.core.project_folder import collect_used_assets
+                asset_filter = collect_used_assets(self.project)
+            export_project(
+                self.project, str(target),
+                as_zip=as_zip,
+                asset_filter=asset_filter,
+            )
+            return
+        clone = self._build_temp_project_for_page(page_id)
+        if clone is None:
+            messagebox.showerror(
+                "Export failed",
+                "Could not load the selected page off disk.",
+                parent=self,
+            )
+            return
+        asset_filter = None
+        if use_filter:
+            from app.core.project_folder import collect_used_assets
+            asset_filter = collect_used_assets(clone)
+        export_project(
+            clone, str(target),
+            as_zip=as_zip,
+            asset_filter=asset_filter,
+        )
+
+    def _export_all_pages(
+        self, out_dir: Path, ext: str,
+        as_zip: bool, use_filter: bool,
+    ) -> None:
+        """Emit one ``.py`` (or ``.zip``) per page into ``out_dir``.
+        Asset filter is per-page so each export bundle ships only
+        its own references — switching the filter off shares the
+        whole assets/ pool across all bundles instead.
+        """
+        from app.core.project_folder import collect_used_assets, slugify_page_name
+        for entry in self.project.pages or []:
+            if not isinstance(entry, dict):
+                continue
+            page_id = entry.get("id")
+            page_name = (entry.get("name") or "untitled").strip() or "untitled"
+            slug = slugify_page_name(page_name)
+            target = out_dir / f"{slug}{ext}"
+            if page_id == self.project.active_page_id:
+                src_project = self.project
+            else:
+                src_project = self._build_temp_project_for_page(page_id)
+                if src_project is None:
+                    continue
+            asset_filter = None
+            if use_filter:
+                asset_filter = collect_used_assets(src_project)
+            export_project(
+                src_project, str(target),
+                as_zip=as_zip,
+                asset_filter=asset_filter,
+            )
+
+    def _build_temp_project_for_page(self, page_id: str):
+        """Spin up a fresh Project loaded with the given page's data
+        without touching the dialog's source project. Returns ``None``
+        if the page can't be located or loaded.
+        """
+        from app.core.project import Project
+        from app.core.project_folder import (
+            page_file_path,
+        )
+        entry = next(
+            (
+                p for p in (self.project.pages or [])
+                if isinstance(p, dict) and p.get("id") == page_id
+            ),
+            None,
+        )
+        if entry is None or not self.project.folder_path:
+            return None
+        page_path = page_file_path(
+            self.project.folder_path, entry.get("file") or "",
+        )
+        if not page_path.is_file():
+            return None
+        from app.io.project_loader import load_project
+        clone = Project()
+        try:
+            load_project(clone, str(page_path))
+        except Exception:
+            log_error("export_dialog build_temp_project")
+            return None
+        return clone
 
     def _run_exported_preview(self, path: Path) -> None:
         # Spawn the exported file with the same Python interpreter the

@@ -161,13 +161,20 @@ class ImagePickerDialog(tk.Toplevel):
     # ------- list population -------
 
     def _images_dir(self) -> Path:
+        from app.core.assets import project_assets_dir
+        a = project_assets_dir(self.project_file)
+        if a is not None:
+            return a / "images"
         return Path(self.project_file).parent / ASSETS_DIR_NAME / "images"
 
     def _list_images(self) -> list[Path]:
         # Recursive scan over the whole ``assets/`` folder so images
         # the user reorganised into custom subfolders (e.g.
         # ``assets/icons/``) still surface in the picker.
-        a_dir = Path(self.project_file).parent / ASSETS_DIR_NAME
+        from app.core.assets import project_assets_dir
+        a_dir = project_assets_dir(self.project_file)
+        if a_dir is None:
+            a_dir = Path(self.project_file).parent / ASSETS_DIR_NAME
         if not a_dir.exists():
             return []
         return sorted(

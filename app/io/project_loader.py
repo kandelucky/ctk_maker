@@ -17,6 +17,11 @@ from app.core.document import (
     Document,
 )
 from app.core.project import Project
+from app.core.project_folder import (
+    ProjectMetaError, find_active_page_entry, find_project_root,
+    migrate_page_sidecars, page_file_path, pages_dir,
+    read_project_meta, write_project_meta,
+)
 from app.core.widget_node import WidgetNode
 
 SUPPORTED_VERSIONS = {1, 2}
@@ -29,7 +34,110 @@ class ProjectLoadError(Exception):
 def load_project(
     project: Project, path: str | Path, root=None,
 ) -> None:
+    """Load a project off disk and populate ``project`` in place.
+
+    Accepts either:
+    - a path to a ``.ctkproj`` page file (multi-page projects + legacy
+      single-file projects)
+    - a path to a project folder containing ``project.json``
+
+    For multi-page projects the loader walks up to ``project.json``,
+    reads project-level metadata (name, page list, font cascade) and
+    then loads the active page's ``.ctkproj``. For legacy projects
+    everything comes from the single ``.ctkproj``.
+    """
     path = Path(path)
+    multi_page_meta: dict | None = None
+    project_folder: Path | None = None
+
+    # Multi-page detection: either ``path`` itself is a folder with
+    # project.json, or the .ctkproj's parent walk-up finds it. In the
+    # second case we may be pointing at a non-active page — load the
+    # page the user picked, but read project-level metadata from
+    # project.json so font cascade + page list stay project-wide.
+    if path.is_dir():
+        candidate = path / "project.json"
+        if candidate.is_file():
+            project_folder = path
+    if project_folder is None:
+        # Walk up regardless of extension — covers .ctkproj page
+        # picks AND .autosave restores (which load a sidecar file
+        # nested under <root>/.autosave/<id>.json but still belong
+        # to the multi-page project).
+        project_folder = find_project_root(path)
+
+    if project_folder is not None:
+        try:
+            multi_page_meta = read_project_meta(project_folder)
+        except ProjectMetaError as exc:
+            raise ProjectLoadError(
+                f"project.json could not be loaded.\n\n{exc}",
+            ) from exc
+
+    # Resolve the actual page file to read. Folder-only path or a
+    # picked .ctkproj that isn't in the page list both fall back to
+    # the active page from project.json.
+    # Migrate any legacy sibling .bak / .autosave files into the
+    # new id-keyed sidecar folders. Idempotent — no-op when the
+    # project has been opened by this build before.
+    if multi_page_meta is not None and project_folder is not None:
+        try:
+            migrate_page_sidecars(project_folder)
+        except Exception:
+            from app.core.logger import log_error as _log
+            _log("migrate_page_sidecars on load")
+
+        # Prune ghost pages — entries in project.json whose .ctkproj
+        # files were deleted from outside the app (Explorer drag-to-
+        # trash, manual cleanup). Without this the user gets a
+        # cryptic "file not found" error on the next switch attempt.
+        # If the active page itself is missing, fall back to the
+        # first living one. Zero living pages → user-facing error.
+        modified, _dropped, _active_changed = _prune_missing_pages(
+            project_folder, multi_page_meta,
+        )
+        if modified:
+            try:
+                write_project_meta(project_folder, multi_page_meta)
+            except ProjectMetaError:
+                from app.core.logger import log_error as _log
+                _log("project.json prune write")
+        if not multi_page_meta.get("pages"):
+            raise ProjectLoadError(
+                "All page files for this project are missing on disk.\n\n"
+                "The project folder was probably moved or its "
+                "``assets/pages/`` contents were deleted from outside "
+                "the app.\n\n"
+                "Try recovering individual pages from "
+                "``.backups/`` (one ``.ctkproj.bak`` per page) — "
+                "rename one back into ``assets/pages/`` and reopen."
+            )
+
+    if multi_page_meta is not None:
+        if path.is_dir():
+            entry = find_active_page_entry(multi_page_meta)
+            if entry is None or not entry.get("file"):
+                raise ProjectLoadError(
+                    "project.json has no active page.",
+                )
+            page_path = page_file_path(project_folder, entry["file"])
+        else:
+            page_path = path
+            # If the user picked a page that isn't the active one,
+            # update the meta in-memory so project.active_page_id
+            # reflects what we actually load.
+            picked_filename = path.name
+            entry_match = next(
+                (
+                    p for p in multi_page_meta.get("pages", [])
+                    if isinstance(p, dict) and p.get("file") == picked_filename
+                ),
+                None,
+            )
+            if entry_match is not None:
+                multi_page_meta["active_page"] = entry_match.get("id")
+        path = Path(page_path)
+
     try:
         with path.open("r", encoding="utf-8") as f:
             data = json.load(f)
@@ -103,7 +211,13 @@ def load_project(
     # round-trip cleanly.
     _migrate_layout_types(documents)
 
-    name = data.get("name")
+    # Multi-page mode: project-level fields come from project.json
+    # (authoritative). Legacy mode: they come from the .ctkproj.
+    if multi_page_meta is not None:
+        meta_source: dict = multi_page_meta
+    else:
+        meta_source = data
+    name = meta_source.get("name")
     if isinstance(name, str) and name.strip():
         project.name = name.strip()
 
@@ -111,12 +225,12 @@ def load_project(
     # (legacy / never-set state). The dict is straight-up applied;
     # ``set_active_project_defaults`` is wired through main_window
     # at ``_set_current_path`` time so listeners pick it up.
-    raw_defaults = data.get("font_defaults")
+    raw_defaults = meta_source.get("font_defaults")
     project.font_defaults = (
         {str(k): str(v) for k, v in raw_defaults.items() if v}
         if isinstance(raw_defaults, dict) else {}
     )
-    raw_system = data.get("system_fonts")
+    raw_system = meta_source.get("system_fonts")
     project.system_fonts = (
         sorted({str(f) for f in raw_system if f})
         if isinstance(raw_system, list) else []
@@ -146,6 +260,25 @@ def load_project(
     # reference widget IDs that no longer exist, so Ctrl+Z after load
     # would either crash or resurrect ghosts from the old project.
     project.history.clear()
+    # Wire up multi-page metadata so save_project knows to also
+    # rewrite project.json + so future page-switch UI has the list
+    # in memory. Legacy single-file projects clear these fields.
+    if multi_page_meta is not None and project_folder is not None:
+        project.folder_path = str(project_folder)
+        raw_pages = multi_page_meta.get("pages") or []
+        project.pages = [
+            {
+                "id": p.get("id"),
+                "file": p.get("file"),
+                "name": p.get("name", ""),
+            }
+            for p in raw_pages if isinstance(p, dict)
+        ]
+        project.active_page_id = multi_page_meta.get("active_page")
+    else:
+        project.folder_path = None
+        project.pages = []
+        project.active_page_id = None
     project.documents = documents
     active_id = data.get("active_document")
     if isinstance(active_id, str) and any(
@@ -185,6 +318,42 @@ def load_project(
     # added into a legacy project will restart from 0 for each doc.
     # Harmless: the first new widget inherits the base name; rename
     # as needed.
+
+
+def _prune_missing_pages(
+    project_folder, meta: dict,
+) -> tuple[bool, int, bool]:
+    """Drop entries from ``meta["pages"]`` whose ``.ctkproj`` files
+    don't exist on disk. If the active page was among them, fall
+    back to the first surviving page.
+
+    Returns ``(modified, dropped_count, active_changed)`` so the
+    caller can decide whether to rewrite ``project.json``.
+    """
+    pdir = pages_dir(project_folder)
+    original_pages = list(meta.get("pages") or [])
+    living: list[dict] = []
+    for entry in original_pages:
+        if not isinstance(entry, dict):
+            continue
+        page_filename = entry.get("file")
+        if not page_filename:
+            continue
+        if (pdir / page_filename).is_file():
+            living.append(entry)
+    dropped = len(original_pages) - len(living)
+    if dropped == 0 and len(living) == len(original_pages):
+        return (False, 0, False)
+    meta["pages"] = living
+    active_changed = False
+    if living:
+        active_id = meta.get("active_page")
+        if not any(p.get("id") == active_id for p in living):
+            meta["active_page"] = living[0].get("id")
+            active_changed = True
+    else:
+        meta["active_page"] = None
+    return (True, dropped, active_changed)
 
 
 def _clear_existing_widgets(project: Project) -> None:

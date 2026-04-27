@@ -274,6 +274,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         self.docked_project = ProjectPanel(
             _pcontent, self.project,
             path_provider=lambda: self._current_path,
+            on_switch_page=self._switch_to_page,
+            on_active_page_path_changed=self._on_active_page_renamed,
         )
 
         def _show_properties():
@@ -483,6 +485,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             self.project.resize_document(w, h)
             self.project.name = name
             self.project.active_document.name = name
+            from app.core.project_folder import seed_multi_page_meta_from_disk
+            seed_multi_page_meta_from_disk(self.project, path)
             try:
                 save_project(self.project, path)
             except OSError:
@@ -539,6 +543,16 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             messagebox.showerror("Open failed", "Unexpected error — see console.", parent=self)
             return
         self._set_current_path(path)
+        # Detect legacy single-file projects (no project.json marker
+        # in the walked-up folder) and offer a one-shot conversion
+        # to the multi-page format. Skipped for already-converted
+        # projects + when the user just declined a previous prompt
+        # in this session (don't nag — they can use File menu).
+        if (
+            self.project.folder_path is None
+            and not getattr(self, "_convert_prompt_dismissed", False)
+        ):
+            self._maybe_prompt_legacy_convert()
         # If we restored from autosave, drop the file now that the
         # state is in memory — next explicit save writes it back to
         # the real .ctkproj.
@@ -588,17 +602,17 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
     def _on_new(self) -> None:
         if not self._confirm_discard_if_dirty():
             return
-        # ``_current_path`` points at the .ctkproj inside its project
-        # folder, so ``.parent`` is the project folder itself —
-        # walking ONE more level up lands on the parent directory the
-        # user originally chose as ``Save to`` (e.g.
-        # ``Documents/CTkMaker/``). Without this the New Project dialog
-        # would default ``Save to`` to the previous project's folder
-        # and try to nest the next project inside it.
-        default_dir = (
-            str(Path(self._current_path).parent.parent)
-            if self._current_path else None
-        )
+        # Resolve the "Save to" default — the parent directory the
+        # user originally picked (e.g. ``Documents/CTkMaker/``), one
+        # level above the project folder. ``project.folder_path`` is
+        # the multi-page project root; legacy single-file projects
+        # fall back to two ``parent`` walks from the .ctkproj.
+        if self.project.folder_path:
+            default_dir = str(Path(self.project.folder_path).parent)
+        elif self._current_path:
+            default_dir = str(Path(self._current_path).parent.parent)
+        else:
+            default_dir = None
         dialog = NewProjectSizeDialog(
             self,
             default_w=self.project.document_width,
@@ -617,6 +631,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         # in the New dialog. They can still rename the window via
         # the Properties panel afterwards.
         self.project.active_document.name = name
+        from app.core.project_folder import seed_multi_page_meta_from_disk
+        seed_multi_page_meta_from_disk(self.project, path)
         try:
             save_project(self.project, path)
         except OSError:
@@ -700,6 +716,219 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             parent=self,
         )
 
+    def _maybe_prompt_legacy_convert(self) -> None:
+        """Offer to convert the just-loaded legacy ``.ctkproj`` to
+        the multi-page folder format. Auto-prompt fires once per
+        session; further loads of legacy files in the same session
+        skip the prompt so the user can keep working without
+        repeated nags. ``File → Convert to Multi-Page Project...``
+        is always available as an explicit entry point.
+        """
+        choice = messagebox.askyesno(
+            "Convert to multi-page project?",
+            (
+                "This project uses the older single-file format.\n\n"
+                "Multi-page projects let you keep multiple page "
+                "designs (e.g. Login + Dashboard) inside one project, "
+                "sharing the same fonts / images / icons.\n\n"
+                "Yes  → convert now (a backup of the original .ctkproj "
+                "is left next to it)\n"
+                "No   → keep the single-file format for this session"
+            ),
+            parent=self,
+        )
+        if not choice:
+            self._convert_prompt_dismissed = True
+            return
+        self._do_legacy_convert()
+
+    def _on_convert_to_multi_page(self) -> None:
+        """File menu entry — same conversion as the auto-prompt, but
+        triggered explicitly. Refuses gracefully when already on a
+        multi-page project.
+        """
+        if self.project.folder_path is not None:
+            messagebox.showinfo(
+                "Already converted",
+                "This project is already in multi-page format.",
+                parent=self,
+            )
+            return
+        if not self._current_path:
+            messagebox.showinfo(
+                "Nothing to convert",
+                "Open or create a project first.",
+                parent=self,
+            )
+            return
+        if not self._confirm_discard_if_dirty():
+            return
+        self._do_legacy_convert()
+
+    def _do_legacy_convert(self) -> None:
+        """Run the actual conversion. Saves any in-memory state to
+        the legacy .ctkproj first so the converted page reflects the
+        user's current edits, not just the last save.
+        """
+        if not self._current_path:
+            return
+        try:
+            save_project(self.project, self._current_path)
+        except OSError:
+            log_error("convert pre-save")
+            messagebox.showerror(
+                "Convert failed",
+                "Could not save current state before conversion.",
+                parent=self,
+            )
+            return
+        from app.core.project_folder import (
+            ProjectMetaError, convert_legacy_to_multi_page,
+        )
+        try:
+            new_page_path = convert_legacy_to_multi_page(self._current_path)
+        except (ProjectMetaError, OSError) as exc:
+            messagebox.showerror(
+                "Convert failed", str(exc), parent=self,
+            )
+            return
+        # Reload from the new layout so all in-memory pointers
+        # (folder_path / pages / active_page_id / asset paths)
+        # match the disk state. clear_autosave on old path drops
+        # any sidecar that didn't follow the move.
+        clear_autosave(self._current_path)
+        self._open_path(str(new_page_path))
+        self._show_toast("Converted to multi-page project")
+
+    def _show_toast(self, text: str, duration_ms: int = 1600) -> None:
+        """Pop a small non-modal banner near the top of the workspace
+        and auto-destroy it. Used for page-switch feedback so the
+        user sees "Switched to Login" without a blocking dialog.
+        Multiple rapid switches replace the previous toast in place.
+        """
+        try:
+            existing = getattr(self, "_toast_window", None)
+            if existing is not None:
+                try:
+                    existing.destroy()
+                except tk.TclError:
+                    pass
+            toast = tk.Toplevel(self)
+            self._toast_window = toast
+            toast.overrideredirect(True)
+            toast.configure(bg="#2d2d30")
+            toast.attributes("-topmost", True)
+            tk.Label(
+                toast, text=text,
+                bg="#2d2d30", fg="#cccccc",
+                font=("Segoe UI", 10),
+                padx=18, pady=8,
+            ).pack()
+            toast.update_idletasks()
+            # Anchor near the top-center of the main window so the
+            # banner reads at a glance without covering the toolbar.
+            try:
+                self.update_idletasks()
+                x = (
+                    self.winfo_rootx()
+                    + (self.winfo_width() - toast.winfo_width()) // 2
+                )
+                y = self.winfo_rooty() + 80
+                toast.geometry(f"+{max(0, x)}+{max(0, y)}")
+            except tk.TclError:
+                pass
+            toast.after(duration_ms, lambda: self._dismiss_toast(toast))
+        except tk.TclError:
+            pass
+
+    def _dismiss_toast(self, toast: tk.Toplevel) -> None:
+        try:
+            toast.destroy()
+        except tk.TclError:
+            pass
+        if getattr(self, "_toast_window", None) is toast:
+            self._toast_window = None
+
+    def _on_active_page_renamed(self, new_path: str) -> None:
+        """Hook called when ProjectPanel renames the currently-active
+        page on disk. Update ``_current_path`` so future Save / Save
+        As / autosave land at the new filename, and refresh the title.
+        Recent files entry shifts to the new path so the next launch
+        opens the renamed file.
+        """
+        target = Path(new_path)
+        # The on-disk rename already moved the autosave / .bak
+        # sidecars (see project_folder.rename_page), so the previous
+        # path's autosave is gone — no clear_autosave needed.
+        self._current_path = str(target)
+        self.project.path = str(target)
+        try:
+            add_recent(str(target))
+            self._rebuild_recent_menu()
+        except Exception:
+            log_error("rename active page recent")
+        self._refresh_title()
+
+    def _switch_to_page(self, page_path: str) -> bool:
+        """Switch the editor to a different page within the current
+        multi-page project. Reuses the Open flow (dirty check + save +
+        load), so the user gets the standard "Save / Don't Save /
+        Cancel" prompt before the switch.
+
+        Returns ``True`` when the switch happened, ``False`` if the
+        user cancelled or the load failed. The caller decides whether
+        to update any UI that mirrors the active page.
+        """
+        target = Path(page_path)
+        # Same page — no-op.
+        if (
+            self._current_path
+            and Path(self._current_path).resolve() == target.resolve()
+        ):
+            return True
+        if not target.exists():
+            messagebox.showerror(
+                "Switch failed",
+                f"Page file not found:\n{target}",
+                parent=self,
+            )
+            return False
+        if not self._confirm_discard_if_dirty():
+            return False
+        # Update project.json's active_page BEFORE loading so the
+        # next launch lands on the page the user picked. Failure
+        # here is non-fatal — the load below still proceeds.
+        if self.project.folder_path:
+            try:
+                from app.core.project_folder import (
+                    ProjectMetaError, set_active_page,
+                )
+                page_id = next(
+                    (
+                        p["id"] for p in self.project.pages
+                        if isinstance(p, dict)
+                        and p.get("file") == target.name
+                    ),
+                    None,
+                )
+                if page_id is not None:
+                    set_active_page(self.project.folder_path, page_id)
+            except ProjectMetaError:
+                log_error("switch_to_page set_active_page")
+        # Resolve the page's display name BEFORE the load resets
+        # in-memory metadata — the toast wants the user-facing name,
+        # not the page filename slug.
+        switched_name = next(
+            (
+                p.get("name", "") for p in (self.project.pages or [])
+                if isinstance(p, dict) and p.get("file") == target.name
+            ),
+            target.stem,
+        )
+        self._open_path(str(target))
+        self._show_toast(f"Switched to: {switched_name}")
+        return True
+
     def _on_save(self) -> None:
         if self._current_path:
             try:
@@ -714,6 +943,12 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             self._on_save_as()
 
     def _on_save_as(self) -> None:
+        # Multi-page projects open the 3-scope dialog; legacy
+        # single-file projects still use the classic filedialog
+        # (no concept of pages, no scope choice to make).
+        if self.project.folder_path:
+            self._save_as_multi_page()
+            return
         path = filedialog.asksaveasfilename(
             parent=self,
             title="Save project as",
@@ -743,6 +978,134 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         clear_autosave(path)
         self._set_current_path(path)
 
+    def _save_as_multi_page(self) -> None:
+        """Multi-page Save As — opens the 3-scope dialog and
+        dispatches:
+          - ``page``    → add_page in current project
+          - ``project`` → clone_project_folder + open the duplicate
+          - ``extract`` → extract_page_to_new_project + open it
+        """
+        from app.ui.save_as_dialog import SaveAsDialog
+        dlg = SaveAsDialog(self, self.project)
+        self.wait_window(dlg)
+        result = dlg.result
+        if result is None:
+            return
+        scope = result["scope"]
+        name = result["name"]
+        if scope == "page":
+            self._save_as_new_page(name)
+        elif scope == "project":
+            self._save_as_clone_project(name, result["save_to"])
+        elif scope == "extract":
+            self._save_as_extract_page(name, result["save_to"])
+
+    def _save_as_new_page(self, name: str) -> None:
+        """Add a new page in the current project, switch to it, and
+        copy the in-memory state (so the new page starts as a clone
+        of what the user is currently looking at — matches the
+        traditional Save As mental model where the new file picks
+        up your working state).
+        """
+        from app.core.project_folder import (
+            ProjectMetaError, add_page, page_file_path,
+            seed_multi_page_meta_from_disk,
+        )
+        try:
+            entry = add_page(self.project.folder_path, name)
+        except ProjectMetaError as exc:
+            messagebox.showerror("Save failed", str(exc), parent=self)
+            return
+        new_page_path = page_file_path(self.project.folder_path, entry["file"])
+        # Save current in-memory state into the new page file so
+        # the new page starts as a copy of the working state.
+        # Refresh metadata so the saver sees the new page entry.
+        seed_multi_page_meta_from_disk(self.project, str(new_page_path))
+        # Switch project.path so save lands on the new page.
+        old_path = self._current_path
+        self._current_path = str(new_page_path)
+        self.project.path = str(new_page_path)
+        self.project.active_page_id = entry["id"]
+        try:
+            save_project(self.project, str(new_page_path))
+        except OSError:
+            log_error("save_as new page")
+            self._current_path = old_path
+            self.project.path = old_path
+            messagebox.showerror(
+                "Save failed",
+                "Could not write the new page file.",
+                parent=self,
+            )
+            return
+        clear_autosave(old_path)
+        # Run a fresh open so all listeners (ProjectPanel, title
+        # bar, etc.) reflect the new active page.
+        self._set_current_path(str(new_page_path))
+        self._show_toast(f"Saved as: {name}")
+
+    def _save_as_clone_project(self, name: str, save_to: str) -> None:
+        """Duplicate the entire project folder at ``<save_to>/<name>``
+        and open the duplicate. The source project is left untouched.
+        """
+        # Save current state first so the duplicate captures any
+        # in-memory edits.
+        try:
+            save_project(self.project, self._current_path)
+        except OSError:
+            log_error("save_as clone pre-save")
+            messagebox.showerror(
+                "Save failed",
+                "Could not save current state before cloning.",
+                parent=self,
+            )
+            return
+        from app.core.project_folder import clone_project_folder
+        try:
+            new_folder = clone_project_folder(
+                self.project.folder_path, save_to, name,
+            )
+        except OSError as exc:
+            messagebox.showerror(
+                "Save failed", str(exc), parent=self,
+            )
+            return
+        # Open the cloned project — load_project picks up the
+        # active page from project.json automatically.
+        if not self._confirm_discard_if_dirty():
+            return
+        self._open_path(str(new_folder))
+        self._show_toast(f"Cloned to: {name}")
+
+    def _save_as_extract_page(self, name: str, save_to: str) -> None:
+        """Save the current page (with only its referenced assets)
+        as a brand-new project at ``<save_to>/<name>``.
+        """
+        try:
+            save_project(self.project, self._current_path)
+        except OSError:
+            log_error("save_as extract pre-save")
+            messagebox.showerror(
+                "Save failed",
+                "Could not save current state before extracting.",
+                parent=self,
+            )
+            return
+        from app.core.project_folder import extract_page_to_new_project
+        try:
+            new_page_path = extract_page_to_new_project(
+                self.project, save_to, name,
+            )
+        except OSError as exc:
+            messagebox.showerror(
+                "Save failed", str(exc), parent=self,
+            )
+            return
+        if not self._confirm_discard_if_dirty():
+            return
+        self._open_path(str(new_page_path))
+        self._show_toast(f"Extracted to: {name}")
+
     def _copy_assets_to_new_location(
         self, old_project_path: str, new_project_path: str,
     ) -> None:
@@ -753,13 +1116,23 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         prepared doesn't get blanked out. Failures log and continue —
         the .ctkproj save still proceeds; the user can drop missing
         assets in manually if needed.
+
+        Multi-page projects use the project root's ``assets/`` (walked
+        up via project.json); legacy projects use the .ctkproj's
+        sibling ``assets/``. The destination layout mirrors the source
+        — Save As to a multi-page page lands assets at the new root.
         """
         try:
             import shutil
-            src_assets = Path(old_project_path).parent / "assets"
+            from app.core.assets import project_assets_dir
+            src_assets = project_assets_dir(old_project_path)
+            if src_assets is None:
+                src_assets = Path(old_project_path).parent / "assets"
             if not src_assets.is_dir():
                 return
-            dst_assets = Path(new_project_path).parent / "assets"
+            dst_assets = project_assets_dir(new_project_path)
+            if dst_assets is None:
+                dst_assets = Path(new_project_path).parent / "assets"
             dst_assets.parent.mkdir(parents=True, exist_ok=True)
             shutil.copytree(src_assets, dst_assets, dirs_exist_ok=True)
         except OSError:
@@ -1117,6 +1490,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 self, self.project,
                 path_provider=lambda: self._current_path,
                 on_close=self._on_project_window_closed,
+                on_switch_page=self._switch_to_page,
+                on_active_page_path_changed=self._on_active_page_renamed,
             )
         elif not want_open and alive:
             try:
@@ -1181,23 +1556,98 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
     def _on_export_active_document(
         self, doc_id: str | None = None,
     ) -> None:
-        """Export only ONE document (Main Window or Dialog) as a
-        standalone runnable ``.py``. The target class subclasses
-        ``ctk.CTk`` regardless of the source doc's ``is_toplevel``
-        flag, so the output file runs on its own without wiring into
-        the rest of the project.
+        """Quick-export ONE document (Main Window or Dialog) as a
+        standalone runnable ``.py``. Asks one question only —
+        ZIP-with-assets or plain .py — then writes straight to
+        ``<project>/exports/<doc_slug>.{py|zip}`` with a toast.
 
-        ``doc_id`` defaults to the currently active document — the
-        File menu entry uses that default. The chrome per-dialog
-        Export button passes an explicit id through the
-        ``request_export_document`` event bus.
+        Asset filter is always document-scoped so the bundle ships
+        only the fonts / images / icons this specific form actually
+        references, never the whole shared pool.
+
+        Triggered from File → "Export Active Document..." (active
+        doc) and from the per-form chrome Export icon (specific id
+        via ``request_export_document`` event bus).
         """
         target_id = doc_id or self.project.active_document_id
         doc = self.project.get_document(target_id)
         if doc is None:
             return
-        from app.ui.export_dialog import ExportDialog
-        ExportDialog(self, self.project, preselected_doc_id=target_id)
+        # Resolve output folder up-front so the dialog can preview
+        # the path before the user commits. Multi-page projects use
+        # <root>/exports/; legacy single-file projects use the
+        # .ctkproj's sibling exports/ folder.
+        if self.project.folder_path:
+            out_dir = Path(self.project.folder_path) / "exports"
+        elif self._current_path:
+            out_dir = Path(self._current_path).parent / "exports"
+        else:
+            messagebox.showinfo(
+                "Quick export",
+                "Save the project before exporting.",
+                parent=self,
+            )
+            return
+        from app.core.project_folder import (
+            collect_used_assets, slugify_page_name,
+        )
+        slug = slugify_page_name(doc.name or "document")
+        # Preview shows the full output path with a wildcard
+        # extension since the user hasn't picked a format yet.
+        try:
+            preview_path = str(
+                (out_dir / f"{slug}.*").relative_to(
+                    Path(self.project.folder_path or self._current_path).parent,
+                ),
+            )
+        except (ValueError, TypeError):
+            preview_path = str(out_dir / f"{slug}.*")
+        from app.ui.quick_export_dialog import QuickExportDialog
+        dlg = QuickExportDialog(self, doc.name or "Untitled", preview_path)
+        self.wait_window(dlg)
+        choice = dlg.result
+        if choice is None:
+            return
+        as_zip = choice == "zip"
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            log_error("quick export mkdir")
+            messagebox.showerror(
+                "Export failed",
+                f"Could not create exports folder:\n{out_dir}",
+                parent=self,
+            )
+            return
+        ext = ".zip" if as_zip else ".py"
+        target = out_dir / f"{slug}{ext}"
+        asset_filter = collect_used_assets(self.project, document_id=target_id)
+        try:
+            export_project(
+                self.project, str(target),
+                single_document_id=target_id,
+                as_zip=as_zip,
+                asset_filter=asset_filter,
+            )
+        except OSError as exc:
+            log_error("quick export")
+            messagebox.showerror(
+                "Export failed",
+                f"Could not write the export:\n{target}\n\n{exc}",
+                parent=self,
+            )
+            return
+        # Show a relative path in the toast — the user already
+        # knows their project folder; the noisy absolute prefix
+        # would push the actual filename off-screen on a small
+        # toast.
+        try:
+            display = target.relative_to(
+                Path(self.project.folder_path or self._current_path).parent,
+            )
+        except (ValueError, TypeError):
+            display = target.name
+        self._show_toast(f"Exported: {display}", duration_ms=2400)
 
     # ------------------------------------------------------------------
     # Undo / redo

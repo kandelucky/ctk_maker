@@ -42,35 +42,60 @@ def make_asset_token(rel_path: str) -> str:
     return ASSET_PREFIX + rel_path.replace("\\", "/")
 
 
+def project_assets_dir(project_file: str | Path | None) -> Path | None:
+    """Locate the ``assets/`` folder for a given page file path.
+
+    Two layouts:
+    - Multi-page (P1+): page lives at ``<root>/assets/pages/foo.ctkproj``.
+      Walk up to find ``project.json``; assets sit at ``<root>/assets/``.
+    - Legacy single-file: ``<folder>/foo.ctkproj`` with sibling
+      ``<folder>/assets/``. Used when no project.json is found.
+    """
+    if not project_file:
+        return None
+    # Local import keeps this module free of project_folder cycles
+    # at import time (project_folder imports paths which imports
+    # nothing from assets, but assets <-> project_folder would
+    # otherwise be a candidate cycle).
+    from app.core.project_folder import find_project_root
+    root = find_project_root(project_file)
+    if root is not None:
+        return root / ASSETS_DIR_NAME
+    return Path(project_file).parent / ASSETS_DIR_NAME
+
+
 def resolve_asset_token(
     token: str, project_file: str | Path | None,
 ) -> Path | None:
     """Convert ``asset:images/photo.png`` to an absolute path inside
-    the project folder. Returns ``None`` if no project path is known
-    (untitled state) or the token is malformed.
+    the project's assets pool. Returns ``None`` if no project path
+    is known (untitled state) or the token is malformed.
     """
-    if not is_asset_token(token) or not project_file:
+    if not is_asset_token(token):
         return None
     rel = parse_asset_token(token)
     if not rel:
         return None
-    return Path(project_file).parent / ASSETS_DIR_NAME / rel
+    assets_dir = project_assets_dir(project_file)
+    if assets_dir is None:
+        return None
+    return assets_dir / rel
 
 
 def absolute_to_token(
     abs_path: str | Path, project_file: str | Path | None,
 ) -> str | None:
-    """If ``abs_path`` lives inside ``<project>/assets/``, return the
-    matching token. Otherwise ``None`` — the caller decides whether
-    to leave the absolute path alone or refuse the save.
+    """If ``abs_path`` lives inside the project's ``assets/``, return
+    the matching token. Otherwise ``None`` — the caller decides
+    whether to leave the absolute path alone or refuse the save.
     """
-    if not project_file or not abs_path:
+    if not abs_path:
         return None
-    project_assets = Path(project_file).parent / ASSETS_DIR_NAME
+    assets_dir = project_assets_dir(project_file)
+    if assets_dir is None:
+        return None
     try:
-        rel = Path(abs_path).resolve().relative_to(
-            project_assets.resolve(),
-        )
+        rel = Path(abs_path).resolve().relative_to(assets_dir.resolve())
     except (OSError, ValueError):
         return None
     return make_asset_token(str(rel).replace("\\", "/"))
@@ -98,7 +123,13 @@ def copy_to_assets(
     content.
     """
     src = Path(src)
-    target_dir = Path(project_file).parent / ASSETS_DIR_NAME / subdir
+    assets_dir = project_assets_dir(project_file)
+    if assets_dir is None:
+        # Untitled project / unknown layout — fall back to the legacy
+        # sibling assumption so the call doesn't crash. Real projects
+        # always resolve through find_project_root above.
+        assets_dir = Path(project_file).parent / ASSETS_DIR_NAME
+    target_dir = assets_dir / subdir
     target_dir.mkdir(parents=True, exist_ok=True)
     sha = sha256_of_file(src)
     # Dedupe: if a same-content file already lives here, reuse it.

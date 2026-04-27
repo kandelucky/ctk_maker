@@ -56,7 +56,15 @@ def export_project(
     preview_dialog_id: str | None = None,
     single_document_id: str | None = None,
     as_zip: bool = False,
+    asset_filter: set[Path] | None = None,
 ) -> None:
+    """Generate a runnable .py from ``project`` at ``path``.
+
+    ``asset_filter`` (P5): when given, only the listed asset files
+    are copied next to the .py — useful for per-page exports where
+    the rest of the shared asset pool shouldn't ship. ``None``
+    keeps the legacy behaviour (whole ``assets/`` copied).
+    """
     if as_zip:
         # Run the normal export into a tempdir, then zip the whole
         # tree (Python file + bundled assets/ + scrollable_dropdown
@@ -74,6 +82,7 @@ def export_project(
                 preview_dialog_id=preview_dialog_id,
                 single_document_id=single_document_id,
                 as_zip=False,
+                asset_filter=asset_filter,
             )
             with zipfile.ZipFile(
                 out_zip, "w", zipfile.ZIP_DEFLATED,
@@ -104,13 +113,36 @@ def export_project(
     # so the relative `assets/images/x.png` paths emitted in the
     # generated code resolve correctly when the user runs it.
     if project.path:
-        src_assets = Path(project.path).parent / "assets"
+        from app.core.assets import project_assets_dir
+        src_assets = project_assets_dir(project.path)
+        if src_assets is None:
+            src_assets = Path(project.path).parent / "assets"
         if src_assets.exists():
             try:
-                shutil.copytree(
-                    src_assets, out.parent / "assets",
-                    dirs_exist_ok=True,
-                )
+                if asset_filter is None:
+                    shutil.copytree(
+                        src_assets, out.parent / "assets",
+                        dirs_exist_ok=True,
+                    )
+                else:
+                    # Copy only the explicitly-listed asset files,
+                    # preserving the relative path inside assets/ so
+                    # ``asset:images/foo.png`` references the runtime
+                    # generates still resolve.
+                    src_resolved = src_assets.resolve()
+                    for src_file in asset_filter:
+                        try:
+                            rel = Path(src_file).resolve().relative_to(
+                                src_resolved,
+                            )
+                        except (OSError, ValueError):
+                            continue
+                        dst = out.parent / "assets" / rel
+                        dst.parent.mkdir(parents=True, exist_ok=True)
+                        try:
+                            shutil.copy2(src_file, dst)
+                        except OSError:
+                            pass
             except OSError:
                 pass
     # Side-car the ScrollableDropdown helper next to the export when
@@ -137,7 +169,11 @@ def _project_uses_custom_fonts(
     export, so the runtime needs the helper to load them.
     """
     if project.path:
-        fonts_dir = Path(project.path).parent / "assets" / "fonts"
+        from app.core.assets import project_assets_dir
+        assets = project_assets_dir(project.path)
+        if assets is None:
+            assets = Path(project.path).parent / "assets"
+        fonts_dir = assets / "fonts"
         if fonts_dir.exists():
             for f in fonts_dir.iterdir():
                 if f.is_file() and f.suffix.lower() in (".ttf", ".otf", ".ttc"):
@@ -990,7 +1026,10 @@ def _path_for_export(image_path: str) -> str:
         return f"assets/{parse_asset_token(image_path)}"
     if not _CURRENT_PROJECT_PATH:
         return str(image_path).replace("\\", "/")
-    project_assets = Path(_CURRENT_PROJECT_PATH).parent / "assets"
+    from app.core.assets import project_assets_dir
+    project_assets = project_assets_dir(_CURRENT_PROJECT_PATH)
+    if project_assets is None:
+        project_assets = Path(_CURRENT_PROJECT_PATH).parent / "assets"
     try:
         rel = Path(image_path).resolve().relative_to(
             project_assets.resolve(),

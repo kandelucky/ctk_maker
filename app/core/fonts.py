@@ -281,7 +281,11 @@ def register_project_fonts(
     """
     if not project_file:
         return []
-    fonts_dir = Path(project_file).parent / ASSETS_DIR_NAME / "fonts"
+    from app.core.assets import project_assets_dir
+    assets = project_assets_dir(project_file)
+    if assets is None:
+        assets = Path(project_file).parent / ASSETS_DIR_NAME
+    fonts_dir = assets / "fonts"
     if not fonts_dir.exists():
         return []
     families: list[str] = []
@@ -312,7 +316,10 @@ def list_project_fonts(
     """
     if not project_file:
         return []
-    a_dir = Path(project_file).parent / ASSETS_DIR_NAME
+    from app.core.assets import project_assets_dir
+    a_dir = project_assets_dir(project_file)
+    if a_dir is None:
+        a_dir = Path(project_file).parent / ASSETS_DIR_NAME
     if not a_dir.exists():
         return []
     out: list[tuple[str, Path]] = []

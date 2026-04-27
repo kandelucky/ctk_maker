@@ -126,7 +126,18 @@ class RecentList(ctk.CTkFrame):
         row.pack(fill="x", padx=2, pady=1)
         row.pack_propagate(False)
 
-        name = Path(path).stem
+        # Multi-page project: show the project folder name + its
+        # parent dir (the location the user picked when creating it),
+        # not the deeply-nested .ctkproj filename + assets/pages/
+        # path. Falls back to the page filename for legacy projects.
+        from app.core.project_folder import find_project_root
+        project_root = find_project_root(path)
+        if project_root is not None:
+            name = project_root.name
+            display_parent = project_root.parent
+        else:
+            name = Path(path).stem
+            display_parent = Path(path).parent
 
         missing = False
         try:
@@ -136,7 +147,7 @@ class RecentList(ctk.CTkFrame):
             time_text = "missing"
             missing = True
 
-        parent_dir = str(Path(path).parent)
+        parent_dir = str(display_parent)
         if len(parent_dir) > PATH_MAX_LEN:
             parent_dir = "…" + parent_dir[-(PATH_MAX_LEN - 1):]
 
@@ -209,7 +220,26 @@ class RecentList(ctk.CTkFrame):
             )
 
     def _show_row_menu(self, event, path: str) -> str:
-        menu = tk.Menu(self, tearoff=0)
+        # Match the dark menu style used elsewhere (ProjectPanel, etc.)
+        # so the welcome screen doesn't clash with the in-app surface.
+        menu = tk.Menu(
+            self, tearoff=0,
+            bg="#2d2d30", fg=FILE_NAME_FG,
+            activebackground="#094771", activeforeground="#ffffff",
+            relief="flat", bd=0, font=("Segoe UI", 10),
+        )
+        missing = not Path(path).exists()
+        menu.add_command(
+            label="Open",
+            state="normal" if not missing else "disabled",
+            command=lambda p=path: self._activate(p),
+        )
+        menu.add_command(
+            label="Open containing folder",
+            state="normal" if not missing else "disabled",
+            command=lambda p=path: self._reveal_in_explorer(p),
+        )
+        menu.add_separator()
         menu.add_command(
             label="Remove from Recent",
             command=lambda p=path: self._on_remove(p),
@@ -219,6 +249,34 @@ class RecentList(ctk.CTkFrame):
         finally:
             menu.grab_release()
         return "break"
+
+    def _activate(self, path: str) -> None:
+        """Same as a double-click — fires the activate callback so
+        the host (StartupDialog / similar) can open the project.
+        """
+        if self._on_activate is not None:
+            self._on_activate(path)
+
+    def _reveal_in_explorer(self, path: str) -> None:
+        """Open the project folder (or the .ctkproj's parent for
+        legacy projects) in the OS file manager.
+        """
+        import os
+        import subprocess
+        import sys
+        from app.core.project_folder import find_project_root
+        target = find_project_root(path) or Path(path).parent
+        if not target.exists():
+            return
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(target))
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(target)])
+            else:
+                subprocess.Popen(["xdg-open", str(target)])
+        except OSError:
+            pass
 
     def _on_remove(self, path: str) -> None:
         remove_recent(path)

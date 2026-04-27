@@ -135,12 +135,26 @@ class ProjectPanel(ctk.CTkFrame):
         parent,
         project: "Project",
         path_provider: Callable[[], str | None],
+        on_switch_page: Callable[[str], bool] | None = None,
+        on_active_page_path_changed: Callable[[str], None] | None = None,
     ):
         super().__init__(
             parent, fg_color=PANEL_BG, corner_radius=0, border_width=0,
         )
         self.project = project
         self.path_provider = path_provider
+        # Page-switch callback wired through MainWindow's
+        # ``_switch_to_page`` (Ctrl+O-style flow with dirty check).
+        # When unset, .ctkproj rows in the pages folder still render
+        # but double-click is a no-op — the floating ProjectWindow
+        # leaves it ``None`` because its switching is gated by the
+        # docked panel's wiring.
+        self.on_switch_page = on_switch_page
+        # Notification when the active page's on-disk filename
+        # changes (e.g. user renamed the currently-loaded page).
+        # MainWindow updates ``_current_path`` so subsequent saves
+        # land at the new path.
+        self.on_active_page_path_changed = on_active_page_path_changed
 
         self._name_var = tk.StringVar()
         self._path_var = tk.StringVar()
@@ -577,6 +591,12 @@ class ProjectPanel(ctk.CTkFrame):
         file_path, kind = meta
         if kind == "folder":
             return  # let Tk's expand/collapse default fire
+        if kind == "page":
+            # In-app page switch. Routes through MainWindow's
+            # _switch_to_page (Ctrl+O-style dirty check + load).
+            if self.on_switch_page is not None:
+                self.on_switch_page(str(file_path))
+            return "break"
         self._open_with_os(file_path)
         # Returning ``"break"`` would prevent Tk's own handler from
         # firing too — but on file rows there's nothing to break, so
@@ -915,17 +935,67 @@ class ProjectPanel(ctk.CTkFrame):
                 "folder-open", self._on_reveal_assets_root,
             )
         else:
-            _, kind = meta
+            folder_path, kind = meta
             if kind == "folder":
-                # Folder right-click — same compact shape:
-                # New Subfolder + Add here ▶ + actions.
-                self._menu_command(
-                    menu, "New Subfolder...", "folder",
-                    self._on_new_folder,
+                pages_root = self._resolve_pages_folder_for_meta()
+                is_pages_folder = (
+                    pages_root is not None
+                    and folder_path.resolve() == pages_root.resolve()
                 )
-                self._menu_cascade(
-                    menu, "Add here", "square-plus",
-                    self._build_add_submenu(menu),
+                if is_pages_folder:
+                    # Pages folder — only New Page makes sense here.
+                    # Generic "New Subfolder" / "Add ▶" would create
+                    # asset-files inside a directory the schema
+                    # expects to hold .ctkproj pages only.
+                    self._menu_command(
+                        menu, "New Page...", "layout-template",
+                        self._on_new_page,
+                    )
+                    menu.add_separator()
+                    self._menu_command(
+                        menu, "Open in Explorer", "folder-open",
+                        self._on_context_reveal,
+                    )
+                else:
+                    # Folder right-click — same compact shape:
+                    # New Subfolder + Add here ▶ + actions.
+                    self._menu_command(
+                        menu, "New Subfolder...", "folder",
+                        self._on_new_folder,
+                    )
+                    self._menu_cascade(
+                        menu, "Add here", "square-plus",
+                        self._build_add_submenu(menu),
+                    )
+                    menu.add_separator()
+                    self._menu_command(
+                        menu, "Open in Explorer", "folder-open",
+                        self._on_context_reveal,
+                    )
+                    self._menu_command(
+                        menu, "Rename...", "pencil", self._on_rename,
+                    )
+                    self._menu_command(
+                        menu, "Delete folder...", "trash-2",
+                        self._on_delete_folder,
+                    )
+            elif kind == "page":
+                # Page right-click — switch / duplicate / rename /
+                # delete. Filesystem-level operations (Open with OS,
+                # Reimport) don't apply to pages — they're routed
+                # through the page CRUD helpers so project.json
+                # stays in sync with the disk.
+                self._menu_command(
+                    menu, "Switch to this page", "external-link",
+                    self._on_context_switch_page,
+                )
+                self._menu_command(
+                    menu, "Duplicate", "copy",
+                    self._on_context_duplicate_page,
+                )
+                self._menu_command(
+                    menu, "Rename...", "pencil",
+                    self._on_context_rename_page,
                 )
                 menu.add_separator()
                 self._menu_command(
@@ -933,11 +1003,8 @@ class ProjectPanel(ctk.CTkFrame):
                     self._on_context_reveal,
                 )
                 self._menu_command(
-                    menu, "Rename...", "pencil", self._on_rename,
-                )
-                self._menu_command(
-                    menu, "Delete folder...", "trash-2",
-                    self._on_delete_folder,
+                    menu, "Delete page...", "trash-2",
+                    self._on_context_delete_page,
                 )
             else:
                 self._menu_command(
@@ -1011,6 +1078,261 @@ class ProjectPanel(ctk.CTkFrame):
             return
         file_path, kind = meta
         self._remove_asset(file_path, kind)
+
+    # ------- page CRUD (P3) -------
+
+    def _resolve_pages_folder_for_meta(self) -> Path | None:
+        """Same as ``_resolve_pages_folder`` but uses the current
+        path_provider rather than a passed-in project file. Used by
+        right-click handlers that don't already have a file path."""
+        path = self.path_provider()
+        if not path:
+            return None
+        return self._resolve_pages_folder(Path(path))
+
+    def _selected_page_id(self) -> str | None:
+        """Look up the project.json page id for the currently
+        right-clicked page row. Walks ``project.pages`` matching the
+        filename — id<->file is stable across rename within a session.
+        """
+        meta = self._selected_meta()
+        if meta is None:
+            return None
+        file_path, kind = meta
+        if kind != "page":
+            return None
+        target = file_path.name
+        for entry in self.project.pages or []:
+            if isinstance(entry, dict) and entry.get("file") == target:
+                return entry.get("id")
+        return None
+
+    def _on_new_page(self) -> None:
+        """Prompt for a name and create a new empty page in the
+        project. The new page is added after the current one in
+        project.json; the user explicitly switches to it via a
+        follow-up double-click (matches "Ctrl+O within project").
+        """
+        if not self.project.folder_path:
+            return
+        from tkinter import simpledialog
+        name = simpledialog.askstring(
+            "New page", "Page name:",
+            initialvalue="New page",
+            parent=self.winfo_toplevel(),
+        )
+        if not name or not name.strip():
+            return
+        name = name.strip()
+        from app.core.project_folder import (
+            ProjectMetaError, add_page, seed_multi_page_meta_from_disk,
+        )
+        try:
+            entry = add_page(self.project.folder_path, name)
+        except ProjectMetaError as exc:
+            messagebox.showerror(
+                "New page failed", str(exc),
+                parent=self.winfo_toplevel(),
+            )
+            return
+        # Re-read project.json so project.pages reflects the new
+        # entry — without this, _selected_page_id wouldn't find the
+        # page if the user immediately right-clicks it.
+        if self.path_provider():
+            seed_multi_page_meta_from_disk(
+                self.project, self.path_provider(),
+            )
+        self.refresh()
+        # Auto-switch to the new page so the user can start editing
+        # it immediately. Same dirty-prompt + load flow as a manual
+        # double-click. ``add_page`` returned the entry; the file
+        # lives at <pages>/<entry.file>.
+        if self.on_switch_page is not None:
+            from app.core.project_folder import pages_dir
+            page_path = pages_dir(self.project.folder_path) / entry["file"]
+            self.on_switch_page(str(page_path))
+
+    def _on_context_switch_page(self) -> None:
+        meta = self._selected_meta()
+        if meta is None or self.on_switch_page is None:
+            return
+        file_path, kind = meta
+        if kind != "page":
+            return
+        self.on_switch_page(str(file_path))
+
+    def _on_context_duplicate_page(self) -> None:
+        page_id = self._selected_page_id()
+        if not page_id or not self.project.folder_path:
+            return
+        from app.core.project_folder import (
+            ProjectMetaError, duplicate_page, seed_multi_page_meta_from_disk,
+        )
+        try:
+            duplicate_page(self.project.folder_path, page_id)
+        except ProjectMetaError as exc:
+            messagebox.showerror(
+                "Duplicate failed", str(exc),
+                parent=self.winfo_toplevel(),
+            )
+            return
+        if self.path_provider():
+            seed_multi_page_meta_from_disk(
+                self.project, self.path_provider(),
+            )
+        self.refresh()
+
+    def _on_context_rename_page(self) -> None:
+        page_id = self._selected_page_id()
+        meta = self._selected_meta()
+        if not page_id or meta is None or not self.project.folder_path:
+            return
+        # Pull current display name from project.pages so the prompt
+        # pre-fills what the user sees in the tree, not the slugged
+        # filename stem.
+        current_name = next(
+            (
+                p.get("name", "") for p in (self.project.pages or [])
+                if isinstance(p, dict) and p.get("id") == page_id
+            ),
+            "",
+        )
+        from tkinter import simpledialog
+        new_name = simpledialog.askstring(
+            "Rename page", "New name:",
+            initialvalue=current_name,
+            parent=self.winfo_toplevel(),
+        )
+        if not new_name:
+            return
+        new_name = new_name.strip()
+        if not new_name or new_name == current_name:
+            return
+        from app.core.project_folder import (
+            ProjectMetaError, rename_page, seed_multi_page_meta_from_disk,
+        )
+        try:
+            rename_page(self.project.folder_path, page_id, new_name)
+        except ProjectMetaError as exc:
+            messagebox.showerror(
+                "Rename failed", str(exc),
+                parent=self.winfo_toplevel(),
+            )
+            return
+        # If the active page got renamed, the on-disk filename
+        # changed too — notify MainWindow via the callback so it
+        # can update ``_current_path`` and re-prime path-derived
+        # state (autosave path, recent files, title bar).
+        active_id = self.project.active_page_id
+        if active_id == page_id and self.on_active_page_path_changed:
+            from app.core.project_folder import (
+                find_active_page_entry, page_file_path, read_project_meta,
+            )
+            try:
+                meta_now = read_project_meta(self.project.folder_path)
+                entry = find_active_page_entry(meta_now)
+                if entry is not None:
+                    new_path = page_file_path(
+                        self.project.folder_path, entry["file"],
+                    )
+                    self.on_active_page_path_changed(str(new_path))
+            except Exception:
+                log_error("rename_page active sync")
+        if self.path_provider():
+            try:
+                seed_multi_page_meta_from_disk(
+                    self.project, self.path_provider(),
+                )
+            except Exception:
+                log_error("rename_page reseed")
+        self.refresh()
+
+    def _on_context_delete_page(self) -> None:
+        # Defer until the context menu's grab fully releases so the
+        # askyesno dialog actually pops modal — without after_idle
+        # the menu was still holding focus and the dialog flashed
+        # behind / didn't surface for some users.
+        self.after_idle(self._do_delete_page)
+
+    def _do_delete_page(self) -> None:
+        page_id = self._selected_page_id()
+        if not page_id or not self.project.folder_path:
+            return
+        # Block deleting the only page — a project must always have
+        # one. Surface the rule explicitly so the user understands
+        # why the operation no-ops, instead of silently failing.
+        if len(self.project.pages or []) <= 1:
+            messagebox.showinfo(
+                "Cannot delete page",
+                "A project must have at least one page. Add another "
+                "page first if you want to remove this one.",
+                parent=self.winfo_toplevel(),
+            )
+            return
+        # Resolve display name for the confirmation prompt.
+        display = next(
+            (
+                p.get("name", "") for p in (self.project.pages or [])
+                if isinstance(p, dict) and p.get("id") == page_id
+            ),
+            "",
+        )
+        if not messagebox.askyesno(
+            "Delete page",
+            f"Delete page '{display}'?\n\n"
+            "The page file and its backups will be removed from disk. "
+            "This can't be undone via Ctrl+Z.",
+            parent=self.winfo_toplevel(),
+        ):
+            return
+        # If the deleted page is the currently-active one, we need
+        # to switch to the new active first so the editor isn't
+        # holding state for a file that's about to vanish. Resolve
+        # the new active id, switch, THEN delete.
+        from app.core.project_folder import (
+            ProjectMetaError, delete_page,
+            page_file_path, read_project_meta,
+            seed_multi_page_meta_from_disk,
+        )
+        was_active = self.project.active_page_id == page_id
+        try:
+            new_active_id = delete_page(self.project.folder_path, page_id)
+        except ProjectMetaError as exc:
+            messagebox.showerror(
+                "Delete failed", str(exc),
+                parent=self.winfo_toplevel(),
+            )
+            return
+        if new_active_id is None:
+            return  # last-page guard fired inside delete_page
+        if was_active and self.on_switch_page is not None:
+            try:
+                meta_now = read_project_meta(self.project.folder_path)
+                entry = next(
+                    (
+                        p for p in meta_now.get("pages", [])
+                        if isinstance(p, dict) and p.get("id") == new_active_id
+                    ),
+                    None,
+                )
+                if entry is not None:
+                    target = page_file_path(
+                        self.project.folder_path, entry["file"],
+                    )
+                    # Skip the dirty prompt — the page being deleted
+                    # took its dirty state with it. Just load the
+                    # replacement directly.
+                    self.on_switch_page(str(target))
+            except Exception:
+                log_error("delete_page switch")
+        if self.path_provider():
+            try:
+                seed_multi_page_meta_from_disk(
+                    self.project, self.path_provider(),
+                )
+            except Exception:
+                log_error("delete_page reseed")
+        self.refresh()
 
     def _on_context_reimport(self) -> None:
         meta = self._selected_meta()
@@ -1590,6 +1912,23 @@ class ProjectPanel(ctk.CTkFrame):
             except OSError:
                 log_error(f"ensure {sub} dir")
 
+        # Bold tag for the active page — set up once, reused on every
+        # populate so reload doesn't re-define the tag on every row.
+        try:
+            self._tree.tag_configure(
+                "active_page",
+                font=("Segoe UI", 10, "bold"),
+                foreground="#5bc0f8",
+            )
+        except tk.TclError:
+            pass
+
+        # Resolve the pages folder for this project so we can flag
+        # ``.ctkproj`` rows nested under it as "page" kind. Empty in
+        # legacy single-file projects (no project.json marker).
+        pages_root = self._resolve_pages_folder(project_file)
+        active_page_file = self._resolve_active_page_file()
+
         # Recursive populate. Folders first, then files within each
         # level so the tree reads as a normal file browser.
         new_sel_iid: str | None = None
@@ -1606,7 +1945,16 @@ class ProjectPanel(ctk.CTkFrame):
                 key=lambda p: p.name.lower(),
             )
             files = sorted(
-                (e for e in entries if e.is_file()),
+                (
+                    e for e in entries
+                    if e.is_file()
+                    # Hide builder-managed sidecars: .bak rotations,
+                    # .autosave snapshots, .tmp atomic-write residue.
+                    # User-relevant files are .ctkproj pages + assets.
+                    and not e.name.endswith(".bak")
+                    and not e.name.endswith(".autosave")
+                    and not e.name.endswith(".tmp")
+                ),
                 key=lambda p: p.name.lower(),
             )
             for folder in folders:
@@ -1620,6 +1968,14 @@ class ProjectPanel(ctk.CTkFrame):
                     str(folder.resolve()) in prev_open
                     or parent_iid == ""  # default top-level open
                 )
+                # Pages folder defaults to expanded so the user sees
+                # their page list without an extra click — pages are
+                # the primary navigation, not a buried subfolder.
+                if (
+                    pages_root is not None
+                    and folder.resolve() == pages_root.resolve()
+                ):
+                    is_open = True
                 fid = self._tree.insert(
                     parent_iid, "end", text=label, open=is_open,
                     image=self._kind_icons.get("folder", ""),
@@ -1633,9 +1989,32 @@ class ProjectPanel(ctk.CTkFrame):
                 walk(fid, folder)
             for f in files:
                 kind = _kind_for_path(f)
+                # Reclassify .ctkproj inside the pages folder as
+                # "page" so the icon + context menu specialise.
+                if (
+                    pages_root is not None
+                    and f.suffix.lower() == ".ctkproj"
+                    and f.parent.resolve() == pages_root.resolve()
+                ):
+                    kind = "page"
+                is_active = (
+                    kind == "page"
+                    and active_page_file is not None
+                    and f.resolve() == active_page_file.resolve()
+                )
+                icon_key = "page_active" if is_active else kind
+                tags = ("active_page",) if is_active else ()
+                # "(active)" badge is the explicit cue; bold + cyan
+                # are reinforcing visual cues.
+                row_text = f"  {f.name}"
+                if is_active:
+                    row_text += "   (active)"
                 iid = self._tree.insert(
-                    parent_iid, "end", text=f"  {f.name}",
-                    image=self._kind_icons.get(kind, self._kind_icons.get("other", "")),
+                    parent_iid, "end", text=row_text,
+                    image=self._kind_icons.get(
+                        icon_key, self._kind_icons.get("other", ""),
+                    ),
+                    tags=tags,
                 )
                 self._iid_meta[iid] = (f, kind)
                 if (
@@ -1653,6 +2032,31 @@ class ProjectPanel(ctk.CTkFrame):
                 pass
         self._refresh_info_panel()
 
+    def _resolve_pages_folder(self, project_file: Path) -> Path | None:
+        """Return ``<root>/assets/pages/`` for multi-page projects,
+        ``None`` for legacy single-file. Used to flag rows in the
+        tree as page-kind so the icon + context menu specialise.
+        """
+        from app.core.project_folder import find_project_root, pages_dir
+        root = find_project_root(project_file)
+        if root is None:
+            return None
+        pdir = pages_dir(root)
+        return pdir if pdir.is_dir() else None
+
+    def _resolve_active_page_file(self) -> Path | None:
+        """Absolute path to the current page's .ctkproj, used by the
+        tree populate to bold the active row. Falls back to the
+        ``path_provider`` value (which is already the active page)
+        so the bold logic also works during the moment between
+        in-memory change and project.json sync.
+        """
+        try:
+            path = self.path_provider()
+        except Exception:
+            path = None
+        return Path(path) if path else None
+
     def _ensure_kind_icons(self) -> None:
         """Lazy-load Lucide icons for the row leading column. Caches
         on ``self._kind_icons`` keyed by row kind so a re-populate
@@ -1669,10 +2073,16 @@ class ProjectPanel(ctk.CTkFrame):
             "text": "file-text",
             "code": "file-code",
             "other": "file",
+            # Page (.ctkproj inside assets/pages/) — same icon as
+            # the canvas/window concept so it reads "this is a UI
+            # design", distinct from generic files.
+            "page": "layout-template",
+            "page_active": "layout-template",
         }
         for kind, icon_name in kind_to_icon_name.items():
             try:
-                img = load_tk_icon(icon_name, size=14, color="#cccccc")
+                color = "#5bc0f8" if kind == "page_active" else "#cccccc"
+                img = load_tk_icon(icon_name, size=14, color=color)
             except Exception:
                 img = None
             if img is not None:
@@ -1720,6 +2130,8 @@ class ProjectWindow(ctk.CTkToplevel):
         project: "Project",
         path_provider: Callable[[], str | None],
         on_close: Callable[[], None] | None = None,
+        on_switch_page: Callable[[str], bool] | None = None,
+        on_active_page_path_changed: Callable[[str], None] | None = None,
     ):
         super().__init__(parent)
         self.title("Assets")
@@ -1732,7 +2144,11 @@ class ProjectWindow(ctk.CTkToplevel):
             pass
 
         self._on_close_callback = on_close
-        self.panel = ProjectPanel(self, project, path_provider)
+        self.panel = ProjectPanel(
+            self, project, path_provider,
+            on_switch_page=on_switch_page,
+            on_active_page_path_changed=on_active_page_path_changed,
+        )
         self.panel.pack(fill="both", expand=True, padx=6, pady=6)
         self._place_relative_to(parent)
         self.protocol("WM_DELETE_WINDOW", self._on_close)

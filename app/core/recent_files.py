@@ -37,18 +37,54 @@ def save_recent(paths: list[str]) -> None:
         pass
 
 
+def _project_key(path: str) -> str:
+    """Canonicalise a path for dedup. Multi-page paths collapse to
+    their project folder so switching between pages doesn't pile up
+    one recent entry per page. Legacy single-file paths use the
+    resolved absolute path as the key, matching the previous behaviour.
+    """
+    try:
+        from app.core.project_folder import find_project_root
+        root = find_project_root(path)
+        if root is not None:
+            return str(root.resolve())
+    except Exception:
+        pass
+    try:
+        return str(Path(path).resolve())
+    except OSError:
+        return str(path)
+
+
 def add_recent(path: str) -> list[str]:
+    """Promote a project to the top of the recents list. Multi-page
+    projects dedup by project folder so opening a different page in
+    the same project doesn't add a second entry.
+
+    Also drops any recent entry whose file no longer exists on disk
+    (test pages the user deleted left "missing" rows otherwise).
+    """
     normalized = str(Path(path).resolve())
-    paths = [p for p in load_recent() if p != normalized]
-    paths.insert(0, normalized)
-    paths = paths[:MAX_RECENT]
-    save_recent(paths)
-    return paths
+    new_key = _project_key(normalized)
+    kept: list[str] = []
+    for existing in load_recent():
+        if not Path(existing).exists():
+            continue  # garbage-collect stale entries
+        if _project_key(existing) == new_key:
+            continue  # same project (folder) — replaced by the new path below
+        kept.append(existing)
+    kept.insert(0, normalized)
+    kept = kept[:MAX_RECENT]
+    save_recent(kept)
+    return kept
 
 
 def remove_recent(path: str) -> list[str]:
-    normalized = str(Path(path).resolve())
-    paths = [p for p in load_recent() if p != normalized]
+    target_key = _project_key(path)
+    paths = [
+        p for p in load_recent()
+        if _project_key(p) != target_key
+    ]
     save_recent(paths)
     return paths
 

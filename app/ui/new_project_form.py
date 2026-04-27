@@ -20,9 +20,9 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
 from app.core.paths import (
-    ensure_project_folder, get_default_projects_dir,
-    project_file_in_folder, project_folder,
+    get_default_projects_dir, project_folder,
 )
+from app.core.project_folder import bootstrap_project_folder
 from app.ui.icons import load_icon
 
 # ---- Style ------------------------------------------------------------------
@@ -230,11 +230,7 @@ class NewProjectForm(ctk.CTkFrame):
             self._preview_var.set("")
             return
         try:
-            target = str(
-                project_file_in_folder(
-                    project_folder(save_dir, name), name,
-                ),
-            )
+            target = str(project_folder(save_dir, name)) + "/"
         except (OSError, ValueError):
             self._preview_var.set("")
             return
@@ -382,8 +378,14 @@ class NewProjectForm(ctk.CTkFrame):
                 parent=self.winfo_toplevel(),
             )
             return None
+        # Bootstrap the multi-page folder structure: project.json +
+        # assets/{pages,fonts,images,icons}/. The first page's
+        # .ctkproj is written by save_project after this returns;
+        # the path we return points at where it will land.
         try:
-            ensure_project_folder(target_folder)
+            _folder, _meta, page_path = bootstrap_project_folder(
+                save_dir, name,
+            )
         except OSError:
             self._flag_name_error()
             messagebox.showerror(
@@ -393,5 +395,4 @@ class NewProjectForm(ctk.CTkFrame):
                 parent=self.winfo_toplevel(),
             )
             return None
-        full_path = project_file_in_folder(target_folder, name)
-        return name, str(full_path), w, h
+        return name, str(page_path), w, h

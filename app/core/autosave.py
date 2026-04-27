@@ -32,8 +32,23 @@ AUTOSAVE_SUFFIX = ".autosave"
 
 
 def autosave_path_for(path: str | Path) -> Path:
-    """Sibling ``.autosave`` for a given project path."""
+    """Resolve the autosave slot for a given page path.
+
+    Multi-page projects: ``<root>/.autosave/<page_id>.json`` —
+    keeps autosaves out of ``assets/pages/`` and survives page
+    renames (id-keyed).
+
+    Legacy single-file projects: sibling ``<page>.ctkproj.autosave``.
+    """
     path = Path(path)
+    from app.core.project_folder import (
+        find_page_id_by_file, find_project_root, page_autosave_path,
+    )
+    folder = find_project_root(path)
+    if folder is not None:
+        page_id = find_page_id_by_file(folder, path.name)
+        if page_id:
+            return page_autosave_path(folder, page_id)
     return path.with_name(path.name + AUTOSAVE_SUFFIX)
 
 
@@ -168,6 +183,7 @@ class AutosaveController:
         tmp = target.with_name(target.name + ".tmp")
         data = project_to_dict(self.project)
         try:
+            target.parent.mkdir(parents=True, exist_ok=True)
             with tmp.open("w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
             os.replace(tmp, target)

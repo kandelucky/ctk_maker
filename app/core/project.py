@@ -192,6 +192,16 @@ class Project:
         # by anything that wants to compute paths inside the project
         # folder without reaching into MainWindow.
         self.path: str | None = None
+        # Multi-page project bookkeeping (P1). When the project is
+        # loaded as a folder with ``project.json``, ``folder_path``
+        # is the absolute path to that folder, ``pages`` is the
+        # ordered list of page metadata dicts (``{id, file, name}``),
+        # and ``active_page_id`` is the page currently in memory.
+        # Legacy single-file projects leave all three at ``None`` /
+        # empty so save/load fall back to single-file behaviour.
+        self.folder_path: str | None = None
+        self.pages: list[dict] = []
+        self.active_page_id: str | None = None
         # Project-level + per-widget-type font defaults. Keys:
         # "_all" (every text widget) and widget type_name strings
         # ("CTkButton", ...). Cascade order is per-widget override →
@@ -713,6 +723,12 @@ class Project:
         # module-level cache.
         self.font_defaults = {}
         self.system_fonts = []
+        # Multi-page metadata (folder_path / pages / active_page_id)
+        # is reset here too — the loader / New Project flow re-seeds
+        # it right after ``clear()``.
+        self.folder_path = None
+        self.pages = []
+        self.active_page_id = None
         self.event_bus.publish(
             "active_document_changed", self.active_document_id,
         )

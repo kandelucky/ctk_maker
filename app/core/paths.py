@@ -27,7 +27,7 @@ ASSETS_DIR_NAME = "assets"
 # real — no point shipping an empty folder users have to delete to
 # clean up. Re-add when a CTkAudioPlayer / sound widget actually
 # lands.
-ASSET_SUBDIRS = ("images", "fonts")
+ASSET_SUBDIRS = ("pages", "images", "fonts", "icons")
 
 
 def get_default_projects_dir() -> Path:
@@ -76,9 +76,16 @@ def project_file_in_folder(folder: str | Path, name: str) -> Path:
 
 
 def assets_dir(project_file: str | Path) -> Path:
-    """``<project_folder>/assets/`` for a given project file path.
-    Caller decides whether to create.
+    """``<project_folder>/assets/`` for a given project (page) file
+    path. Walks up to the project root marker (``project.json``)
+    when present so multi-page projects with pages nested under
+    ``assets/pages/`` still resolve to the shared pool. Falls back
+    to the legacy sibling ``assets/`` for single-file projects.
     """
+    from app.core.assets import project_assets_dir
+    resolved = project_assets_dir(project_file)
+    if resolved is not None:
+        return resolved
     return Path(project_file).parent / ASSETS_DIR_NAME
 
 
