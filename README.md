@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/screenshots/logo.png" alt="CTkMaker" width="100">
-</p>
-
 # CTkMaker
 
 Drag-and-drop visual designer for **CustomTkinter** — design Python GUIs without writing layout code by hand.
