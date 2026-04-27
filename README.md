@@ -2,7 +2,7 @@
 
 Drag-and-drop visual designer for **CustomTkinter** — design Python GUIs without writing layout code by hand.
 
-> **v1.0.1** — Card widget + bug sweep on top of the first stable release. Free and open source.
+> **v1.0.2** — Multi-page projects: one project, multiple Page designs sharing the asset pool. Plus quick-export, Save As scopes, and per-page export filtering.
 >
 > ⚠️ **Tested on Windows only.** macOS and Linux are not verified for this release — feedback and contributions welcome.
 
