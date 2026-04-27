@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/screenshots/logo.png" alt="CTkMaker" width="160">
+  <img src="docs/screenshots/logo.png" alt="CTkMaker" width="100">
 </p>
 
 # CTkMaker
