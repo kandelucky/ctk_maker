@@ -288,6 +288,19 @@ class LucideIconPickerDialog(tk.Toplevel):
         self._active_cat = key
         self._highlight_cat(key)
         self._refresh_grid()
+        # Reset scroll to top so the new category opens at its first
+        # row regardless of where the previous category was scrolled.
+        # CTkScrollableFrame doesn't expose ``yview_moveto`` directly —
+        # reach into the inner canvas. Defer with after_idle so the
+        # grid rebuild has time to update the scroll region first;
+        # otherwise yview_moveto sees stale dimensions and lands at
+        # the wrong fraction.
+        try:
+            self._grid_scroll.after_idle(
+                lambda: self._grid_scroll._parent_canvas.yview_moveto(0.0),
+            )
+        except Exception:
+            pass
 
     def _highlight_cat(self, active_key: str | None) -> None:
         for key, row in self._cat_buttons.items():

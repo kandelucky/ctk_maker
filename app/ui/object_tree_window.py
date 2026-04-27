@@ -144,6 +144,12 @@ class ObjectTreePanel(ctk.CTkFrame):
         # because ttk.Treeview's image= parameter rejects CTkImage).
         self._eye_icon = load_tk_icon("eye", size=16, color="#cccccc")
         self._eye_off_icon = load_tk_icon("eye-off", size=16, color="#666666")
+        # Cascade-dimmed eye: same ``eye`` glyph, dim colour. Used
+        # when a node's own ``visible=True`` but a hidden ancestor
+        # cascades the row to "effective hidden" — the user can tell
+        # at a glance that this row IS being hidden, but not because
+        # of an explicit toggle on this node.
+        self._eye_dim_icon = load_tk_icon("eye", size=16, color="#666666")
         self._window_icon_active = load_tk_icon(
             "app-window", size=16, color="#cccccc",
         )
@@ -581,7 +587,7 @@ class ObjectTreePanel(ctk.CTkFrame):
         if visible is not None and node.id not in visible:
             return
         name_cell = self._build_name_cell(node)
-        icon = self._eye_icon if node.visible else self._eye_off_icon
+        icon = self._resolve_eye_icon(node)
         lock_cell = LOCK_ON if node.locked else LOCK_OFF
         tags: tuple[str, ...] = ()
         if not self._effective_visible(node):
@@ -602,6 +608,20 @@ class ObjectTreePanel(ctk.CTkFrame):
             self._insert_node_flat(
                 child, depth=depth + 1, layer=child_index, visible=visible,
             )
+
+    def _resolve_eye_icon(self, node: "WidgetNode"):
+        """Pick the eye glyph for a row. Three states:
+        - own ``visible=False`` → ``eye-off`` (explicit hide on this node)
+        - cascade-hidden (own ``visible=True`` but ancestor hidden) →
+          dim ``eye`` so the icon shape stays familiar but reads as
+          inactive
+        - fully visible → bright ``eye``
+        """
+        if not node.visible:
+            return self._eye_off_icon
+        if not self._effective_visible(node):
+            return self._eye_dim_icon
+        return self._eye_icon
 
     def _effective_visible(self, node: "WidgetNode") -> bool:
         """True iff this node and every ancestor are visible."""
@@ -793,7 +813,7 @@ class ObjectTreePanel(ctk.CTkFrame):
         tree — silently no-op otherwise (e.g. filtered out)."""
         if not self.tree.exists(node.id):
             return
-        icon = self._eye_icon if node.visible else self._eye_off_icon
+        icon = self._resolve_eye_icon(node)
         lock_cell = LOCK_ON if node.locked else LOCK_OFF
         tags: list[str] = []
         if not self._effective_visible(node):

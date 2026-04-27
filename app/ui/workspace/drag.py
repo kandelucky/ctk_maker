@@ -1144,9 +1144,16 @@ class WidgetDragController:
         drops use coords relative to the container widget. Non-place
         containers ignore x/y so we zero them for a clean Inspector
         reading after the drop.
+
+        ``rel_x`` / ``rel_y`` are in physical screen pixels (winfo_*
+        returns physical), so dividing by ``canvas_scale`` (= user
+        zoom × DPI factor) yields the logical model coords. Using
+        ``zoom.value`` alone here was the source of a long-standing
+        bug on DPI > 1.0 systems where dropped widgets landed below /
+        right of the cursor by an amount proportional to the drop y
+        (the off-by-DPI multiplier compounded with each tk pixel).
         """
         widget, _ = self.widget_views[nid]
-        zoom = self.zoom.value or 1.0
         if target is None:
             rx = widget.winfo_rootx() - self.canvas.winfo_rootx()
             ry = widget.winfo_rooty() - self.canvas.winfo_rooty()
@@ -1172,10 +1179,11 @@ class WidgetDragController:
                     coord_ref = target_widget.tab(active)
                 except Exception:
                     coord_ref = target_widget
+        canvas_scale = self.zoom.canvas_scale or 1.0
         rel_x = widget.winfo_rootx() - coord_ref.winfo_rootx()
         rel_y = widget.winfo_rooty() - coord_ref.winfo_rooty()
-        new_x = int(rel_x / zoom)
-        new_y = int(rel_y / zoom)
+        new_x = int(rel_x / canvas_scale)
+        new_y = int(rel_y / canvas_scale)
         if normalise_layout_type(
             target.properties.get("layout_type", "place"),
         ) != "place":

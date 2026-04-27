@@ -1,5 +1,13 @@
 import uuid
 
+# Backwards-compat widget type renames. Older ``.ctkproj`` files
+# stored the historical type name; on load we silently translate to
+# the current one so existing projects don't break after a rename.
+# Rename only — kwargs / properties are unchanged across these mappings.
+_WIDGET_TYPE_RENAMES = {
+    "Shape": "Card",  # 2026-04-27: Shape → Card
+}
+
 
 class WidgetNode:
     def __init__(self, widget_type: str, properties: dict | None = None):
@@ -45,8 +53,11 @@ class WidgetNode:
 
     @classmethod
     def from_dict(cls, data: dict) -> "WidgetNode":
+        widget_type = _WIDGET_TYPE_RENAMES.get(
+            data["widget_type"], data["widget_type"],
+        )
         node = cls(
-            widget_type=data["widget_type"],
+            widget_type=widget_type,
             properties=data.get("properties", {}),
         )
         node.id = data["id"]

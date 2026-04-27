@@ -106,13 +106,13 @@ CATALOG: tuple[WidgetGroup, ...] = (
         ),
     )),
     WidgetGroup("Buttons", (
-        WidgetEntry("CTkButton", "Button", "square-dot"),
+        WidgetEntry("CTkButton", "Button", "square-mouse-pointer"),
         WidgetEntry("CTkSegmentedButton", "Segmented Button", "panel-left-right-dashed"),
     )),
     WidgetGroup("Display", (
         WidgetEntry("CTkLabel", "Label", "type"),
         WidgetEntry("Image", "Image", "image"),
-        WidgetEntry("Shape", "Shape", "square"),
+        WidgetEntry("Card", "Card", "circle-stop"),
         WidgetEntry("CTkProgressBar", "Progress Bar", "loader"),
     )),
     WidgetGroup("Selection", (

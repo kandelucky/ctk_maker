@@ -413,6 +413,13 @@ class Workspace(ctk.CTkFrame):
             nonlocal found, found_depth
             if exclude_id is not None and node.id == exclude_id:
                 return  # skip self + entire subtree
+            # Hidden widgets shouldn't act as drop targets — a hidden
+            # frame is logically "not there" on the canvas, so cursor
+            # tests + drag-into-frame should fall through to whatever
+            # is underneath. Subtree skipped too: descendants of a
+            # hidden frame would render hidden anyway.
+            if not getattr(node, "visible", True):
+                return
             descriptor = get_descriptor(node.widget_type)
             if descriptor is None:
                 return

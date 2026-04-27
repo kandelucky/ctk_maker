@@ -722,6 +722,14 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         )
         if not path:
             return
+        # Copy the assets/ tree to the new location BEFORE saving the
+        # ctkproj, so the saved file's tokenised asset paths
+        # (``asset:images/...``) resolve against a real folder. Without
+        # this, Save As writes only the .ctkproj and the new location
+        # has dangling references to assets back at the original path.
+        old_path = self._current_path
+        if old_path and Path(old_path).resolve() != Path(path).resolve():
+            self._copy_assets_to_new_location(old_path, path)
         try:
             save_project(self.project, path)
         except OSError:
@@ -734,6 +742,28 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         clear_autosave(self._current_path)
         clear_autosave(path)
         self._set_current_path(path)
+
+    def _copy_assets_to_new_location(
+        self, old_project_path: str, new_project_path: str,
+    ) -> None:
+        """Mirror the project's ``assets/`` folder from the old
+        location to the new one so a Save As lands a self-contained
+        project. Existing files at the destination are preserved
+        (``dirs_exist_ok=True``) so a target directory the user
+        prepared doesn't get blanked out. Failures log and continue —
+        the .ctkproj save still proceeds; the user can drop missing
+        assets in manually if needed.
+        """
+        try:
+            import shutil
+            src_assets = Path(old_project_path).parent / "assets"
+            if not src_assets.is_dir():
+                return
+            dst_assets = Path(new_project_path).parent / "assets"
+            dst_assets.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(src_assets, dst_assets, dirs_exist_ok=True)
+        except OSError:
+            log_error("save_as copy assets")
 
     def _on_preview_active(self) -> None:
         doc = self.project.active_document

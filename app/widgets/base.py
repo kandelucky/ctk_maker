@@ -9,6 +9,13 @@ class WidgetDescriptor:
     default_properties: dict = {}
     property_schema: list[dict] = []
     is_container: bool = False
+    # When True (default), the exporter auto-emits ``image=CTkImage(...)``
+    # + ``compound="left"`` constructor kwargs for any widget with an
+    # ``image`` property — matches CTkButton / CTkLabel / Image. Set
+    # False on widgets whose underlying CTk class doesn't accept those
+    # kwargs (Shape exports as CTkFrame, which rejects them; Shape
+    # builds an inner CTkLabel via ``export_state`` instead).
+    image_inline_kwarg: bool = True
     # Property keys that are stored as newline-separated strings in the
     # editor (multiline text box) but must be passed to CTk as a list of
     # strings at runtime. The exporter splits these on "\n" when emitting

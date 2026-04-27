@@ -774,6 +774,13 @@ def _emit_widget(
         and props.get("image_color_disabled")
         and "button_enabled" in props
     )
+    inline_image = getattr(descriptor, "image_inline_kwarg", True)
+    if image_path and not inline_image:
+        # Descriptor builds the image off-band (e.g. Shape's inner
+        # CTkLabel via ``export_state``) — don't auto-emit
+        # ``image=`` / ``compound=`` to the constructor since the
+        # underlying CTk class wouldn't accept them.
+        image_path = None
     if image_path:
         if has_disabled_tint:
             # Store both tinted variants on ``self`` so they stay
