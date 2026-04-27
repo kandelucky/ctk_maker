@@ -147,7 +147,7 @@ class MenuMixin:
         )
 
         self._recent_menu = tk.Menu(file_menu, tearoff=0, **MENU_STYLE)
-        self._add_cascade(file_menu, "Recent Forms", self._recent_menu, icon="history")
+        self._add_cascade(file_menu, "Recent Projects", self._recent_menu, icon="history")
         self._rebuild_recent_menu()
 
         file_menu.add_separator()
@@ -250,7 +250,7 @@ class MenuMixin:
         form_menu.add_separator()
         self._add_cmd(form_menu, "Rename", self._on_rename_current_doc,
                       icon="pencil", accelerator="Ctrl+I")
-        self._add_cmd(form_menu, "Form Settings", self._on_form_settings,
+        self._add_cmd(form_menu, "Window Settings", self._on_form_settings,
                       icon="settings")
         form_menu.add_separator()
         self._add_cmd(form_menu, "Move Up", self._on_move_doc_up,
@@ -263,8 +263,8 @@ class MenuMixin:
             postcommand=self._rebuild_windows_menu,
             **MENU_STYLE,
         )
-        form_menu.add_cascade(label="All Forms", menu=self._windows_menu)
-        menubar.add_cascade(label="Form", menu=form_menu)
+        form_menu.add_cascade(label="All Windows", menu=self._windows_menu)
+        menubar.add_cascade(label="Window", menu=form_menu)
 
         # ---- Widget ----
         widget_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)

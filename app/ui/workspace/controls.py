@@ -204,7 +204,7 @@ class WorkspaceControls:
 
         chevron_icon = load_icon("chevron-down", size=12)
         forms_btn = ctk.CTkButton(
-            bar, text="All Forms",
+            bar, text="All Windows",
             image=chevron_icon, compound="right",
             width=100, height=24, corner_radius=3,
             fg_color="transparent", hover_color=TOOL_BTN_HOVER,

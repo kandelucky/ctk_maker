@@ -8,13 +8,23 @@ Drag-and-drop visual designer for **CustomTkinter** — design Python GUIs witho
 
 [![CTkMaker canvas](docs/screenshots/canvas.png)](docs/screenshots/canvas.png)
 
+## Project structure
+
+A CTkMaker project is organised in four levels:
+
+- **Project** — a folder containing one or more page files plus a shared asset pool
+- **Page** — a single `.ctkproj` design (Login, Dashboard, Settings, ...) — pages share the project's fonts / images / icons
+- **Window** — a Tk window inside a page; either the **Main Window** (one per page) or a **Dialog Window** (zero or more)
+- **Widget** — buttons, labels, frames, etc. nested inside a window
+
 ## What it does
 
-- **Visual canvas** — real CTk widgets on a zoomable workspace. What you see is what you get. Multi-document: main window + dialogs in one project.
+- **Visual canvas** — real CTk widgets on a zoomable workspace. What you see is what you get. Multiple windows (main + dialogs) live on the same canvas in one page.
 - **Widgets — 20 in the palette:** Button, Segmented Button, Label, Image, Card, Progress Bar, Check Box, Radio Button, Switch, Entry, Textbox, Combo Box, Option Menu, Slider, Frame, Scrollable Frame, Tab View, Vertical Layout, Horizontal Layout, Grid Layout. Richer property editing than raw CTk: drag-scrub numbers, paired font family + size, multiline overlays, segmented value editor, scrollable dropdown for ComboBox / OptionMenu, color swatches with eyedropper. Open **Tools → Inspect CTk Widget** to see every property side-by-side — native CTk parameters vs builder-added helpers.
-- **Layout managers** — `place`, `vbox`, `hbox`, `grid` rendered with the actual Tk pack/grid managers. Drop into cells, drag to reparent, even across documents.
+- **Layout managers** — `place`, `vbox`, `hbox`, `grid` rendered with the actual Tk pack/grid managers. Drop into cells, drag to reparent, even across windows.
+- **Alignment & distribution** — toolbar buttons to align widgets (Left / Center / Right + Top / Middle / Bottom) and distribute them evenly. Auto-detects intent: a single widget aligns to its container, multiple widgets align to each other.
 - **Asset system** — fonts, images, and 1700+ Lucide icons managed inside the project folder. Tinted PNGs, system-font auto-import, portable references.
-- **Clean code export** — one runnable Python file per project. Optional `.zip` bundle (Python code + assets) for sharing.
+- **Clean code export** — one runnable Python file per window. Optional `.zip` bundle (Python code + assets) for sharing. Per-page export ships only the assets that page actually references.
 
 ## Screenshots
 
@@ -47,7 +57,7 @@ Full docs live in the [Wiki](https://github.com/kandelucky/ctk_maker/wiki):
 
 ## What's next
 
-- Alignment tools, marquee selection, snap-to-guides
+- Marquee selection, snap-to-guides
 - Variables panel + event handlers
 - Custom user widgets + plugin system
 - Distribution: PyInstaller bundles, installers, auto-updater
