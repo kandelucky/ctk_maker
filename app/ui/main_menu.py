@@ -220,6 +220,17 @@ class MenuMixin:
         )
         edit_menu.add_separator()
         self._add_cmd(
+            edit_menu, "Group", self._on_group_shortcut,
+            accelerator="Ctrl+G",
+        )
+        self._add_cmd(
+            edit_menu, "Ungroup", self._on_ungroup_shortcut,
+            accelerator="Ctrl+Shift+G",
+        )
+        edit_menu.add_separator()
+        self._build_align_submenu(edit_menu)
+        edit_menu.add_separator()
+        self._add_cmd(
             edit_menu, "Bring to Front", self._on_menu_bring_to_front,
         )
         self._add_cmd(
@@ -397,6 +408,12 @@ class MenuMixin:
         has_selection = bool(self.project.selected_ids)
         has_clipboard = bool(self.project.clipboard)
         has_any = any(True for _ in self.project.iter_all_widgets())
+        sel_ids = self.project.selected_ids or set()
+        can_group = self.project.can_group_selection(sel_ids)
+        can_ungroup = any(
+            getattr(self.project.get_widget(wid), "group_id", None)
+            for wid in sel_ids
+        )
         states = {
             "Undo": self.project.history.can_undo(),
             "Redo": self.project.history.can_redo(),
@@ -404,6 +421,8 @@ class MenuMixin:
             "Paste": has_clipboard,
             "Delete": has_selection,
             "Select All": has_any,
+            "Group": can_group,
+            "Ungroup": can_ungroup,
             "Bring to Front": has_selection,
             "Send to Back": has_selection,
         }
@@ -425,6 +444,40 @@ class MenuMixin:
                     i,
                     foreground=MENU_FG if states[label] else MENU_DISABLED_FG,
                 )
+        # Align submenu — mirror the toolbar's enable rule so menu
+        # items dim alongside their toolbar twins. Distribute needs
+        # 3+, the six aligns need 1+ (single-widget aligns to its
+        # container, multi aligns to the selection bbox).
+        align_menu = getattr(self, "_align_menu", None)
+        modes = getattr(self, "_align_menu_modes", None)
+        if align_menu is not None and modes:
+            from app.core.alignment import (
+                MODE_DISTRIBUTE_H, MODE_DISTRIBUTE_V,
+            )
+            nodes, _parent, _container = self._resolve_align_targets()
+            align_on = bool(nodes)
+            distribute_on = len(nodes) >= 3
+            try:
+                last_a = align_menu.index("end")
+            except tk.TclError:
+                last_a = None
+            if last_a is not None:
+                cmd_indices = [
+                    i for i in range(last_a + 1)
+                    if align_menu.type(i) == "command"
+                ]
+                for slot, item_idx in enumerate(cmd_indices):
+                    if slot >= len(modes):
+                        break
+                    mode = modes[slot]
+                    if mode in (MODE_DISTRIBUTE_H, MODE_DISTRIBUTE_V):
+                        enabled = distribute_on
+                    else:
+                        enabled = align_on
+                    align_menu.entryconfigure(
+                        item_idx,
+                        foreground=MENU_FG if enabled else MENU_DISABLED_FG,
+                    )
 
     # ------------------------------------------------------------------
     # Edit menu dispatchers — route to project methods so the same
@@ -553,6 +606,114 @@ class MenuMixin:
             return
         primary = self.project.selected_id or next(iter(all_ids))
         self.project.set_multi_selection(all_ids, primary=primary)
+
+    def _build_align_submenu(self, parent_menu) -> None:
+        """Insert an "Align" cascade into the Edit menu mirroring the
+        toolbar's 6 align + 2 distribute buttons. Item state is
+        refreshed by ``_refresh_edit_menu_state`` via the cached
+        ``_align_menu`` reference, using the same selection rules as
+        ``_refresh_align_buttons``.
+        """
+        from app.core.alignment import (
+            MODE_LEFT, MODE_CENTER_H, MODE_RIGHT,
+            MODE_TOP, MODE_CENTER_V, MODE_BOTTOM,
+            MODE_DISTRIBUTE_H, MODE_DISTRIBUTE_V,
+        )
+        align_menu = tk.Menu(parent_menu, tearoff=0, **MENU_STYLE)
+        self._align_menu = align_menu
+        self._align_menu_modes: list[str] = []
+
+        def _add(label, mode):
+            self._add_cmd(
+                align_menu, label,
+                lambda m=mode: self._on_align_action(m),
+            )
+            self._align_menu_modes.append(mode)
+
+        _add("Align Left", MODE_LEFT)
+        _add("Align Center Horizontally", MODE_CENTER_H)
+        _add("Align Right", MODE_RIGHT)
+        align_menu.add_separator()
+        _add("Align Top", MODE_TOP)
+        _add("Align Middle Vertically", MODE_CENTER_V)
+        _add("Align Bottom", MODE_BOTTOM)
+        align_menu.add_separator()
+        _add("Distribute Horizontally", MODE_DISTRIBUTE_H)
+        _add("Distribute Vertically", MODE_DISTRIBUTE_V)
+        parent_menu.add_cascade(label="Align", menu=align_menu)
+
+    def _on_group_shortcut(self) -> None:
+        """Tag every selected widget with a fresh group_id. Groups
+        live within one parent only — selections that span parents
+        or sit inside a layout container (vbox/hbox/grid) are
+        rejected by ``Project.can_group_selection`` so the rest of
+        the codebase can assume every group shares one parent.
+        """
+        import uuid
+        from app.core.commands import SetGroupCommand
+        ids = list(self.project.selected_ids or set())
+        if not self.project.can_group_selection(ids):
+            return
+        before: dict = {}
+        for wid in ids:
+            node = self.project.get_widget(wid)
+            if node is None:
+                continue
+            before[wid] = getattr(node, "group_id", None)
+        if not before:
+            return
+        new_group = str(uuid.uuid4())
+        after = {wid: new_group for wid in before}
+        for wid, gid in after.items():
+            self.project.set_group_id(wid, gid)
+        self.project.history.push(
+            SetGroupCommand(before, after, description="Group widgets"),
+        )
+
+    def _on_select_group(self, group_id: str) -> None:
+        """Replace the current selection with every member of
+        ``group_id``. Triggered by the right-click "Select Group"
+        entry — the within-group invariant in
+        ``set_multi_selection`` keeps this from clashing with
+        already-selected widgets outside the group.
+        """
+        members = self.project.iter_group_members(group_id)
+        ids = {m.id for m in members}
+        if not ids:
+            return
+        primary = self.project.selected_id if self.project.selected_id in ids else next(iter(ids))
+        self.project.set_multi_selection(ids, primary)
+
+    def _on_ungroup_shortcut(self) -> None:
+        """Strip the group tag off every widget that shares a group
+        with the current selection. Triggered by Ctrl+Shift+G — picks
+        up every group represented in the selection so ungrouping one
+        member ungroups its whole group.
+        """
+        from app.core.commands import SetGroupCommand
+        sel_ids = self.project.selected_ids or set()
+        group_ids: set = set()
+        for wid in sel_ids:
+            node = self.project.get_widget(wid)
+            gid = getattr(node, "group_id", None) if node else None
+            if gid:
+                group_ids.add(gid)
+        if not group_ids:
+            return
+        before: dict = {}
+        for gid in group_ids:
+            for member in self.project.iter_group_members(gid):
+                before[member.id] = gid
+        if not before:
+            return
+        after = {wid: None for wid in before}
+        for wid, gid in after.items():
+            self.project.set_group_id(wid, gid)
+        self.project.history.push(
+            SetGroupCommand(
+                before, after, description="Ungroup widgets",
+            ),
+        )
 
     def _on_menu_bring_to_front(self) -> None:
         sid = self.project.selected_id

@@ -30,6 +30,12 @@ class WidgetNode:
         # arrow-nudge / delete — protects background containers from
         # accidental edits. Cascades through descendants.
         self.locked: bool = False
+        # Builder-only group tag. Widgets sharing a group_id are
+        # selected together by a single click and are dragged /
+        # deleted as one unit. Cross-parent groups are allowed —
+        # group_id is metadata, not hierarchy. Skipped from code
+        # export (the generated Python sees only individual widgets).
+        self.group_id: str | None = None
 
     def to_dict(self) -> dict:
         # Shallow-copy ``properties`` so callers (project_saver
@@ -49,6 +55,8 @@ class WidgetNode:
         }
         if self.parent_slot is not None:
             result["parent_slot"] = self.parent_slot
+        if self.group_id is not None:
+            result["group_id"] = self.group_id
         return result
 
     @classmethod
@@ -65,6 +73,7 @@ class WidgetNode:
         node.visible = bool(data.get("visible", True))
         node.locked = bool(data.get("locked", False))
         node.parent_slot = data.get("parent_slot")
+        node.group_id = data.get("group_id")
         for child_data in data.get("children", []):
             child = cls.from_dict(child_data)
             child.parent = node

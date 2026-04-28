@@ -2,7 +2,7 @@
 
 Drag-and-drop visual designer for **CustomTkinter** — design Python GUIs without writing layout code by hand.
 
-> **v1.0.4** — Marquee selection (drag a rectangle on empty canvas to multi-select) + smart snap guides (cyan lines snap a dragged widget to its siblings' or container's edges and centres). Hold Alt during drag to bypass snap.
+> **v1.0.5** — Group / Ungroup widgets (Ctrl+G / Ctrl+Shift+G). Click a member selects the whole group, a fast follow-up click drills to a single member, drag always carries the group as one. Object Tree shows a virtual `◆ Group (n)` parent row with members nested in soft orange. Edit menu now includes an Align submenu.
 >
 > ⚠️ **Tested on Windows only.** macOS and Linux are not verified for this release — feedback and contributions welcome.
 
@@ -24,6 +24,7 @@ A CTkMaker project is organised in four levels:
 - **Layout managers** — `place`, `vbox`, `hbox`, `grid` rendered with the actual Tk pack/grid managers. Drop into cells, drag to reparent, even across windows.
 - **Alignment & distribution** — toolbar buttons to align widgets (Left / Center / Right + Top / Middle / Bottom) and distribute them evenly. Auto-detects intent: a single widget aligns to its container, multiple widgets align to each other.
 - **Marquee selection + smart snap guides** — drag a rectangle on empty canvas to multi-select; while dragging a widget, cyan guide lines snap its edges / centre to siblings and to the container. Hold Alt to bypass.
+- **Groups** — Ctrl+G binds a same-parent selection together; clicking any member targets the whole group, fast follow-up drills to a single member, drag always carries the group as one. Object Tree shows them as a virtual `◆ Group (n)` parent with members nested in soft orange. Ctrl+Shift+G dissolves the group.
 - **Asset system** — fonts, images, and 1700+ Lucide icons managed inside the project folder. Tinted PNGs, system-font auto-import, portable references.
 - **Clean code export** — one runnable Python file per window. Optional `.zip` bundle (Python code + assets) for sharing. Per-page export ships only the assets that page actually references.
 

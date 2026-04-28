@@ -1442,6 +1442,7 @@ class Workspace(ctk.CTkFrame):
             and nid in self.project.selected_ids
         )
         menu = tk.Menu(self.winfo_toplevel(), tearoff=0)
+        toplevel = self.winfo_toplevel()
         if multi_active:
             count = len(self.project.selected_ids)
             menu.add_command(
@@ -1457,6 +1458,7 @@ class Workspace(ctk.CTkFrame):
                 label=f"Delete {count} widgets",
                 command=self._on_delete,
             )
+            self._add_group_entries_to_menu(menu, toplevel)
         else:
             self.project.select_widget(nid)
             menu.add_command(
@@ -1479,6 +1481,7 @@ class Workspace(ctk.CTkFrame):
                 command=lambda: self._prompt_rename_widget(nid),
             )
             menu.add_command(label="Delete", command=self._on_delete)
+            self._add_group_entries_to_menu(menu, toplevel)
             menu.add_separator()
             menu.add_command(
                 label="Bring to Front",
@@ -1493,6 +1496,53 @@ class Workspace(ctk.CTkFrame):
         finally:
             menu.grab_release()
         return "break"
+
+    def _add_group_entries_to_menu(self, menu, toplevel) -> None:
+        """Append the Group / Ungroup / Select Group entries to a
+        context menu — each only added when currently runnable.
+        Routes to the same MainWindow handlers used by the Edit menu
+        and Ctrl+G / Ctrl+Shift+G so every entry point produces the
+        same history record.
+        """
+        sel_ids = set(self.project.selected_ids or set())
+        can_group = self.project.can_group_selection(sel_ids)
+        # "Select Group" only makes sense when the current selection
+        # is a partial group (1 member of a 2+ member group). Whole
+        # group already selected → entry would be a no-op.
+        select_group_id: str | None = None
+        for wid in sel_ids:
+            node = self.project.get_widget(wid)
+            gid = getattr(node, "group_id", None) if node else None
+            if not gid:
+                continue
+            members = self.project.iter_group_members(gid)
+            if len(members) > 1 and sel_ids != {m.id for m in members}:
+                select_group_id = gid
+                break
+        can_ungroup = any(
+            getattr(self.project.get_widget(wid), "group_id", None)
+            for wid in sel_ids
+        )
+        if not (can_group or can_ungroup or select_group_id):
+            return
+        menu.add_separator()
+        if can_group:
+            menu.add_command(
+                label="Group",
+                accelerator="Ctrl+G",
+                command=toplevel._on_group_shortcut,
+            )
+        if select_group_id:
+            menu.add_command(
+                label="Select Group",
+                command=lambda gid=select_group_id: toplevel._on_select_group(gid),
+            )
+        if can_ungroup:
+            menu.add_command(
+                label="Ungroup",
+                accelerator="Ctrl+Shift+G",
+                command=toplevel._on_ungroup_shortcut,
+            )
 
     def _copy_selection(self) -> None:
         ids = self.project.selected_ids

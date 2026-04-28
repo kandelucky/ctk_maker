@@ -253,6 +253,27 @@ class WidgetDragController:
                 current_ids.discard(nid)
                 new_primary = next(iter(current_ids), None)
             else:
+                # Cross-parent shift+click clears the prior selection
+                # so multi-select stays single-parent only — keeps
+                # Group/Ungroup, drag, and reparent invariants simple
+                # (everything operates inside one geometry context).
+                clicked_node = self.project.get_widget(nid)
+                clicked_parent = (
+                    clicked_node.parent.id
+                    if clicked_node is not None
+                       and clicked_node.parent is not None
+                    else None
+                )
+                existing_parents: set = set()
+                for wid in current_ids:
+                    n = self.project.get_widget(wid)
+                    if n is None:
+                        continue
+                    existing_parents.add(
+                        n.parent.id if n.parent is not None else None,
+                    )
+                if existing_parents and clicked_parent not in existing_parents:
+                    current_ids = set()
                 current_ids.add(nid)
                 new_primary = nid
             self.project.set_multi_selection(current_ids, new_primary)
@@ -262,6 +283,49 @@ class WidgetDragController:
             if len(current_ids) > 1 and ws.controls.tool == "edit":
                 ws.controls.set_tool("select")
             return new_primary or nid
+        # Group-member shortcut — bypasses the Frame-outermost drill
+        # so a click on a grouped widget targets the group directly:
+        #   - cold click on a member → whole group selected
+        #   - fast follow-up click on the same member → drill to
+        #     single member (Figma-style)
+        #   - slow follow-up → group stays as-is (no change), so
+        #     the user can repeatedly grab + reposition the group
+        #     without the selection cycling out from under them
+        # Mirrors the Frame drill-down rhythm in _resolve_click_target
+        # (same _DRILL_WINDOW_MS, same _last_click_* state).
+        clicked_node = self.project.get_widget(nid)
+        click_gid = (
+            getattr(clicked_node, "group_id", None)
+            if clicked_node is not None else None
+        )
+        if click_gid and not ws._effective_locked(nid):
+            members = list(self.project.iter_group_members(click_gid))
+            member_ids = {m.id for m in members}
+            if len(member_ids) > 1:
+                now_ms = int(self.workspace.tk.call(
+                    "clock", "milliseconds",
+                ))
+                same_leaf = nid == self._last_click_leaf_id
+                within_window = (
+                    now_ms - self._last_click_time_ms
+                ) <= self._DRILL_WINDOW_MS
+                fast_follow_up = same_leaf and within_window
+                # Update the stamp BEFORE returning so the next
+                # click sees the correct timing context.
+                self._last_click_leaf_id = nid
+                self._last_click_time_ms = now_ms
+                if existing_ids == member_ids:
+                    if fast_follow_up:
+                        # Fast click on member of selected group → drill
+                        self.project.select_widget(nid)
+                        return nid
+                    # Slow click — keep group selected, no change.
+                    return nid
+                # Cold / unrelated previous selection → whole group
+                self.project.set_multi_selection(member_ids, nid)
+                if ws.controls.tool == "edit":
+                    ws.controls.set_tool("select")
+                return nid
         if len(existing_ids) > 1 and nid in existing_ids:
             return nid
         resolved = self._resolve_click_target(nid)
@@ -283,6 +347,19 @@ class WidgetDragController:
         )
         if resolved_nid not in selected_ids:
             selected_ids = {resolved_nid}
+        # Group expansion — drag of any grouped widget always carries
+        # every member of its group, regardless of which member is
+        # currently the selection. Keeps the group invariant: a
+        # single member can't be moved away from its siblings.
+        for wid in list(selected_ids):
+            w_node = self.project.get_widget(wid)
+            gid = (
+                getattr(w_node, "group_id", None)
+                if w_node is not None else None
+            )
+            if gid:
+                for member in self.project.iter_group_members(gid):
+                    selected_ids.add(member.id)
         group_starts: dict = {}
         for wid in selected_ids:
             w_node = self.project.get_widget(wid)
@@ -1146,6 +1223,11 @@ class WidgetDragController:
         widget started inside a container and wasn't dropped inside
         that same container. Returns True when extraction happened —
         callers skip grid / reparent fallbacks after.
+
+        Multi-widget grouped extracts: when ``drag_ids`` covers more
+        than the primary AND every member shares the source parent
+        (group invariant), the whole group is extracted together so
+        the user can drag a group out of a Frame as one unit.
         """
         ws = self.workspace
         nid = drag["nid"]
@@ -1164,11 +1246,27 @@ class WidgetDragController:
         )
         if old_doc is None:
             return False
-        # Land at the cursor's position translated into the source
-        # document's logical coords — that's where the user aimed.
-        # If the cursor is outside the source document (dropped over
-        # another form or empty canvas), fall back to a cascade
-        # default so the widget doesn't vanish off-form.
+        # Multi-widget group extract — when every group_starts member
+        # shares ``old_parent_id``, extract them all together so the
+        # group invariant survives. Single-widget path stays the same.
+        drag_ids = list(drag.get("group_starts", {}).keys())
+        all_share_parent = (
+            len(drag_ids) >= 2
+            and nid in drag_ids
+            and all(
+                (lambda w: w is not None and w.parent is not None
+                 and w.parent.id == old_parent_id)(
+                    self.project.get_widget(wid),
+                )
+                for wid in drag_ids
+            )
+        )
+        if all_share_parent:
+            self._perform_group_extract(
+                event, drag, old_parent_id, old_doc, cx, cy,
+            )
+            return True
+        # Single-widget path.
         cursor_doc = ws._find_document_at_canvas(cx, cy)
         if cursor_doc is old_doc:
             lx, ly = self.zoom.canvas_to_logical(cx, cy, document=old_doc)
@@ -1177,8 +1275,6 @@ class WidgetDragController:
                 h = int(node.properties.get("height", 0) or 0)
             except (TypeError, ValueError):
                 w = h = 0
-            # Centre-ish on cursor so the release point lines up
-            # visually with the drop location.
             nx = max(0, min(lx - w // 2, max(0, old_doc.width - w)))
             ny = max(0, min(ly - h // 2, max(0, old_doc.height - h)))
         else:
@@ -1186,7 +1282,6 @@ class WidgetDragController:
             nx, ny = find_free_cascade_slot(
                 old_doc.root_widgets, start_xy=(20, 20), exclude=node,
             )
-        # Undo snapshot
         old_siblings = node.parent.children
         try:
             old_index = old_siblings.index(node)
@@ -1195,7 +1290,6 @@ class WidgetDragController:
         old_x = drag["start_x"]
         old_y = drag["start_y"]
         old_parent_slot = node.parent_slot
-        # Mutate: remove from container, append to doc root, reset x/y
         node.properties["x"] = nx
         node.properties["y"] = ny
         node.parent_slot = None
@@ -1225,6 +1319,132 @@ class WidgetDragController:
             ),
         )
         return True
+
+    def _perform_group_extract(
+        self, event, drag: dict, old_parent_id: str,
+        old_doc, cx: float, cy: float,
+    ) -> None:
+        """Extract every widget in ``drag['group_starts']`` from a
+        shared container to the source document's root, preserving
+        each member's relative offset to the primary so the group
+        keeps its visual layout after the drop. Pushes a single
+        ``BulkReparentCommand`` so undo rewinds everything together.
+        """
+        ws = self.workspace
+        nid = drag["nid"]
+        primary = self.project.get_widget(nid)
+        if primary is None:
+            return
+        # Anchor: where the cursor lands in old_doc's logical coords
+        # (or a cascade slot when dropped on a different form).
+        cursor_doc = ws._find_document_at_canvas(cx, cy)
+        try:
+            primary_w = int(primary.properties.get("width", 0) or 0)
+            primary_h = int(primary.properties.get("height", 0) or 0)
+        except (TypeError, ValueError):
+            primary_w = primary_h = 0
+        if cursor_doc is old_doc:
+            lx, ly = self.zoom.canvas_to_logical(
+                cx, cy, document=old_doc,
+            )
+            anchor_x = max(0, min(
+                lx - primary_w // 2,
+                max(0, old_doc.width - primary_w),
+            ))
+            anchor_y = max(0, min(
+                ly - primary_h // 2,
+                max(0, old_doc.height - primary_h),
+            ))
+        else:
+            from app.core.project import find_free_cascade_slot
+            anchor_x, anchor_y = find_free_cascade_slot(
+                old_doc.root_widgets, start_xy=(20, 20), exclude=primary,
+            )
+        # Compute per-member offset from the primary's pre-drag pos.
+        primary_start_x, primary_start_y = drag["group_starts"][nid]
+        snapshots: list = []
+        old_parent_node = self.project.get_widget(old_parent_id)
+        old_siblings = (
+            old_parent_node.children if old_parent_node is not None
+            else []
+        )
+        same_doc_id = old_doc.id
+        drag_ids = list(drag["group_starts"].keys())
+        for wid in drag_ids:
+            w_node = self.project.get_widget(wid)
+            if w_node is None:
+                continue
+            sx, sy = drag["group_starts"][wid]
+            try:
+                old_idx = old_siblings.index(w_node)
+            except ValueError:
+                old_idx = len(old_siblings)
+            old_parent_slot = w_node.parent_slot
+            new_x = max(0, anchor_x + (sx - primary_start_x))
+            new_y = max(0, anchor_y + (sy - primary_start_y))
+            snapshots.append({
+                "wid": wid, "old_index": old_idx,
+                "old_x": sx, "old_y": sy,
+                "new_x": new_x, "new_y": new_y,
+                "old_parent_slot": old_parent_slot,
+            })
+        # Mutate in two phases: detach all from old parent, then
+        # append to doc root in original sibling order so z-order
+        # carries over to the new top-level layer.
+        nodes_to_move: list = []
+        for snap in snapshots:
+            w_node = self.project.get_widget(snap["wid"])
+            if w_node is None:
+                continue
+            w_node.properties["x"] = snap["new_x"]
+            w_node.properties["y"] = snap["new_y"]
+            w_node.parent_slot = None
+            if w_node in old_siblings:
+                old_siblings.remove(w_node)
+            w_node.parent = None
+            nodes_to_move.append(w_node)
+        # Stable order: lowest old_index first → preserves z-order
+        # in the new container.
+        nodes_to_move.sort(
+            key=lambda n: next(
+                (s["old_index"] for s in snapshots if s["wid"] == n.id),
+                0,
+            ),
+        )
+        for w_node in nodes_to_move:
+            old_doc.root_widgets.append(w_node)
+            self.project.event_bus.publish(
+                "widget_reparented", w_node.id, old_parent_id, None,
+            )
+        # Push BulkReparentCommand — one entry per moved member.
+        cmds: list = []
+        for snap in snapshots:
+            w_node = self.project.get_widget(snap["wid"])
+            if w_node is None:
+                continue
+            try:
+                new_idx = old_doc.root_widgets.index(w_node)
+            except ValueError:
+                new_idx = len(old_doc.root_widgets) - 1
+            cmds.append(ReparentCommand(
+                snap["wid"],
+                old_parent_id=old_parent_id,
+                old_index=snap["old_index"],
+                old_x=snap["old_x"],
+                old_y=snap["old_y"],
+                new_parent_id=None,
+                new_index=new_idx,
+                new_x=snap["new_x"],
+                new_y=snap["new_y"],
+                old_document_id=same_doc_id,
+                new_document_id=same_doc_id,
+                old_parent_slot=snap["old_parent_slot"],
+                new_parent_slot=None,
+            ))
+        if len(cmds) == 1:
+            self.project.history.push(cmds[0])
+        elif cmds:
+            self.project.history.push(BulkReparentCommand(cmds))
 
     # ------------------------------------------------------------------
     # Reparent detection
@@ -1306,6 +1526,16 @@ class WidgetDragController:
                 drag, old_doc, new_doc,
                 old_parent_id, new_parent_id,
             )
+            return True
+        # Multi-widget group reparent — when the drag carries a full
+        # selection (clicked a grouped widget), every member must
+        # follow the primary into the new parent. Without this only
+        # the clicked widget reparents and the rest stay in the old
+        # Frame visually shifted by the drag delta.
+        if self._perform_in_doc_group_reparent(
+            drag, target, new_parent_id, old_parent_id,
+            old_doc, new_doc, new_parent_slot, old_parent_slot,
+        ):
             return True
         self.project.reparent(nid, new_parent_id)
         self._push_reparent_command(
@@ -1389,6 +1619,119 @@ class WidgetDragController:
         ) != "place":
             new_x = new_y = 0
         return new_x, new_y
+
+    def _perform_in_doc_group_reparent(
+        self, drag: dict, target, new_parent_id: str | None,
+        old_parent_id: str | None, old_doc, new_doc,
+        new_parent_slot: str | None, old_parent_slot: str | None,
+    ) -> bool:
+        """Same-doc multi-widget reparent for a grouped drag. Returns
+        True when the multi-widget path ran (and pushed bulk undo);
+        False to fall through to the single-widget reparent.
+
+        Triggers only when (a) the drag carries 2+ widgets, (b) every
+        carried widget shares ``old_parent_id``, and (c) every widget
+        has place layout. Mixed-parent or non-place groups fall back
+        to the single-widget path so behavior degrades gracefully
+        instead of corrupting the model.
+        """
+        nid = drag["nid"]
+        drag_ids = list(drag.get("group_starts", {}).keys())
+        if len(drag_ids) < 2 or nid not in drag_ids:
+            return False
+        # Every member must share the primary's source parent — group
+        # invariants enforce this at Group time, but a stale selection
+        # might still slip through, so verify.
+        for wid in drag_ids:
+            w_node = self.project.get_widget(wid)
+            if w_node is None:
+                return False
+            wp_id = (
+                w_node.parent.id if w_node.parent is not None else None
+            )
+            if wp_id != old_parent_id:
+                return False
+        # Snapshot every member's pre-reparent state before any of
+        # them get moved — needed for the bulk undo path.
+        snapshots: list = []
+        for wid in drag_ids:
+            w_node = self.project.get_widget(wid)
+            if w_node is None:
+                continue
+            siblings = (
+                w_node.parent.children if w_node.parent is not None
+                else (
+                    old_doc.root_widgets if old_doc is not None
+                    else self.project.root_widgets
+                )
+            )
+            try:
+                old_idx = siblings.index(w_node)
+            except ValueError:
+                old_idx = len(siblings)
+            sx, sy = drag["group_starts"][wid]
+            snapshots.append({
+                "wid": wid, "old_index": old_idx,
+                "old_x": sx, "old_y": sy,
+            })
+        # Reparent each member with its own target-space coords.
+        # Primary already has its coords updated by the caller — skip
+        # the recompute for it; for everyone else, _compute_drop_coords
+        # reads the post-drag canvas position so each lands relative
+        # to the target.
+        for wid in drag_ids:
+            w_node = self.project.get_widget(wid)
+            if w_node is None:
+                continue
+            if wid != nid:
+                wx, wy = self._compute_drop_coords(wid, target, new_doc)
+                w_node.properties["x"] = max(0, wx)
+                w_node.properties["y"] = max(0, wy)
+                w_node.parent_slot = new_parent_slot
+            self.project.reparent(wid, new_parent_id)
+        # Bulk undo command, one per member, in the same order they
+        # were reparented so redo replays the original sequence.
+        old_doc_id = old_doc.id if old_doc is not None else None
+        new_doc_id = new_doc.id if new_doc is not None else old_doc_id
+        reparent_cmds: list = []
+        for snap in snapshots:
+            wid = snap["wid"]
+            w_node = self.project.get_widget(wid)
+            if w_node is None:
+                continue
+            new_siblings = (
+                w_node.parent.children if w_node.parent is not None
+                else self.project.root_widgets
+            )
+            try:
+                new_idx = new_siblings.index(w_node)
+            except ValueError:
+                new_idx = len(new_siblings) - 1
+            try:
+                new_x = int(w_node.properties.get("x", 0))
+                new_y = int(w_node.properties.get("y", 0))
+            except (TypeError, ValueError):
+                new_x = new_y = 0
+            reparent_cmds.append(ReparentCommand(
+                wid,
+                old_parent_id=old_parent_id,
+                old_index=snap["old_index"],
+                old_x=snap["old_x"],
+                old_y=snap["old_y"],
+                new_parent_id=new_parent_id,
+                new_index=new_idx,
+                new_x=new_x,
+                new_y=new_y,
+                old_document_id=old_doc_id,
+                new_document_id=new_doc_id,
+                old_parent_slot=old_parent_slot if wid == nid else None,
+                new_parent_slot=new_parent_slot,
+            ))
+        if len(reparent_cmds) == 1:
+            self.project.history.push(reparent_cmds[0])
+        elif reparent_cmds:
+            self.project.history.push(BulkReparentCommand(reparent_cmds))
+        return True
 
     def _perform_cross_doc_group_move(
         self, drag: dict, old_doc, new_doc,

@@ -26,6 +26,13 @@ RECT_COLOR = "#3b8ed0"
 RECT_THICKNESS = 2
 SELECTION_PAD = 6
 MIN_WIDGET_SIZE = 20
+# Distinct outline colour for a complete-group selection. An extra
+# rectangle is drawn around the union bbox of all members so the
+# user can tell "I clicked a grouped widget" apart from a manual
+# multi-select. Brand cyan would clash with the per-widget blue
+# outlines, so we use the warm accent instead.
+GROUP_BBOX_COLOR = "#ff9f43"
+GROUP_BBOX_PAD = 4
 
 HANDLE_CURSORS = {
     "nw": "size_nw_se",
@@ -83,6 +90,10 @@ class SelectionController:
         # needed, shrinks only by hiding surplus entries (the tk.Frame
         # itself stays around for future reuse).
         self._outline_pool: list[dict[str, tuple[int, tk.Frame]]] = []
+        # Single 4-edge frame set drawn around the union bbox when
+        # the current selection equals every member of one group.
+        # Lazily allocated on the first group-selection draw.
+        self._group_bbox: dict[str, tuple[int, tk.Frame]] = {}
 
         self._resize: dict | None = None
 
@@ -129,6 +140,10 @@ class SelectionController:
             self._position_outline(i, bbox, wid)
         for i in range(len(non_primary), len(self._outline_pool)):
             self._hide_outline(i)
+        # Group bounding box — drawn only when the selection equals
+        # every member of exactly one group. Distinguishes "I clicked
+        # a grouped widget" from "I shift-clicked these together".
+        self._draw_group_bbox(ids)
         # Chrome must stay above every widget on the canvas. Pool
         # frames are lifted once at allocation time, but a subsequent
         # ``render.redraw`` or widget reparent re-stacks widgets via
@@ -172,6 +187,7 @@ class SelectionController:
         self._set_handles_visible(False)
         for i in range(len(self._outline_pool)):
             self._hide_outline(i)
+        self._set_group_bbox_visible(False)
 
     # ------------------------------------------------------------------
     # Resize flow — driven by handle widget bindings
@@ -448,6 +464,83 @@ class SelectionController:
         for window_id, _ in entry.values():
             try:
                 self.canvas.itemconfigure(window_id, state="hidden")
+            except tk.TclError:
+                pass
+
+    # ------------------------------------------------------------------
+    # Group bounding box (drawn around full-group selection)
+    # ------------------------------------------------------------------
+    def _draw_group_bbox(self, ids: list) -> None:
+        bbox = self._group_bbox_geom(ids)
+        if bbox is None:
+            self._set_group_bbox_visible(False)
+            return
+        self._ensure_group_bbox_allocated()
+        x1, y1, x2, y2 = bbox
+        x1 -= GROUP_BBOX_PAD
+        y1 -= GROUP_BBOX_PAD
+        x2 += GROUP_BBOX_PAD
+        y2 += GROUP_BBOX_PAD
+        for side, (x, y, w, h) in self._edge_geoms(x1, y1, x2, y2).items():
+            window_id, frame = self._group_bbox[side]
+            try:
+                self.canvas.coords(window_id, x, y)
+                self.canvas.itemconfigure(
+                    window_id, width=max(1, w), height=max(1, h),
+                    state="normal",
+                )
+                frame.lift()
+            except tk.TclError:
+                pass
+
+    def _group_bbox_geom(self, ids: list):
+        if not ids:
+            return None
+        first_node = self.project.get_widget(ids[0])
+        gid = getattr(first_node, "group_id", None) if first_node else None
+        if not gid:
+            return None
+        members = self.project.iter_group_members(gid)
+        member_ids = {m.id for m in members}
+        if member_ids != set(ids) or len(member_ids) < 2:
+            return None
+        x1 = y1 = float("inf")
+        x2 = y2 = float("-inf")
+        any_bbox = False
+        for wid in ids:
+            b = self._bbox_for(wid)
+            if b is None:
+                continue
+            any_bbox = True
+            x1 = min(x1, b[0])
+            y1 = min(y1, b[1])
+            x2 = max(x2, b[2])
+            y2 = max(y2, b[3])
+        if not any_bbox:
+            return None
+        return (int(x1), int(y1), int(x2), int(y2))
+
+    def _ensure_group_bbox_allocated(self) -> None:
+        if self._group_bbox:
+            return
+        for side in ("top", "bottom", "left", "right"):
+            frame = tk.Frame(
+                self.canvas, bg=GROUP_BBOX_COLOR, highlightthickness=0,
+                width=1, height=1,
+            )
+            window_id = self.canvas.create_window(
+                0, 0, window=frame, anchor="nw",
+                width=1, height=1, state="hidden",
+                tags=("selection_chrome",),
+            )
+            frame.lift()
+            self._group_bbox[side] = (window_id, frame)
+
+    def _set_group_bbox_visible(self, visible: bool) -> None:
+        state = "normal" if visible else "hidden"
+        for window_id, _ in self._group_bbox.values():
+            try:
+                self.canvas.itemconfigure(window_id, state=state)
             except tk.TclError:
                 pass
 

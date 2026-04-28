@@ -139,6 +139,11 @@ class ObjectTreePanel(ctk.CTkFrame):
         # Expand/collapse state for containers. None = expand by
         # default; a node id in this set means "user collapsed me".
         self._collapsed_ids: set[str] = set()
+        # Per-virtual-group-row depth — populated on every refresh
+        # so ``_click_on_arrow`` can hit-test the arrow region for
+        # synthetic ``group:<gid>`` rows (which have no widget node
+        # backing them, so ``_node_depth`` doesn't apply).
+        self._group_row_depths: dict[str, int] = {}
 
         # Row images for the visibility toggle (must be tk.PhotoImage
         # because ttk.Treeview's image= parameter rejects CTkImage).
@@ -181,6 +186,7 @@ class ObjectTreePanel(ctk.CTkFrame):
             ("widget_renamed", self._on_widget_renamed),
             ("widget_visibility_changed", self._on_widget_visibility_changed),
             ("widget_locked_changed", self._on_widget_locked_changed),
+            ("widget_group_changed", self._on_widget_group_changed),
             ("selection_changed", self._on_selection_changed),
             ("active_document_changed", self._on_project_changed),
             # layout_type changes the container's name suffix, so we
@@ -424,6 +430,14 @@ class ObjectTreePanel(ctk.CTkFrame):
             "locked-row",
             font=("Segoe UI", TREE_FONT_SIZE, "italic"),
         )
+        # Group rows — name text colored, NOT the row background
+        # (background tint would override the tk selection highlight
+        # and make the selected row indistinguishable from siblings).
+        # Virtual parent gets the strong group orange; member rows
+        # get a softer tint so they read as "in the group" without
+        # competing with the parent.
+        self.tree.tag_configure("group-row", foreground="#ff9f43")
+        self.tree.tag_configure("group-member", foreground="#d49764")
 
         # Insertion line overlay — placed on demand above the tree row.
         self._insert_line = tk.Frame(tree_row, bg=DROP_TARGET_BG, height=2)
@@ -443,14 +457,14 @@ class ObjectTreePanel(ctk.CTkFrame):
         try:
             self._rebuild_filter_options()
             self.tree.delete(*self.tree.get_children(""))
+            self._group_row_depths.clear()
             self._refresh_doc_header()
             visible = self._compute_visible_set()
             active = self.project.active_document
             if active is not None:
-                for index, node in enumerate(active.root_widgets):
-                    self._insert_node_flat(
-                        node, depth=0, layer=index, visible=visible,
-                    )
+                self._insert_children_with_groups(
+                    active.root_widgets, depth=0, visible=visible,
+                )
             self._apply_selection(self.project.selected_id)
         finally:
             self._syncing = False
@@ -579,6 +593,7 @@ class ObjectTreePanel(ctk.CTkFrame):
         depth: int,
         layer: int,
         visible: set[str] | None = None,
+        in_group: bool = False,
     ) -> None:
         """Insert a row for `node` at the top level (no real tree
         parent), with indentation + arrow simulated in the Name
@@ -586,7 +601,9 @@ class ObjectTreePanel(ctk.CTkFrame):
         """
         if visible is not None and node.id not in visible:
             return
-        name_cell = self._build_name_cell(node)
+        name_cell = self._build_name_cell(
+            node, extra_depth=1 if in_group else 0,
+        )
         icon = self._resolve_eye_icon(node)
         lock_cell = LOCK_ON if node.locked else LOCK_OFF
         tags: tuple[str, ...] = ()
@@ -594,6 +611,8 @@ class ObjectTreePanel(ctk.CTkFrame):
             tags += ("hidden-row",)
         if self._effective_locked(node):
             tags += ("locked-row",)
+        if in_group:
+            tags += ("group-member",)
         self.tree.insert(
             "", "end",
             iid=node.id,
@@ -604,10 +623,73 @@ class ObjectTreePanel(ctk.CTkFrame):
         )
         if not node.children or node.id in self._collapsed_ids:
             return
-        for child_index, child in enumerate(node.children):
+        self._insert_children_with_groups(
+            node.children, depth=depth + 1, visible=visible,
+        )
+
+    def _insert_children_with_groups(
+        self,
+        children: list,
+        depth: int,
+        visible: set | None = None,
+    ) -> None:
+        """Walk a sibling list and insert each child row, but bundle
+        every group into a virtual "Group" row that owns its members.
+        Members render at ``depth + 1`` so the indent matches the
+        usual parent → child visual; non-grouped siblings stay at
+        ``depth`` like before. Group order follows whichever member
+        comes first in the original child list.
+        """
+        emitted_groups: set = set()
+        for child_index, child in enumerate(children):
+            gid = getattr(child, "group_id", None)
+            if gid and gid in emitted_groups:
+                continue
+            if gid:
+                members = [
+                    c for c in children
+                    if getattr(c, "group_id", None) == gid
+                ]
+                if len(members) >= 2:
+                    emitted_groups.add(gid)
+                    if visible is not None and not any(
+                        m.id in visible for m in members
+                    ):
+                        continue
+                    self._insert_group_row(gid, members, depth=depth)
+                    if f"group:{gid}" in self._collapsed_ids:
+                        continue
+                    for member_index, member in enumerate(members):
+                        self._insert_node_flat(
+                            member, depth=depth + 1,
+                            layer=member_index, visible=visible,
+                            in_group=True,
+                        )
+                    continue
             self._insert_node_flat(
-                child, depth=depth + 1, layer=child_index, visible=visible,
+                child, depth=depth, layer=child_index, visible=visible,
             )
+
+    def _insert_group_row(
+        self, group_id: str, members: list, depth: int,
+    ) -> None:
+        """Virtual parent row for a group. Synthetic iid keeps it
+        out of every code path that walks ``project.iter_all_widgets``
+        — the row only exists in the tree view, never in the model.
+        """
+        iid = f"group:{group_id}"
+        expanded = iid not in self._collapsed_ids
+        arrow = ARROW_EXPANDED if expanded else ARROW_COLLAPSED
+        label = f"{INDENT_STR * depth}{arrow}◆ Group ({len(members)})"
+        self._group_row_depths[iid] = depth
+        self.tree.insert(
+            "", "end",
+            iid=iid,
+            text="",
+            image="",
+            values=("", label, "", ""),
+            tags=("group-row",),
+        )
 
     def _resolve_eye_icon(self, node: "WidgetNode"):
         """Pick the eye glyph for a row. Three states:
@@ -674,6 +756,15 @@ class ObjectTreePanel(ctk.CTkFrame):
         clear, not the tree)."""
         ids = list(self.project.selected_ids)
         valid = [i for i in ids if self.tree.exists(i)]
+        # Virtual group row mirroring — when every member of one
+        # group is in the selection AND nothing else is, also light
+        # up the synthetic ``group:<gid>`` row so the user sees the
+        # whole-group selection at a glance.
+        sel_set = set(valid)
+        for gid in self._groups_in_selection(sel_set):
+            row_id = f"group:{gid}"
+            if self.tree.exists(row_id):
+                valid.append(row_id)
         current = set(self.tree.selection())
         if set(valid) != current:
             if valid:
@@ -684,6 +775,28 @@ class ObjectTreePanel(ctk.CTkFrame):
         primary = self.project.selected_id
         if primary and self.tree.exists(primary):
             self.tree.see(primary)
+
+    def _groups_in_selection(self, ids: set) -> list:
+        """Group IDs that are FULLY represented in ``ids`` (every
+        member present, no widgets outside the group). Used to
+        mirror the virtual Group row's selection state.
+        """
+        if not ids:
+            return []
+        by_group: dict = {}
+        non_group_count = 0
+        for wid in ids:
+            node = self.project.get_widget(wid)
+            gid = getattr(node, "group_id", None) if node else None
+            if gid:
+                by_group.setdefault(gid, set()).add(wid)
+            else:
+                non_group_count += 1
+        if non_group_count > 0 or len(by_group) != 1:
+            return []
+        gid, present = next(iter(by_group.items()))
+        full = {m.id for m in self.project.iter_group_members(gid)}
+        return [gid] if present == full else []
 
     # ------------------------------------------------------------------
     # Event-bus callbacks
@@ -776,12 +889,24 @@ class ObjectTreePanel(ctk.CTkFrame):
         for descendant in self._iter_subtree(node):
             self._refresh_row_visual(descendant)
 
+    def _on_widget_group_changed(
+        self, _widget_id: str, _group_id,
+    ) -> None:
+        """Group changes alter tree structure (virtual Group rows
+        appear / vanish, members move between sibling positions) so
+        a full refresh is the cheapest correct path. In-place tag
+        toggling can't model the parent row insertion.
+        """
+        self.refresh()
+
     def _iter_subtree(self, node: "WidgetNode"):
         for child in node.children:
             yield child
             yield from self._iter_subtree(child)
 
-    def _build_name_cell(self, node: "WidgetNode") -> str:
+    def _build_name_cell(
+        self, node: "WidgetNode", extra_depth: int = 0,
+    ) -> str:
         descriptor = get_descriptor(node.widget_type)
         display_name = (
             descriptor.display_name if descriptor else node.widget_type
@@ -798,13 +923,16 @@ class ObjectTreePanel(ctk.CTkFrame):
             )
             if layout != "place":
                 base_name = f"{base_name}  [{layout}]"
-        depth = self._node_depth(node)
+        depth = self._node_depth(node) + extra_depth
         has_children = bool(node.children)
         expanded = node.id not in self._collapsed_ids
         if has_children:
             arrow = ARROW_EXPANDED if expanded else ARROW_COLLAPSED
         else:
             arrow = ARROW_LEAF
+        # ◆ marker now lives on the virtual Group row, so per-member
+        # rows render plainly — the row tint + parent-row already
+        # show membership.
         return f"{INDENT_STR * depth}{arrow}{base_name}"
 
     def _refresh_row_visual(self, node: "WidgetNode") -> None:
@@ -851,16 +979,40 @@ class ObjectTreePanel(ctk.CTkFrame):
                     doc_id = iid[4:]
                     self.project.set_active_document(doc_id)
                     self.project.select_widget(WINDOW_ID)
+                elif iid.startswith("group:"):
+                    # Virtual Group row — selects every member at
+                    # once. The group invariant in
+                    # ``set_multi_selection`` keeps the whole-group
+                    # set as-is; partial selections collapse on the
+                    # way through.
+                    gid = iid[len("group:"):]
+                    members = self.project.iter_group_members(gid)
+                    ids = {m.id for m in members}
+                    if not ids:
+                        return
+                    primary = next(iter(ids))
+                    self.project.set_multi_selection(ids, primary)
                 else:
                     self.project.select_widget(iid)
             else:
                 focus = self.tree.focus()
                 primary = focus if focus in sel else sel[-1]
-                # Skip document header rows when tracking multi.
-                ids = {i for i in sel if not i.startswith("doc:")}
+                # Skip document header + virtual group rows when
+                # tracking multi — only real widget ids land in
+                # ``project.selected_ids``.
+                ids = {
+                    i for i in sel
+                    if not i.startswith("doc:")
+                    and not i.startswith("group:")
+                }
                 if not ids:
                     return
-                primary_id = primary if not primary.startswith("doc:") else None
+                primary_id = (
+                    primary
+                    if not primary.startswith("doc:")
+                    and not primary.startswith("group:")
+                    else None
+                )
                 self.project.set_multi_selection(ids, primary_id)
         finally:
             self._syncing = False
@@ -909,6 +1061,16 @@ class ObjectTreePanel(ctk.CTkFrame):
         # (within the first ~18px after the indent) toggles expand/
         # collapse for containers.
         if column == "#2" and self._click_on_arrow(iid, event.x):
+            # Virtual Group rows are always expandable — they own
+            # the group members and have no underlying widget node.
+            if iid.startswith("group:"):
+                if iid in self._collapsed_ids:
+                    self._collapsed_ids.discard(iid)
+                else:
+                    self._collapsed_ids.add(iid)
+                self.refresh()
+                self._drag_source_id = None
+                return "break"
             node = self.project.get_widget(iid)
             if node is not None and node.children:
                 if iid in self._collapsed_ids:
@@ -939,10 +1101,13 @@ class ObjectTreePanel(ctk.CTkFrame):
         if not bbox:
             return False
         cell_x, _, cell_w, _ = bbox
-        node = self.project.get_widget(iid)
-        if node is None:
-            return False
-        depth = self._node_depth(node)
+        if iid.startswith("group:"):
+            depth = self._group_row_depths.get(iid, 0)
+        else:
+            node = self.project.get_widget(iid)
+            if node is None:
+                return False
+            depth = self._node_depth(node)
         indent_px = depth * 18
         arrow_start = cell_x + indent_px
         arrow_end = arrow_start + 18
@@ -1254,7 +1419,7 @@ class ObjectTreePanel(ctk.CTkFrame):
     # ------------------------------------------------------------------
     def _on_double_click(self, event) -> str | None:
         iid = self.tree.identify_row(event.y)
-        if not iid or iid.startswith("doc:"):
+        if not iid or iid.startswith("doc:") or iid.startswith("group:"):
             return None
         if self.tree.identify_column(event.x) != "#2":
             return None
@@ -1332,6 +1497,36 @@ class ObjectTreePanel(ctk.CTkFrame):
         iid = self.tree.identify_row(event.y)
         if not iid:
             return "break"
+        # Virtual Group row — short menu (Select Group / Ungroup).
+        if iid.startswith("group:"):
+            gid = iid[len("group:"):]
+            members = self.project.iter_group_members(gid)
+            if not members:
+                return "break"
+            toplevel = self.winfo_toplevel()
+            menu = tk.Menu(
+                self.winfo_toplevel(), tearoff=0, **CTX_MENU_STYLE,
+            )
+            menu.add_command(
+                label=f"Select Group ({len(members)})",
+                command=lambda g=gid: toplevel._on_select_group(g),
+            )
+            menu.add_separator()
+            ids = {m.id for m in members}
+            primary = next(iter(ids))
+            menu.add_command(
+                label="Ungroup",
+                accelerator="Ctrl+Shift+G",
+                command=lambda ids=ids, p=primary, t=toplevel: (
+                    self.project.set_multi_selection(ids, p),
+                    t._on_ungroup_shortcut(),
+                ),
+            )
+            try:
+                menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                menu.grab_release()
+            return "break"
         # If a multi-selection is active and the right-clicked row is
         # part of it, only Delete is meaningful — every other action
         # (rename, duplicate, z-order) is per-widget. Skip selection
@@ -1344,6 +1539,7 @@ class ObjectTreePanel(ctk.CTkFrame):
         menu = tk.Menu(
             self.winfo_toplevel(), tearoff=0, **CTX_MENU_STYLE,
         )
+        toplevel = self.winfo_toplevel()
         if multi_active:
             count = len(self.project.selected_ids)
             menu.add_command(
@@ -1355,6 +1551,7 @@ class ObjectTreePanel(ctk.CTkFrame):
                 label=f"Delete {count} widgets",
                 command=lambda nid=iid: self._delete_widget(nid),
             )
+            self._add_group_entries(menu, toplevel)
         else:
             self.project.select_widget(iid)
             menu.add_command(
@@ -1406,6 +1603,7 @@ class ObjectTreePanel(ctk.CTkFrame):
                 label="Delete",
                 command=lambda nid=iid: self._delete_widget(nid),
             )
+            self._add_group_entries(menu, toplevel)
             menu.add_separator()
             menu.add_command(
                 label="Bring to Front",
@@ -1424,6 +1622,50 @@ class ObjectTreePanel(ctk.CTkFrame):
         finally:
             menu.grab_release()
         return "break"
+
+    def _add_group_entries(self, menu, toplevel) -> None:
+        """Append Group / Ungroup / Select Group entries to a tree
+        context menu — only what's currently runnable. Routes to the
+        same MainWindow handlers as the Edit menu and the Ctrl+G /
+        Ctrl+Shift+G shortcuts so undo/redo stays consistent across
+        every entry point.
+        """
+        sel_ids = set(self.project.selected_ids or set())
+        can_group = self.project.can_group_selection(sel_ids)
+        select_group_id: str | None = None
+        for wid in sel_ids:
+            node = self.project.get_widget(wid)
+            gid = getattr(node, "group_id", None) if node else None
+            if not gid:
+                continue
+            members = self.project.iter_group_members(gid)
+            if len(members) > 1 and sel_ids != {m.id for m in members}:
+                select_group_id = gid
+                break
+        can_ungroup = any(
+            getattr(self.project.get_widget(wid), "group_id", None)
+            for wid in sel_ids
+        )
+        if not (can_group or can_ungroup or select_group_id):
+            return
+        menu.add_separator()
+        if can_group:
+            menu.add_command(
+                label="Group",
+                accelerator="Ctrl+G",
+                command=toplevel._on_group_shortcut,
+            )
+        if select_group_id:
+            menu.add_command(
+                label="Select Group",
+                command=lambda gid=select_group_id: toplevel._on_select_group(gid),
+            )
+        if can_ungroup:
+            menu.add_command(
+                label="Ungroup",
+                accelerator="Ctrl+Shift+G",
+                command=toplevel._on_ungroup_shortcut,
+            )
 
     def _copy_single_to_clipboard(self, widget_id: str) -> None:
         self.project.copy_to_clipboard({widget_id})

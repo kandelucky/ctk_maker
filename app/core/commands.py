@@ -902,3 +902,31 @@ class ToggleFlagCommand(Command):
 
     def redo(self, project: "Project") -> None:
         self._apply(project, self.after)
+
+
+class SetGroupCommand(Command):
+    """Group / ungroup tag mutation — records before/after group_id
+    per widget so undo restores prior group memberships exactly,
+    even for widgets that were already in a (possibly different)
+    group before the change.
+    """
+
+    def __init__(
+        self,
+        before: dict,
+        after: dict,
+        description: str = "Group widgets",
+    ):
+        self.before = dict(before)
+        self.after = dict(after)
+        self.description = description
+
+    def _apply(self, project: "Project", values: dict) -> None:
+        for widget_id, group_id in values.items():
+            project.set_group_id(widget_id, group_id)
+
+    def undo(self, project: "Project") -> None:
+        self._apply(project, self.before)
+
+    def redo(self, project: "Project") -> None:
+        self._apply(project, self.after)

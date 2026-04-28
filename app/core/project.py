@@ -755,6 +755,13 @@ class Project:
         workspace handles + properties panel while the tree keeps
         its own multi-row highlight."""
         new_ids = {i for i in ids if i is not None}
+        # Group invariant — within one group, only single selection
+        # is allowed; the only way more than one member coexists in
+        # the selection is when EVERY member of that group is
+        # present (whole-group selection via tree row / right-click).
+        # Mixed selection (some members + non-members) is also
+        # rejected to keep the rule simple.
+        new_ids = self._enforce_group_invariant(new_ids, primary)
         if primary is not None and primary not in new_ids:
             primary = None
         if primary is None and new_ids:
@@ -765,6 +772,45 @@ class Project:
         self.selected_id = primary
         display = primary if len(new_ids) <= 1 else None
         self.event_bus.publish("selection_changed", display)
+
+    def _enforce_group_invariant(
+        self, ids: set, primary: str | None,
+    ) -> set:
+        """Drop selections that violate the group-invariant: at most
+        one widget per group, OR every member of one group with no
+        other widget in the selection. Returns a possibly-reduced
+        set — never grows it. Pure, no side effects.
+        """
+        if not ids:
+            return ids
+        group_buckets: dict = {}
+        non_group: set = set()
+        for wid in ids:
+            node = self._id_index.get(wid) or self.get_widget(wid)
+            gid = getattr(node, "group_id", None) if node else None
+            if gid:
+                group_buckets.setdefault(gid, set()).add(wid)
+            else:
+                non_group.add(wid)
+        if not group_buckets:
+            return ids
+        # Whole-group selection: exactly one group, all its members
+        # present, no widgets outside the group.
+        if len(group_buckets) == 1 and not non_group:
+            gid, present = next(iter(group_buckets.items()))
+            full = {m.id for m in self.iter_group_members(gid)}
+            if present == full:
+                return ids
+        # Otherwise: keep at most one widget per group. Prefer the
+        # primary when it falls inside the group; else first iter.
+        kept: set = set(non_group)
+        for gid, present in group_buckets.items():
+            if primary in present:
+                keeper = primary
+            else:
+                keeper = next(iter(present))
+            kept.add(keeper)
+        return kept
 
     def update_property(
         self, widget_id: str, prop_name: str, value,
@@ -853,6 +899,58 @@ class Project:
             return
         node.locked = locked
         self.event_bus.publish("widget_locked_changed", widget_id, locked)
+
+    def set_group_id(
+        self, widget_id: str, group_id: str | None,
+    ) -> None:
+        """Set or clear a widget's group tag. Group tags are
+        builder-only metadata: clicking any member selects the whole
+        group, drag moves them as one. Skipped from code export.
+        """
+        node = self.get_widget(widget_id)
+        if node is None:
+            return
+        if node.group_id == group_id:
+            return
+        node.group_id = group_id
+        self.event_bus.publish(
+            "widget_group_changed", widget_id, group_id,
+        )
+
+    def iter_group_members(self, group_id: str) -> list:
+        """All widgets currently tagged with ``group_id`` across every
+        document. Order matches ``iter_all_widgets`` (DFS top-down)."""
+        if not group_id:
+            return []
+        return [
+            n for n in self.iter_all_widgets()
+            if getattr(n, "group_id", None) == group_id
+        ]
+
+    def can_group_selection(self, ids) -> bool:
+        """True when ``ids`` can be tagged as a single group. Groups
+        live within one parent only — cross-parent or layout-managed
+        parents are rejected up front so the rest of the codebase can
+        rely on every group sharing one geometry context.
+        """
+        from app.widgets.layout_schema import is_layout_container
+        if not ids:
+            return False
+        nodes = [self.get_widget(wid) for wid in ids]
+        nodes = [n for n in nodes if n is not None]
+        if len(nodes) < 2:
+            return False
+        parents = {
+            (n.parent.id if n.parent is not None else None) for n in nodes
+        }
+        if len(parents) > 1:
+            return False
+        parent_node = nodes[0].parent
+        if parent_node is not None and is_layout_container(
+            parent_node.properties,
+        ):
+            return False
+        return True
 
     # ------------------------------------------------------------------
     # Sibling operations

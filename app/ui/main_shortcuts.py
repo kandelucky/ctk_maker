@@ -44,7 +44,7 @@ class ShortcutsMixin:
         latin = event.keysym.lower()
         if latin in (
             "v", "c", "x", "a", "s", "n", "o", "w", "q", "r", "z", "y",
-            "d", "i", "p", "m",
+            "d", "i", "p", "m", "g",
         ):
             return None
         kc = event.keycode
@@ -100,6 +100,12 @@ class ShortcutsMixin:
             return "break"
         if kc == 77:  # M
             self._on_add_dialog()
+            return "break"
+        if kc == 71:  # G
+            if event.state & self._SHIFT_MASK:
+                self._on_ungroup_shortcut()
+            else:
+                self._on_group_shortcut()
             return "break"
         if kc == 90:  # Z
             is_redo = bool(event.state & self._SHIFT_MASK)
@@ -179,6 +185,9 @@ class ShortcutsMixin:
         self.bind("<Control-P>", lambda e: self._on_preview_active())
         self.bind("<Control-m>", lambda e: self._on_add_dialog())
         self.bind("<Control-M>", lambda e: self._on_add_dialog())
+        self.bind("<Control-g>", lambda e: self._on_group_shortcut())
+        self.bind("<Control-G>", lambda e: self._on_group_shortcut())
+        self.bind("<Control-Shift-G>", lambda e: self._on_ungroup_shortcut())
         self.bind_all("<Control-a>", self._on_select_all_shortcut)
         self.bind_all("<Control-A>", self._on_select_all_shortcut)
         self.bind("<<Copy>>", self._on_copy_shortcut)

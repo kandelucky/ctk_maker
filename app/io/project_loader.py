@@ -312,12 +312,49 @@ def load_project(
         "active_document_changed", project.active_document_id,
     )
 
+    # Group hygiene — drop ``group_id`` on widgets whose group spans
+    # multiple parents or whose shared parent is a layout container.
+    # The Group action enforces these invariants at creation time but
+    # external edits (or older builds) might not, so the loader
+    # cleans up on the way in.
+    _drop_invalid_groups(project)
+
     # Name counters are now per-document (Document.name_counters) and
     # round-trip through Document.from_dict / to_dict. Legacy v1 files
     # with a top-level "name_counters" dict are ignored — new widgets
     # added into a legacy project will restart from 0 for each doc.
     # Harmless: the first new widget inherits the base name; rename
     # as needed.
+
+
+def _drop_invalid_groups(project) -> None:
+    """Strip ``group_id`` from widgets whose group violates the
+    same-parent / non-layout-container invariant. Silent — invalid
+    groups are quietly cleared rather than reported, on the
+    assumption that whatever produced them is upstream of the user.
+    """
+    from app.widgets.layout_schema import is_layout_container
+    by_group: dict = {}
+    for node in project.iter_all_widgets():
+        gid = getattr(node, "group_id", None)
+        if not gid:
+            continue
+        by_group.setdefault(gid, []).append(node)
+    for gid, members in by_group.items():
+        parents = {
+            (m.parent.id if m.parent is not None else None)
+            for m in members
+        }
+        invalid = len(parents) > 1
+        if not invalid:
+            parent_node = members[0].parent
+            invalid = (
+                parent_node is not None
+                and is_layout_container(parent_node.properties)
+            )
+        if invalid:
+            for m in members:
+                m.group_id = None
 
 
 def _prune_missing_pages(
