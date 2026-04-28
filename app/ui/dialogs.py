@@ -345,7 +345,7 @@ _ABT_SEP  = "#3a3a3a"
 
 _PROJECT_LINKS = [
     ("Source", "https://github.com/kandelucky/ctk_maker"),
-    ("Issues", "https://github.com/kandelucky/ctk_maker/issues"),
+    ("Discussions", "https://github.com/kandelucky/ctk_maker/discussions"),
 ]
 _BMC_URL = "https://buymeacoffee.com/Kandelucky_dev"
 # BMC official button palette — copied off the embed snippet so the
@@ -365,7 +365,7 @@ class AboutDialog(tk.Toplevel):
         self._build(app_version)
         # Fixed size — height bumped to accommodate the new Links
         # section + Buy me a coffee button.
-        W, H = 480, 460
+        W, H = 480, 540
         px = parent.winfo_rootx() + parent.winfo_width() // 2
         py = parent.winfo_rooty() + parent.winfo_height() // 2
         self.geometry(f"{W}x{H}+{px - W // 2}+{py - H // 2}")
@@ -445,7 +445,7 @@ class AboutDialog(tk.Toplevel):
         # Tk doesn't have a Cookie-script font on Windows by
         # default, so we emulate the chunky BMC text with bold
         # Segoe UI.
-        tk.Frame(self, bg=_ABT_BG, height=14).pack()
+        tk.Frame(self, bg=_ABT_BG, height=34).pack()
         bmc_row = tk.Frame(self, bg=_ABT_BG)
         bmc_row.pack(pady=(0, 4))
         from app.ui.icons import load_tk_icon
@@ -475,7 +475,7 @@ class AboutDialog(tk.Toplevel):
             activeforeground=_ABT_FG, relief="flat", bd=0,
             font=("Segoe UI", 10), padx=20, pady=4, cursor="hand2",
         )
-        btn.pack(pady=(0, 16))
+        btn.pack(pady=(10, 16))
 
 
 # ---------------------------------------------------------------------------

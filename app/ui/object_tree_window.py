@@ -19,6 +19,7 @@ import customtkinter as ctk
 
 from app.core.commands import (
     BulkAddCommand,
+    BulkToggleFlagCommand,
     DeleteMultipleCommand,
     DeleteWidgetCommand,
     RenameCommand,
@@ -256,10 +257,25 @@ class ObjectTreePanel(ctk.CTkFrame):
             font=("Segoe UI", TREE_FONT_SIZE),
             indent=0,  # kill depth indentation — we fake it in the name col
         )
+        # Tk Treeview's default style.map for foreground/background
+        # contains a `("!disabled", "!selected")` entry that wins over
+        # tag_configure colors — well-known bug. Filter it out so tags
+        # like ``group-row`` keep their orange foreground when selected.
+        def _fixed_map(option: str):
+            return [
+                elm for elm in style.map(
+                    "ObjectTree.Treeview", query_opt=option,
+                )
+                if elm[:2] != ("!disabled", "!selected")
+            ]
         style.map(
             "ObjectTree.Treeview",
-            background=[("selected", TREE_SELECTED_BG)],
-            foreground=[("selected", "#ffffff")],
+            background=_fixed_map("background") + [
+                ("selected", TREE_SELECTED_BG),
+            ],
+            foreground=_fixed_map("foreground") + [
+                ("selected", "#ffffff"),
+            ],
         )
         style.configure(
             "ObjectTree.Treeview.Heading",
@@ -682,14 +698,114 @@ class ObjectTreePanel(ctk.CTkFrame):
         arrow = ARROW_EXPANDED if expanded else ARROW_COLLAPSED
         label = f"{INDENT_STR * depth}{arrow}◆ Group ({len(members)})"
         self._group_row_depths[iid] = depth
+        eye_icon = self._resolve_group_eye_icon(members)
+        lock_cell = LOCK_ON if self._group_any_locked(members) else LOCK_OFF
+        tags: tuple[str, ...] = ("group-row",)
+        if self._group_all_hidden(members):
+            tags += ("hidden-row",)
         self.tree.insert(
             "", "end",
             iid=iid,
             text="",
-            image="",
-            values=("", label, "", ""),
-            tags=("group-row",),
+            image=eye_icon if eye_icon is not None else "",
+            values=(lock_cell, label, "---", ""),
+            tags=tags,
         )
+
+    def _group_all_hidden(self, members: list) -> bool:
+        return bool(members) and all(
+            not getattr(m, "visible", True) for m in members
+        )
+
+    def _group_any_locked(self, members: list) -> bool:
+        return any(getattr(m, "locked", False) for m in members)
+
+    def _group_any_hidden(self, members: list) -> bool:
+        return any(not getattr(m, "visible", True) for m in members)
+
+    def _resolve_group_eye_icon(self, members: list):
+        """Eye glyph for the virtual Group row. Mirrors per-widget
+        logic: all hidden → eye-off, all visible → eye, mixed → dim eye.
+        """
+        hidden_count = sum(
+            1 for m in members if not getattr(m, "visible", True)
+        )
+        if hidden_count == len(members) and members:
+            return self._eye_off_icon
+        if hidden_count == 0:
+            return self._eye_icon
+        return self._eye_dim_icon
+
+    def _toggle_group_flag(self, group_id: str, flag: str) -> None:
+        """Batch-toggle ``visible`` or ``locked`` across every member
+        of a group as one undo step. Convention: if ANY member has
+        the flag in the "active" state (visible=True for eye, or
+        locked=True for lock), the click turns it OFF for everyone;
+        if all are already off, the click turns it ON. Mirrors how
+        most tree UIs collapse mixed group state to a single action.
+        """
+        members = self.project.iter_group_members(group_id)
+        if not members:
+            return
+        if flag == "visible":
+            # Eye toggle: if any member is hidden → show all; else hide all.
+            any_hidden = any(
+                not getattr(m, "visible", True) for m in members
+            )
+            target = True if any_hidden else False
+            entries: list[tuple[str, bool, bool]] = []
+            for m in members:
+                before = getattr(m, "visible", True)
+                if before == target:
+                    continue
+                self.project.set_visibility(m.id, target)
+                entries.append((m.id, before, target))
+            if entries:
+                self.project.history.push(
+                    BulkToggleFlagCommand("visible", entries),
+                )
+        elif flag == "locked":
+            # Lock toggle: if any member is locked → unlock all; else lock all.
+            any_locked = any(
+                getattr(m, "locked", False) for m in members
+            )
+            target = False if any_locked else True
+            entries = []
+            for m in members:
+                before = getattr(m, "locked", False)
+                if before == target:
+                    continue
+                self.project.set_locked(m.id, target)
+                entries.append((m.id, before, target))
+            if entries:
+                self.project.history.push(
+                    BulkToggleFlagCommand("locked", entries),
+                )
+
+    def _refresh_group_row(self, group_id: str) -> None:
+        """Refresh lock cell + eye image on a virtual Group row after
+        a member's flag changed. Silent no-op if the row isn't in the
+        tree (e.g. group filtered out or fewer than 2 members left)."""
+        iid = f"group:{group_id}"
+        if not self.tree.exists(iid):
+            return
+        members = self.project.iter_group_members(group_id)
+        if not members:
+            return
+        eye_icon = self._resolve_group_eye_icon(members)
+        lock_cell = LOCK_ON if self._group_any_locked(members) else LOCK_OFF
+        tags: tuple[str, ...] = ("group-row",)
+        if self._group_all_hidden(members):
+            tags += ("hidden-row",)
+        try:
+            self.tree.item(
+                iid,
+                image=eye_icon if eye_icon is not None else "",
+                tags=tags,
+            )
+            self.tree.set(iid, "lock", lock_cell)
+        except tk.TclError:
+            pass
 
     def _resolve_eye_icon(self, node: "WidgetNode"):
         """Pick the eye glyph for a row. Three states:
@@ -876,6 +992,9 @@ class ObjectTreePanel(ctk.CTkFrame):
         self._refresh_row_visual(node)
         for descendant in self._iter_subtree(node):
             self._refresh_row_visual(descendant)
+        gid = getattr(node, "group_id", None)
+        if gid:
+            self._refresh_group_row(gid)
 
     def _on_widget_locked_changed(
         self, widget_id: str, _locked: bool,
@@ -888,6 +1007,9 @@ class ObjectTreePanel(ctk.CTkFrame):
         self._refresh_row_visual(node)
         for descendant in self._iter_subtree(node):
             self._refresh_row_visual(descendant)
+        gid = getattr(node, "group_id", None)
+        if gid:
+            self._refresh_group_row(gid)
 
     def _on_widget_group_changed(
         self, _widget_id: str, _group_id,
@@ -948,6 +1070,12 @@ class ObjectTreePanel(ctk.CTkFrame):
             tags.append("hidden-row")
         if self._effective_locked(node):
             tags.append("locked-row")
+        # Preserve the soft orange "in a group" tint — without this the
+        # row drops to default gray after any flag toggle, which reads
+        # as the row "leaving the group" visually.
+        gid = getattr(node, "group_id", None)
+        if gid and self.tree.exists(f"group:{gid}"):
+            tags.append("group-member")
         try:
             self.tree.item(
                 node.id,
@@ -1037,6 +1165,10 @@ class ObjectTreePanel(ctk.CTkFrame):
         column = self.tree.identify_column(event.x)
         # #0 column (tree column) holds the visibility icon image.
         if column == "#0":
+            if iid.startswith("group:"):
+                self._toggle_group_flag(iid[len("group:"):], "visible")
+                self._drag_source_id = None
+                return "break"
             before = self._node_visible(iid)
             after = not before
             self.project.set_visibility(iid, after)
@@ -1047,6 +1179,10 @@ class ObjectTreePanel(ctk.CTkFrame):
             return "break"
         # #1 is the lock column — click toggles locked flag.
         if column == "#1":
+            if iid.startswith("group:"):
+                self._toggle_group_flag(iid[len("group:"):], "locked")
+                self._drag_source_id = None
+                return "break"
             node = self.project.get_widget(iid)
             if node is not None:
                 before = node.locked
@@ -1108,9 +1244,17 @@ class ObjectTreePanel(ctk.CTkFrame):
             if node is None:
                 return False
             depth = self._node_depth(node)
-        indent_px = depth * 18
-        arrow_start = cell_x + indent_px
-        arrow_end = arrow_start + 18
+        # Cell text is "{INDENT_STR*depth}{arrow}{label}" rendered in
+        # the tree font — measure it directly rather than guessing
+        # 18px/depth (which is far off for 6-space indents in Segoe UI).
+        import tkinter.font as tkfont
+        font = tkfont.Font(family="Segoe UI", size=TREE_FONT_SIZE)
+        indent_px = font.measure(INDENT_STR * depth)
+        arrow_px = font.measure(ARROW_EXPANDED)
+        # ttk Treeview's default cell text padding is ~4px from cell_x.
+        cell_pad = 4
+        arrow_start = cell_x + cell_pad + indent_px
+        arrow_end = arrow_start + arrow_px
         return arrow_start <= event_x <= arrow_end and event_x <= cell_x + cell_w
 
     def _node_depth(self, node: "WidgetNode") -> int:

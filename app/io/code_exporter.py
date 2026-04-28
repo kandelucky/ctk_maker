@@ -51,12 +51,98 @@ INDENT = "    "
 _CURRENT_PROJECT_PATH: str | None = None
 
 
+_PREVIEW_SCREENSHOT_TEMPLATE = '''\
+# CTkMaker preview tools — floating screenshot button + F12 hotkey.
+import tkinter as _ctkmaker_tk
+_ctkmaker_floater = _ctkmaker_tk.Toplevel({target})
+_ctkmaker_floater.overrideredirect(True)
+_ctkmaker_floater.attributes("-topmost", True)
+_ctkmaker_floater.configure(bg="#1f1f1f", highlightthickness=1,
+                            highlightbackground="#3a3a3a")
+_ctkmaker_btn = _ctkmaker_tk.Button(
+    _ctkmaker_floater, text=" ⬜  Screenshot  ·  F12 ",
+    font=("Segoe UI", 9, "bold"), bg="#2d2d30", fg="#cccccc",
+    activebackground="#3e3e42", activeforeground="#ffffff",
+    bd=0, padx=10, pady=4, cursor="hand2",
+    relief="flat",
+)
+_ctkmaker_btn.pack()
+
+def _ctkmaker_screenshot(_event=None):
+    try:
+        from PIL import ImageGrab
+    except ImportError:
+        print("Pillow not installed — cannot screenshot.")
+        return
+    from tkinter import filedialog
+    _ctkmaker_floater.withdraw()
+    {target}.update_idletasks()
+    {target}.update()
+    x = {target}.winfo_rootx()
+    y = {target}.winfo_rooty()
+    w = {target}.winfo_width()
+    h = {target}.winfo_height()
+    try:
+        img = ImageGrab.grab(bbox=(x, y, x + w, y + h), all_screens=True)
+    finally:
+        _ctkmaker_floater.deiconify()
+    path = filedialog.asksaveasfilename(
+        parent={target}, defaultextension=".png",
+        filetypes=[("PNG image", "*.png")],
+        initialfile="preview.png",
+    )
+    if path:
+        img.save(path)
+        print(f"Saved screenshot: {{path}}")
+
+_ctkmaker_btn.configure(command=_ctkmaker_screenshot)
+{target}.bind_all("<F12>", _ctkmaker_screenshot)
+
+def _ctkmaker_position_floater(_event=None):
+    try:
+        if not _ctkmaker_floater.winfo_exists():
+            return
+        {target}.update_idletasks()
+        bw = _ctkmaker_floater.winfo_reqwidth()
+        x = {target}.winfo_rootx() + {target}.winfo_width() - bw - 12
+        y = {target}.winfo_rooty() + 8
+        _ctkmaker_floater.geometry(f"+{{x}}+{{y}}")
+    except _ctkmaker_tk.TclError:
+        pass
+
+{target}.bind("<Configure>", _ctkmaker_position_floater, add="+")
+{target}.after(120, _ctkmaker_position_floater)
+
+def _ctkmaker_close_floater(_event=None):
+    try:
+        _ctkmaker_floater.destroy()
+    except _ctkmaker_tk.TclError:
+        pass
+
+{target}.bind("<Destroy>", _ctkmaker_close_floater, add="+")
+print("[CTkMaker preview] Press F12 or click the floating button to screenshot.")
+'''
+
+
+def _preview_screenshot_lines(target: str) -> list[str]:
+    """Inject the floating screenshot button + F12 hotkey into the
+    __main__ block when the file is being run as a CTkMaker preview
+    (NOT a real export). ``target`` is the variable name of the
+    visible window — ``app`` for the main-window preview, the dialog
+    instance for dialog previews. The floater hides itself during
+    capture so it doesn't appear in the saved PNG.
+    """
+    body = _PREVIEW_SCREENSHOT_TEMPLATE.format(target=target)
+    return [INDENT + line for line in body.splitlines()]
+
+
 def export_project(
     project: Project, path: str | Path,
     preview_dialog_id: str | None = None,
     single_document_id: str | None = None,
     as_zip: bool = False,
     asset_filter: set[Path] | None = None,
+    inject_preview_screenshot: bool = False,
 ) -> None:
     """Generate a runnable .py from ``project`` at ``path``.
 
@@ -104,6 +190,7 @@ def export_project(
             project,
             preview_dialog_id=preview_dialog_id,
             single_document_id=single_document_id,
+            inject_preview_screenshot=inject_preview_screenshot,
         )
     finally:
         _CURRENT_PROJECT_PATH = None
@@ -207,6 +294,7 @@ def generate_code(
     project: Project,
     preview_dialog_id: str | None = None,
     single_document_id: str | None = None,
+    inject_preview_screenshot: bool = False,
 ) -> str:
     """Generate the project's ``.py`` source.
 
@@ -369,6 +457,8 @@ def generate_code(
         lines.append(f"{INDENT}{var} = {preview_cls}(app)")
         if needs_text_clipboard:
             lines.append(f"{INDENT}_setup_text_clipboard(app)")
+        if inject_preview_screenshot:
+            lines.extend(_preview_screenshot_lines(target=var))
         lines.append(f"{INDENT}app.wait_window({var})")
     else:
         first_doc, first_class = class_names[0]
@@ -383,6 +473,8 @@ def generate_code(
                 f"{INDENT}# {var} = {cls}(app)  "
                 f"# open the '{doc.name}' dialog",
             )
+        if inject_preview_screenshot:
+            lines.extend(_preview_screenshot_lines(target="app"))
         lines.append(f"{INDENT}app.mainloop()")
     lines.append("")
     return "\n".join(lines)

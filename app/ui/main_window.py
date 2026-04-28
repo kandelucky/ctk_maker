@@ -1318,7 +1318,10 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         tmp_dir = Path(tempfile.mkdtemp(prefix="ctk_preview_"))
         tmp_path = tmp_dir / "preview.py"
         try:
-            export_project(self.project, tmp_path)
+            export_project(
+                self.project, tmp_path,
+                inject_preview_screenshot=True,
+            )
         except OSError:
             log_error("preview export")
             messagebox.showerror("Preview failed", "Could not generate preview file.", parent=self)
@@ -1360,6 +1363,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         try:
             export_project(
                 self.project, tmp_path, preview_dialog_id=doc_id,
+                inject_preview_screenshot=True,
             )
         except OSError:
             log_error("preview dialog export")
@@ -1690,10 +1694,12 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         """Resolve which widgets (if any) the alignment buttons
         currently operate on, plus the container reference.
 
-        Returns ``(nodes, parent_node, container_size)`` where:
-          - ``nodes`` is the moveable widget list (empty disables all
-            buttons; widgets in a layout-managed parent are dropped
-            since the layout owns positioning)
+        Returns ``(units, parent_node, container_size)`` where:
+          - ``units`` is a list of node-lists. Each unit moves as one
+            block: a fully-selected group becomes one multi-widget
+            unit, every other selected widget becomes a singleton.
+            Empty disables all buttons; widgets in a layout-managed
+            parent are dropped since the layout owns positioning.
           - ``parent_node`` is the shared parent (``None`` for
             top-level / mixed-parent selections)
           - ``container_size`` is ``(width, height)`` for the parent
@@ -1732,10 +1738,31 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 int(parent.properties.get("width", 0) or 0),
                 int(parent.properties.get("height", 0) or 0),
             )
-        # When 2+ selected, switch reference to selection bbox so
-        # the buttons mean "align to each other".
-        use_container = len(nodes) == 1
-        return nodes, parent, container_size if use_container else None
+        # Bundle selected group members into one unit per group_id;
+        # ungrouped widgets stay as singleton units. This is what
+        # makes "align group to other widget" treat the group as one
+        # block rather than aligning members against each other first.
+        units: list[list] = []
+        seen_gids: set = set()
+        for n in nodes:
+            gid = getattr(n, "group_id", None)
+            if gid:
+                if gid in seen_gids:
+                    continue
+                members = [
+                    m for m in nodes
+                    if getattr(m, "group_id", None) == gid
+                ]
+                seen_gids.add(gid)
+                units.append(members)
+            else:
+                units.append([n])
+        # When 2+ units, switch reference to selection bbox so the
+        # buttons mean "align units to each other". A single unit
+        # (one widget OR one whole selected group) aligns to its
+        # container.
+        use_container = len(units) == 1
+        return units, parent, container_size if use_container else None
 
     def _refresh_align_buttons(self) -> None:
         if not hasattr(self, "toolbar"):
@@ -1743,11 +1770,11 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         from app.core.alignment import (
             ALIGN_MODES, MODE_DISTRIBUTE_H, MODE_DISTRIBUTE_V,
         )
-        nodes, _parent, _container = self._resolve_align_targets()
-        # Align-to-selection needs 2+ to be useful; align-to-container
-        # works with 1. Distribute always needs 3+.
-        align_on = bool(nodes)
-        distribute_on = len(nodes) >= 3
+        units, _parent, _container = self._resolve_align_targets()
+        # Align-to-selection needs 2+ units to be useful; align-to-
+        # container works with 1. Distribute always needs 3+ units.
+        align_on = bool(units)
+        distribute_on = len(units) >= 3
         states: dict[str, bool] = {
             mode: align_on for mode in ALIGN_MODES
         }
@@ -1757,15 +1784,19 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
 
     def _on_align_action(self, mode: str) -> None:
         from app.core.alignment import (
-            DISTRIBUTE_MODES, compute_align, compute_distribute,
+            DISTRIBUTE_MODES,
+            compute_align_units,
+            compute_distribute_units,
         )
-        nodes, _parent, container_size = self._resolve_align_targets()
-        if not nodes:
+        units, _parent, container_size = self._resolve_align_targets()
+        if not units:
             return
         if mode in DISTRIBUTE_MODES:
-            moves = compute_distribute(nodes, mode)
+            moves = compute_distribute_units(units, mode)
         else:
-            moves = compute_align(nodes, mode, container_size=container_size)
+            moves = compute_align_units(
+                units, mode, container_size=container_size,
+            )
         # Drop no-op tuples so the history entry doesn't show the
         # widgets that were already aligned. If everything was
         # already aligned, do nothing.

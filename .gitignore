@@ -43,7 +43,7 @@ TODO.md
 reference/ctk_official/
 
 # Developer-only tooling and notes (not shipped)
-docs/ARCHITECTURE.md
+docs/architecture/
 docs/module_descriptions.ka.json
 docs/New folder/
 tools/ctk_examples/

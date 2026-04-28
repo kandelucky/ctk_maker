@@ -37,6 +37,7 @@ except Exception:
 REPO = "kandelucky/ctk_maker"
 NEW_ISSUE_URL = f"https://github.com/{REPO}/issues/new"
 KNOWN_ISSUES_URL = f"https://github.com/{REPO}/issues"
+WIKI_REPORTING_URL = f"https://github.com/{REPO}/wiki/Reporting-Bugs"
 URL_PREFILL_LIMIT = 8000
 # +ctkmaker tag routes to a Gmail filter for builder reports.
 BUG_REPORT_EMAIL = "kandelucky.dev+ctkmaker@gmail.com"
@@ -344,8 +345,8 @@ class BugReporterWindow(ctk.CTkToplevel):
         super().__init__(master)
         self.configure(fg_color=BG)
         self.title("Report a Bug — CTkMaker")
-        self.geometry("660x600")
-        self.minsize(560, 520)
+        self.geometry("660x590")
+        self.minsize(560, 540)
         self.transient(master)
         try:
             self.grab_set()
@@ -398,11 +399,8 @@ class BugReporterWindow(ctk.CTkToplevel):
     def _build_picker(self) -> ctk.CTkFrame:
         f = ctk.CTkFrame(self, fg_color="transparent")
 
-        # Vertical centring via a spacer above + spacer below so the
-        # cards land in the visual middle of the window regardless of
-        # height. Same trick as the startup dialog.
-        ctk.CTkFrame(f, fg_color="transparent").pack(
-            fill="both", expand=True,
+        self._build_intro_banner(f).pack(
+            fill="x", padx=20, pady=(18, 44),
         )
 
         ctk.CTkLabel(
@@ -446,31 +444,90 @@ class BugReporterWindow(ctk.CTkToplevel):
             on_click=lambda: self._show_form("Feature Request"),
         ).pack(side="left")
 
-        # Browse-issues link — encourages duplicate-checking before
-        # the user commits to filling out a form. Opens the default
-        # browser so the builder window stays as-is.
-        link_row = ctk.CTkFrame(f, fg_color="transparent")
-        link_row.pack(pady=(20, 0))
-        link_btn = ctk.CTkButton(
-            link_row,
-            text="Browse open issues first →",
-            command=lambda: webbrowser.open(KNOWN_ISSUES_URL),
-            fg_color="transparent", hover_color=BTN_HOVER,
-            text_color=LINK_FG,
-            font=ctk.CTkFont("Segoe UI", 11, underline=True),
-            width=200, height=24, corner_radius=4,
-        )
-        link_btn.pack()
-        try:
-            link_btn.configure(cursor="hand2")
-        except Exception:
-            pass
-
         ctk.CTkFrame(f, fg_color="transparent").pack(
             fill="both", expand=True,
         )
 
         return f
+
+    def _build_intro_banner(self, parent) -> ctk.CTkFrame:
+        # Why-this-matters banner — sits at the top of the picker so
+        # the user reads the intent before picking a track. Mirrors
+        # the wiki Reporting-Bugs page so the language is consistent.
+        banner = ctk.CTkFrame(
+            parent, fg_color=PANEL_BG, corner_radius=8,
+        )
+        inner = ctk.CTkFrame(banner, fg_color="transparent")
+        inner.pack(fill="x", padx=14, pady=12)
+
+        head_row = ctk.CTkFrame(inner, fg_color="transparent")
+        head_row.pack(fill="x")
+        icon_img = load_icon("book-open", size=20, color=LINK_FG)
+        if icon_img is not None:
+            ctk.CTkLabel(head_row, image=icon_img, text="").pack(
+                side="left", padx=(0, 8),
+            )
+        ctk.CTkLabel(
+            head_row, text="Why this matters",
+            font=ctk.CTkFont("Segoe UI", 13, "bold"),
+            text_color=TITLE_FG, anchor="w",
+        ).pack(side="left", fill="x", expand=True)
+
+        ctk.CTkLabel(
+            inner,
+            text=(
+                "CTkMaker is a one-person project — clear bug reports "
+                "and well-described feature requests directly shape "
+                "what gets fixed and built next. Thanks for taking "
+                "the time to write one."
+            ),
+            font=ctk.CTkFont("Segoe UI", 11),
+            text_color=TEXT_FG, anchor="w", justify="left",
+            wraplength=560,
+        ).pack(fill="x", pady=(8, 4))
+
+        ctk.CTkLabel(
+            inner,
+            text=(
+                "Please check existing issues first to avoid duplicates."
+            ),
+            font=ctk.CTkFont("Segoe UI", 11),
+            text_color=DIM_FG, anchor="w", justify="left",
+            wraplength=560,
+        ).pack(fill="x", pady=(0, 6))
+
+        action_row = ctk.CTkFrame(inner, fg_color="transparent")
+        action_row.pack(fill="x", pady=(4, 0))
+
+        guide_btn = ctk.CTkButton(
+            action_row,
+            text="Read the full reporting guide  →",
+            command=lambda: webbrowser.open(WIKI_REPORTING_URL),
+            fg_color=BTN_BG, hover_color=BTN_HOVER,
+            text_color=LINK_FG,
+            font=ctk.CTkFont("Segoe UI", 11, "bold"),
+            height=28, corner_radius=4,
+        )
+        guide_btn.pack(side="left")
+
+        issues_btn = ctk.CTkButton(
+            action_row,
+            text="Browse open issues first  →",
+            command=lambda: webbrowser.open(KNOWN_ISSUES_URL),
+            fg_color=BTN_BG, hover_color=BTN_HOVER,
+            text_color=LINK_FG,
+            font=ctk.CTkFont("Segoe UI", 11, "bold"),
+            height=28, corner_radius=4,
+        )
+        issues_btn.pack(side="right")
+
+        for btn in (guide_btn, issues_btn):
+            try:
+                btn.configure(cursor="hand2")
+            except Exception:
+                pass
+
+        return banner
 
     def _build_picker_card(
         self, parent, *, icon_name: str, icon_color: str,

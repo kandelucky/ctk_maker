@@ -223,3 +223,153 @@ def compute_distribute(
 def _bare_pos(node) -> dict:
     x, y, _w, _h = _xywh(node)
     return {"x": x, "y": y}
+
+
+def _unit_bbox(unit: list) -> tuple[int, int, int, int]:
+    """(left, top, right, bottom) of a unit (one or more widgets that
+    move together). For a single-widget unit this is just its rect;
+    for a multi-widget unit it's the union of every member's rect."""
+    return _selection_bbox(unit)
+
+
+def compute_align_units(
+    units: list,
+    mode: str,
+    container_size: tuple[int, int] | None = None,
+) -> list[tuple[str, dict, dict]]:
+    """Group-aware variant of ``compute_align``. Each ``unit`` is a
+    list of widget nodes that should move together as one block — a
+    selected group becomes a single multi-widget unit, an ungrouped
+    selection becomes a singleton. Alignment math runs on each unit's
+    combined bbox; the resulting offset is applied to every member.
+    """
+    if not units or mode not in ALIGN_MODES:
+        return []
+    if container_size is not None:
+        cw, ch = container_size
+        return _unit_moves_to_container(units, mode, cw, ch)
+    return _unit_moves_to_selection(units, mode)
+
+
+def _unit_moves_to_container(
+    units: list, mode: str, cw: int, ch: int,
+) -> list[tuple[str, dict, dict]]:
+    moves: list[tuple[str, dict, dict]] = []
+    for unit in units:
+        bl, bt, br, bb = _unit_bbox(unit)
+        bw, bh = br - bl, bb - bt
+        new_l, new_t = bl, bt
+        if mode == MODE_LEFT:
+            new_l = 0
+        elif mode == MODE_RIGHT:
+            new_l = max(0, cw - bw)
+        elif mode == MODE_CENTER_H:
+            new_l = max(0, (cw - bw) // 2)
+        elif mode == MODE_TOP:
+            new_t = 0
+        elif mode == MODE_BOTTOM:
+            new_t = max(0, ch - bh)
+        elif mode == MODE_CENTER_V:
+            new_t = max(0, (ch - bh) // 2)
+        dx, dy = new_l - bl, new_t - bt
+        moves.extend(_apply_offset(unit, dx, dy))
+    return moves
+
+
+def _unit_moves_to_selection(
+    units: list, mode: str,
+) -> list[tuple[str, dict, dict]]:
+    # Outer bbox = union over UNIT bboxes (not individual widgets) so
+    # leftmost/rightmost reference is the leftmost/rightmost UNIT.
+    unit_rects = [_unit_bbox(u) for u in units]
+    bbox_l = min(r[0] for r in unit_rects)
+    bbox_t = min(r[1] for r in unit_rects)
+    bbox_r = max(r[2] for r in unit_rects)
+    bbox_b = max(r[3] for r in unit_rects)
+    moves: list[tuple[str, dict, dict]] = []
+    for unit, (ul, ut, ur, ub) in zip(units, unit_rects):
+        uw, uh = ur - ul, ub - ut
+        new_l, new_t = ul, ut
+        if mode == MODE_LEFT:
+            new_l = bbox_l
+        elif mode == MODE_RIGHT:
+            new_l = bbox_r - uw
+        elif mode == MODE_CENTER_H:
+            new_l = ((bbox_l + bbox_r) - uw) // 2
+        elif mode == MODE_TOP:
+            new_t = bbox_t
+        elif mode == MODE_BOTTOM:
+            new_t = bbox_b - uh
+        elif mode == MODE_CENTER_V:
+            new_t = ((bbox_t + bbox_b) - uh) // 2
+        dx, dy = new_l - ul, new_t - ut
+        moves.extend(_apply_offset(unit, dx, dy))
+    return moves
+
+
+def _apply_offset(
+    unit: list, dx: int, dy: int,
+) -> list[tuple[str, dict, dict]]:
+    out: list[tuple[str, dict, dict]] = []
+    for n in unit:
+        x, y, _w, _h = _xywh(n)
+        before = {"x": x, "y": y}
+        after = {"x": x + dx, "y": y + dy}
+        out.append((n.id, before, after))
+    return out
+
+
+def compute_distribute_units(
+    units: list, mode: str,
+) -> list[tuple[str, dict, dict]]:
+    """Group-aware variant of ``compute_distribute``. Operates on
+    UNIT bboxes (a selected group counts as one block) so distributing
+    one group with two ungrouped widgets yields three evenly-spaced
+    bboxes rather than spacing every group member individually.
+    Needs at least 3 units.
+    """
+    if mode not in DISTRIBUTE_MODES or len(units) < 3:
+        return []
+    horizontal = mode == MODE_DISTRIBUTE_H
+    unit_rects = [_unit_bbox(u) for u in units]
+    if horizontal:
+        order = sorted(
+            range(len(units)), key=lambda i: unit_rects[i][0],
+        )
+    else:
+        order = sorted(
+            range(len(units)), key=lambda i: unit_rects[i][1],
+        )
+    ordered_units = [units[i] for i in order]
+    ordered_rects = [unit_rects[i] for i in order]
+    fl, ft, fr, fb = ordered_rects[0]
+    ll, lt, lr, lb = ordered_rects[-1]
+    if horizontal:
+        span = lr - fl
+        total_size = sum(r[2] - r[0] for r in ordered_rects)
+    else:
+        span = lb - ft
+        total_size = sum(r[3] - r[1] for r in ordered_rects)
+    free = span - total_size
+    if free < 0:
+        # Units overlap the available range — can't distribute cleanly.
+        out: list[tuple[str, dict, dict]] = []
+        for unit in ordered_units:
+            out.extend(_apply_offset(unit, 0, 0))
+        return out
+    gap = free // (len(ordered_units) - 1)
+    moves: list[tuple[str, dict, dict]] = []
+    cursor = fl if horizontal else ft
+    for i, (unit, rect) in enumerate(zip(ordered_units, ordered_rects)):
+        ul, ut, ur, ub = rect
+        uw, uh = ur - ul, ub - ut
+        if i in (0, len(ordered_units) - 1):
+            new_l, new_t = ul, ut  # endpoints stay put
+        elif horizontal:
+            new_l, new_t = cursor, ut
+        else:
+            new_l, new_t = ul, cursor
+        dx, dy = new_l - ul, new_t - ut
+        moves.extend(_apply_offset(unit, dx, dy))
+        cursor += (uw if horizontal else uh) + gap
+    return moves

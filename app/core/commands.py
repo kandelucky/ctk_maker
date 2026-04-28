@@ -904,6 +904,51 @@ class ToggleFlagCommand(Command):
         self._apply(project, self.after)
 
 
+class BulkToggleFlagCommand(Command):
+    """Batch visibility / lock toggle for a set of widgets — used by
+    Object Tree's virtual Group row so toggling the group is one undo
+    step rather than N. Each entry remembers its own before-state so
+    undo restores the exact mix even if some members were already ON.
+    """
+
+    def __init__(
+        self,
+        flag: str,
+        entries: list[tuple[str, bool, bool]],
+        label: str | None = None,
+    ):
+        self.flag = flag
+        self._entries = list(entries)
+        if label is None:
+            verb = {
+                ("visible", True): "Show",
+                ("visible", False): "Hide",
+                ("locked", True): "Lock",
+                ("locked", False): "Unlock",
+            }
+            after_state = entries[0][2] if entries else True
+            label = verb.get(
+                (flag, after_state), f"Toggle {flag}",
+            )
+        self.description = f"{label} group ({len(entries)})"
+
+    def _apply_one(
+        self, project: "Project", widget_id: str, value: bool,
+    ) -> None:
+        if self.flag == "visible":
+            project.set_visibility(widget_id, value)
+        elif self.flag == "locked":
+            project.set_locked(widget_id, value)
+
+    def undo(self, project: "Project") -> None:
+        for widget_id, before, _after in self._entries:
+            self._apply_one(project, widget_id, before)
+
+    def redo(self, project: "Project") -> None:
+        for widget_id, _before, after in self._entries:
+            self._apply_one(project, widget_id, after)
+
+
 class SetGroupCommand(Command):
     """Group / ungroup tag mutation — records before/after group_id
     per widget so undo restores prior group memberships exactly,
