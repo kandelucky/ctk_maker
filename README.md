@@ -2,7 +2,7 @@
 
 Drag-and-drop visual designer for **[CustomTkinter](https://github.com/TomSchimansky/CustomTkinter)** — design Python GUIs without writing layout code by hand.
 
-> **v1.1.0** — **Group hide/lock**: virtual `◆ Group` row in Object Tree gets eye + lock cells that batch-toggle every member as one undo step. **Group-aware alignment + distribution**: a fully-selected group counts as one block (combined bbox), so it moves as a unit against another widget instead of having its members align to each other first. **Preview screenshot**: every preview window now has a floating "⬜ Screenshot · F12" button that saves the client area as PNG — handy for sharing in-progress designs with a client. Plus About + bug-reporter polish (Discussions link, wiki intro banner).
+> **v1.1.0** — Group hide/lock toggles in the Object Tree (batch as one undo). Alignment + distribution treat a selected group as a single block. Preview windows gain a floating **Screenshot · F12** button — saves the client area as PNG.
 >
 > ⚠️ **Tested on Windows only.** macOS and Linux are not verified for this release — feedback and contributions welcome.
 
