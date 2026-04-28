@@ -157,6 +157,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             on_redo=self._on_redo,
             on_run_script=self._on_run_script,
             on_align=self._on_align_action,
+            on_report_bug=self._on_report_bug,
         )
         self.toolbar.pack(side="top", fill="x")
 
@@ -1407,7 +1408,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         self._open_url(WIKI_SHORTCUTS_URL)
 
     def _on_report_bug(self) -> None:
-        self._open_url(GITHUB_ISSUES_URL)
+        from app.ui.bug_reporter import BugReporterWindow
+        BugReporterWindow(self)
 
     def _on_about(self) -> None:
         from app.ui.dialogs import AboutDialog

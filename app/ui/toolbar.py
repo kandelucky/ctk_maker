@@ -43,6 +43,7 @@ class Toolbar(ctk.CTkFrame):
         on_redo: Callable[[], None],
         on_run_script: Callable[[], None] | None = None,
         on_align: Callable[[str], None] | None = None,
+        on_report_bug: Callable[[], None] | None = None,
     ):
         super().__init__(
             master, fg_color=BAR_BG, corner_radius=0, height=BAR_HEIGHT,
@@ -90,6 +91,13 @@ class Toolbar(ctk.CTkFrame):
         if on_align is not None:
             self._add_separator()
             self._build_align_group(on_align)
+
+        # Report-bug button — packed to the right edge so it sits in
+        # its own quiet zone, well away from the functional cluster
+        # on the left. The blank stretch in the middle is the visual
+        # separator the user asked for.
+        if on_report_bug is not None:
+            self._add_report_bug_button(on_report_bug)
 
     def _build_align_group(self, on_align: Callable[[str], None]) -> None:
         """Pack the 6 align + 2 distribute icon buttons. Each entry
@@ -229,6 +237,32 @@ class Toolbar(ctk.CTkFrame):
     def _add_separator(self) -> None:
         sep = ctk.CTkFrame(self, width=1, fg_color=SEP_FG, corner_radius=0)
         sep.pack(side="left", fill="y", padx=6, pady=6)
+
+    def _add_report_bug_button(
+        self, command: Callable[[], None],
+    ) -> ctk.CTkButton:
+        """Right-anchored 'Bug Report / Feature Request' button.
+        Slight warm tint on the button background sets it apart from
+        the functional cluster on the left without colouring the
+        text or icon."""
+        icon = load_icon("bug-play", size=20, color=ICON_TINT)
+        btn = ctk.CTkButton(
+            self,
+            text="Bug Report / Feature Request",
+            image=icon,
+            width=220,
+            height=28,
+            corner_radius=4,
+            fg_color="#3b3026",
+            hover_color="#4a3b2c",
+            text_color=ICON_TINT,
+            font=ctk.CTkFont("Segoe UI", 11, "bold"),
+            compound="left",
+            command=command,
+        )
+        btn.pack(side="right", padx=(8, 8), pady=3)
+        _attach_tooltip(btn, "Report a bug or request a feature")
+        return btn
 
 
 # ----------------------------------------------------------------------------
