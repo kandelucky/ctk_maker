@@ -2,7 +2,7 @@
 
 Drag-and-drop visual designer for **[CustomTkinter](https://github.com/TomSchimansky/CustomTkinter)** — design Python GUIs without writing layout code by hand.
 
-> **v1.0.6** — In-app Bug / Feature reporter (Help → Report a Bug + toolbar button). Picker view first, then a structured form that opens a pre-filled GitHub Issue Form template or exports a markdown file with the destination email + Copy button. Plus a hotfix to v1.0.5's group selection — Ctrl+Click on a group member now toggles the whole group, the orange bbox follows during drag, and partial-group selections can no longer arise.
+> **v1.1.0** — **Group hide/lock**: virtual `◆ Group` row in Object Tree gets eye + lock cells that batch-toggle every member as one undo step. **Group-aware alignment + distribution**: a fully-selected group counts as one block (combined bbox), so it moves as a unit against another widget instead of having its members align to each other first. **Preview screenshot**: every preview window now has a floating "⬜ Screenshot · F12" button that saves the client area as PNG — handy for sharing in-progress designs with a client. Plus About + bug-reporter polish (Discussions link, wiki intro banner).
 >
 > ⚠️ **Tested on Windows only.** macOS and Linux are not verified for this release — feedback and contributions welcome.
 
