@@ -1,0 +1,111 @@
+name: Bug report
+description: Report a problem in CTkMaker
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill in the fields below.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I have searched the existing issues and did not find a duplicate
+          required: true
+        - label: I am using the latest version of CTkMaker
+          required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Crash
+        - Data loss
+        - Wrong behavior
+        - Visual glitch
+        - Minor
+    validations:
+      required: true
+  - type: dropdown
+    id: reproducibility
+    attributes:
+      label: Reproducibility
+      options:
+        - Always
+        - Sometimes
+        - Once
+        - Could not verify
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Canvas
+        - Properties
+        - Widgets
+        - Export
+        - Save-Load
+        - UI
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: CTkMaker version
+      placeholder: e.g. 1.0.4
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: python
+    attributes:
+      label: Python version
+      options:
+        - "< 3.10"
+        - "3.10"
+        - "3.11"
+        - "3.12"
+        - "3.13"
+        - "> 3.13"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What went wrong?
+      placeholder: Describe the problem in your own words.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Click ...
+        3. ...
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual behavior
+      placeholder: What did you expect to happen, and what actually happened?
+  - type: markdown
+    attributes:
+      value: |
+        **Tip:** drag a screenshot or short video into the description fields above to attach it.

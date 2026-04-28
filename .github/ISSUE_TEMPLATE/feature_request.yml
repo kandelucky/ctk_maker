@@ -1,0 +1,37 @@
+name: Feature request
+description: Suggest an idea for CTkMaker
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature. Please describe it below.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I have searched the existing issues and did not find a duplicate request
+          required: true
+        - label: This is for the CTkMaker app, not the underlying customtkinter library
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem it solves
+      description: What user pain or limitation does this feature address?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How would you like it to work?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any other approaches you have thought about?
