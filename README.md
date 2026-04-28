@@ -2,7 +2,7 @@
 
 Drag-and-drop visual designer for **CustomTkinter** — design Python GUIs without writing layout code by hand.
 
-> **v1.0.5** — Group / Ungroup widgets (Ctrl+G / Ctrl+Shift+G). Click a member selects the whole group, a fast follow-up click drills to a single member, drag always carries the group as one. Object Tree shows a virtual `◆ Group (n)` parent row with members nested in soft orange. Edit menu now includes an Align submenu.
+> **v1.0.6** — In-app Bug / Feature reporter (Help → Report a Bug + toolbar button). Picker view first, then a structured form that opens a pre-filled GitHub Issue Form template or exports a markdown file with the destination email + Copy button. Plus a hotfix to v1.0.5's group selection — Ctrl+Click on a group member now toggles the whole group, the orange bbox follows during drag, and partial-group selections can no longer arise.
 >
 > ⚠️ **Tested on Windows only.** macOS and Linux are not verified for this release — feedback and contributions welcome.
 
