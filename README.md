@@ -1,6 +1,6 @@
 # CTkMaker
 
-Drag-and-drop visual designer for **CustomTkinter** — design Python GUIs without writing layout code by hand.
+Drag-and-drop visual designer for **[CustomTkinter](https://github.com/TomSchimansky/CustomTkinter)** — design Python GUIs without writing layout code by hand.
 
 > **v1.0.6** — In-app Bug / Feature reporter (Help → Report a Bug + toolbar button). Picker view first, then a structured form that opens a pre-filled GitHub Issue Form template or exports a markdown file with the destination email + Copy button. Plus a hotfix to v1.0.5's group selection — Ctrl+Click on a group member now toggles the whole group, the orange bbox follows during drag, and partial-group selections can no longer arise.
 >
@@ -50,6 +50,11 @@ Full docs live in the [Wiki](https://github.com/kandelucky/ctk_maker/wiki):
 - [User Guide](https://github.com/kandelucky/ctk_maker/wiki/User-Guide) — workflow walkthrough
 - [Widgets](https://github.com/kandelucky/ctk_maker/wiki/Widgets) — every supported widget + properties
 - [Keyboard Shortcuts](https://github.com/kandelucky/ctk_maker/wiki/Keyboard-Shortcuts) — full reference
+- [Version history](docs/history/) — screenshots and notes from each release
+
+## Reporting issues
+
+Found a bug or have an idea? Use **Help → Report a Bug** (or the toolbar button on the right) — a guided form opens that submits straight to the GitHub issue tracker, or saves a markdown file you can email instead. You can also [open an issue directly](https://github.com/kandelucky/ctk_maker/issues).
 
 ## Tech stack
 
