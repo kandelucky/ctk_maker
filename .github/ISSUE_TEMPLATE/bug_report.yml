@@ -7,15 +7,8 @@ body:
     attributes:
       value: |
         Thanks for taking the time to report a bug. Please fill in the fields below.
-  - type: checkboxes
-    id: preflight
-    attributes:
-      label: Pre-flight checks
-      options:
-        - label: I have searched the existing issues and did not find a duplicate
-          required: true
-        - label: I am using the latest version of CTkMaker
-          required: true
+
+        Before you submit, please take a moment to <a href="https://github.com/kandelucky/ctk_maker/issues" target="_blank" rel="noopener">browse the open issues</a> to see whether someone has already reported this — it saves us both some time.
   - type: dropdown
     id: severity
     attributes:

@@ -7,15 +7,8 @@ body:
     attributes:
       value: |
         Thanks for suggesting a feature. Please describe it below.
-  - type: checkboxes
-    id: preflight
-    attributes:
-      label: Pre-flight checks
-      options:
-        - label: I have searched the existing issues and did not find a duplicate request
-          required: true
-        - label: This is for the CTkMaker app, not the underlying customtkinter library
-          required: true
+
+        Before you submit, please take a moment to <a href="https://github.com/kandelucky/ctk_maker/issues" target="_blank" rel="noopener">browse the open issues</a> to see whether someone has already requested this — it saves us both some time.
   - type: textarea
     id: problem
     attributes:
