@@ -249,15 +249,29 @@ class WidgetDragController:
             return None
         if multi:
             current_ids = set(existing_ids)
-            if nid in current_ids:
-                current_ids.discard(nid)
+            # Ctrl+click on a grouped widget toggles the whole group —
+            # never picks just one member. Keeps the within-group
+            # invariant (no partial group selections) consistent with
+            # plain-click and drag, so a Ctrl+G that follows can't
+            # silently break an existing group.
+            clicked_node = self.project.get_widget(nid)
+            click_gid = (
+                getattr(clicked_node, "group_id", None)
+                if clicked_node is not None else None
+            )
+            target_ids = {nid}
+            if click_gid:
+                target_ids = {
+                    m.id for m in self.project.iter_group_members(click_gid)
+                }
+            if target_ids.issubset(current_ids):
+                current_ids -= target_ids
                 new_primary = next(iter(current_ids), None)
             else:
                 # Cross-parent shift+click clears the prior selection
                 # so multi-select stays single-parent only — keeps
                 # Group/Ungroup, drag, and reparent invariants simple
                 # (everything operates inside one geometry context).
-                clicked_node = self.project.get_widget(nid)
                 clicked_parent = (
                     clicked_node.parent.id
                     if clicked_node is not None
@@ -274,7 +288,7 @@ class WidgetDragController:
                     )
                 if existing_parents and clicked_parent not in existing_parents:
                     current_ids = set()
-                current_ids.add(nid)
+                current_ids |= target_ids
                 new_primary = nid
             self.project.set_multi_selection(current_ids, new_primary)
             # Entering multi-select while in Edit mode flips the tool
@@ -320,6 +334,13 @@ class WidgetDragController:
                         self.project.select_widget(nid)
                         return nid
                     # Slow click — keep group selected, no change.
+                    return nid
+                # Group is already part of a larger multi-selection
+                # (e.g. {Button, Frame, group A,B,C}) — clicking a
+                # member should NOT collapse the selection back down
+                # to just the group, so the press still drags every
+                # selected widget together.
+                if member_ids.issubset(existing_ids):
                     return nid
                 # Cold / unrelated previous selection → whole group
                 self.project.set_multi_selection(member_ids, nid)
@@ -445,6 +466,27 @@ class WidgetDragController:
                 )
             except tk.TclError:
                 pass
+        # Pull every visible orange group-bbox frame into the drag
+        # chrome tag so the bbox follows the moving widgets per tick.
+        # (The bbox frames live in selection_controller's pool, not
+        # under any chrome_wid_ tag, so they need explicit tagging.)
+        pool = getattr(
+            self.workspace.selection, "_group_bbox_pool", [],
+        )
+        for entry in pool:
+            for window_id, _frame in entry.values():
+                try:
+                    state = self.canvas.itemcget(window_id, "state")
+                except tk.TclError:
+                    continue
+                if state == "hidden":
+                    continue
+                try:
+                    self.canvas.addtag_withtag(
+                        "drag_chrome_group", window_id,
+                    )
+                except tk.TclError:
+                    pass
 
     def _enter_hidden_mode(self, group_starts: dict) -> None:
         """Swap from live widget dragging to a single dashed-rect

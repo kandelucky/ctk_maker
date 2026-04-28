@@ -776,10 +776,12 @@ class Project:
     def _enforce_group_invariant(
         self, ids: set, primary: str | None,
     ) -> set:
-        """Drop selections that violate the group-invariant: at most
-        one widget per group, OR every member of one group with no
-        other widget in the selection. Returns a possibly-reduced
-        set — never grows it. Pure, no side effects.
+        """Each group in the selection is either fully present or
+        fully absent — never partial. Non-group widgets pass through
+        untouched, and multiple full groups can coexist. When a group
+        is partially present the function reduces it to a single
+        keeper (preferring ``primary``) so the selection stays
+        consistent. Pure, no side effects.
         """
         if not ids:
             return ids
@@ -794,22 +796,18 @@ class Project:
                 non_group.add(wid)
         if not group_buckets:
             return ids
-        # Whole-group selection: exactly one group, all its members
-        # present, no widgets outside the group.
-        if len(group_buckets) == 1 and not non_group:
-            gid, present = next(iter(group_buckets.items()))
-            full = {m.id for m in self.iter_group_members(gid)}
-            if present == full:
-                return ids
-        # Otherwise: keep at most one widget per group. Prefer the
-        # primary when it falls inside the group; else first iter.
         kept: set = set(non_group)
         for gid, present in group_buckets.items():
+            full = {m.id for m in self.iter_group_members(gid)}
+            if present == full:
+                kept |= present
+                continue
+            # Partial group → collapse to one keeper (primary if it's
+            # inside this group, else any member).
             if primary in present:
-                keeper = primary
+                kept.add(primary)
             else:
-                keeper = next(iter(present))
-            kept.add(keeper)
+                kept.add(next(iter(present)))
         return kept
 
     def update_property(
@@ -949,6 +947,8 @@ class Project:
         if parent_node is not None and is_layout_container(
             parent_node.properties,
         ):
+            return False
+        if any(getattr(n, "group_id", None) for n in nodes):
             return False
         return True
 

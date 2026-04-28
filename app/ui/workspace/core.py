@@ -235,6 +235,10 @@ class Workspace(ctk.CTkFrame):
             lambda *_a, **_k: self._reapply_fonts_to_all_widgets(),
         )
         bus.subscribe("selection_changed", self._on_selection_changed)
+        bus.subscribe(
+            "widget_group_changed",
+            lambda *_a, **_k: self.selection.draw(),
+        )
         bus.subscribe("palette_drop_request", self._on_palette_drop)
         bus.subscribe("document_resized", self._on_document_resized)
         bus.subscribe("project_renamed", self._on_project_renamed)
