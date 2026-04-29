@@ -27,8 +27,11 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
 from app.core.logger import log_error
+from app.core.settings import load_settings, save_setting
 from app.io.code_exporter import export_project
 from app.ui.icons import load_icon
+
+SETTING_INCLUDE_DESCRIPTIONS = "export_include_descriptions"
 
 DIALOG_W = 560
 DIALOG_H = 410
@@ -106,6 +109,14 @@ class ExportDialog(ctk.CTkToplevel):
         # to preserve the historical "everything in assets/" behaviour.
         self._only_used_assets_var = tk.BooleanVar(
             value=bool(project.folder_path),
+        )
+        # Phase 0 AI-bridge toggle. Persists to settings so the user's
+        # last choice survives across exports / sessions.
+        _settings = load_settings()
+        self._include_descriptions_var = tk.BooleanVar(
+            value=bool(
+                _settings.get(SETTING_INCLUDE_DESCRIPTIONS, True),
+            ),
         )
         self._open_editor_cb: ctk.CTkCheckBox | None = None
         self._run_preview_cb: ctk.CTkCheckBox | None = None
@@ -215,6 +226,8 @@ class ExportDialog(ctk.CTkToplevel):
         self._add_row("Scope", self._build_scope_row)
         self._add_separator()
         self._add_row("Format", self._build_format_checkbox)
+        self._add_separator()
+        self._add_row("Comments", self._build_descriptions_checkbox)
         self._add_separator()
         self._add_row("After", self._build_after_checkbox)
         # Sub-hint pinned under the After row, indented past the
@@ -339,6 +352,34 @@ class ExportDialog(ctk.CTkToplevel):
                 bg=PANEL_BG, fg=PREVIEW_FG,
                 font=("Segoe UI", 9, "italic"),
             ).pack(side="left", padx=(10, 0))
+
+    def _build_descriptions_checkbox(self, row) -> None:
+        # Phase 0 AI bridge: toggle whether widget descriptions emit
+        # as Python ``# comments`` above each constructor. Default on
+        # so the AI workflow is discoverable; the choice persists in
+        # Settings, so power users who flip it off don't have to redo
+        # it on every export.
+        wrap = ctk.CTkFrame(row, fg_color="transparent")
+        wrap.pack(side="left", fill="x", expand=True)
+        desc_row = ctk.CTkFrame(wrap, fg_color="transparent")
+        desc_row.pack(fill="x", anchor="w")
+        ctk.CTkCheckBox(
+            desc_row, text="Include descriptions as comments",
+            variable=self._include_descriptions_var,
+            checkbox_width=18, checkbox_height=18,
+            font=("Segoe UI", 11),
+            text_color=FIELD_FG,
+            fg_color="#0e639c", hover_color="#1177bb",
+        ).pack(side="left")
+        tk.Label(
+            desc_row,
+            text=(
+                "Widget descriptions emitted as # lines — "
+                "uncheck for clean production code"
+            ),
+            bg=PANEL_BG, fg=PREVIEW_FG,
+            font=("Segoe UI", 9, "italic"),
+        ).pack(side="left", padx=(10, 0))
 
     def _build_after_checkbox(self, row) -> None:
         # Two independent toggles. "Open in editor" routes through the
@@ -521,6 +562,12 @@ class ExportDialog(ctk.CTkToplevel):
                 parent=self,
             )
             return
+        # Persist the AI-bridge toggle so the user's last choice
+        # survives across exports / sessions.
+        save_setting(
+            SETTING_INCLUDE_DESCRIPTIONS,
+            bool(self._include_descriptions_var.get()),
+        )
         scope_id = self._scope_id_for(self._scope_label_var.get())
         try:
             self._dispatch_export(scope_id, target)
@@ -575,6 +622,7 @@ class ExportDialog(ctk.CTkToplevel):
             single_document_id=single_id,
             as_zip=as_zip,
             asset_filter=asset_filter,
+            include_descriptions=self._include_descriptions_var.get(),
         )
 
     def _export_single_page(
@@ -597,6 +645,7 @@ class ExportDialog(ctk.CTkToplevel):
                 self.project, str(target),
                 as_zip=as_zip,
                 asset_filter=asset_filter,
+                include_descriptions=self._include_descriptions_var.get(),
             )
             return
         clone = self._build_temp_project_for_page(page_id)
@@ -615,6 +664,7 @@ class ExportDialog(ctk.CTkToplevel):
             clone, str(target),
             as_zip=as_zip,
             asset_filter=asset_filter,
+            include_descriptions=self._include_descriptions_var.get(),
         )
 
     def _export_all_pages(
@@ -647,6 +697,7 @@ class ExportDialog(ctk.CTkToplevel):
                 src_project, str(target),
                 as_zip=as_zip,
                 asset_filter=asset_filter,
+                include_descriptions=self._include_descriptions_var.get(),
             )
 
     def _build_temp_project_for_page(self, page_id: str):

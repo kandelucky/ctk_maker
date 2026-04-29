@@ -136,6 +136,9 @@ def _preview_screenshot_lines(target: str) -> list[str]:
     return [INDENT + line for line in body.splitlines()]
 
 
+_INCLUDE_DESCRIPTIONS_DEFAULT = True
+
+
 def export_project(
     project: Project, path: str | Path,
     preview_dialog_id: str | None = None,
@@ -143,6 +146,7 @@ def export_project(
     as_zip: bool = False,
     asset_filter: set[Path] | None = None,
     inject_preview_screenshot: bool = False,
+    include_descriptions: bool = True,
 ) -> None:
     """Generate a runnable .py from ``project`` at ``path``.
 
@@ -169,6 +173,7 @@ def export_project(
                 single_document_id=single_document_id,
                 as_zip=False,
                 asset_filter=asset_filter,
+                include_descriptions=include_descriptions,
             )
             with zipfile.ZipFile(
                 out_zip, "w", zipfile.ZIP_DEFLATED,
@@ -191,6 +196,7 @@ def export_project(
             preview_dialog_id=preview_dialog_id,
             single_document_id=single_document_id,
             inject_preview_screenshot=inject_preview_screenshot,
+            include_descriptions=include_descriptions,
         )
     finally:
         _CURRENT_PROJECT_PATH = None
@@ -295,6 +301,7 @@ def generate_code(
     preview_dialog_id: str | None = None,
     single_document_id: str | None = None,
     inject_preview_screenshot: bool = False,
+    include_descriptions: bool = True,
 ) -> str:
     """Generate the project's ``.py`` source.
 
@@ -312,7 +319,33 @@ def generate_code(
     the exported file is a standalone runnable app. Useful for the
     per-dialog Export button in the chrome, or the "Export active
     document" File-menu entry.
+
+    ``include_descriptions`` (Phase 0 AI bridge): when True, the
+    exporter emits each widget's ``description`` meta-property as a
+    Python comment above its constructor so an AI can be handed the
+    file and fill in the missing logic. Set False for clean
+    production code.
     """
+    global _INCLUDE_DESCRIPTIONS_DEFAULT
+    _prev_include_desc = _INCLUDE_DESCRIPTIONS_DEFAULT
+    _INCLUDE_DESCRIPTIONS_DEFAULT = include_descriptions
+    try:
+        return _generate_code_inner(
+            project,
+            preview_dialog_id=preview_dialog_id,
+            single_document_id=single_document_id,
+            inject_preview_screenshot=inject_preview_screenshot,
+        )
+    finally:
+        _INCLUDE_DESCRIPTIONS_DEFAULT = _prev_include_desc
+
+
+def _generate_code_inner(
+    project: Project,
+    preview_dialog_id: str | None = None,
+    single_document_id: str | None = None,
+    inject_preview_screenshot: bool = False,
+) -> str:
     # Single-document export narrows the widget scan + class emission
     # to just the requested document. Image scans must also respect
     # the filter so the PIL helper / tint import only lands when THIS
@@ -946,7 +979,17 @@ def _emit_widget(
         getattr(descriptor, "ctk_class_name", "") or node.widget_type
     )
     full_name = f"{instance_prefix}{var_name}"
-    lines: list[str] = list(pre_lines)
+    # Phase 0 AI bridge: prepend the widget's plain-language description
+    # as comments above its constructor call. Empty descriptions skip.
+    # Toggled via ``include_descriptions`` on ``export_project`` /
+    # ``generate_code`` so the user can choose clean production code.
+    description_lines: list[str] = []
+    if _INCLUDE_DESCRIPTIONS_DEFAULT:
+        desc = (getattr(node, "description", "") or "").strip()
+        if desc:
+            for line in desc.splitlines() or [desc]:
+                description_lines.append(f"# {line}")
+    lines: list[str] = description_lines + list(pre_lines)
     lines.append(f"{full_name} = ctk.{ctk_class}(")
     lines.append(f"    {master_var},")
     for key, src in kwargs:

@@ -350,6 +350,37 @@ class ChangePropertyCommand(Command):
         return True
 
 
+class ChangeDescriptionCommand(Command):
+    """Change a widget's ``description`` meta-property. Stored on the
+    node directly (not in ``properties``) so it never leaks into the
+    CTk constructor — only into the export-time comment pass.
+    """
+
+    def __init__(self, widget_id: str, before: str, after: str):
+        self.widget_id = widget_id
+        self.before = before
+        self.after = after
+        self.description = "Edit description"
+
+    def undo(self, project: "Project") -> None:
+        node = project.get_widget(self.widget_id)
+        if node is not None:
+            node.description = self.before
+            project.event_bus.publish(
+                "widget_description_changed", self.widget_id, self.before,
+            )
+        project.select_widget(self.widget_id)
+
+    def redo(self, project: "Project") -> None:
+        node = project.get_widget(self.widget_id)
+        if node is not None:
+            node.description = self.after
+            project.event_bus.publish(
+                "widget_description_changed", self.widget_id, self.after,
+            )
+        project.select_widget(self.widget_id)
+
+
 class MultiChangePropertyCommand(Command):
     """Bundle multiple property changes for a single widget into
     one undo step. Used when a single UI action triggers derived

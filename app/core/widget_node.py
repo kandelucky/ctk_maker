@@ -36,6 +36,12 @@ class WidgetNode:
         # group_id is metadata, not hierarchy. Skipped from code
         # export (the generated Python sees only individual widgets).
         self.group_id: str | None = None
+        # AI-bridge meta-property. Plain-language description of what
+        # this widget should do. Emitted as Python comments above the
+        # widget's constructor call in code export so an AI can read
+        # the structure + intent and fill in the missing logic. Never
+        # reaches CTk constructors.
+        self.description: str = ""
 
     def to_dict(self) -> dict:
         # Shallow-copy ``properties`` so callers (project_saver
@@ -57,6 +63,8 @@ class WidgetNode:
             result["parent_slot"] = self.parent_slot
         if self.group_id is not None:
             result["group_id"] = self.group_id
+        if self.description:
+            result["description"] = self.description
         return result
 
     @classmethod
@@ -74,6 +82,7 @@ class WidgetNode:
         node.locked = bool(data.get("locked", False))
         node.parent_slot = data.get("parent_slot")
         node.group_id = data.get("group_id")
+        node.description = data.get("description", "")
         for child_data in data.get("children", []):
             child = cls.from_dict(child_data)
             child.parent = node

@@ -136,6 +136,9 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         bus.subscribe("tool_changed", self._on_tool_changed)
         bus.subscribe("property_changed", self._on_property_changed)
         bus.subscribe("widget_renamed", self._on_widget_renamed)
+        bus.subscribe(
+            "widget_description_changed", self._on_description_changed,
+        )
 
         self._show_empty()
 
@@ -223,6 +226,47 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             "<Return>", lambda _e: self.tree.focus_set(),
         )
         self._attach_inline_context_menu(self._name_entry, prop=None)
+
+        # Description row — Phase 0 AI bridge. Click "Edit Description…"
+        # opens a Toplevel; the typed text is emitted as Python comments
+        # above the widget's constructor in code export so an AI can
+        # read intent + structure and fill in the missing logic.
+        self._desc_row = tk.Frame(
+            self, bg=BG, height=30, highlightthickness=0,
+        )
+        self._desc_row.pack(fill="x", pady=(0, 4), padx=6)
+        self._desc_row.pack_propagate(False)
+
+        tk.Label(
+            self._desc_row, text="Desc", bg=BG, fg=STATIC_FG,
+            font=("Segoe UI", 10), anchor="w",
+        ).pack(side="left", padx=(6, 8))
+
+        self._desc_preview_var = tk.StringVar(
+            value="Click to add description…",
+        )
+        self._desc_preview = tk.Label(
+            self._desc_row, textvariable=self._desc_preview_var,
+            bg=VALUE_BG, fg="#666666",
+            font=("Segoe UI", 10, "italic"), anchor="w",
+            relief="flat", bd=0, padx=6, cursor="hand2",
+        )
+        self._desc_preview.pack(side="left", fill="x", expand=True)
+        self._desc_preview.bind(
+            "<Button-1>", lambda _e: self._open_description_dialog(),
+        )
+
+        desc_edit_icon = load_icon("pencil", size=14)
+        self._desc_edit_btn = ctk.CTkButton(
+            self._desc_row, text="" if desc_edit_icon else "Edit",
+            image=desc_edit_icon,
+            width=26, height=22, corner_radius=3,
+            fg_color="#2d2d2d", hover_color="#3a3a3a",
+            text_color="#cccccc",
+            font=("Segoe UI", 10, "bold"),
+            command=self._open_description_dialog,
+        )
+        self._desc_edit_btn.pack(side="right", padx=(4, 6))
 
     def _open_widget_docs(self) -> None:
         # Best-effort: open the widget's wiki page if we have a selection.
@@ -489,6 +533,15 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         finally:
             self._suspend_name_trace = False
 
+    def _on_description_changed(
+        self, widget_id: str, _value: str,
+    ) -> None:
+        if widget_id != self.current_id:
+            return
+        node = self.project.get_widget(widget_id)
+        if node is not None:
+            self._update_description_preview(node)
+
     def _on_name_var_write(self, *_args) -> None:
         if self._suspend_name_trace or self.current_id is None:
             return
@@ -537,6 +590,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         finally:
             self._suspend_name_trace = False
         self._name_entry.configure(state="disabled")
+        self._update_description_preview(None)
 
     def _clear_tree(self) -> None:
         for child in self.tree.get_children(""):
@@ -670,6 +724,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         finally:
             self._suspend_name_trace = False
         self._name_entry.configure(state="normal")
+        self._update_description_preview(node)
         self._sync_edit_button(node)
 
     def _sync_edit_button(self, node) -> None:
@@ -711,4 +766,67 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             if len(current_ids) > 1:
                 self.project.select_widget(primary)
         self._tool_setter("edit")
+
+    # ==================================================================
+    # Description dialog (Phase 0 AI bridge)
+    # ==================================================================
+    def _open_description_dialog(self) -> None:
+        """Open the multiline editor for the current widget's
+        ``description`` meta-property. Empty / unchanged result skips
+        the history push so a no-op cancel doesn't pollute undo.
+        """
+        if self.current_id is None:
+            return
+        node = self.project.get_widget(self.current_id)
+        if node is None:
+            return
+        before = getattr(node, "description", "") or ""
+        from tools.text_editor_dialog import TextEditorDialog
+        from app.core.commands import ChangeDescriptionCommand
+        descriptor = get_descriptor(node.widget_type)
+        label = node.name or (
+            descriptor.display_name if descriptor is not None
+            else node.widget_type
+        )
+        dialog = TextEditorDialog(
+            self.winfo_toplevel(),
+            f"Description: {label}",
+            before,
+            width=580, height=420,
+        )
+        dialog.wait_window()
+        if dialog.result is None or dialog.result == before:
+            return
+        node.description = dialog.result
+        self.project.event_bus.publish(
+            "widget_description_changed",
+            self.current_id, dialog.result,
+        )
+        self.project.history.push(
+            ChangeDescriptionCommand(
+                self.current_id, before, dialog.result,
+            ),
+        )
+
+    def _update_description_preview(self, node) -> None:
+        desc = (
+            (getattr(node, "description", "") or "").strip()
+            if node is not None else ""
+        )
+        if not desc:
+            preview = "Click to add description…"
+            fg = "#666666"
+        else:
+            first_line = desc.partition("\n")[0]
+            if len(first_line) > 60:
+                first_line = first_line[:57] + "…"
+            elif "\n" in desc:
+                first_line += " …"
+            preview = first_line
+            fg = "#cccccc"
+        self._desc_preview_var.set(preview)
+        try:
+            self._desc_preview.configure(fg=fg)
+        except tk.TclError:
+            pass
 

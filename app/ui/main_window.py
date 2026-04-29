@@ -1638,12 +1638,19 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         ext = ".zip" if as_zip else ".py"
         target = out_dir / f"{slug}{ext}"
         asset_filter = collect_used_assets(self.project, document_id=target_id)
+        # Respect the AI-bridge toggle persisted from the full Export
+        # dialog so Quick Export's behaviour stays consistent.
+        from app.core.settings import load_settings
+        include_descriptions = bool(
+            load_settings().get("export_include_descriptions", True),
+        )
         try:
             export_project(
                 self.project, str(target),
                 single_document_id=target_id,
                 as_zip=as_zip,
                 asset_filter=asset_filter,
+                include_descriptions=include_descriptions,
             )
         except OSError as exc:
             log_error("quick export")
