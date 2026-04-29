@@ -21,6 +21,8 @@ A CTkMaker project is organised in four levels:
 
 - **Visual canvas** — real CTk widgets on a zoomable workspace. What you see is what you get. Multiple windows (main + dialogs) live on the same canvas in one page.
 - **Widgets — 20 in the palette:** Button, Segmented Button, Label, Image, Card, Progress Bar, Check Box, Radio Button, Switch, Entry, Textbox, Combo Box, Option Menu, Slider, Frame, Scrollable Frame, Tab View, Vertical Layout, Horizontal Layout, Grid Layout. Richer property editing than raw CTk: drag-scrub numbers, paired font family + size, multiline overlays, segmented value editor, scrollable dropdown for ComboBox / OptionMenu, color swatches with eyedropper. Open **Tools → Inspect CTk Widget** to see every property side-by-side — native CTk parameters vs builder-added helpers.
+- **Variables + property bindings** — declare project-level shared values (string / int / float / bool) once via the Variables window (F11), then bind them to widget properties from the Properties panel with a single click on the row's diamond icon. Bound rows render with a soft orange tint. Updates propagate live across every bound widget on the canvas — typing into one Entry mirrors instantly into every Label / Switch / Slider sharing the variable. Exported code uses `tk.StringVar` / `IntVar` / `DoubleVar` / `BooleanVar` for clean two-way data flow.
+- **Widget descriptions (AI bridge)** — every widget has a free-form description field for plain-language intent ("when clicked, add the digit 1 to the display"). Export optionally emits descriptions as Python comments above each widget — paste the file into your favourite AI to have it fill in the missing logic.
 - **Layout managers** — `place`, `vbox`, `hbox`, `grid` rendered with the actual Tk pack/grid managers. Drop into cells, drag to reparent, even across windows.
 - **Alignment & distribution** — toolbar buttons to align widgets (Left / Center / Right + Top / Middle / Bottom) and distribute them evenly. Auto-detects intent: a single widget aligns to its container, multiple widgets align to each other.
 - **Marquee selection + smart snap guides** — drag a rectangle on empty canvas to multi-select; while dragging a widget, cyan guide lines snap its edges / centre to siblings and to the container. Hold Alt to bypass.
@@ -65,7 +67,8 @@ Found a bug or have an idea? Use **Help → Report a Bug** (or the toolbar butto
 
 ## What's next
 
-- Variables panel + event handlers
+- Event handlers — right-click a widget → "On Click" stubs a method in a companion behavior file, ready for the user to fill in
+- Visual scripting — node editor for wiring widgets together without writing Python
 - Custom user widgets + plugin system
 - Distribution: PyInstaller bundles, installers, auto-updater
 
