@@ -2,7 +2,7 @@
 
 Drag-and-drop visual designer for **[CustomTkinter](https://github.com/TomSchimansky/CustomTkinter)** — design Python GUIs without writing layout code by hand.
 
-> **v1.1.0** — Group hide/lock toggles in the Object Tree (batch as one undo). Alignment + distribution treat a selected group as a single block. Preview windows gain a floating **Screenshot · F12** button — saves the client area as PNG.
+> **v1.2.0** — **Local variables** (per-window) alongside the existing project-wide globals; cross-document widgets auto-migrate their bindings on reparent / paste. Code export routes globals onto the main window; Toplevels read them via `self.master.var_*`. **Prefab library** — save any selection as a reusable `.ctkprefab` and drag it back onto the canvas from the Palette's new Prefabs tab.
 >
 > ⚠️ **Tested on Windows only.** macOS and Linux are not verified for this release — feedback and contributions welcome.
 

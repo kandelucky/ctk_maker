@@ -4,6 +4,7 @@ Visual snapshots of CTkMaker across releases. Screenshots only on the milestones
 
 | Version | Screenshot | Highlights |
 |---------|-----------|------------|
+| **v1.2.0** | _no screenshot_ | **Local variables + prefab library.** Variables window splits into Global (project-wide) and Local (per-window) tabs; local bindings auto-migrate when a widget moves between documents. Code export emits globals on the main window class, Toplevels read them via `self.master.var_*`. Prefab library — save any canvas selection as a reusable `.ctkprefab`, browse / search / drag-back from the Palette's Prefabs tab. |
 | **v1.1.0** | _no screenshot_ | **Group hide/lock + group-aware alignment.** Virtual `◆ Group` row gains eye + lock cells — batch toggle as one undo step. Alignment + distribution treat a selected group as a single block. Preview windows ship with a floating **Screenshot · F12** button. |
 | **v1.0.6** | [![v1.0.6](v1.0.6.png)](v1.0.6.png) | In-app **Bug / Feature reporter** — Help menu + toolbar button open a structured form that submits via GitHub Issue Form template URL or markdown export. Plus a hotfix to v1.0.5's group selection (Ctrl+Click toggles whole group, orange bbox follows during drag). |
 | **v1.0.5** | _no screenshot_ | **Group / Ungroup widgets** (Ctrl+G / Ctrl+Shift+G). Click a member targets the whole group, fast follow-up drills to one, drag carries the group as one. Object Tree shows a virtual `◆ Group (n)` parent row. |

@@ -11,7 +11,7 @@ Schema (v1):
       "type": "fragment" | "window",
       "name": "Login Card",
       "created_at": "2026-04-29T12:00:00",
-      "ctk_maker_version": "1.1.0",
+      "ctk_maker_version": "1.2.0",
       "view_size": {"w": 320, "h": 240},
       "nodes": [ /* WidgetNode dicts */ ],
       "variables": [],
