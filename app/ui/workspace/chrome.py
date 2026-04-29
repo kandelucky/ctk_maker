@@ -35,6 +35,10 @@ CHROME_BG_TAG = "window_chrome_bg"
 CHROME_TITLE_TAG = "window_chrome_title"
 CHROME_SETTINGS_TAG = "window_chrome_settings"
 CHROME_SETTINGS_IMG_TAG = "window_chrome_settings_img"
+CHROME_DESC_TAG = "window_chrome_desc"
+CHROME_DESC_IMG_TAG = "window_chrome_desc_img"
+CHROME_VARS_LOCAL_TAG = "window_chrome_vars_local"
+CHROME_VARS_LOCAL_IMG_TAG = "window_chrome_vars_local_img"
 CHROME_TOFRONT_TAG = "window_chrome_tofront"
 CHROME_TOFRONT_IMG_TAG = "window_chrome_tofront_img"
 CHROME_TOBACK_TAG = "window_chrome_toback"
@@ -61,19 +65,28 @@ HIDE_THRESHOLD = 10
 
 # Button x-offsets from the right edge of the document rectangle —
 # laid out right-to-left in the title bar: close (✕) → min (−) →
-# tofront (⇧) → toback (⇩) → settings (⚙).
+# settings (⚙) → description (✎) → tofront (⇧) → toback (⇩).
 CLOSE_X_OFFSET = 20
 MIN_X_OFFSET = 48
 SETTINGS_X_OFFSET = 78
-TOFRONT_X_OFFSET = 108
-TOBACK_X_OFFSET = 138
+# Description (square-pen) sits between settings and z-order so the
+# user can edit the document's AI-bridge note without first selecting
+# the window in the properties panel.
+DESC_X_OFFSET = 108
+# Local variables shortcut — one orange ``braces`` icon that opens
+# the Variables window on the per-document Local tab. The Global
+# scope is reachable from the workspace toolbar's Variables button,
+# so the chrome strip stays uncluttered with just the local entry.
+VARS_LOCAL_X_OFFSET = 138
+TOFRONT_X_OFFSET = 168
+TOBACK_X_OFFSET = 198
 # Dialog-only "▶ Preview this dialog" button — launches a hidden-root
 # subprocess that opens just this Toplevel. Placed farthest from the
 # right edge so it doesn't compete with the destructive close button.
-PREVIEW_X_OFFSET = 168
+PREVIEW_X_OFFSET = 228
 # Dialog-only "Export this dialog" button — single-document export
 # to standalone .py. Sits just left of the preview icon.
-EXPORT_X_OFFSET = 198
+EXPORT_X_OFFSET = 258
 # Half-width of the invisible hit-rect that sits behind each icon
 # so clicking near the glyph (not just on its pixels) registers.
 ICON_HIT_PADDING = 10
@@ -98,6 +111,26 @@ class ChromeManager:
         )
         self._settings_icon_hover = load_tk_icon(
             "settings", size=14, color="#ffffff",
+        )
+        # Description (AI-bridge note) icon — opens the same multiline
+        # editor the Properties panel uses, but for the *document*
+        # itself. Saves a click vs. selecting the window first.
+        self._desc_icon = load_tk_icon(
+            "square-pen", size=14, color=CHROME_FG_DIM,
+        )
+        self._desc_icon_hover = load_tk_icon(
+            "square-pen", size=14, color="#ffffff",
+        )
+        # Local variables shortcut — coloured at rest so the scope
+        # is readable without hovering. Hover swaps to white for an
+        # affordance cue, matching the rest of the chrome icons. The
+        # Global scope is reachable via the workspace toolbar.
+        from app.ui.icons import VARIABLES_LOCAL_COLOR
+        self._vars_local_icon = load_tk_icon(
+            "braces", size=14, color=VARIABLES_LOCAL_COLOR,
+        )
+        self._vars_local_icon_hover = load_tk_icon(
+            "braces", size=14, color="#ffffff",
         )
         # Z-order icons (Bring to Front / Send to Back). Double
         # chevrons read as "all the way" vs a single step.
@@ -195,6 +228,10 @@ class ChromeManager:
         doc_title_tag = f"chrome_title:{doc.id}"
         doc_settings_tag = f"chrome_settings:{doc.id}"
         doc_settings_img_tag = f"chrome_settings_img:{doc.id}"
+        doc_desc_tag = f"chrome_desc:{doc.id}"
+        doc_desc_img_tag = f"chrome_desc_img:{doc.id}"
+        doc_vars_local_tag = f"chrome_vars_local:{doc.id}"
+        doc_vars_local_img_tag = f"chrome_vars_local_img:{doc.id}"
         doc_tofront_tag = f"chrome_tofront:{doc.id}"
         doc_tofront_img_tag = f"chrome_tofront_img:{doc.id}"
         doc_toback_tag = f"chrome_toback:{doc.id}"
@@ -243,6 +280,34 @@ class ChromeManager:
                     CHROME_TAG, CHROME_SETTINGS_TAG,
                     CHROME_SETTINGS_IMG_TAG,
                     doc_settings_tag, doc_settings_img_tag, doc_tag,
+                ),
+            )
+        if self._desc_icon is not None:
+            self._draw_icon_button(
+                right - DESC_X_OFFSET, top, doc_top, mid, bg_fill,
+                self._desc_icon,
+                rect_tags=(
+                    CHROME_TAG, CHROME_DESC_TAG,
+                    doc_desc_tag, doc_tag,
+                ),
+                image_tags=(
+                    CHROME_TAG, CHROME_DESC_TAG,
+                    CHROME_DESC_IMG_TAG,
+                    doc_desc_tag, doc_desc_img_tag, doc_tag,
+                ),
+            )
+        if self._vars_local_icon is not None:
+            self._draw_icon_button(
+                right - VARS_LOCAL_X_OFFSET, top, doc_top, mid, bg_fill,
+                self._vars_local_icon,
+                rect_tags=(
+                    CHROME_TAG, CHROME_VARS_LOCAL_TAG,
+                    doc_vars_local_tag, doc_tag,
+                ),
+                image_tags=(
+                    CHROME_TAG, CHROME_VARS_LOCAL_TAG,
+                    CHROME_VARS_LOCAL_IMG_TAG,
+                    doc_vars_local_tag, doc_vars_local_img_tag, doc_tag,
                 ),
             )
 
@@ -347,6 +412,8 @@ class ChromeManager:
             doc_toback_tag, doc_toback_img_tag,
             doc_preview_tag, doc_preview_img_tag,
             doc_export_tag, doc_export_img_tag,
+            doc_desc_tag, doc_desc_img_tag,
+            doc_vars_local_tag, doc_vars_local_img_tag,
         )
 
     def _draw_icon_button(
@@ -404,6 +471,8 @@ class ChromeManager:
         tofront_tag, tofront_img_tag, toback_tag, toback_img_tag,
         preview_tag=None, preview_img_tag=None,
         export_tag=None, export_img_tag=None,
+        desc_tag=None, desc_img_tag=None,
+        vars_local_tag=None, vars_local_img_tag=None,
     ) -> None:
         """Wire the click / drag / hover bindings for a single
         document's chrome strip. Each document gets its own tag
@@ -442,6 +511,25 @@ class ChromeManager:
             self._settings_icon, self._settings_icon_hover,
             on_click=lambda d=doc_id: self._on_settings_click(None, d),
         )
+        if (
+            desc_tag and desc_img_tag and self._desc_icon is not None
+        ):
+            self._bind_icon_hover(
+                desc_tag, desc_img_tag,
+                self._desc_icon, self._desc_icon_hover,
+                on_click=lambda d=doc_id: self._on_desc_click(d),
+            )
+        if (
+            vars_local_tag and vars_local_img_tag
+            and self._vars_local_icon is not None
+        ):
+            self._bind_icon_hover(
+                vars_local_tag, vars_local_img_tag,
+                self._vars_local_icon, self._vars_local_icon_hover,
+                on_click=lambda d=doc_id: self._on_vars_click(
+                    d, "local",
+                ),
+            )
         self._bind_icon_hover(
             tofront_tag, tofront_img_tag,
             self._tofront_icon, self._tofront_icon_hover,
@@ -548,6 +636,24 @@ class ChromeManager:
         self, _event=None, doc_id: str | None = None,
     ) -> str:
         self._select(doc_id)
+        return "break"
+
+    def _on_desc_click(self, doc_id: str) -> str:
+        """Open the AI-bridge description editor for the clicked
+        document. Selects the document's window first so the
+        properties panel is on the right context, then asks it to
+        open the dialog via an event-bus request."""
+        self._select(doc_id)
+        self.project.event_bus.publish("request_edit_description")
+        return "break"
+
+    def _on_vars_click(self, doc_id: str, scope: str) -> str:
+        """Open the Variables window on the matching tab. Activates
+        the clicked document first so the Local tab targets it."""
+        self.project.set_active_document(doc_id)
+        self.project.event_bus.publish(
+            "request_open_variables_window", scope, doc_id,
+        )
         return "break"
 
     def _set_cursor(self, cursor: str) -> None:

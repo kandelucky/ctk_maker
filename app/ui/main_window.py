@@ -343,6 +343,14 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             lambda *_a, **_k: self._on_add_dialog(),
         )
         bus.subscribe(
+            "request_open_variables_window",
+            self._on_request_open_variables_window,
+        )
+        bus.subscribe(
+            "local_variables_migrated",
+            self._on_local_variables_migrated,
+        )
+        bus.subscribe(
             "request_preview_dialog", self._on_preview_dialog,
         )
         bus.subscribe(
@@ -1498,7 +1506,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         self._history_var.set(not self._history_var.get())
         self._on_toggle_history_window()
 
-    def _on_toggle_variables_window(self) -> None:
+    def _on_toggle_variables_window(self, scope: str = "global") -> None:
         want_open = bool(self._variables_var.get())
         alive = (
             self._variables_window is not None
@@ -1508,7 +1516,10 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             self._variables_window = VariablesWindow(
                 self, self.project,
                 on_close=self._on_variables_window_closed,
+                initial_scope=scope,
             )
+        elif want_open and alive:
+            self._variables_window.show_scope(scope)
         elif not want_open and alive:
             try:
                 self._variables_window.destroy()
@@ -1516,9 +1527,30 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 pass
             self._variables_window = None
 
+    def _on_request_open_variables_window(
+        self, scope: str = "global", _doc_id: str | None = None,
+    ) -> None:
+        """Bus-routed open. Sets the toggle var so menubar / F11 stay
+        in sync, then switches to the requested scope tab."""
+        self._variables_var.set(True)
+        self._on_toggle_variables_window(scope)
+
     def _on_variables_window_closed(self) -> None:
         self._variables_window = None
         self._variables_var.set(False)
+
+    def _on_local_variables_migrated(self, count: int) -> None:
+        """Surface the cross-document variable copy as a status toast.
+
+        Fires from ``Project.migrate_local_var_bindings`` after a
+        widget paste / reparent that brought local-variable bindings
+        into a new document. The user otherwise wouldn't know that
+        their variables list grew, so we tell them.
+        """
+        if count <= 0:
+            return
+        word = "variable" if count == 1 else "variables"
+        self._show_toast(f"{count} local {word} copied")
 
     def _on_f11_variables_window(self) -> None:
         self._variables_var.set(not self._variables_var.get())
@@ -1595,8 +1627,23 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             )
 
     def _on_export(self) -> None:
+        if not self._confirm_save_before_export():
+            return
         from app.ui.export_dialog import ExportDialog
         ExportDialog(self, self.project)
+
+    def _confirm_save_before_export(self) -> bool:
+        """Block export if the project has unsaved changes — single
+        OK button to acknowledge, then abort so the user can save
+        manually. Returns True when the caller may proceed."""
+        if not self._dirty:
+            return True
+        messagebox.showwarning(
+            "Unsaved changes",
+            "Please save your progress before exporting.",
+            parent=self,
+        )
+        return False
 
     def _on_export_active_document(
         self, doc_id: str | None = None,
@@ -1614,6 +1661,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         doc) and from the per-form chrome Export icon (specific id
         via ``request_export_document`` event bus).
         """
+        if not self._confirm_save_before_export():
+            return
         target_id = doc_id or self.project.active_document_id
         doc = self.project.get_document(target_id)
         if doc is None:

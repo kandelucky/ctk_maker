@@ -354,31 +354,50 @@ class ChangeDescriptionCommand(Command):
     """Change a widget's ``description`` meta-property. Stored on the
     node directly (not in ``properties``) so it never leaks into the
     CTk constructor — only into the export-time comment pass.
+
+    For Window selections (``widget_id == WINDOW_ID``) the description
+    actually lives on the ``Document`` — captured by ``document_id``
+    at command time so undo/redo target the right document even after
+    the user switches the active form.
     """
 
-    def __init__(self, widget_id: str, before: str, after: str):
+    def __init__(
+        self,
+        widget_id: str,
+        before: str,
+        after: str,
+        document_id: str | None = None,
+    ):
         self.widget_id = widget_id
+        self.document_id = document_id
         self.before = before
         self.after = after
         self.description = "Edit description"
 
-    def undo(self, project: "Project") -> None:
-        node = project.get_widget(self.widget_id)
-        if node is not None:
-            node.description = self.before
-            project.event_bus.publish(
-                "widget_description_changed", self.widget_id, self.before,
+    def _apply(self, project: "Project", value: str) -> None:
+        from app.core.project import WINDOW_ID
+        if self.widget_id == WINDOW_ID and self.document_id is not None:
+            doc = next(
+                (d for d in project.documents if d.id == self.document_id),
+                None,
             )
+            if doc is not None:
+                project.set_active_document(doc.id)
+                doc.description = value
+        else:
+            node = project.get_widget(self.widget_id)
+            if node is not None:
+                node.description = value
+        project.event_bus.publish(
+            "widget_description_changed", self.widget_id, value,
+        )
         project.select_widget(self.widget_id)
 
+    def undo(self, project: "Project") -> None:
+        self._apply(project, self.before)
+
     def redo(self, project: "Project") -> None:
-        node = project.get_widget(self.widget_id)
-        if node is not None:
-            node.description = self.after
-            project.event_bus.publish(
-                "widget_description_changed", self.widget_id, self.after,
-            )
-        project.select_widget(self.widget_id)
+        self._apply(project, self.after)
 
 
 class MultiChangePropertyCommand(Command):
@@ -1011,16 +1030,42 @@ class SetGroupCommand(Command):
 # ======================================================================
 # Variables (Phase 1 visual scripting)
 # ======================================================================
+def _variable_target_list(
+    project: "Project", scope: str, document_id: str | None,
+) -> list:
+    """Pick the right backing list for a variable command's scope.
+
+    Locals follow ``document_id`` first; if the document is gone (e.g.
+    deleted between redo and undo), the entry is dropped — we'd rather
+    silently lose a stale undo entry than insert the variable into the
+    wrong document.
+    """
+    if scope == "local":
+        if document_id is None:
+            return []
+        doc = project.get_document(document_id)
+        if doc is None:
+            return []
+        return doc.local_variables
+    return project.variables
+
+
 class AddVariableCommand(Command):
     """Append a new variable to the project. Stores the entry's
     serialised form so undo / redo can recreate it with the same UUID
     + name + type + default — bindings written in the same session
-    keep resolving across undo/redo.
+    keep resolving across undo/redo. ``scope`` + ``document_id`` route
+    the entry to the right list; locals require a document_id.
     """
 
-    def __init__(self, entry_dict: dict, index: int):
+    def __init__(
+        self, entry_dict: dict, index: int,
+        scope: str = "global", document_id: str | None = None,
+    ):
         self.entry_dict = dict(entry_dict)
         self.index = index
+        self.scope = scope
+        self.document_id = document_id
         self.description = f"Add variable: {entry_dict.get('name', '')}"
 
     def undo(self, project: "Project") -> None:
@@ -1031,11 +1076,14 @@ class AddVariableCommand(Command):
     def redo(self, project: "Project") -> None:
         from app.core.variables import VariableEntry
         entry = VariableEntry.from_dict(self.entry_dict)
+        target = _variable_target_list(
+            project, self.scope, self.document_id,
+        )
         # Insert at the recorded index so position survives undo/redo.
-        if 0 <= self.index <= len(project.variables):
-            project.variables.insert(self.index, entry)
+        if 0 <= self.index <= len(target):
+            target.insert(self.index, entry)
         else:
-            project.variables.append(entry)
+            target.append(entry)
         project.event_bus.publish("variable_added", entry)
 
 
@@ -1043,11 +1091,14 @@ class DeleteVariableCommand(Command):
     """Remove a variable + cascade-unbind every property that
     references it. Captures the per-binding snapshot so undo can
     re-bind every widget that was using the variable before delete.
+    Scope + document_id route the restored entry back to the right
+    list on undo.
     """
 
     def __init__(
         self, entry_dict: dict, index: int,
         bindings: list[tuple[str, str, str]],
+        scope: str = "global", document_id: str | None = None,
     ):
         # ``bindings`` items: (widget_id, prop_name, previous_value).
         # ``previous_value`` is the var token at delete time so undo
@@ -1055,6 +1106,8 @@ class DeleteVariableCommand(Command):
         self.entry_dict = dict(entry_dict)
         self.index = index
         self.bindings = list(bindings)
+        self.scope = scope
+        self.document_id = document_id
         self.description = (
             f"Delete variable: {entry_dict.get('name', '')}"
         )
@@ -1062,10 +1115,13 @@ class DeleteVariableCommand(Command):
     def undo(self, project: "Project") -> None:
         from app.core.variables import VariableEntry
         entry = VariableEntry.from_dict(self.entry_dict)
-        if 0 <= self.index <= len(project.variables):
-            project.variables.insert(self.index, entry)
+        target = _variable_target_list(
+            project, self.scope, self.document_id,
+        )
+        if 0 <= self.index <= len(target):
+            target.insert(self.index, entry)
         else:
-            project.variables.append(entry)
+            target.append(entry)
         project.event_bus.publish("variable_added", entry)
         # Restore every binding that was cleared on delete.
         for widget_id, pname, prev_value in self.bindings:

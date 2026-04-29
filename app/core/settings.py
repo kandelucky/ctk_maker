@@ -34,3 +34,15 @@ def save_setting(key: str, value: Any) -> None:
         )
     except OSError:
         pass
+
+
+def load_description_hints() -> list[str]:
+    raw = load_settings().get("description_hints", [])
+    if not isinstance(raw, list):
+        return []
+    return [str(x) for x in raw if isinstance(x, str) and x.strip()]
+
+
+def save_description_hints(hints: list[str]) -> None:
+    cleaned = [h for h in hints if isinstance(h, str) and h.strip()]
+    save_setting("description_hints", cleaned)

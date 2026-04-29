@@ -229,6 +229,8 @@ class WidgetLifecycle:
         self.zoom.apply_to_widget(
             widget, window_id, node.properties, document=owning_doc,
         )
+        if node.widget_type == "Image":
+            self.zoom._scale_image_for_zoom(widget, node.properties)
         # Grid children: place AFTER apply_to_widget using the same
         # path as drag-reassigns, so fresh drops and manual moves go
         # through identical code.

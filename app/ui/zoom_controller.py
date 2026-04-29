@@ -197,7 +197,41 @@ class ZoomController:
             self.apply_to_widget(
                 widget, window_id, node.properties, document=document,
             )
+            if node.widget_type == "Image":
+                self._scale_image_for_zoom(widget, node.properties)
         self._on_zoom_changed()
+
+    def _scale_image_for_zoom(self, widget, properties: dict) -> None:
+        """Resize the wrapped ``CTkImage`` so the bitmap tracks zoom.
+
+        The Image descriptor builds the ``CTkImage`` with a logical
+        ``size=(width, height)`` baked in at construction time, so the
+        outer ``CTkLabel`` grows on zoom while the bitmap inside stays
+        at its construction pixel size. This pulls the bitmap back to
+        ``(width * zoom, height * zoom)`` after the wrapper resizes.
+        """
+        try:
+            img = widget.cget("image")
+        except (tk.TclError, AttributeError):
+            return
+        if img is None or not hasattr(img, "configure"):
+            return
+        try:
+            lw = int(properties.get("width", 0))
+            lh = int(properties.get("height", 0))
+        except (TypeError, ValueError):
+            return
+        if lw <= 0 or lh <= 0:
+            return
+        try:
+            img.configure(
+                size=(
+                    max(1, int(lw * self.value)),
+                    max(1, int(lh * self.value)),
+                ),
+            )
+        except (tk.TclError, AttributeError):
+            pass
 
     def apply_to_widget(
         self, widget, window_id, properties: dict, document=None,

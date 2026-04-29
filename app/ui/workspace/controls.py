@@ -237,6 +237,36 @@ class WorkspaceControls:
         )
         add_btn.pack(side="right", padx=(0, 2), pady=3)
 
+        # Separator between Add Dialog and Variables — mirrors the
+        # Add Dialog ↔ All Windows separator so the three groups read
+        # as distinct controls instead of one long button row.
+        ctk.CTkFrame(
+            bar, width=1, fg_color="#3c3c3c", corner_radius=0,
+        ).pack(side="right", fill="y", pady=6)
+
+        # "Variables" button — opens the Variables window on the
+        # Global tab. Packed AFTER add_btn so it lands visually to
+        # add_btn's left (side="right" stacks newer items inward).
+        from app.ui.icons import VARIABLES_GLOBAL_COLOR
+        vars_icon = load_icon(
+            "braces", size=14, color=VARIABLES_GLOBAL_COLOR,
+        )
+        vars_btn = ctk.CTkButton(
+            bar,
+            text="Variables",
+            image=vars_icon,
+            compound="left",
+            width=100,
+            height=24,
+            corner_radius=3,
+            fg_color="transparent",
+            hover_color=TOOL_BTN_HOVER,
+            text_color="#cccccc",
+            font=("Segoe UI", 10),
+            command=self._on_variables_click,
+        )
+        vars_btn.pack(side="right", padx=(0, 4), pady=3)
+
         self._refresh_tool_buttons()
 
     def build_status_bar(self) -> None:
@@ -250,6 +280,11 @@ class WorkspaceControls:
 
     def _on_add_dialog_click(self) -> None:
         self.project.event_bus.publish("request_add_dialog")
+
+    def _on_variables_click(self) -> None:
+        self.project.event_bus.publish(
+            "request_open_variables_window", "global", None,
+        )
 
     def _focus_document(self, doc_id: str) -> None:
         self.project.set_active_document(doc_id)

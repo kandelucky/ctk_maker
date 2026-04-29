@@ -43,6 +43,7 @@ from app.core.variables import (
     coerce_default_for_type,
     is_var_token,
     make_tk_var,
+    make_var_token,
     parse_var_token,
     sanitize_var_name,
 )
@@ -135,6 +136,19 @@ class _WindowProxy:
     @property
     def locked(self) -> bool:
         return False
+
+    @property
+    def description(self) -> str:
+        # Mirror of WidgetNode.description for the active document.
+        # Stored on Document so it persists with the project file.
+        doc = self._project.active_document
+        return getattr(doc, "description", "") if doc is not None else ""
+
+    @description.setter
+    def description(self, value: str) -> None:
+        doc = self._project.active_document
+        if doc is not None:
+            doc.description = value or ""
 
     @property
     def properties(self) -> dict:
@@ -694,6 +708,11 @@ class Project:
         # but doc-crossing moves would otherwise leave stale entries.
         if doc_changed and target_doc is not None:
             self._index_subtree(node, target_doc)
+            # Cross-document move: any local-variable binding now
+            # references a variable owned by the source doc, which is
+            # invisible from the destination. Migrate (copy + retoken)
+            # so bindings keep working in their new home.
+            self.migrate_local_var_bindings(node, target_doc)
 
         if parent_changed or doc_changed:
             self.event_bus.publish(
@@ -893,28 +912,117 @@ class Project:
         )
 
     # ==================================================================
-    # Variables (Phase 1 visual scripting — project-level shared state)
+    # Variables (Phase 1 visual scripting — shared state)
+    #
+    # Two scopes:
+    #   * ``"global"`` lives on ``self.variables`` (project-wide)
+    #   * ``"local"``  lives on ``Document.local_variables`` (per-doc)
+    #
+    # The token (``var:<uuid>``) does not encode scope — UUIDs are
+    # globally unique, and the registry resolves scope on lookup.
+    # Visibility rule: a widget in document D may bind to globals + the
+    # locals of D. Other docs' locals are blocked at the binding-menu
+    # level and at code-export time.
     # ==================================================================
+    def _get_var_list(
+        self, scope: str, document_id: str | None,
+    ) -> list[VariableEntry]:
+        """Return the list backing the given scope. Locals require a
+        ``document_id``; passing ``None`` falls back to the active
+        document. Raises ``ValueError`` for an unknown scope so caller
+        bugs surface immediately instead of silently writing to the
+        wrong list.
+        """
+        if scope == "global":
+            return self.variables
+        if scope == "local":
+            doc = (
+                self.get_document(document_id)
+                if document_id else self.active_document
+            )
+            if doc is None:
+                raise ValueError(
+                    "local variable requires a valid document",
+                )
+            return doc.local_variables
+        raise ValueError(f"unknown variable scope: {scope!r}")
+
+    def find_document_for_variable(
+        self, var_id: str,
+    ) -> Document | None:
+        """Document that owns the given local variable, or ``None`` for
+        globals / unknown ids. Used by undo, code-export, and the
+        Variables window to find the right list when only the UUID is
+        in hand.
+        """
+        for doc in self.documents:
+            for v in doc.local_variables:
+                if v.id == var_id:
+                    return doc
+        return None
+
+    def get_variable_scope(self, var_id: str) -> str | None:
+        """Return ``"global"`` / ``"local"`` for a known UUID, ``None``
+        when no entry exists with that id.
+        """
+        for v in self.variables:
+            if v.id == var_id:
+                return "global"
+        if self.find_document_for_variable(var_id) is not None:
+            return "local"
+        return None
+
+    def iter_variables(
+        self,
+        scope: str | None = None,
+        document_id: str | None = None,
+    ) -> Iterator[VariableEntry]:
+        """Iterate the variables visible from the given context.
+
+        ``scope=None`` (default) yields globals first, then the locals
+        of ``document_id`` (or the active doc if not given). This is
+        the visibility rule used by binding menus.
+
+        ``scope="global"`` yields only globals; ``scope="local"``
+        yields only the document's locals.
+        """
+        if scope in (None, "global"):
+            yield from self.variables
+        if scope in (None, "local"):
+            doc = (
+                self.get_document(document_id)
+                if document_id else self.active_document
+            )
+            if doc is not None:
+                yield from doc.local_variables
+
     def add_variable(
         self, name: str, var_type: str = "str", default: str = "",
         var_id: str | None = None,
+        scope: str = "global",
+        document_id: str | None = None,
     ) -> VariableEntry:
         """Append a new variable to the project. Names are sanitised
         toward Python identifiers; types outside the supported set
         fall back to ``"str"``. Pass ``var_id`` to restore an existing
-        UUID (used by undo / paste).
+        UUID (used by undo / paste). ``scope="local"`` stores the
+        entry on the given document's ``local_variables`` instead of
+        the project-wide list.
         """
         clean_type = var_type if var_type in VAR_TYPES else "str"
+        target = self._get_var_list(scope, document_id)
         clean_name = self._dedupe_var_name(
             sanitize_var_name(name or "var"),
+            scope=scope, document_id=document_id,
         )
         clean_default = coerce_default_for_type(default, clean_type)
         entry = VariableEntry(
             name=clean_name, type=clean_type, default=clean_default,
+            scope="local" if scope == "local" else "global",
         )
         if var_id:
             entry.id = var_id
-        self.variables.append(entry)
+        target.append(entry)
         # Lazy: ``tk.Variable`` is created on first ``get_tk_var`` call.
         self.event_bus.publish("variable_added", entry)
         return entry
@@ -922,8 +1030,9 @@ class Project:
     def remove_variable(self, var_id: str) -> VariableEntry | None:
         """Remove a variable + tear down its tk var. Cascade-unbinds
         every widget property that references it so nothing dangles
-        after delete. Returns the removed entry (or None when the id
-        wasn't known).
+        after delete. Works for both scopes — the registry resolves
+        which list to mutate. Returns the removed entry (or ``None``
+        when the id wasn't known).
         """
         entry = self.get_variable(var_id)
         if entry is None:
@@ -933,7 +1042,16 @@ class Project:
             self.event_bus.publish(
                 "property_changed", node.id, pname, None,
             )
-        self.variables = [v for v in self.variables if v.id != var_id]
+        if entry.scope == "local":
+            owner = self.find_document_for_variable(var_id)
+            if owner is not None:
+                owner.local_variables = [
+                    v for v in owner.local_variables if v.id != var_id
+                ]
+        else:
+            self.variables = [
+                v for v in self.variables if v.id != var_id
+            ]
         self._tk_vars.pop(var_id, None)
         self.event_bus.publish("variable_removed", var_id)
         return entry
@@ -942,8 +1060,14 @@ class Project:
         entry = self.get_variable(var_id)
         if entry is None:
             return
+        owner_doc_id = None
+        if entry.scope == "local":
+            owner = self.find_document_for_variable(var_id)
+            owner_doc_id = owner.id if owner else None
         clean = self._dedupe_var_name(
             sanitize_var_name(new_name or "var"),
+            scope=entry.scope,
+            document_id=owner_doc_id,
             exclude_id=var_id,
         )
         if clean == entry.name:
@@ -998,19 +1122,40 @@ class Project:
         for v in self.variables:
             if v.id == var_id:
                 return v
+        for doc in self.documents:
+            for v in doc.local_variables:
+                if v.id == var_id:
+                    return v
         return None
 
-    def get_variable_by_name(self, name: str) -> VariableEntry | None:
+    def get_variable_by_name(
+        self, name: str, document_id: str | None = None,
+    ) -> VariableEntry | None:
+        """Visibility-aware name lookup. Globals win over a same-named
+        local in the active doc — exporter code uses this to resolve
+        token-less name references where a literal collision is
+        possible. Pass ``document_id`` explicitly to query a specific
+        document's locals; otherwise the active doc's locals are used.
+        """
         for v in self.variables:
             if v.name == name:
                 return v
+        doc = (
+            self.get_document(document_id)
+            if document_id else self.active_document
+        )
+        if doc is not None:
+            for v in doc.local_variables:
+                if v.name == name:
+                    return v
         return None
 
     def get_tk_var(self, var_id: str):
         """Return the live ``tk.Variable`` for ``var_id``, building it
         on first request. Returns ``None`` when the id isn't known —
         callers degrade by ignoring the binding (the property slot
-        falls back to its descriptor default).
+        falls back to its descriptor default). Locals and globals
+        share one cache because UUIDs are unique across both pools.
         """
         tk_var = self._tk_vars.get(var_id)
         if tk_var is not None:
@@ -1034,17 +1179,80 @@ class Project:
                 if parse_var_token(pvalue) == var_id:
                     yield node, pname
 
+    def migrate_local_var_bindings(
+        self, root_node, target_doc,
+    ) -> int:
+        """Re-home local-variable bindings inside ``root_node``'s
+        subtree onto ``target_doc``.
+
+        For each ``var:<uuid>`` token whose variable is local to a
+        document other than ``target_doc``, copy the variable into
+        ``target_doc.local_variables`` (suffix-deduped on name
+        collision) with a fresh UUID, then rewrite the token to point
+        at the copy. Globals are always reachable across documents so
+        they're left alone; dangling / missing tokens are left in
+        place so the runtime falls back to literal defaults.
+
+        Returns the number of variables copied — 0 means nothing
+        needed migration. Publishes ``local_variables_migrated`` on a
+        non-zero count so the workspace can post a status-bar toast.
+        """
+        if target_doc is None or root_node is None:
+            return 0
+        remap: dict[str, str] = {}
+        stack = [root_node]
+        while stack:
+            node = stack.pop()
+            stack.extend(getattr(node, "children", ()))
+            for pname, pvalue in list(node.properties.items()):
+                old_id = parse_var_token(pvalue)
+                if old_id is None:
+                    continue
+                if old_id in remap:
+                    node.properties[pname] = make_var_token(
+                        remap[old_id],
+                    )
+                    continue
+                old_entry = self.get_variable(old_id)
+                if old_entry is None:
+                    continue
+                if old_entry.scope == "global":
+                    continue
+                owner = self.find_document_for_variable(old_id)
+                if owner is None or owner is target_doc:
+                    continue
+                new_entry = self.add_variable(
+                    old_entry.name, old_entry.type, old_entry.default,
+                    scope="local", document_id=target_doc.id,
+                )
+                remap[old_id] = new_entry.id
+                node.properties[pname] = make_var_token(new_entry.id)
+        count = len(remap)
+        if count > 0:
+            self.event_bus.publish("local_variables_migrated", count)
+        return count
+
     def _dedupe_var_name(
-        self, base: str, exclude_id: str | None = None,
+        self, base: str,
+        scope: str = "global",
+        document_id: str | None = None,
+        exclude_id: str | None = None,
     ) -> str:
         """Append ``_2`` / ``_3`` / ... to keep variable names unique
-        across the project. ``exclude_id`` skips one entry so renaming
-        to the same name is a no-op.
+        within their scope. Globals dedupe against all globals;
+        locals dedupe only against same-document locals. Same name
+        re-used across two documents is allowed by design.
+        ``exclude_id`` skips one entry so renaming-to-self is a no-op.
         """
-        used = {
-            v.name for v in self.variables
-            if v.id != exclude_id
-        }
+        if scope == "local":
+            doc = (
+                self.get_document(document_id)
+                if document_id else self.active_document
+            )
+            pool = doc.local_variables if doc is not None else []
+        else:
+            pool = self.variables
+        used = {v.name for v in pool if v.id != exclude_id}
         if base not in used:
             return base
         i = 2
@@ -1250,6 +1458,12 @@ class Project:
                 pass
             self._paste_recursive(root, parent_id)
             new_top_ids.append(root.id)
+            # Pasted bindings carry the source-doc's UUIDs verbatim;
+            # if the paste landed in a different doc, copy any local
+            # vars across so the chips don't end up dangling.
+            target_doc = self.find_document_for_widget(root.id)
+            if target_doc is not None:
+                self.migrate_local_var_bindings(root, target_doc)
         if new_top_ids:
             if len(new_top_ids) == 1:
                 self.select_widget(new_top_ids[0])

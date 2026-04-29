@@ -169,11 +169,18 @@ class Palette(ctk.CTkFrame):
         self._chevron_right_btn = load_icon("chevron-right", size=14)
 
         self._collapsed: bool = False
+        # Tab state — Widgets (the original CATALOG drag source) vs
+        # Prefabs (user-saved widget bundles, see prefabs_panel.py).
+        # Collapsed mode forces "widgets" since prefab folders don't
+        # render meaningfully in icon-only width.
+        self._active_tab: str = "widgets"
 
         self._build_header()
-        self._build_filter()
-        self._build_scroll_body()
+        self._build_tabs()
+        self._build_widgets_tab()
+        self._build_prefabs_tab()
         self._rebuild_catalog()
+        self._show_tab("widgets")
 
     # ------------------------------------------------------------------
     # Static chrome
@@ -200,11 +207,71 @@ class Palette(ctk.CTkFrame):
         self._collapse_btn.pack(side="right", padx=(0, 4))
         _attach_tooltip(self._collapse_btn, "Collapse")
 
-    def _build_filter(self) -> None:
+    def _build_tabs(self) -> None:
+        """Two icon-only tab buttons below the header. Tooltip carries
+        the label so the strip stays narrow enough for the collapsed
+        Palette pane width.
+        """
+        self._tab_bar = tk.Frame(self, bg=PANEL_BG, height=24)
+        self._tab_bar.pack(fill="x", padx=4, pady=(0, 4))
+        self._tab_bar.pack_propagate(False)
+
+        widgets_icon = load_icon("frame", size=14, color="#ffffff")
+        prefabs_icon = load_icon("layout-list", size=14, color="#888888")
+        self._tab_widgets_icon_active = load_icon("frame", size=14, color="#ffffff")
+        self._tab_widgets_icon_inactive = load_icon("frame", size=14, color="#888888")
+        self._tab_prefabs_icon_active = load_icon("layout-list", size=14, color="#ffffff")
+        self._tab_prefabs_icon_inactive = load_icon("layout-list", size=14, color="#888888")
+
+        btn_kw = dict(
+            text="", width=42, height=22, corner_radius=3, border_width=0,
+        )
+        self._btn_widgets = ctk.CTkButton(
+            self._tab_bar, image=widgets_icon,
+            command=lambda: self._show_tab("widgets"),
+            fg_color="#3a3a3a", hover_color="#3a3a3a", **btn_kw,
+        )
+        self._btn_prefabs = ctk.CTkButton(
+            self._tab_bar, image=prefabs_icon,
+            command=lambda: self._show_tab("prefabs"),
+            fg_color="transparent", hover_color="#2d2d2d", **btn_kw,
+        )
+        self._btn_widgets.pack(side="left", padx=(0, 2))
+        self._btn_prefabs.pack(side="left", padx=(0, 2))
+        _attach_tooltip(self._btn_widgets, "Widgets")
+        _attach_tooltip(self._btn_prefabs, "Prefabs")
+
+    def _update_tab_buttons(self, active: str) -> None:
+        if active == "widgets":
+            self._btn_widgets.configure(
+                image=self._tab_widgets_icon_active,
+                fg_color="#3a3a3a", hover_color="#3a3a3a",
+            )
+            self._btn_prefabs.configure(
+                image=self._tab_prefabs_icon_inactive,
+                fg_color="transparent", hover_color="#2d2d2d",
+            )
+        else:
+            self._btn_prefabs.configure(
+                image=self._tab_prefabs_icon_active,
+                fg_color="#3a3a3a", hover_color="#3a3a3a",
+            )
+            self._btn_widgets.configure(
+                image=self._tab_widgets_icon_inactive,
+                fg_color="transparent", hover_color="#2d2d2d",
+            )
+
+    def _build_widgets_tab(self) -> None:
+        """Container for the legacy Widgets view: filter entry + the
+        scrollable catalog body. Held in a wrapper Frame so the tab
+        switcher can pack/forget the whole thing as one unit.
+        """
+        self._widgets_container = tk.Frame(self, bg=PANEL_BG)
+
         self._filter_var = tk.StringVar()
         self._filter_var.trace_add("write", lambda *a: self._on_filter_change())
         self._filter_entry = ctk.CTkEntry(
-            self,
+            self._widgets_container,
             textvariable=self._filter_var,
             placeholder_text="Filter",
             height=24,
@@ -215,9 +282,8 @@ class Palette(ctk.CTkFrame):
         )
         self._filter_entry.pack(fill="x", padx=8, pady=(0, 6))
 
-    def _build_scroll_body(self) -> None:
         self.scroll = ctk.CTkScrollableFrame(
-            self, fg_color=PANEL_BG, corner_radius=0,
+            self._widgets_container, fg_color=PANEL_BG, corner_radius=0,
             scrollbar_fg_color="transparent",
             scrollbar_button_color="#3a3a3a",
             scrollbar_button_hover_color="#4a4a4a",
@@ -228,6 +294,62 @@ class Palette(ctk.CTkFrame):
         # so we reach into its internal CTkScrollbar after construction.
         self.scroll._scrollbar.configure(width=10, corner_radius=4)
         self.body = self.scroll  # alias for children
+
+    def _build_prefabs_tab(self) -> None:
+        from app.ui.prefabs_panel import PrefabsPanel
+        self._prefabs_panel = PrefabsPanel(self, self.project)
+
+    def _show_tab(self, name: str) -> None:
+        """Swap the active tab content. Collapsed mode forces 'widgets'
+        regardless of the requested tab — the prefab folder tree has
+        no useful icon-only rendering.
+        """
+        if self._collapsed:
+            name = "widgets"
+        self._active_tab = name
+        self._apply_chrome_layout()
+        if name == "prefabs":
+            self._prefabs_panel.refresh()
+
+    def _apply_chrome_layout(self) -> None:
+        """Idempotent chrome layout: forget every chrome widget, then
+        re-pack in the canonical order based on (collapsed, active_tab).
+        Cleaner than surgical pack/unpack across multiple branches.
+        Order: header (already packed) → tab bar → active tab body.
+        Inside widgets body: filter → scroll. Collapsed mode hides
+        the tab bar + filter and forces widgets.
+        """
+        for w in (
+            self._title_lbl, self._tab_bar,
+            self._filter_entry, self.scroll,
+            self._widgets_container, self._prefabs_panel,
+        ):
+            try:
+                w.pack_forget()
+            except tk.TclError:
+                pass
+
+        if not self._collapsed:
+            self._title_lbl.pack(
+                side="left", expand=True, before=self._collapse_btn,
+            )
+            self._tab_bar.pack(fill="x", padx=4, pady=(0, 4))
+
+        active = self._active_tab if not self._collapsed else "widgets"
+        if active == "widgets":
+            self._widgets_container.pack(fill="both", expand=True)
+            if not self._collapsed:
+                self._filter_entry.pack(fill="x", padx=8, pady=(0, 6))
+            self.scroll.pack(fill="both", expand=True)
+        else:
+            self._prefabs_panel.pack(fill="both", expand=True)
+
+        self._update_tab_buttons(active)
+        img = (
+            self._chevron_right_btn if self._collapsed
+            else self._chevron_left_btn
+        )
+        self._collapse_btn.configure(image=img)
 
     # ------------------------------------------------------------------
     # Catalog render
@@ -252,14 +374,7 @@ class Palette(ctk.CTkFrame):
     # ------------------------------------------------------------------
     def _toggle_collapsed(self) -> None:
         self._collapsed = not self._collapsed
-        if self._collapsed:
-            self._title_lbl.pack_forget()
-            self._filter_entry.pack_forget()
-            self._collapse_btn.configure(image=self._chevron_right_btn)
-        else:
-            self._title_lbl.pack(side="left", expand=True, before=self._collapse_btn)
-            self._filter_entry.pack(fill="x", padx=8, pady=(0, 6))
-            self._collapse_btn.configure(image=self._chevron_left_btn)
+        self._apply_chrome_layout()
         self._rebuild_catalog()
         if self._on_collapse_changed is not None:
             self._on_collapse_changed(self._collapsed)

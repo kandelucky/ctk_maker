@@ -22,24 +22,38 @@ from typing import Literal
 VAR_TYPES = ("str", "int", "float", "bool")
 VarType = Literal["str", "int", "float", "bool"]
 
+VAR_SCOPES = ("global", "local")
+VarScope = Literal["global", "local"]
+
 VAR_TOKEN_PREFIX = "var:"
 
 
 @dataclass
 class VariableEntry:
-    """One named, typed shared value declared at the project level."""
+    """One named, typed shared value.
+
+    ``scope == "global"`` lives on ``Project.variables``;
+    ``scope == "local"`` lives on a single ``Document.local_variables``
+    and is invisible to widgets in other documents. Identity is the
+    UUID — token rewrites are needed only when copying a local across
+    documents (each copy gets its own UUID).
+    """
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     name: str = ""
     type: VarType = "str"
     default: str = ""
+    scope: VarScope = "global"
 
     def to_dict(self) -> dict:
-        return {
+        result = {
             "id": self.id,
             "name": self.name,
             "type": self.type,
             "default": self.default,
         }
+        if self.scope != "global":
+            result["scope"] = self.scope
+        return result
 
     @classmethod
     def from_dict(cls, data: dict) -> "VariableEntry":
@@ -49,6 +63,8 @@ class VariableEntry:
         raw_type = str(data.get("type") or "str")
         v.type = raw_type if raw_type in VAR_TYPES else "str"
         v.default = str(data.get("default") or "")
+        raw_scope = str(data.get("scope") or "global")
+        v.scope = raw_scope if raw_scope in VAR_SCOPES else "global"
         return v
 
 

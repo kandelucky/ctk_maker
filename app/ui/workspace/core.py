@@ -258,6 +258,7 @@ class Workspace(ctk.CTkFrame):
             lambda *_a, **_k: self.selection.draw(),
         )
         bus.subscribe("palette_drop_request", self._on_palette_drop)
+        bus.subscribe("prefab_drop_request", self._on_prefab_drop)
         bus.subscribe("document_resized", self._on_document_resized)
         bus.subscribe("project_renamed", self._on_project_renamed)
         bus.subscribe("dirty_changed", self._on_dirty_changed)
@@ -277,6 +278,11 @@ class Workspace(ctk.CTkFrame):
         # chrome strip is highlighted and, on add/remove, the total
         # scroll region. A full redraw covers both cheaply.
         self._redraw_document()
+        # Center viewport on the now-active document so the user
+        # never ends up looking at the wrong canvas region after a
+        # cross-document switch (project load, Object Tree click on
+        # a widget in another document, programmatic switch, …).
+        self.focus_document(self.project.active_document_id)
 
     def _on_documents_reordered(self, *_args, **_kwargs) -> None:
         # Send-to-Back / Bring-to-Front swap the drawing order; a
@@ -1028,7 +1034,15 @@ class Workspace(ctk.CTkFrame):
         else:
             self._bound_props_cache.pop(node.id, None)
 
-    def _drop_binding_cache_on_remove(self, widget_id: str) -> None:
+    def _drop_binding_cache_on_remove(
+        self, widget_id: str, parent_id: str | None = None,
+    ) -> None:
+        # ``widget_removed`` publishes ``(widget_id, parent_id)`` — the
+        # earlier signature only accepted one positional and raised
+        # TypeError, which propagated up and killed callers iterating
+        # over multiple removals (e.g. the dialog-close ✕ would only
+        # remove the first child widget per click).
+        _ = parent_id
         self._bound_props_cache.pop(widget_id, None)
 
     def _on_variable_type_changed(self, var_id: str, _new_type) -> None:
@@ -1225,6 +1239,96 @@ class Workspace(ctk.CTkFrame):
                 self._reapply_child_manager(widget_id)
         if widget_id == self.project.selected_id:
             self._schedule_selection_redraw()
+
+    def _on_prefab_drop(
+        self, prefab_path, x_root: int, y_root: int,
+    ) -> None:
+        """Drop a prefab onto the canvas. Loads the ``.ctkprefab``
+        payload, instantiates fresh ``WidgetNode`` trees with new
+        UUIDs, offsets root coords so the prefab's bounding-box
+        top-left lands at the drop point, and inserts under the
+        container at the cursor (or top-level if outside any
+        container).
+        """
+        from app.core.commands import _add_subtree_recursive
+        from app.io.prefab_io import instantiate_fragment, load_payload
+
+        canvas_rx = self.canvas.winfo_rootx()
+        canvas_ry = self.canvas.winfo_rooty()
+        canvas_w = self.canvas.winfo_width()
+        canvas_h = self.canvas.winfo_height()
+        local_x = x_root - canvas_rx
+        local_y = y_root - canvas_ry
+        if not (0 <= local_x < canvas_w and 0 <= local_y < canvas_h):
+            return
+        payload = load_payload(prefab_path)
+        if payload is None or not payload.get("nodes"):
+            return
+
+        cx, cy = self._screen_to_canvas(x_root, y_root)
+        container_node = self._find_container_at(cx, cy)
+
+        if container_node is None:
+            target_doc = self._find_document_at_canvas(cx, cy)
+            if target_doc is None:
+                return
+            self.project.set_active_document(target_doc.id)
+            lx, ly = self.zoom.canvas_to_logical(
+                cx, cy, document=target_doc,
+            )
+            target_x, target_y = max(0, lx), max(0, ly)
+            parent_id = None
+            document_id = target_doc.id
+        else:
+            container_widget, _ = self.widget_views[container_node.id]
+            zoom = self.zoom.value or 1.0
+            coord_ref = container_widget
+            if container_node.widget_type == "CTkTabview":
+                try:
+                    active_tab_slot = container_widget.get() or None
+                except Exception:
+                    active_tab_slot = None
+                if active_tab_slot:
+                    try:
+                        coord_ref = container_widget.tab(active_tab_slot)
+                    except Exception:
+                        coord_ref = container_widget
+            target_x = max(0, int((x_root - coord_ref.winfo_rootx()) / zoom))
+            target_y = max(0, int((y_root - coord_ref.winfo_rooty()) / zoom))
+            parent_id = container_node.id
+            owning_doc = self.project.find_document_for_widget(parent_id)
+            document_id = owning_doc.id if owning_doc is not None else None
+
+        # Bounding-box top-left → drop point. Root nodes get offset;
+        # children's coords stay relative to their parent so the
+        # internal layout survives the move.
+        roots = payload["nodes"]
+        bbox_x = min(int(n.get("properties", {}).get("x", 0) or 0) for n in roots)
+        bbox_y = min(int(n.get("properties", {}).get("y", 0) or 0) for n in roots)
+        nodes = instantiate_fragment(
+            payload, drop_offset=(target_x - bbox_x, target_y - bbox_y),
+        )
+        new_ids: list[str] = []
+        for root in nodes:
+            _add_subtree_recursive(
+                self.project, root, parent_id, document_id,
+            )
+            new_ids.append(root.id)
+        if not new_ids:
+            return
+        if len(new_ids) == 1:
+            self.project.select_widget(new_ids[0])
+        else:
+            self.project.set_multi_selection(
+                set(new_ids), primary=new_ids[0],
+            )
+        from app.core.commands import build_bulk_add_entries
+        entries = build_bulk_add_entries(self.project, new_ids)
+        if entries:
+            label = payload.get("name") or "prefab"
+            self.project.history.push(
+                BulkAddCommand(entries, label=f"Insert {label}"),
+            )
 
     def _on_palette_drop(
         self, entry, descriptor, x_root: int, y_root: int,
@@ -1571,6 +1675,11 @@ class Workspace(ctk.CTkFrame):
                 label=f"Delete {count} widgets",
                 command=self._on_delete,
             )
+            menu.add_separator()
+            menu.add_command(
+                label=f"Save {count} widgets as prefab…",
+                command=self._save_selection_as_prefab,
+            )
             self._add_group_entries_to_menu(menu, toplevel)
         else:
             self.project.select_widget(nid)
@@ -1587,6 +1696,26 @@ class Workspace(ctk.CTkFrame):
             menu.add_command(
                 label="Duplicate",
                 command=lambda: self._duplicate_with_history(nid),
+            )
+            menu.add_separator()
+            from app.ui.workspace.controls import TOOL_EDIT
+            edit_state = (
+                "disabled" if self.controls.tool == TOOL_EDIT
+                else "normal"
+            )
+            menu.add_command(
+                label="Edit mode",
+                command=lambda: self._enter_edit_mode(nid),
+                state=edit_state,
+            )
+            menu.add_command(
+                label="Description…",
+                command=lambda: self._open_widget_description(nid),
+            )
+            menu.add_separator()
+            menu.add_command(
+                label="Save as prefab…",
+                command=self._save_selection_as_prefab,
             )
             menu.add_separator()
             menu.add_command(
@@ -1665,6 +1794,64 @@ class Workspace(ctk.CTkFrame):
 
     def _copy_single(self, nid: str) -> None:
         self.project.copy_to_clipboard({nid})
+
+    def _enter_edit_mode(self, nid: str) -> None:
+        """Right-click → Edit mode entry. Caller already selected
+        ``nid``; flip the workspace tool so handles + property panel
+        switch to the per-widget edit experience."""
+        from app.ui.workspace.controls import TOOL_EDIT
+        self.controls.set_tool(TOOL_EDIT)
+
+    def _open_widget_description(self, nid: str) -> None:
+        """Right-click → Description… entry. The widget is already
+        selected, so a single event-bus publish is enough — the
+        properties panel subscribes and opens the same multiline
+        editor it uses for its own square-pen button."""
+        self.project.event_bus.publish("request_edit_description")
+
+    def _save_selection_as_prefab(self) -> None:
+        """Bundle the current selection as a fragment prefab. Variable
+        bindings inside the selection are stripped to literals on save
+        (Phase A — Phase B will bundle window-local variables instead).
+        """
+        from tkinter import messagebox
+        from app.io.prefab_io import count_var_bindings, save_fragment
+        from app.ui.prefab_save_dialog import PrefabSaveDialog
+
+        ids = list(self.project.selected_ids)
+        if not ids:
+            return
+        nodes = [
+            self.project.get_widget(nid) for nid in ids
+        ]
+        nodes = [n for n in nodes if n is not None]
+        if not nodes:
+            return
+        # Default name from the first node's name (or widget type).
+        first = nodes[0]
+        default_name = first.name or first.widget_type
+        binding_count = count_var_bindings(nodes)
+        dialog = PrefabSaveDialog(
+            self.winfo_toplevel(),
+            default_name=default_name,
+            var_binding_count=binding_count,
+        )
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        name, target_path = dialog.result
+        try:
+            save_fragment(target_path, name, nodes, self.project)
+        except OSError as exc:
+            messagebox.showerror(
+                "Save prefab failed",
+                f"Couldn't write prefab:\n{exc}",
+                parent=self.winfo_toplevel(),
+            )
+            return
+        # Tell the prefab panel a new file appeared so its tree
+        # repopulates without needing a tab switch.
+        self.project.event_bus.publish("prefab_library_changed")
 
     def _paste_at_widget(self, nid: str) -> None:
         if not self.project.clipboard:

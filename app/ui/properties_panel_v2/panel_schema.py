@@ -234,16 +234,35 @@ class SchemaMixin:
         if chip is None:
             get_editor(ptype).populate(self, iid, pname, prop, value)
 
+        # Resolve binding scope so the diamond carries the same colour
+        # cue as the Variables window tab — global = blue, local =
+        # orange. Unbound rows stay neutral grey.
+        bound_scope = None
+        if chip is not None:
+            from app.core.variables import parse_var_token
+            var_id = parse_var_token(value)
+            if var_id is not None:
+                bound_scope = self.project.get_variable_scope(var_id)
+
         # Diamond bind button in the left gutter of the label column.
-        # ◇ unbound / ◆ bound, single muted colour for both states —
-        # the shape difference is the only signal. Click → bind menu.
-        # Hover lightens the background and brightens the foreground
-        # so the cell visibly registers as "interactive" instead of a
-        # passive glyph.
-        bound_bg = "#2d1f12"
-        idle_bg = bound_bg if chip is not None else TREE_BG
-        hover_bg = "#3d2c1c" if chip is not None else "#2d2d2d"
-        idle_fg = "#888888"
+        # ◇ unbound / ◆ bound, the shape change carries the bind state
+        # and the foreground colour carries the scope. The row
+        # background stays neutral — fixed orange tint regardless of
+        # scope read as inconsistent once globals went blue. The chip
+        # text + filled diamond + scope colour + ✕ unbind button are
+        # already four signals, no need for a fifth.
+        from app.ui.icons import (
+            VARIABLES_GLOBAL_COLOR, VARIABLES_LOCAL_COLOR,
+        )
+        bound_bg = TREE_BG
+        idle_bg = TREE_BG
+        hover_bg = "#2d2d2d"
+        if bound_scope == "global":
+            idle_fg = VARIABLES_GLOBAL_COLOR
+        elif bound_scope == "local":
+            idle_fg = VARIABLES_LOCAL_COLOR
+        else:
+            idle_fg = "#888888"
         hover_fg = "#ffffff"
         bind_btn = tk.Label(
             self.tree,

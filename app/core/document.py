@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import uuid
 
+from app.core.variables import VariableEntry
 from app.core.widget_node import WidgetNode
 
 # Defaults for a freshly-created Document. Mirrors the previous
@@ -74,6 +75,15 @@ class Document:
         # signature (``class X(ctk.CTk):`` vs ``ctk.CTkToplevel``).
         self.is_toplevel: bool = bool(is_toplevel)
         self.root_widgets: list[WidgetNode] = []
+        # AI-bridge meta-property for the window itself. Mirror of
+        # ``WidgetNode.description`` — emitted as Python comments above
+        # the generated ``class X(ctk.CTk):`` line at export time.
+        self.description: str = ""
+        # Per-document shared variables (Phase 1.5 visual scripting).
+        # Visible only to widgets inside this document; cross-document
+        # bindings are blocked by the Properties panel and refused at
+        # export time. Globals live on ``Project.variables`` instead.
+        self.local_variables: list[VariableEntry] = []
         # Per-document monotonic counter for auto-naming new widgets
         # ("Button", "Button (1)", "Button (2)", …). Kept per-document
         # so numbering restarts inside each Dialog and every fresh
@@ -85,7 +95,7 @@ class Document:
     # Serialisation
     # ------------------------------------------------------------------
     def to_dict(self) -> dict:
-        return {
+        result = {
             "id": self.id,
             "name": self.name,
             "color": self.color,
@@ -98,6 +108,13 @@ class Document:
             "widgets": [w.to_dict() for w in self.root_widgets],
             "name_counters": dict(self.name_counters),
         }
+        if self.description:
+            result["description"] = self.description
+        if self.local_variables:
+            result["local_variables"] = [
+                v.to_dict() for v in self.local_variables
+            ]
+        return result
 
     @classmethod
     def from_dict(cls, data: dict) -> "Document":
@@ -115,6 +132,20 @@ class Document:
         raw_id = data.get("id")
         if isinstance(raw_id, str) and raw_id:
             doc.id = raw_id
+        raw_desc = data.get("description")
+        if isinstance(raw_desc, str):
+            doc.description = raw_desc
+        raw_locals = data.get("local_variables")
+        if isinstance(raw_locals, list):
+            for raw_var in raw_locals:
+                if not isinstance(raw_var, dict):
+                    continue
+                entry = VariableEntry.from_dict(raw_var)
+                # Force scope = "local" defensively in case the saved
+                # payload is missing or wrong; the storage location is
+                # the source of truth here.
+                entry.scope = "local"
+                doc.local_variables.append(entry)
         for raw in data.get("widgets", []):
             if not isinstance(raw, dict):
                 continue

@@ -139,6 +139,9 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         bus.subscribe(
             "widget_description_changed", self._on_description_changed,
         )
+        bus.subscribe(
+            "request_edit_description", self._on_edit_description_request,
+        )
         # Variable state can change without touching widget properties
         # (e.g. rename, type change). Re-render the panel so the chip
         # text in any bound row stays in sync with the variable's name
@@ -265,7 +268,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             "<Button-1>", lambda _e: self._open_description_dialog(),
         )
 
-        desc_edit_icon = load_icon("pencil", size=14)
+        desc_edit_icon = load_icon("square-pen", size=14)
         self._desc_edit_btn = ctk.CTkButton(
             self._desc_row, text="" if desc_edit_icon else "Edit",
             image=desc_edit_icon,
@@ -370,11 +373,13 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         self.tree.tag_configure(
             "disabled", foreground=DISABLED_FG, background=TREE_BG,
         )
-        # Phase 1 binding: bound rows get a soft warm-tinted background
-        # so they're distinguishable at a glance without cluttering
-        # the row with extra glyphs.
+        # Phase 1.5 binding: the bound-state cue lives on the diamond
+        # glyph + chip text + ✕ button now, so the row tag is a no-op
+        # tinted to match the tree background. Kept as a tag in case
+        # we want a subtle cue back later — switching colour here will
+        # apply across every bound row without touching call sites.
         self.tree.tag_configure(
-            "bound", background="#2d1f12",
+            "bound", background=TREE_BG,
         )
 
         vscroll = ctk.CTkScrollbar(
@@ -557,6 +562,14 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         node = self.project.get_widget(widget_id)
         if node is not None:
             self._update_description_preview(node)
+
+    def _on_edit_description_request(self) -> None:
+        """Open the description editor for whatever the panel currently
+        targets. Caller is expected to have selected the right widget /
+        window first (chrome icon + canvas context menu both do this
+        before publishing the event)."""
+        if self.current_id is not None:
+            self._open_description_dialog()
 
     def _on_variable_state_changed(self, *_args, **_kwargs) -> None:
         """Cheap blanket refresh — a variable's user-visible label
@@ -815,11 +828,17 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             self.winfo_toplevel(),
             f"Description: {label}",
             before,
-            width=580, height=420,
+            width=720, height=420,
+            show_hints=True,
         )
         dialog.wait_window()
         if dialog.result is None or dialog.result == before:
             return
+        from app.core.project import WINDOW_ID
+        document_id = (
+            self.project.active_document_id
+            if self.current_id == WINDOW_ID else None
+        )
         node.description = dialog.result
         self.project.event_bus.publish(
             "widget_description_changed",
@@ -828,6 +847,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         self.project.history.push(
             ChangeDescriptionCommand(
                 self.current_id, before, dialog.result,
+                document_id=document_id,
             ),
         )
 
@@ -904,10 +924,15 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         compat_types = compatible_var_types(ptype)
 
         from .constants import BG as _BG
+        # disabledforeground MUST be set explicitly on Windows —
+        # the system default uses a 3D etched effect that renders as
+        # ghost-doubled text on dark backgrounds. Flat grey kills the
+        # bevel and matches the rest of the dark UI.
         menu_style = dict(
             bg="#2d2d30", fg="#cccccc",
             activebackground="#094771",
             activeforeground="#ffffff",
+            disabledforeground="#777777",
             bd=0, borderwidth=0, relief="flat",
             font=("Segoe UI", 10),
         )
@@ -920,35 +945,119 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             )
             menu.add_separator()
 
-        bind_submenu = tk.Menu(menu, tearoff=0, **menu_style)
-        compatible_vars = [
-            v for v in self.project.variables
+        # Find the document this widget belongs to so we know which
+        # locals to expose in the bind menu. The properties panel
+        # only shows the active document's widgets, but we look the
+        # owner up explicitly so a stale selection still resolves to
+        # the right scope.
+        owner_doc = self.project.find_document_for_widget(node.id)
+        owner_doc_id = owner_doc.id if owner_doc is not None else None
+
+        # Variables visible from this widget, grouped by scope.
+        global_vars = [
+            v for v in self.project.iter_variables(scope="global")
             if v.type in compat_types and v.id != bound_var_id
         ]
-        if not self.project.variables:
-            bind_submenu.add_command(
-                label="(no variables yet)", state="disabled",
+        local_vars = [
+            v for v in self.project.iter_variables(
+                scope="local", document_id=owner_doc_id,
             )
-        elif not compatible_vars:
+            if v.type in compat_types and v.id != bound_var_id
+        ]
+
+        bind_submenu = tk.Menu(menu, tearoff=0, **menu_style)
+        # Section-header label colours match the toolbar / Add button
+        # accents. Headers + the "(no …)" placeholder use a no-op
+        # command instead of ``state="disabled"`` because Windows
+        # native menus draw disabled items with an etched-3D shadow
+        # that looks like double-stamped text on dark backgrounds.
+        # ``disabledforeground`` doesn't kill the bevel either.
+        # Trade-off: clicking a header closes the menu. Acceptable —
+        # users target the variable items below, not the labels.
+        global_header_fg = "#0e639c"
+        local_header_fg = "#8a541a"
+        muted_label_fg = "#777777"
+        if not global_vars and not local_vars:
             type_hint = " / ".join(compat_types)
-            bind_submenu.add_command(
-                label=f"(no {type_hint} variables)",
-                state="disabled",
-            )
-            bind_submenu.add_separator()
-        else:
-            for v in compatible_vars:
+            visible_total = sum(1 for _ in self.project.iter_variables(
+                document_id=owner_doc_id,
+            ))
+            if visible_total == 0:
                 bind_submenu.add_command(
-                    label=f"{v.name}  ({v.type})",
-                    command=(
-                        lambda var_id=v.id:
-                        self._bind_property(pname, prop, var_id)
-                    ),
+                    label="(no variables yet)",
+                    foreground=muted_label_fg,
+                    activeforeground=muted_label_fg,
+                    activebackground="#2d2d30",
+                    command=lambda: None,
+                )
+            else:
+                bind_submenu.add_command(
+                    label=f"(no {type_hint} variables)",
+                    foreground=muted_label_fg,
+                    activeforeground=muted_label_fg,
+                    activebackground="#2d2d30",
+                    command=lambda: None,
                 )
             bind_submenu.add_separator()
+        else:
+            if global_vars:
+                bind_submenu.add_command(
+                    label="Global",
+                    foreground=muted_label_fg,
+                    activeforeground=muted_label_fg,
+                    activebackground="#2d2d30",
+                    command=lambda: None,
+                )
+                for v in global_vars:
+                    bind_submenu.add_command(
+                        label=f"{v.name}  ({v.type})",
+                        foreground=global_header_fg,
+                        activeforeground="#ffffff",
+                        command=(
+                            lambda var_id=v.id:
+                            self._bind_property(pname, prop, var_id)
+                        ),
+                    )
+            if local_vars:
+                if global_vars:
+                    bind_submenu.add_separator()
+                doc_label = (
+                    owner_doc.name if owner_doc is not None else "Local"
+                )
+                bind_submenu.add_command(
+                    label=f"Local: {doc_label}",
+                    foreground=muted_label_fg,
+                    activeforeground=muted_label_fg,
+                    activebackground="#2d2d30",
+                    command=lambda: None,
+                )
+                for v in local_vars:
+                    bind_submenu.add_command(
+                        label=f"{v.name}  ({v.type})",
+                        foreground=local_header_fg,
+                        activeforeground="#ffffff",
+                        command=(
+                            lambda var_id=v.id:
+                            self._bind_property(pname, prop, var_id)
+                        ),
+                    )
+            bind_submenu.add_separator()
         bind_submenu.add_command(
-            label="+ Create new variable…",
-            command=lambda: self._create_and_bind(pname, prop),
+            label="+ Create new global variable…",
+            foreground=global_header_fg,
+            activeforeground="#1177bb",
+            command=lambda: self._create_and_bind(
+                pname, prop, scope="global",
+            ),
+        )
+        bind_submenu.add_command(
+            label="+ Create new local variable…",
+            foreground=local_header_fg,
+            activeforeground="#a0651e",
+            command=lambda: self._create_and_bind(
+                pname, prop, scope="local",
+                document_id=owner_doc_id,
+            ),
         )
         menu.add_cascade(label="Bind to variable", menu=bind_submenu)
         menu.add_separator()
@@ -1015,14 +1124,32 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         )
         self._rebuild()
 
-    def _create_and_bind(self, pname: str, prop: dict) -> None:
+    def _create_and_bind(
+        self, pname: str, prop: dict,
+        scope: str = "global",
+        document_id: str | None = None,
+    ) -> None:
         """Open the Variables Add dialog with a name suggestion
-        derived from the property, then bind on success.
+        derived from the property, then bind on success. ``scope``
+        picks where the new variable lands — globals are project-wide,
+        locals attach to the given document (which must own the
+        currently selected widget for the binding to be reachable).
         """
         from app.ui.variables_window import VariableEditDialog
         from app.core.commands import AddVariableCommand
         suggestion = self._suggest_var_name(pname)
-        existing = {v.name for v in self.project.variables}
+        if scope == "local":
+            doc = (
+                self.project.get_document(document_id)
+                if document_id else self.project.active_document
+            )
+            existing = {
+                v.name for v in (doc.local_variables if doc else [])
+            }
+            title = "Create local variable + bind"
+        else:
+            existing = {v.name for v in self.project.variables}
+            title = "Create global variable + bind"
         # Default type guess based on the property's editor kind.
         ptype = prop.get("type", "")
         guess_type = {
@@ -1031,7 +1158,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         }.get(ptype, "str")
         dialog = VariableEditDialog(
             self.winfo_toplevel(),
-            title="Create variable + bind",
+            title=title,
             initial_name=suggestion,
             initial_type=guess_type,
             initial_default="",
@@ -1041,10 +1168,24 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         if dialog.result is None:
             return
         name, var_type, default = dialog.result
-        entry = self.project.add_variable(name, var_type, default)
+        entry = self.project.add_variable(
+            name, var_type, default,
+            scope=scope, document_id=document_id,
+        )
+        # Index in the right scope's list — locals on doc, globals on
+        # project — so undo restores the entry to the correct spot.
+        if scope == "local":
+            doc = (
+                self.project.get_document(document_id)
+                if document_id else self.project.active_document
+            )
+            target_len = len(doc.local_variables) if doc else 0
+        else:
+            target_len = len(self.project.variables)
         self.project.history.push(
             AddVariableCommand(
-                entry.to_dict(), len(self.project.variables) - 1,
+                entry.to_dict(), target_len - 1,
+                scope=scope, document_id=document_id,
             ),
         )
         self._bind_property(pname, prop, entry.id)

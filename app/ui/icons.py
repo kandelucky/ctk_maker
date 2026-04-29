@@ -19,6 +19,13 @@ ICON_DIR = Path(__file__).resolve().parent.parent / "assets" / "icons"
 DEFAULT_SIZE = 16
 DEFAULT_COLOR = "#888888"
 
+# Variables scope colors — global = blue (project-wide), local =
+# orange (per-document). Reused by the toolbar button, the chrome
+# icons, and the Variables window's tab accents so the user reads
+# the same colour cue everywhere.
+VARIABLES_GLOBAL_COLOR = "#2e7dc4"
+VARIABLES_LOCAL_COLOR = "#cc7e1f"
+
 _ctk_cache: dict[tuple[str, int, str], ctk.CTkImage] = {}
 _tk_cache: dict[tuple[str, int, str], tk.PhotoImage] = {}
 

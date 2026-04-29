@@ -140,17 +140,30 @@ _INCLUDE_DESCRIPTIONS_DEFAULT = True
 
 # Phase 1 binding plumbing. Set by ``generate_code`` for the duration
 # of a single export so ``_emit_widget`` can resolve ``var:<uuid>``
-# tokens against project variables + the ``self.var_<name>``
-# attribute they're emitted under in every class's ``_build_ui``.
+# tokens. Two layers:
+#
+#   ``_GLOBAL_VAR_ATTR``  — project-wide ``var_id → "var_<name>"``.
+#       Stable across every class in the export so globals declared
+#       on the main window are reachable as ``self.master.var_X``
+#       from Toplevels.
+#
+#   ``_VAR_ID_TO_ATTR``   — per-class context. Set fresh inside each
+#       ``_emit_class`` to ``var_id → "self.var_X"`` /
+#       ``"self.master.var_X"`` so widget kwargs use the right form
+#       for whichever class is currently being emitted.
 _EXPORT_PROJECT = None
+_GLOBAL_VAR_ATTR: dict = {}
 _VAR_ID_TO_ATTR: dict = {}
 
 
-def _build_var_id_to_attr(project) -> dict:
-    """Build a stable mapping from VariableEntry.id to ``self.var_<n>``
-    attribute name. Names sanitised to Python identifiers + deduped
-    against each other so two variables with the same display name
-    don't collide in generated code.
+def _build_global_var_attrs(project) -> dict:
+    """Stable ``var_id → "var_<name>"`` for the project's globals.
+
+    Names sanitised to Python identifiers + deduped against each
+    other so two globals with the same display name don't collide
+    in generated code. Used by every class in the export — the main
+    window emits ``self.<attr>``, Toplevels reference
+    ``self.master.<attr>``.
     """
     from app.core.variables import sanitize_var_name
     mapping: dict = {}
@@ -163,49 +176,117 @@ def _build_var_id_to_attr(project) -> dict:
             candidate = f"var_{base}_{i}"
             i += 1
         used.add(candidate)
+        mapping[v.id] = candidate
+    return mapping
+
+
+def _build_class_var_map(project, doc, force_main: bool) -> dict:
+    """Per-class ``var_id → attr_ref`` used by widget-kwarg emission.
+
+    Globals are reachable everywhere; the ref form depends on whether
+    the current class owns them (``self.var_X``) or merely consumes
+    them from its master (``self.master.var_X``). Locals are reachable
+    only from their owner doc and always emit as ``self.var_X``.
+
+    ``force_main=True`` flattens globals into the current class as if
+    they were locals — single-document export of a Toplevel needs
+    them attached to ``self`` so the file runs standalone.
+    """
+    from app.core.variables import sanitize_var_name
+    mapping: dict = {}
+    used_attrs: set = set(_GLOBAL_VAR_ATTR.values())
+    is_main_class = force_main or not doc.is_toplevel
+    for v in project.variables or []:
+        attr = _GLOBAL_VAR_ATTR.get(v.id)
+        if attr is None:
+            continue
+        if is_main_class:
+            mapping[v.id] = f"self.{attr}"
+        else:
+            mapping[v.id] = f"self.master.{attr}"
+    # Local attribute names dedupe against the global pool so a local
+    # named identically to a global (allowed across scopes) doesn't
+    # shadow the master ref or collide on the same class.
+    for v in (doc.local_variables or []):
+        base = sanitize_var_name(v.name) or "var"
+        candidate = f"var_{base}"
+        i = 2
+        while candidate in used_attrs:
+            candidate = f"var_{base}_{i}"
+            i += 1
+        used_attrs.add(candidate)
         mapping[v.id] = f"self.{candidate}"
     return mapping
 
 
-def _emit_project_variables(project) -> list[str]:
-    """Emit one ``self.var_X = tk.<Type>Var(value=...)`` line per
-    project variable, prefixed with a section comment. Empty list
-    when the project has no variables.
+def _format_var_value_lit(v) -> str:
+    """Convert a VariableEntry's stored default into a Python literal
+    suitable for ``tk.<Type>Var(value=...)``. Falls back to a safe
+    zero-equivalent on type-mismatch so the export never raises at
+    write time.
     """
-    if not project or not project.variables:
+    if v.type == "str":
+        return repr(v.default)
+    if v.type == "int":
+        try:
+            return str(int(v.default))
+        except (TypeError, ValueError):
+            return "0"
+    if v.type == "float":
+        try:
+            return str(float(v.default))
+        except (TypeError, ValueError):
+            return "0.0"
+    if v.type == "bool":
+        return "True" if v.default == "True" else "False"
+    return repr(v.default)
+
+
+_TYPE_TO_TK_CLASS = {
+    "str": "tk.StringVar",
+    "int": "tk.IntVar",
+    "float": "tk.DoubleVar",
+    "bool": "tk.BooleanVar",
+}
+
+
+def _emit_class_variables(project, doc, force_main: bool) -> list[str]:
+    """Emit the variable-declaration block for one class's
+    ``_build_ui``.
+
+    Globals appear here only on the main window class (or any class
+    when ``force_main`` is set, so a single-doc Toplevel export keeps
+    them). Locals always belong to their owner class. Empty list when
+    nothing applies.
+    """
+    if not project:
         return []
-    type_to_class = {
-        "str": "tk.StringVar",
-        "int": "tk.IntVar",
-        "float": "tk.DoubleVar",
-        "bool": "tk.BooleanVar",
-    }
-    out: list[str] = [
-        "# Project variables — shared state across widgets.",
-    ]
-    for v in project.variables:
-        attr = _VAR_ID_TO_ATTR.get(v.id)
-        if attr is None:
-            continue
-        cls = type_to_class.get(v.type, "tk.StringVar")
-        if v.type == "str":
-            value_lit = repr(v.default)
-        elif v.type == "int":
-            try:
-                value_lit = str(int(v.default))
-            except (TypeError, ValueError):
-                value_lit = "0"
-        elif v.type == "float":
-            try:
-                value_lit = str(float(v.default))
-            except (TypeError, ValueError):
-                value_lit = "0.0"
-        elif v.type == "bool":
-            value_lit = "True" if v.default == "True" else "False"
-        else:
-            value_lit = repr(v.default)
-        out.append(f"{attr} = {cls}(value={value_lit})")
-    out.append("")
+    is_main_class = force_main or not doc.is_toplevel
+    out: list[str] = []
+    if is_main_class and project.variables:
+        out.append("# Project variables — shared state across widgets.")
+        for v in project.variables:
+            attr = _GLOBAL_VAR_ATTR.get(v.id)
+            if attr is None:
+                continue
+            cls = _TYPE_TO_TK_CLASS.get(v.type, "tk.StringVar")
+            out.append(
+                f"self.{attr} = {cls}(value={_format_var_value_lit(v)})",
+            )
+        out.append("")
+    locals_for_doc = doc.local_variables or []
+    if locals_for_doc:
+        out.append("# Local variables — scoped to this window only.")
+        for v in locals_for_doc:
+            ref = _VAR_ID_TO_ATTR.get(v.id)
+            if not ref or not ref.startswith("self."):
+                continue
+            attr = ref[len("self."):]
+            cls = _TYPE_TO_TK_CLASS.get(v.type, "tk.StringVar")
+            out.append(
+                f"self.{attr} = {cls}(value={_format_var_value_lit(v)})",
+            )
+        out.append("")
     return out
 
 
@@ -419,13 +500,17 @@ def generate_code(
     file and fill in the missing logic. Set False for clean
     production code.
     """
-    global _INCLUDE_DESCRIPTIONS_DEFAULT, _EXPORT_PROJECT, _VAR_ID_TO_ATTR
+    global _INCLUDE_DESCRIPTIONS_DEFAULT, _EXPORT_PROJECT
+    global _GLOBAL_VAR_ATTR, _VAR_ID_TO_ATTR
     _prev = (
-        _INCLUDE_DESCRIPTIONS_DEFAULT, _EXPORT_PROJECT, _VAR_ID_TO_ATTR,
+        _INCLUDE_DESCRIPTIONS_DEFAULT, _EXPORT_PROJECT,
+        _GLOBAL_VAR_ATTR, _VAR_ID_TO_ATTR,
     )
     _INCLUDE_DESCRIPTIONS_DEFAULT = include_descriptions
     _EXPORT_PROJECT = project
-    _VAR_ID_TO_ATTR = _build_var_id_to_attr(project)
+    _GLOBAL_VAR_ATTR = _build_global_var_attrs(project)
+    # Per-class map is rebuilt inside ``_emit_class``; start empty.
+    _VAR_ID_TO_ATTR = {}
     try:
         return _generate_code_inner(
             project,
@@ -437,6 +522,7 @@ def generate_code(
         (
             _INCLUDE_DESCRIPTIONS_DEFAULT,
             _EXPORT_PROJECT,
+            _GLOBAL_VAR_ATTR,
             _VAR_ID_TO_ATTR,
         ) = _prev
 
@@ -513,10 +599,17 @@ def _generate_code_inner(
     # Any radio with a non-empty `group` triggers a tk.StringVar
     # import + per-group declaration so radios in the same group
     # actually deselect each other in the runtime app.
-    needs_tk_import = bool(project.variables) or any(
-        w.widget_type == "CTkRadioButton"
-        and str(w.properties.get("group") or "").strip()
-        for w in scoped_widgets
+    has_local_vars = any(
+        bool(d.local_variables) for d in docs_to_emit
+    )
+    needs_tk_import = (
+        bool(project.variables)
+        or has_local_vars
+        or any(
+            w.widget_type == "CTkRadioButton"
+            and str(w.properties.get("group") or "").strip()
+            for w in scoped_widgets
+        )
     )
     needs_font_register = _project_uses_custom_fonts(project, scoped_widgets)
 
@@ -675,12 +768,43 @@ def _emit_class(
 ) -> list[str]:
     # ``force_main`` is True for single-document export: the class
     # subclasses ``ctk.CTk`` even when the source doc is a Toplevel,
-    # so the exported file runs as a standalone app.
+    # so the exported file runs as a standalone app. It also flips
+    # globals into "owned by this class" mode so the file's variables
+    # land on ``self`` instead of being orphaned ``self.master.*``
+    # references.
+    global _VAR_ID_TO_ATTR
+    _prev_var_map = _VAR_ID_TO_ATTR
+    _VAR_ID_TO_ATTR = _build_class_var_map(
+        _EXPORT_PROJECT, doc, force_main,
+    )
+    try:
+        return _emit_class_body(
+            doc, class_name, force_main, register_fonts,
+        )
+    finally:
+        _VAR_ID_TO_ATTR = _prev_var_map
+
+
+def _emit_class_body(
+    doc: Document, class_name: str, force_main: bool,
+    register_fonts: bool,
+) -> list[str]:
     if force_main or not doc.is_toplevel:
         base = "ctk.CTk"
     else:
         base = "ctk.CTkToplevel"
-    lines: list[str] = [f"class {class_name}({base}):"]
+    lines: list[str] = []
+    # Phase 0 AI bridge: prepend the document's plain-language
+    # description as comments above the class definition. Same
+    # gate as widget descriptions — toggled via ``include_descriptions``
+    # on ``export_project`` / ``generate_code`` so the user can
+    # choose clean production code.
+    if _INCLUDE_DESCRIPTIONS_DEFAULT:
+        doc_desc = (getattr(doc, "description", "") or "").strip()
+        if doc_desc:
+            for line in doc_desc.splitlines() or [doc_desc]:
+                lines.append(f"# {line}")
+    lines.append(f"class {class_name}({base}):")
     if base == "ctk.CTkToplevel":
         lines.append(f"{INDENT}def __init__(self, master=None):")
         lines.append(f"{INDENT}{INDENT}super().__init__(master)")
@@ -721,11 +845,14 @@ def _emit_class(
 
     counts: dict[str, int] = {}
     body_lines: list[str] = []
-    # Phase 1 binding: project-level shared variables come BEFORE
-    # widget construction so any constructor below can reference
+    # Phase 1.5 binding: shared variables come BEFORE widget
+    # construction so any constructor below can reference
     # ``self.var_<name>`` for ``textvariable=`` / ``variable=``
-    # kwargs.
-    body_lines.extend(_emit_project_variables(_EXPORT_PROJECT))
+    # kwargs. Globals only land on the main window class (or anywhere
+    # under ``force_main``); locals attach to their owning class.
+    body_lines.extend(
+        _emit_class_variables(_EXPORT_PROJECT, doc, force_main),
+    )
     radio_var_map, group_to_var_attr = _collect_radio_groups(
         doc.root_widgets,
     )
