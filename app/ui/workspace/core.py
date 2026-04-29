@@ -141,6 +141,19 @@ class Workspace(ctk.CTkFrame):
         # entries mean "outer == inner" (the default).
         self._anchor_views: dict[str, tk.Widget] = {}
 
+        # Phase 1 binding cache. ``widget_id → {prop_name: var_id}``.
+        # Tracks which property of which widget is currently wired to
+        # which variable. Used by ``_handle_var_binding_change`` to
+        # detect three transitions that need a widget recreate:
+        # 1. literal → bound (new wiring)
+        # 2. bound → literal (drop wiring)
+        # 3. bound → bound to a different variable (rewire)
+        # The recreate path runs through ``lifecycle.create_widget_subtree``
+        # so the descriptor's ``init_kwargs`` plumbing picks up the
+        # live ``tk.Variable`` cleanly, no special-case configure
+        # logic needed.
+        self._bound_props_cache: dict[str, dict[str, str]] = {}
+
         # Marquee selection (drag-rect on empty canvas) state. ``None``
         # when no marquee is in progress; otherwise carries start
         # coords, the dashed rect canvas item id, and the modifier
@@ -230,6 +243,11 @@ class Workspace(ctk.CTkFrame):
         bus = self.project.event_bus
         self.lifecycle.subscribe(bus)
         bus.subscribe("property_changed", self._on_property_changed)
+        bus.subscribe("widget_added", self._seed_binding_cache_on_add)
+        bus.subscribe("widget_removed", self._drop_binding_cache_on_remove)
+        bus.subscribe(
+            "variable_type_changed", self._on_variable_type_changed,
+        )
         bus.subscribe(
             "font_defaults_changed",
             lambda *_a, **_k: self._reapply_fonts_to_all_widgets(),
@@ -853,6 +871,10 @@ class Workspace(ctk.CTkFrame):
             self._handle_coord_prop(widget_id, widget, window_id, node)
             return
         descriptor = get_descriptor(node.widget_type) if node else None
+        if self._handle_var_binding_change(
+            widget_id, prop_name, value, node, descriptor,
+        ):
+            return
         if self._handle_recreate_prop(
             widget_id, prop_name, node, descriptor,
         ):
@@ -988,6 +1010,93 @@ class Workspace(ctk.CTkFrame):
             log_error("workspace._on_property_changed x/y coords")
         if widget_id == self.project.selected_id:
             self._schedule_selection_redraw()
+
+    # ------------------------------------------------------------------
+    # Phase 1 binding — recreate widgets when a property toggles in / out
+    # of bound state so Tkinter's ``textvariable`` / ``variable`` wiring
+    # is rebuilt cleanly.
+    # ------------------------------------------------------------------
+    def _seed_binding_cache_on_add(self, node) -> None:
+        from app.core.variables import parse_var_token
+        bound: dict[str, str] = {}
+        for k, v in node.properties.items():
+            var_id = parse_var_token(v)
+            if var_id is not None:
+                bound[k] = var_id
+        if bound:
+            self._bound_props_cache[node.id] = bound
+        else:
+            self._bound_props_cache.pop(node.id, None)
+
+    def _drop_binding_cache_on_remove(self, widget_id: str) -> None:
+        self._bound_props_cache.pop(widget_id, None)
+
+    def _on_variable_type_changed(self, var_id: str, _new_type) -> None:
+        """The Project drops the cached ``tk.Variable`` when a type
+        changes (so a fresh instance with the new type is built on
+        next ``get_tk_var``). Every widget bound to that variable
+        therefore holds a stale reference and needs a full recreate
+        so the descriptor's ``init_kwargs`` plumbing rewires the new
+        ``tk.Variable``.
+        """
+        affected_ids = [
+            wid for wid, props in self._bound_props_cache.items()
+            if var_id in props.values()
+        ]
+        for wid in affected_ids:
+            node = self.project.get_widget(wid)
+            descriptor = get_descriptor(node.widget_type) if node else None
+            if node is None or descriptor is None:
+                continue
+
+            def _remove_subtree(n) -> None:
+                for c in list(n.children):
+                    _remove_subtree(c)
+                self.lifecycle.on_widget_removed(n.id)
+            _remove_subtree(node)
+            self.lifecycle.create_widget_subtree(node)
+            if wid == self.project.selected_id:
+                self._schedule_selection_redraw()
+
+    def _handle_var_binding_change(
+        self, widget_id: str, prop_name: str, value,
+        node, descriptor,
+    ) -> bool:
+        """Detect transitions in bound state for a property. Triggers
+        a recreate when the property toggles literal ↔ bound, OR when
+        it stays bound but switches to a different variable. Returns
+        True when a recreate ran — caller skips the rest of the
+        property-change pipeline.
+        """
+        from app.core.variables import parse_var_token
+        if descriptor is None or node is None:
+            return False
+        bound_dict = self._bound_props_cache.setdefault(widget_id, {})
+        new_var_id = parse_var_token(value)
+        old_var_id = bound_dict.get(prop_name)
+        if new_var_id == old_var_id:
+            return False
+        if new_var_id is None:
+            bound_dict.pop(prop_name, None)
+        else:
+            bound_dict[prop_name] = new_var_id
+        entry = self.widget_views.get(widget_id)
+        if entry is not None:
+            widget_obj, _ = entry
+            try:
+                descriptor.before_recreate(node, widget_obj, prop_name)
+            except Exception:
+                log_error(f"{node.widget_type}.before_recreate")
+
+        def _remove_subtree(n) -> None:
+            for c in list(n.children):
+                _remove_subtree(c)
+            self.lifecycle.on_widget_removed(n.id)
+        _remove_subtree(node)
+        self.lifecycle.create_widget_subtree(node)
+        if widget_id == self.project.selected_id:
+            self._schedule_selection_redraw()
+        return True
 
     def _handle_recreate_prop(
         self, widget_id: str, prop_name: str, node, descriptor,

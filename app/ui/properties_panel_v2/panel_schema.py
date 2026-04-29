@@ -26,18 +26,37 @@ from __future__ import annotations
 import tkinter as tk
 
 from app.core.project import WINDOW_ID
+from app.core.variables import is_var_token, parse_var_token
 from app.widgets.layout_schema import (
     DEFAULT_LAYOUT_TYPE,
     child_layout_schema,
 )
 
-from .constants import STYLE_BOOL_NAMES
+from .constants import STYLE_BOOL_NAMES, TREE_BG
 from .editors import get_editor
 from .format_utils import (
     compute_subgroup_preview,
     format_numeric_pair_preview,
     format_value,
 )
+from .overlays import (
+    SLOT_BIND_BUTTON,
+    SLOT_BIND_CLEAR,
+    place_bind_button,
+    place_bind_clear,
+)
+
+
+def _binding_chip_text(project, value) -> str | None:
+    """Render a bound value as the variable's plain name. The cell's
+    ``bound`` tag colours the row background — no glyph prefix needed
+    on the text itself. Returns None for literal values.
+    """
+    var_id = parse_var_token(value)
+    if var_id is None:
+        return None
+    entry = project.get_variable(var_id) if project is not None else None
+    return entry.name if entry is not None else "(missing)"
 
 
 class SchemaMixin:
@@ -196,7 +215,10 @@ class SchemaMixin:
         iid = f"p:{pname}"
         self._prop_iids[pname] = iid
 
-        display = format_value(ptype, value, prop)
+        chip = _binding_chip_text(self.project, value)
+        display = chip if chip is not None else format_value(
+            ptype, value, prop,
+        )
         tags = self._row_tags_for(pname, prop, value)
 
         self.tree.insert(
@@ -205,24 +227,102 @@ class SchemaMixin:
             open=False, tags=tags,
         )
 
-        get_editor(ptype).populate(self, iid, pname, prop, value)
+        # Skip the rich editor overlays when a property is bound to a
+        # variable — the chip in the cell is the editor surface, and
+        # any literal-value overlay would visually fight with it. The
+        # right-click menu handles bind / unbind from this row.
+        if chip is None:
+            get_editor(ptype).populate(self, iid, pname, prop, value)
+
+        # Diamond bind button in the left gutter of the label column.
+        # ◇ unbound / ◆ bound, single muted colour for both states —
+        # the shape difference is the only signal. Click → bind menu.
+        # Hover lightens the background and brightens the foreground
+        # so the cell visibly registers as "interactive" instead of a
+        # passive glyph.
+        bound_bg = "#2d1f12"
+        idle_bg = bound_bg if chip is not None else TREE_BG
+        hover_bg = "#3d2c1c" if chip is not None else "#2d2d2d"
+        idle_fg = "#888888"
+        hover_fg = "#ffffff"
+        bind_btn = tk.Label(
+            self.tree,
+            text="◆" if chip is not None else "◇",
+            bg=idle_bg, fg=idle_fg,
+            font=("Segoe UI Symbol", 10),
+            cursor="hand2", borderwidth=0, padx=0, pady=0,
+        )
+        bind_btn.bind(
+            "<Enter>",
+            lambda _e, b=bind_btn, bg=hover_bg, fg=hover_fg:
+            b.configure(bg=bg, fg=fg),
+        )
+        bind_btn.bind(
+            "<Leave>",
+            lambda _e, b=bind_btn, bg=idle_bg, fg=idle_fg:
+            b.configure(bg=bg, fg=fg),
+        )
+        bind_btn.bind(
+            "<Button-1>",
+            lambda e, p=pname, pr=prop:
+            self._open_binding_menu_for(e, p, pr),
+        )
+        self.overlays.add(
+            iid, SLOT_BIND_BUTTON, bind_btn, place_bind_button,
+        )
+
+        # ✕ unbind button on bound rows only. Single click clears the
+        # binding and restores the descriptor's default literal so
+        # the row falls back to its normal editor. Hover treatment
+        # matches the diamond so both feel like buttons.
+        if chip is not None:
+            clear_btn = tk.Label(
+                self.tree,
+                text="✕",
+                bg=bound_bg, fg="#aaaaaa",
+                font=("Segoe UI Symbol", 11),
+                cursor="hand2", borderwidth=0, padx=0, pady=0,
+            )
+            clear_btn.bind(
+                "<Enter>",
+                lambda _e, b=clear_btn:
+                b.configure(bg="#3d2c1c", fg="#ff8080"),
+            )
+            clear_btn.bind(
+                "<Leave>",
+                lambda _e, b=clear_btn:
+                b.configure(bg=bound_bg, fg="#aaaaaa"),
+            )
+            clear_btn.bind(
+                "<Button-1>",
+                lambda _e, p=pname, pr=prop:
+                self._unbind_property(p, pr),
+            )
+            self.overlays.add(
+                iid, SLOT_BIND_CLEAR, clear_btn, place_bind_clear,
+            )
 
     def _refresh_cell(self, iid: str, prop: dict, value) -> None:
         ptype = prop["type"]
-        display = format_value(ptype, value, prop)
+        chip = _binding_chip_text(self.project, value)
+        display = chip if chip is not None else format_value(
+            ptype, value, prop,
+        )
         try:
             self.tree.set(iid, "value", display)
         except tk.TclError:
             return
 
-        if ptype == "boolean":
-            try:
-                self.tree.item(
-                    iid,
-                    tags=self._row_tags_for(prop["name"], prop, value),
-                )
-            except tk.TclError:
-                pass
+        # Refresh row tags so the ``bound`` background tint follows
+        # bind / unbind changes triggered through undo / redo or any
+        # other property mutation that doesn't go through _rebuild.
+        try:
+            self.tree.item(
+                iid,
+                tags=self._row_tags_for(prop["name"], prop, value),
+            )
+        except tk.TclError:
+            pass
             if prop["name"] in STYLE_BOOL_NAMES:
                 self._refresh_style_preview()
 
@@ -337,7 +437,9 @@ class SchemaMixin:
 
     def _row_tags_for(self, pname: str, prop: dict, value) -> tuple[str, ...]:
         tags: list[str] = []
-        if prop["type"] == "boolean" and not value:
+        if is_var_token(value):
+            tags.append("bound")
+        elif prop["type"] == "boolean" and not value:
             tags.append("bool_off")
         if self._disabled_states.get(pname):
             tags.append("disabled")

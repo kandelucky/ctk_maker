@@ -290,11 +290,22 @@ class WidgetLifecycle:
         CTkTabview's button bar parent, etc.) where events + canvas
         placement target the outer container, not the inner widget.
         """
+        from app.core.variables import resolve_bindings
         ws = self.workspace
-        init_kwargs = ws._get_radio_init_kwargs(node)
+        init_kwargs = ws._get_radio_init_kwargs(node) or {}
+        # Phase 1 binding: walk the property dict for ``var:<uuid>``
+        # tokens. Strip wired ones (CTk's ``textvariable`` /
+        # ``variable``) and pass the live ``tk.Variable`` via init
+        # kwargs so the runtime widget tracks the shared value.
+        clean_props = _strip_layout_keys(node.properties)
+        clean_props, var_kwargs = resolve_bindings(
+            ws.project, node.widget_type, clean_props,
+        )
+        if var_kwargs:
+            init_kwargs = {**init_kwargs, **var_kwargs}
         widget = descriptor.create_widget(
-            master, _strip_layout_keys(node.properties),
-            init_kwargs=init_kwargs,
+            master, clean_props,
+            init_kwargs=init_kwargs or None,
         )
         ws._sync_radio_initial(widget, node)
         anchor_widget = descriptor.canvas_anchor(widget)

@@ -138,6 +138,99 @@ def _preview_screenshot_lines(target: str) -> list[str]:
 
 _INCLUDE_DESCRIPTIONS_DEFAULT = True
 
+# Phase 1 binding plumbing. Set by ``generate_code`` for the duration
+# of a single export so ``_emit_widget`` can resolve ``var:<uuid>``
+# tokens against project variables + the ``self.var_<name>``
+# attribute they're emitted under in every class's ``_build_ui``.
+_EXPORT_PROJECT = None
+_VAR_ID_TO_ATTR: dict = {}
+
+
+def _build_var_id_to_attr(project) -> dict:
+    """Build a stable mapping from VariableEntry.id to ``self.var_<n>``
+    attribute name. Names sanitised to Python identifiers + deduped
+    against each other so two variables with the same display name
+    don't collide in generated code.
+    """
+    from app.core.variables import sanitize_var_name
+    mapping: dict = {}
+    used: set = set()
+    for v in project.variables or []:
+        base = sanitize_var_name(v.name) or "var"
+        candidate = f"var_{base}"
+        i = 2
+        while candidate in used:
+            candidate = f"var_{base}_{i}"
+            i += 1
+        used.add(candidate)
+        mapping[v.id] = f"self.{candidate}"
+    return mapping
+
+
+def _emit_project_variables(project) -> list[str]:
+    """Emit one ``self.var_X = tk.<Type>Var(value=...)`` line per
+    project variable, prefixed with a section comment. Empty list
+    when the project has no variables.
+    """
+    if not project or not project.variables:
+        return []
+    type_to_class = {
+        "str": "tk.StringVar",
+        "int": "tk.IntVar",
+        "float": "tk.DoubleVar",
+        "bool": "tk.BooleanVar",
+    }
+    out: list[str] = [
+        "# Project variables — shared state across widgets.",
+    ]
+    for v in project.variables:
+        attr = _VAR_ID_TO_ATTR.get(v.id)
+        if attr is None:
+            continue
+        cls = type_to_class.get(v.type, "tk.StringVar")
+        if v.type == "str":
+            value_lit = repr(v.default)
+        elif v.type == "int":
+            try:
+                value_lit = str(int(v.default))
+            except (TypeError, ValueError):
+                value_lit = "0"
+        elif v.type == "float":
+            try:
+                value_lit = str(float(v.default))
+            except (TypeError, ValueError):
+                value_lit = "0.0"
+        elif v.type == "bool":
+            value_lit = "True" if v.default == "True" else "False"
+        else:
+            value_lit = repr(v.default)
+        out.append(f"{attr} = {cls}(value={value_lit})")
+    out.append("")
+    return out
+
+
+def _entry_default_as_value(entry):
+    """Convert a VariableEntry's stored string default into the right
+    Python value for its declared type. Used for unwired bindings —
+    where the runtime can't pass a live ``tk.Variable`` so the
+    exporter substitutes the variable's current value as a literal.
+    """
+    if entry is None:
+        return None
+    if entry.type == "int":
+        try:
+            return int(entry.default)
+        except (TypeError, ValueError):
+            return 0
+    if entry.type == "float":
+        try:
+            return float(entry.default)
+        except (TypeError, ValueError):
+            return 0.0
+    if entry.type == "bool":
+        return entry.default == "True"
+    return entry.default
+
 
 def export_project(
     project: Project, path: str | Path,
@@ -326,9 +419,13 @@ def generate_code(
     file and fill in the missing logic. Set False for clean
     production code.
     """
-    global _INCLUDE_DESCRIPTIONS_DEFAULT
-    _prev_include_desc = _INCLUDE_DESCRIPTIONS_DEFAULT
+    global _INCLUDE_DESCRIPTIONS_DEFAULT, _EXPORT_PROJECT, _VAR_ID_TO_ATTR
+    _prev = (
+        _INCLUDE_DESCRIPTIONS_DEFAULT, _EXPORT_PROJECT, _VAR_ID_TO_ATTR,
+    )
     _INCLUDE_DESCRIPTIONS_DEFAULT = include_descriptions
+    _EXPORT_PROJECT = project
+    _VAR_ID_TO_ATTR = _build_var_id_to_attr(project)
     try:
         return _generate_code_inner(
             project,
@@ -337,7 +434,11 @@ def generate_code(
             inject_preview_screenshot=inject_preview_screenshot,
         )
     finally:
-        _INCLUDE_DESCRIPTIONS_DEFAULT = _prev_include_desc
+        (
+            _INCLUDE_DESCRIPTIONS_DEFAULT,
+            _EXPORT_PROJECT,
+            _VAR_ID_TO_ATTR,
+        ) = _prev
 
 
 def _generate_code_inner(
@@ -412,14 +513,18 @@ def _generate_code_inner(
     # Any radio with a non-empty `group` triggers a tk.StringVar
     # import + per-group declaration so radios in the same group
     # actually deselect each other in the runtime app.
-    needs_tk_import = any(
+    needs_tk_import = bool(project.variables) or any(
         w.widget_type == "CTkRadioButton"
         and str(w.properties.get("group") or "").strip()
         for w in scoped_widgets
     )
     needs_font_register = _project_uses_custom_fonts(project, scoped_widgets)
 
-    lines: list[str] = ["import customtkinter as ctk"]
+    lines: list[str] = [
+        "# Generated by CTkMaker",
+        "",
+        "import customtkinter as ctk",
+    ]
     if needs_tk_import:
         lines.append("import tkinter as tk")
     if needs_pil:
@@ -616,6 +721,11 @@ def _emit_class(
 
     counts: dict[str, int] = {}
     body_lines: list[str] = []
+    # Phase 1 binding: project-level shared variables come BEFORE
+    # widget construction so any constructor below can reference
+    # ``self.var_<name>`` for ``textvariable=`` / ``variable=``
+    # kwargs.
+    body_lines.extend(_emit_project_variables(_EXPORT_PROJECT))
     radio_var_map, group_to_var_attr = _collect_radio_groups(
         doc.root_widgets,
     )
@@ -813,7 +923,14 @@ def _emit_widget(
     )
     overrides: dict = descriptor.export_kwarg_overrides(props)
 
+    from app.core.variables import BINDING_WIRINGS, parse_var_token
+
     kwargs: list[tuple[str, str]] = []
+    # Wired bindings — emitted at the end so the kwarg order doesn't
+    # matter for CTk's __init__, but kept in a separate list because
+    # their values are attribute references (not Python literals) and
+    # ``_py_literal`` would mangle them.
+    var_kwargs: list[tuple[str, str]] = []
 
     for key, val in props.items():
         if key in node_only or key in font_keys or key == "image":
@@ -822,6 +939,24 @@ def _emit_widget(
         # never as CTk constructor kwargs.
         if key in LAYOUT_NODE_ONLY_KEYS:
             continue
+        # Phase 1 binding: ``var:<uuid>`` token. Wired bindings emit a
+        # ``textvariable=self.var_X`` / ``variable=self.var_X`` kwarg
+        # so the runtime widget tracks the live tk.Variable. Unwired
+        # bindings substitute the variable's current default literal.
+        var_id = parse_var_token(val)
+        if var_id is not None:
+            wiring = BINDING_WIRINGS.get((node.widget_type, key))
+            if wiring and var_id in _VAR_ID_TO_ATTR:
+                var_kwargs.append((wiring, _VAR_ID_TO_ATTR[var_id]))
+                continue
+            entry = (
+                _EXPORT_PROJECT.get_variable(var_id)
+                if _EXPORT_PROJECT is not None else None
+            )
+            if entry is not None:
+                val = _entry_default_as_value(entry)
+            else:
+                continue  # stale binding — drop the kwarg entirely
         if key in overrides:
             val = overrides[key]
         if key in multiline_list_keys:
@@ -993,6 +1128,11 @@ def _emit_widget(
     lines.append(f"{full_name} = ctk.{ctk_class}(")
     lines.append(f"    {master_var},")
     for key, src in kwargs:
+        lines.append(f"    {key}={src},")
+    # Wired bindings come last; their ``src`` is already a Python
+    # expression (``self.var_X``) so it's emitted verbatim, no
+    # ``_py_literal`` quoting.
+    for key, src in var_kwargs:
         lines.append(f"    {key}={src},")
     lines.append(")")
 

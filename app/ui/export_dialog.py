@@ -34,7 +34,7 @@ from app.ui.icons import load_icon
 SETTING_INCLUDE_DESCRIPTIONS = "export_include_descriptions"
 
 DIALOG_W = 560
-DIALOG_H = 410
+DIALOG_H = 460
 
 PANEL_BG = "#252526"
 SUBTITLE_FG = "#888888"
@@ -101,7 +101,7 @@ class ExportDialog(ctk.CTkToplevel):
         self._name_var = tk.StringVar()
         self._dir_var = tk.StringVar()
         self._preview_var = tk.StringVar()
-        self._open_editor_var = tk.BooleanVar(value=False)
+        self._open_editor_var = tk.BooleanVar(value=True)
         self._run_preview_var = tk.BooleanVar(value=False)
         self._as_zip_var = tk.BooleanVar(value=False)
         # Asset filter: default ON for multi-page projects (avoid
@@ -111,11 +111,12 @@ class ExportDialog(ctk.CTkToplevel):
             value=bool(project.folder_path),
         )
         # Phase 0 AI-bridge toggle. Persists to settings so the user's
-        # last choice survives across exports / sessions.
+        # last choice survives across exports / sessions. Default OFF
+        # — clean code is the more common need; AI workflow is opt-in.
         _settings = load_settings()
         self._include_descriptions_var = tk.BooleanVar(
             value=bool(
-                _settings.get(SETTING_INCLUDE_DESCRIPTIONS, True),
+                _settings.get(SETTING_INCLUDE_DESCRIPTIONS, False),
             ),
         )
         self._open_editor_cb: ctk.CTkCheckBox | None = None
@@ -167,12 +168,18 @@ class ExportDialog(ctk.CTkToplevel):
         is_multi_page = bool(self.project.folder_path) and bool(pages)
 
         if is_multi_page:
-            # Top entry: every page as separate .py.
+            # Top entry: every page as separate .py. Only meaningful
+            # when the project actually has multiple pages — for a
+            # 1-page folder project "All pages" collapses into a
+            # single-page export that ignores the Name field, so we
+            # skip the entry there and let the user pick the page
+            # directly (which uses Name correctly).
             n = len(pages)
-            out.append((
-                f"All pages ({n} page{'s' if n != 1 else ''})",
-                ALL_PAGES_VALUE,
-            ))
+            if n > 1:
+                out.append((
+                    f"All pages ({n} pages)",
+                    ALL_PAGES_VALUE,
+                ))
             # Per-page scopes — one .py per pick.
             for entry in pages:
                 if not isinstance(entry, dict):

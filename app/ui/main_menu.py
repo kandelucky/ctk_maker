@@ -311,6 +311,12 @@ class MenuMixin:
             command=self._on_toggle_project_window,
             accelerator="F10",
         )
+        view_menu.add_checkbutton(
+            label="Variables",
+            variable=self._variables_var,
+            command=self._on_toggle_variables_window,
+            accelerator="F11",
+        )
         menubar.add_cascade(label="View", menu=view_menu)
 
         # ---- Tools ----

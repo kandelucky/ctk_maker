@@ -148,6 +148,30 @@ def place_style_preview(
     _place_value_cell_left(tree, widget, iid, width=300, pad_y=3)
 
 
+def place_bind_button(
+    tree: tk.Widget, widget: tk.Widget, iid: str,
+) -> None:
+    """Pinned to the leftmost gutter of the tree, OUTSIDE the indent
+    area, so every row's icon aligns in the same vertical column
+    regardless of indent depth. Tk's ``bbox(iid, "#0")`` returns the
+    cell's content bbox (after indent), which would push the icon
+    next to the row text — using a fixed x ignores that.
+    """
+    try:
+        bbox = tree.bbox(iid, "#0")
+    except tk.TclError:
+        bbox = ()
+    if not bbox:
+        widget.place_forget()
+        return
+    _x, y, _w, h = bbox
+    widget.place(
+        x=4, y=y + 4,
+        width=12, height=max(1, h - 8),
+    )
+    widget.lift()
+
+
 # =====================================================================
 # Slot constants — one string per overlay kind
 # =====================================================================
@@ -160,6 +184,19 @@ SLOT_TEXT_EDIT = "text_edit"
 SLOT_IMAGE_VALUE = "image_value"
 SLOT_IMAGE_BUTTONS = "image_buttons"
 SLOT_STYLE_PREVIEW = "style_preview"
+SLOT_BIND_BUTTON = "bind_button"
+SLOT_BIND_CLEAR = "bind_clear"
+
+
+def place_bind_clear(
+    tree: tk.Widget, widget: tk.Widget, iid: str,
+) -> None:
+    """Right-edge ✕ button for unbinding a bound property. Sits at the
+    far right of the value cell — when a row is bound the literal
+    editor is skipped (no swatch / pencil / spinner there), so this
+    spot is always free.
+    """
+    _place_value_cell_right(tree, widget, iid, width=14, pad_y=4)
 
 
 # =====================================================================

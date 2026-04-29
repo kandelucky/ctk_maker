@@ -37,6 +37,15 @@ from app.core.document import (
 )
 from app.core.event_bus import EventBus
 from app.core.history import History
+from app.core.variables import (
+    VAR_TYPES,
+    VariableEntry,
+    coerce_default_for_type,
+    is_var_token,
+    make_tk_var,
+    parse_var_token,
+    sanitize_var_name,
+)
 from app.core.widget_node import WidgetNode
 
 # Sentinel id for the virtual "Window" node that represents the
@@ -234,6 +243,15 @@ class Project:
         self._id_index: dict[str, WidgetNode] = {}
         self._doc_index: dict[str, Document] = {}
         self._window_proxy = _WindowProxy(self)
+        # Phase 1 (visual scripting): project-level shared variables.
+        # ``variables`` is the persisted list of declarations; ``_tk_vars``
+        # is the lazy runtime cache of ``tk.Variable`` instances (keyed
+        # by VariableEntry.id). Widgets bind via a ``var:<uuid>`` token
+        # in their property slot; the runtime resolves the token through
+        # ``get_tk_var`` and feeds the live ``tk.Variable`` to the widget
+        # constructor (``textvariable=`` / ``variable=``).
+        self.variables: list[VariableEntry] = []
+        self._tk_vars: dict[str, object] = {}
         # Undo / redo history. UI code pushes Command objects after
         # applying mutations; history replays them backward / forward.
         self.history = History(self)
@@ -729,6 +747,11 @@ class Project:
         self.folder_path = None
         self.pages = []
         self.active_page_id = None
+        # Phase 1: drop variable declarations + cached tk vars so a
+        # New Project / Open doesn't inherit the previous project's
+        # state.
+        self.variables = []
+        self.reset_tk_vars()
         self.event_bus.publish(
             "active_document_changed", self.active_document_id,
         )
@@ -868,6 +891,173 @@ class Project:
         self.event_bus.publish(
             "property_changed", WINDOW_ID, prop_name, value,
         )
+
+    # ==================================================================
+    # Variables (Phase 1 visual scripting — project-level shared state)
+    # ==================================================================
+    def add_variable(
+        self, name: str, var_type: str = "str", default: str = "",
+        var_id: str | None = None,
+    ) -> VariableEntry:
+        """Append a new variable to the project. Names are sanitised
+        toward Python identifiers; types outside the supported set
+        fall back to ``"str"``. Pass ``var_id`` to restore an existing
+        UUID (used by undo / paste).
+        """
+        clean_type = var_type if var_type in VAR_TYPES else "str"
+        clean_name = self._dedupe_var_name(
+            sanitize_var_name(name or "var"),
+        )
+        clean_default = coerce_default_for_type(default, clean_type)
+        entry = VariableEntry(
+            name=clean_name, type=clean_type, default=clean_default,
+        )
+        if var_id:
+            entry.id = var_id
+        self.variables.append(entry)
+        # Lazy: ``tk.Variable`` is created on first ``get_tk_var`` call.
+        self.event_bus.publish("variable_added", entry)
+        return entry
+
+    def remove_variable(self, var_id: str) -> VariableEntry | None:
+        """Remove a variable + tear down its tk var. Cascade-unbinds
+        every widget property that references it so nothing dangles
+        after delete. Returns the removed entry (or None when the id
+        wasn't known).
+        """
+        entry = self.get_variable(var_id)
+        if entry is None:
+            return None
+        for node, pname in list(self.iter_bindings_for(var_id)):
+            node.properties.pop(pname, None)
+            self.event_bus.publish(
+                "property_changed", node.id, pname, None,
+            )
+        self.variables = [v for v in self.variables if v.id != var_id]
+        self._tk_vars.pop(var_id, None)
+        self.event_bus.publish("variable_removed", var_id)
+        return entry
+
+    def rename_variable(self, var_id: str, new_name: str) -> None:
+        entry = self.get_variable(var_id)
+        if entry is None:
+            return
+        clean = self._dedupe_var_name(
+            sanitize_var_name(new_name or "var"),
+            exclude_id=var_id,
+        )
+        if clean == entry.name:
+            return
+        entry.name = clean
+        self.event_bus.publish("variable_renamed", var_id, clean)
+
+    def change_variable_type(self, var_id: str, new_type: str) -> None:
+        """Change a variable's runtime type. Coerces the existing
+        default into the new type's safe value and drops the cached
+        ``tk.Variable`` so every bound widget rebuilds against the
+        new kind on its next reconfigure.
+        """
+        entry = self.get_variable(var_id)
+        if entry is None:
+            return
+        clean_type = new_type if new_type in VAR_TYPES else "str"
+        if clean_type == entry.type:
+            return
+        entry.type = clean_type
+        entry.default = coerce_default_for_type(
+            entry.default, clean_type,
+        )
+        self._tk_vars.pop(var_id, None)
+        self.event_bus.publish(
+            "variable_type_changed", var_id, clean_type,
+        )
+
+    def change_variable_default(
+        self, var_id: str, new_default: str,
+    ) -> None:
+        entry = self.get_variable(var_id)
+        if entry is None:
+            return
+        clean = coerce_default_for_type(new_default, entry.type)
+        if clean == entry.default:
+            return
+        entry.default = clean
+        # Push the new default into the live tk var so every bound
+        # widget updates instantly.
+        tk_var = self._tk_vars.get(var_id)
+        if tk_var is not None:
+            try:
+                tk_var.set(clean)
+            except Exception:
+                pass
+        self.event_bus.publish(
+            "variable_default_changed", var_id, clean,
+        )
+
+    def get_variable(self, var_id: str) -> VariableEntry | None:
+        for v in self.variables:
+            if v.id == var_id:
+                return v
+        return None
+
+    def get_variable_by_name(self, name: str) -> VariableEntry | None:
+        for v in self.variables:
+            if v.name == name:
+                return v
+        return None
+
+    def get_tk_var(self, var_id: str):
+        """Return the live ``tk.Variable`` for ``var_id``, building it
+        on first request. Returns ``None`` when the id isn't known —
+        callers degrade by ignoring the binding (the property slot
+        falls back to its descriptor default).
+        """
+        tk_var = self._tk_vars.get(var_id)
+        if tk_var is not None:
+            return tk_var
+        entry = self.get_variable(var_id)
+        if entry is None:
+            return None
+        tk_var = make_tk_var(entry.type, entry.default)
+        self._tk_vars[var_id] = tk_var
+        return tk_var
+
+    def iter_bindings_for(
+        self, var_id: str,
+    ) -> Iterator[tuple[WidgetNode, str]]:
+        """Yield ``(node, prop_name)`` for every property holding a
+        ``var:<var_id>`` token. Used by Variables panel ("used by N
+        widgets") and by ``remove_variable`` for cascade-unbind.
+        """
+        for node in self.iter_all_widgets():
+            for pname, pvalue in list(node.properties.items()):
+                if parse_var_token(pvalue) == var_id:
+                    yield node, pname
+
+    def _dedupe_var_name(
+        self, base: str, exclude_id: str | None = None,
+    ) -> str:
+        """Append ``_2`` / ``_3`` / ... to keep variable names unique
+        across the project. ``exclude_id`` skips one entry so renaming
+        to the same name is a no-op.
+        """
+        used = {
+            v.name for v in self.variables
+            if v.id != exclude_id
+        }
+        if base not in used:
+            return base
+        i = 2
+        while f"{base}_{i}" in used:
+            i += 1
+        return f"{base}_{i}"
+
+    def reset_tk_vars(self) -> None:
+        """Drop every cached ``tk.Variable``. Called by ``clear`` /
+        load paths so stale tk vars from a previous project don't
+        survive into the new one.
+        """
+        self._tk_vars.clear()
 
     def set_visibility(self, widget_id: str, visible: bool) -> None:
         """Toggle a node's builder-only visibility flag and notify

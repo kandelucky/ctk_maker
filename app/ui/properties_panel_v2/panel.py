@@ -139,6 +139,15 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         bus.subscribe(
             "widget_description_changed", self._on_description_changed,
         )
+        # Variable state can change without touching widget properties
+        # (e.g. rename, type change). Re-render the panel so the chip
+        # text in any bound row stays in sync with the variable's name
+        # / type label.
+        for ev in (
+            "variable_renamed", "variable_type_changed",
+            "variable_default_changed", "variable_removed",
+        ):
+            bus.subscribe(ev, self._on_variable_state_changed)
 
         self._show_empty()
 
@@ -361,6 +370,12 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         self.tree.tag_configure(
             "disabled", foreground=DISABLED_FG, background=TREE_BG,
         )
+        # Phase 1 binding: bound rows get a soft warm-tinted background
+        # so they're distinguishable at a glance without cluttering
+        # the row with extra glyphs.
+        self.tree.tag_configure(
+            "bound", background="#2d1f12",
+        )
 
         vscroll = ctk.CTkScrollbar(
             wrap, orientation="vertical", command=self._on_vscroll,
@@ -382,6 +397,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
 
         self.tree.bind("<Double-Button-1>", self._on_double_click)
         self.tree.bind("<Button-1>", self._on_single_click, add="+")
+        self.tree.bind("<Button-3>", self._on_tree_right_click, add="+")
         self.tree.bind("<<TreeviewOpen>>", self._on_layout_change,
                        add="+")
         self.tree.bind("<<TreeviewClose>>", self._on_layout_change,
@@ -541,6 +557,13 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         node = self.project.get_widget(widget_id)
         if node is not None:
             self._update_description_preview(node)
+
+    def _on_variable_state_changed(self, *_args, **_kwargs) -> None:
+        """Cheap blanket refresh — a variable's user-visible label
+        changed, so any bound row's chip text needs updating. Only
+        rebuilds when the panel currently has a selection."""
+        if self.current_id is not None:
+            self._rebuild()
 
     def _on_name_var_write(self, *_args) -> None:
         if self._suspend_name_trace or self.current_id is None:
@@ -829,4 +852,223 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             self._desc_preview.configure(fg=fg)
         except tk.TclError:
             pass
+
+    # ==================================================================
+    # Variable binding (Phase 1 visual scripting)
+    # ==================================================================
+    def _on_tree_right_click(self, event) -> None:
+        """Right-click on a property row → bind / unbind menu. Right
+        click stays as a backup gesture — the visible 🔗 button on
+        each row is the primary path."""
+        if self.current_id is None:
+            return
+        iid = self.tree.identify_row(event.y)
+        if not iid or not iid.startswith("p:"):
+            return
+        pname = iid[2:]
+        descriptor = self._current_descriptor()
+        if descriptor is None:
+            return
+        prop = self._find_prop(descriptor, pname)
+        if prop is None:
+            return
+        node = self.project.get_widget(self.current_id)
+        if node is None:
+            return
+        self._show_binding_menu(event, pname, prop, node)
+
+    def _open_binding_menu_for(self, event, pname: str, prop: dict) -> None:
+        """Click handler for the per-row 🔗 button. Resolves the
+        current widget, then defers to the shared menu builder so
+        the bind / unbind flows match the right-click path."""
+        if self.current_id is None:
+            return
+        node = self.project.get_widget(self.current_id)
+        if node is None:
+            return
+        self._show_binding_menu(event, pname, prop, node)
+
+    def _show_binding_menu(self, event, pname, prop, node) -> None:
+        from app.core.variables import (
+            compatible_var_types,
+            is_var_token,
+            parse_var_token,
+        )
+        current = node.properties.get(pname)
+        bound_var_id = parse_var_token(current)
+        bound_entry = (
+            self.project.get_variable(bound_var_id)
+            if bound_var_id else None
+        )
+        ptype = prop.get("type", "")
+        compat_types = compatible_var_types(ptype)
+
+        from .constants import BG as _BG
+        menu_style = dict(
+            bg="#2d2d30", fg="#cccccc",
+            activebackground="#094771",
+            activeforeground="#ffffff",
+            bd=0, borderwidth=0, relief="flat",
+            font=("Segoe UI", 10),
+        )
+        menu = tk.Menu(self.tree, tearoff=0, **menu_style)
+
+        if bound_entry is not None:
+            menu.add_command(
+                label=f"Unbind from: {bound_entry.name}",
+                command=lambda: self._unbind_property(pname, prop),
+            )
+            menu.add_separator()
+
+        bind_submenu = tk.Menu(menu, tearoff=0, **menu_style)
+        compatible_vars = [
+            v for v in self.project.variables
+            if v.type in compat_types and v.id != bound_var_id
+        ]
+        if not self.project.variables:
+            bind_submenu.add_command(
+                label="(no variables yet)", state="disabled",
+            )
+        elif not compatible_vars:
+            type_hint = " / ".join(compat_types)
+            bind_submenu.add_command(
+                label=f"(no {type_hint} variables)",
+                state="disabled",
+            )
+            bind_submenu.add_separator()
+        else:
+            for v in compatible_vars:
+                bind_submenu.add_command(
+                    label=f"{v.name}  ({v.type})",
+                    command=(
+                        lambda var_id=v.id:
+                        self._bind_property(pname, prop, var_id)
+                    ),
+                )
+            bind_submenu.add_separator()
+        bind_submenu.add_command(
+            label="+ Create new variable…",
+            command=lambda: self._create_and_bind(pname, prop),
+        )
+        menu.add_cascade(label="Bind to variable", menu=bind_submenu)
+        menu.add_separator()
+        menu.add_command(
+            label="Open Variables window…",
+            command=self._open_variables_window_from_menu,
+        )
+
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            try:
+                menu.grab_release()
+            except tk.TclError:
+                pass
+
+    def _bind_property(self, pname: str, prop: dict, var_id: str) -> None:
+        """Replace the property's literal value with a ``var:<uuid>``
+        token. Pushes a ``ChangePropertyCommand`` so undo / redo work,
+        then rebuilds the panel so the cell re-renders as a chip and
+        the editor overlay tears down cleanly.
+        """
+        from app.core.commands import ChangePropertyCommand
+        from app.core.variables import make_var_token
+        if self.current_id is None:
+            return
+        node = self.project.get_widget(self.current_id)
+        if node is None:
+            return
+        before = node.properties.get(pname)
+        token = make_var_token(var_id)
+        if before == token:
+            return
+        self.project.update_property(self.current_id, pname, token)
+        self.project.history.push(
+            ChangePropertyCommand(self.current_id, pname, before, token),
+        )
+        # Full rebuild — a literal-value editor overlay was just
+        # replaced by a chip, and the per-cell refresh path can't
+        # destroy overlays cleanly across editor types.
+        self._rebuild()
+
+    def _unbind_property(self, pname: str, prop: dict) -> None:
+        """Drop the ``var:<uuid>`` token and restore the descriptor's
+        default literal so the row falls back to its normal editor.
+        """
+        from app.core.commands import ChangePropertyCommand
+        if self.current_id is None:
+            return
+        node = self.project.get_widget(self.current_id)
+        if node is None:
+            return
+        descriptor = self._current_descriptor()
+        if descriptor is None:
+            return
+        before = node.properties.get(pname)
+        # Fall back to the descriptor's declared default — keeps the
+        # property type valid (no dangling None) and renders cleanly
+        # in the literal editor.
+        default = descriptor.default_properties.get(pname, "")
+        self.project.update_property(self.current_id, pname, default)
+        self.project.history.push(
+            ChangePropertyCommand(self.current_id, pname, before, default),
+        )
+        self._rebuild()
+
+    def _create_and_bind(self, pname: str, prop: dict) -> None:
+        """Open the Variables Add dialog with a name suggestion
+        derived from the property, then bind on success.
+        """
+        from app.ui.variables_window import VariableEditDialog
+        from app.core.commands import AddVariableCommand
+        suggestion = self._suggest_var_name(pname)
+        existing = {v.name for v in self.project.variables}
+        # Default type guess based on the property's editor kind.
+        ptype = prop.get("type", "")
+        guess_type = {
+            "boolean": "bool",
+            "number": "int",
+        }.get(ptype, "str")
+        dialog = VariableEditDialog(
+            self.winfo_toplevel(),
+            title="Create variable + bind",
+            initial_name=suggestion,
+            initial_type=guess_type,
+            initial_default="",
+            existing_names=existing,
+        )
+        dialog.wait_window()
+        if dialog.result is None:
+            return
+        name, var_type, default = dialog.result
+        entry = self.project.add_variable(name, var_type, default)
+        self.project.history.push(
+            AddVariableCommand(
+                entry.to_dict(), len(self.project.variables) - 1,
+            ),
+        )
+        self._bind_property(pname, prop, entry.id)
+
+    def _suggest_var_name(self, pname: str) -> str:
+        """Build a friendly variable name guess from the widget name
+        + property name (e.g. button_1.text -> button_1_text)."""
+        if self.current_id is None:
+            return pname
+        node = self.project.get_widget(self.current_id)
+        if node is None or not node.name:
+            return pname
+        return f"{node.name}_{pname}"
+
+    def _open_variables_window_from_menu(self) -> None:
+        """Try to flip the MainWindow's Variables window var so it
+        opens (or focuses if already open). Falls back silently if
+        the parent doesn't expose the toggle (used in standalone
+        tests of the panel)."""
+        top = self.winfo_toplevel()
+        toggle = getattr(top, "_on_f11_variables_window", None)
+        if callable(toggle):
+            try:
+                toggle()
+            except Exception:
+                pass
 

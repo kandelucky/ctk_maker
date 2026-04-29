@@ -24,6 +24,7 @@ from app.io.project_loader import ProjectLoadError, load_project
 from app.io.project_saver import save_project
 from app.ui.dialogs import NewProjectSizeDialog
 from app.ui.history_window import HistoryPanel, HistoryWindow
+from app.ui.variables_window import VariablesWindow
 from app.ui.main_menu import APPEARANCE_MODES, MenuMixin
 from app.ui.main_shortcuts import ShortcutsMixin
 from app.ui.object_tree_window import ObjectTreePanel, ObjectTreeWindow
@@ -134,6 +135,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         self._history_var = tk.BooleanVar(value=False)
         self._project_window: ProjectWindow | None = None
         self._project_var = tk.BooleanVar(value=False)
+        self._variables_window: VariablesWindow | None = None
+        self._variables_var = tk.BooleanVar(value=False)
 
         settings = load_settings()
         initial_mode = settings.get("appearance_mode", "Dark")
@@ -1494,6 +1497,32 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
     def _on_f9_history_window(self) -> None:
         self._history_var.set(not self._history_var.get())
         self._on_toggle_history_window()
+
+    def _on_toggle_variables_window(self) -> None:
+        want_open = bool(self._variables_var.get())
+        alive = (
+            self._variables_window is not None
+            and self._variables_window.winfo_exists()
+        )
+        if want_open and not alive:
+            self._variables_window = VariablesWindow(
+                self, self.project,
+                on_close=self._on_variables_window_closed,
+            )
+        elif not want_open and alive:
+            try:
+                self._variables_window.destroy()
+            except tk.TclError:
+                pass
+            self._variables_window = None
+
+    def _on_variables_window_closed(self) -> None:
+        self._variables_window = None
+        self._variables_var.set(False)
+
+    def _on_f11_variables_window(self) -> None:
+        self._variables_var.set(not self._variables_var.get())
+        self._on_toggle_variables_window()
 
     def _on_toggle_project_window(self) -> None:
         want_open = bool(self._project_var.get())

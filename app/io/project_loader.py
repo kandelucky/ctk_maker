@@ -236,6 +236,17 @@ def load_project(
         if isinstance(raw_system, list) else []
     )
 
+    # Phase 1: project-level shared variables. Missing key → empty
+    # list (legacy projects + never-declared state). Tk vars stay
+    # lazy — they're built on first ``get_tk_var`` call.
+    from app.core.variables import VariableEntry
+    raw_vars = meta_source.get("variables")
+    project.variables = (
+        [VariableEntry.from_dict(d) for d in raw_vars if isinstance(d, dict)]
+        if isinstance(raw_vars, list) else []
+    )
+    project.reset_tk_vars()
+
     # Prime the font system BEFORE any widget is added — otherwise
     # CTkFont(family=...) calls inside widget construction resolve
     # against an empty cascade (defaults stale from the previous
