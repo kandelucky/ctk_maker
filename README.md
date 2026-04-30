@@ -2,6 +2,8 @@
 
 Drag-and-drop visual designer for **[CustomTkinter](https://github.com/TomSchimansky/CustomTkinter)** — design Python GUIs without writing layout code by hand.
 
+**Community Hub:** [kandelucky.github.io/ctkmaker-hub](https://kandelucky.github.io/ctkmaker-hub/) — browse and share reusable components built in CTkMaker.
+
 > **v1.3.0** — **Cross-document reparent dialog** — moving a widget between windows now asks how to handle its local-variable bindings (Keep / Delete in source, Duplicate / Unbind in target); same flow on Ctrl+C/V/X across windows. **Component library** (per-project) — save any selection as a reusable `.ctkcomp`, browse / preview / drop back from the Palette's new Components tab; bundled variable conflicts get resolved on insert (Rename / Skip). **Add Widget cascade** on canvas + widget right-click. **Per-document Snap & Alignment** toggles on the Window properties panel. **Local Variables group** appears in the Properties panel when the Window itself is selected.
 >
 > ⚠️ **Tested on Windows only.** macOS and Linux are not verified for this release — feedback and contributions welcome.
