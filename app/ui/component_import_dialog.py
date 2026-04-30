@@ -157,7 +157,7 @@ class ComponentImportDialog(ctk.CTkToplevel):
             )
             return
         from app.ui.component_preview_window import ComponentPreviewWindow
-        ComponentPreviewWindow(self, self._payload)
+        ComponentPreviewWindow(self, self._payload, self._source_path)
 
     def _on_import(self) -> None:
         if self._payload is None:

@@ -7,8 +7,6 @@ file written at the chosen folder.
 from __future__ import annotations
 
 import datetime
-import json
-import re
 import shutil
 import tkinter as tk
 from pathlib import Path
@@ -19,9 +17,7 @@ import customtkinter as ctk
 from app.core.component_paths import COMPONENT_EXT
 from app.core.logger import log_error
 from app.core.settings import load_settings, save_setting
-from app.io.component_io import (
-    load_metadata, load_payload, rewrite_payload_for_publish,
-)
+from app.io.component_io import load_metadata, rewrite_payload_for_publish
 
 CATEGORY_GUIDE_URL = (
     "https://github.com/kandelucky/ctk_maker/wiki/Component-Categories"
@@ -30,6 +26,8 @@ CATEGORY_GUIDE_URL = (
 LAST_AUTHOR_KEY = "last_component_author"
 LICENSE_TEXT_VERSION = 1
 DESCRIPTION_MAX = 300
+# Hub site upload cap — temporary GitHub Discussions attachment limit.
+PUBLISH_MAX_BYTES = 25 * 1024 * 1024
 
 CATEGORIES: list[tuple[str, str]] = [
     ("Buttons", "Styled buttons (icon, toggle packs, action groups)"),
@@ -74,11 +72,6 @@ def _format_date(iso: str) -> str:
         return dt.strftime("%Y-%m-%d %H:%M")
     except ValueError:
         return iso
-
-
-def _slugify(name: str) -> str:
-    s = re.sub(r"[^a-zA-Z0-9_-]+", "-", name.strip()).strip("-")
-    return s.lower() or "component"
 
 
 class ComponentPublishFormDialog(ctk.CTkToplevel):
@@ -271,6 +264,20 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
         self._dest_var.set(path)
 
     def _on_publish(self) -> None:
+        try:
+            source_size = self._source_path.stat().st_size
+        except OSError:
+            source_size = 0
+        if source_size > PUBLISH_MAX_BYTES:
+            self.bell()
+            messagebox.showwarning(
+                "Too large to publish",
+                f"This component is {_format_size(source_size)}. The "
+                "community site currently accepts files up to 25 MB. "
+                "You can still save it for personal use.",
+                parent=self,
+            )
+            return
         author = self._author_var.get().strip()
         if not author:
             self.bell()
@@ -372,16 +379,6 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
             )
             return
 
-        # Sidecar entry.json — pre-filled fragment for the shared
-        # Component Library workflow.
-        try:
-            self._write_sidecar_entry(
-                dest_path, author, license_block,
-                category=category, description=description,
-            )
-        except Exception:
-            log_error(f"publish sidecar {dest_path}")
-
         if author and author != self._cached_author:
             save_setting(LAST_AUTHOR_KEY, author)
 
@@ -409,38 +406,6 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
             },
             "text_version": LICENSE_TEXT_VERSION,
         }
-
-    def _write_sidecar_entry(
-        self, dest_path: Path, author: str, license_block: dict,
-        *, category: str, description: str,
-    ) -> None:
-        sidecar = dest_path.with_name(f"{dest_path.stem}_entry.json")
-        try:
-            file_bytes = dest_path.stat().st_size
-        except OSError:
-            file_bytes = 0
-        meta = load_metadata(dest_path) or {}
-        entry = {
-            "id": _slugify(dest_path.stem),
-            "name": meta.get("name") or dest_path.stem,
-            "category": category,
-            "author": author,
-            "version": "1.0",
-            "description": description,
-            "file": dest_path.name,
-            "preview": "",
-            "size_px": {
-                "w": int(meta.get("view_w", 0) or 0),
-                "h": int(meta.get("view_h", 0) or 0),
-            },
-            "size_kb": round(file_bytes / 1024, 1),
-            "added_at": datetime.datetime.now().isoformat(timespec="seconds"),
-            "license": license_block,
-        }
-        sidecar.write_text(
-            json.dumps(entry, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
 
     def _on_cancel(self) -> None:
         self.result = False

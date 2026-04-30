@@ -9,8 +9,6 @@ Returns ``True`` from ``run()`` when the file was written.
 from __future__ import annotations
 
 import datetime
-import json
-import re
 import shutil
 import tkinter as tk
 from pathlib import Path
@@ -21,9 +19,7 @@ import customtkinter as ctk
 from app.core.component_paths import COMPONENT_EXT
 from app.core.logger import log_error
 from app.core.settings import load_settings, save_setting
-from app.io.component_io import (
-    load_metadata, load_payload, rewrite_payload_author,
-)
+from app.io.component_io import load_metadata, rewrite_payload_author
 
 LAST_AUTHOR_KEY = "last_component_author"
 
@@ -220,50 +216,8 @@ class ComponentExportDialog(ctk.CTkToplevel):
             log_error(f"component export rewrite {dest_path}")
         if new_author and new_author != self._cached_author:
             save_setting(LAST_AUTHOR_KEY, new_author)
-        # Pre-filled index.json fragment for shared-library
-        # contribution. Sidecar failures don't fail the export — the
-        # zip is the artefact that matters.
-        try:
-            self._write_sidecar(dest_path)
-        except OSError:
-            log_error(f"component export sidecar {dest_path}")
         self.result = True
         self.destroy()
-
-    def _write_sidecar(self, dest_path: Path) -> None:
-        payload = load_payload(dest_path) or {}
-        raw_name = (payload.get("name") or dest_path.stem).strip()
-        slug = re.sub(r"[^a-z0-9]+", "_", raw_name.lower()).strip("_")
-        if not slug:
-            slug = dest_path.stem
-        view = payload.get("view_size") or {}
-        size_px = f"{view.get('w', 0)}x{view.get('h', 0)}"
-        try:
-            byte_count = dest_path.stat().st_size
-        except OSError:
-            byte_count = 0
-        size_kb = max(1, round(byte_count / 1024))
-        entry = {
-            "id": slug,
-            "name": raw_name,
-            "category": (
-                "TODO — pick one of: buttons, inputs, display, "
-                "layout, navigation, feedback, templates"
-            ),
-            "author": payload.get("author", ""),
-            "version": "1.0",
-            "description": "TODO — write one short line",
-            "file": f"components/{dest_path.name}",
-            "preview": f"components/{dest_path.stem}.png",
-            "size_px": size_px,
-            "size_kb": size_kb,
-            "added_at": datetime.date.today().isoformat(),
-        }
-        sidecar_path = dest_path.with_name(f"{dest_path.stem}_entry.json")
-        sidecar_path.write_text(
-            json.dumps(entry, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
 
     def _on_cancel(self) -> None:
         self.result = False

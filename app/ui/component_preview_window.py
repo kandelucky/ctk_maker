@@ -16,13 +16,20 @@ Limitations (Phase D v1):
 
 from __future__ import annotations
 
+import shutil
+import tempfile
 import tkinter as tk
+import zipfile
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import customtkinter as ctk
 
 from app.core.logger import log_error
 from app.core.variables import is_var_token, parse_var_token
+from app.io.component_assets import (
+    extract_assets_to_folder, rewrite_bundle_tokens_to_paths,
+)
 from app.widgets.registry import get_descriptor
 
 if TYPE_CHECKING:
@@ -30,11 +37,32 @@ if TYPE_CHECKING:
 
 
 class ComponentPreviewWindow(ctk.CTkToplevel):
-    def __init__(self, parent, payload: dict):
+    def __init__(self, parent, payload: dict, component_path: Path | None = None):
         super().__init__(parent)
         name = payload.get("name") or "(component)"
         self.title(f"{name} — Preview")
         self.transient(parent)
+
+        # Bundle tokens point at archive-relative names that don't
+        # resolve on disk, so for previews we extract to a temp dir
+        # and rewrite the tokens in a copy of the node tree. The temp
+        # dir is cleaned up when the preview window closes.
+        self._temp_assets_dir: Path | None = None
+        if component_path is not None:
+            try:
+                tmp = Path(tempfile.mkdtemp(prefix="ctkcomp_preview_"))
+                with zipfile.ZipFile(component_path, "r") as zf:
+                    extracted = extract_assets_to_folder(zf, tmp)
+                if extracted:
+                    self._temp_assets_dir = tmp
+                    rewrite_bundle_tokens_to_paths(
+                        payload.get("nodes", []), extracted,
+                    )
+                else:
+                    shutil.rmtree(tmp, ignore_errors=True)
+            except (OSError, zipfile.BadZipFile):
+                log_error(f"preview asset extract {component_path}")
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         # Map var-uuid → default literal so var-tokens in properties
         # render as plain values inside the preview.
@@ -74,8 +102,14 @@ class ComponentPreviewWindow(ctk.CTkToplevel):
         for raw in nodes:
             self._render(surface, raw, var_defaults, offset)
 
-        self.bind("<Escape>", lambda _e: self.destroy())
+        self.bind("<Escape>", lambda _e: self._on_close())
         self.after(100, self._center_on_parent)
+
+    def _on_close(self) -> None:
+        if self._temp_assets_dir is not None:
+            shutil.rmtree(self._temp_assets_dir, ignore_errors=True)
+            self._temp_assets_dir = None
+        self.destroy()
 
     @staticmethod
     def _bbox(nodes: list[dict]) -> tuple[int, int, int, int]:

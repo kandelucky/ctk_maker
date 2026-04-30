@@ -46,6 +46,8 @@ class ComponentSaveDialog(ctk.CTkToplevel):
         default_name: str,
         components_dir: Path,
         bundled_var_count: int = 0,
+        bundled_asset_count: int = 0,
+        bundled_asset_bytes: int = 0,
         initial_folder: str = "",
     ):
         super().__init__(parent)
@@ -107,6 +109,22 @@ class ComponentSaveDialog(ctk.CTkToplevel):
                 justify="left",
             )
             hint.pack(padx=20, pady=(0, 8), anchor="w")
+
+        if bundled_asset_count > 0:
+            kb = bundled_asset_bytes / 1024
+            size_str = (
+                f"{kb:.0f} KB" if kb < 1024 else f"{kb / 1024:.1f} MB"
+            )
+            ctk.CTkLabel(
+                self,
+                text=(
+                    f"📎 {bundled_asset_count} asset(s) bundled "
+                    f"({size_str})."
+                ),
+                text_color="#7ea4c7",
+                font=("Segoe UI", 10),
+                wraplength=320, justify="left",
+            ).pack(padx=20, pady=(0, 8), anchor="w")
 
         footer = ctk.CTkFrame(self, fg_color="transparent")
         footer.pack(fill="x", padx=20, pady=(4, 16))

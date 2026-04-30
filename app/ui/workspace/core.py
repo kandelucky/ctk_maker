@@ -1254,7 +1254,7 @@ class Workspace(ctk.CTkFrame):
         from app.core.commands import _add_subtree_recursive
         from app.io.component_io import (
             analyze_var_conflicts, apply_var_resolutions,
-            instantiate_fragment, load_payload,
+            extract_component_assets, instantiate_fragment, load_payload,
         )
         from app.ui.component_var_conflict_dialog import (
             ComponentVarConflictDialog,
@@ -1335,10 +1335,21 @@ class Workspace(ctk.CTkFrame):
         roots = payload["nodes"]
         bbox_x = min(int(n.get("properties", {}).get("x", 0) or 0) for n in roots)
         bbox_y = min(int(n.get("properties", {}).get("y", 0) or 0) for n in roots)
+        # Asset extraction: bundle tokens get rewritten to absolute
+        # paths inside ``<project>/assets/components/<slug>/``. Empty
+        # bundles return an empty map; rewrite_bundle_tokens then
+        # leaves the property as an empty string for the descriptor
+        # to handle.
+        extracted_assets, _component_folder = extract_component_assets(
+            component_path,
+            getattr(self.project, "path", None),
+            payload.get("name") or component_path.stem,
+        )
         nodes = instantiate_fragment(
             payload,
             drop_offset=(target_x - bbox_x, target_y - bbox_y),
             var_uuid_map=uuid_map,
+            asset_extracted_map=extracted_assets,
         )
         new_ids: list[str] = []
         for root in nodes:
@@ -1950,7 +1961,7 @@ class Workspace(ctk.CTkFrame):
         from tkinter import messagebox
         from app.core.component_paths import ensure_components_root
         from app.io.component_io import (
-            count_bindings_to_bundle, save_fragment,
+            count_assets_to_bundle, count_bindings_to_bundle, save_fragment,
         )
         from app.ui.component_save_dialog import ComponentSaveDialog
 
@@ -1979,11 +1990,16 @@ class Workspace(ctk.CTkFrame):
         first = nodes[0]
         default_name = first.name or first.widget_type
         bundled_count = count_bindings_to_bundle(nodes, self.project)
+        asset_count, asset_bytes = count_assets_to_bundle(
+            nodes, self.project,
+        )
         dialog = ComponentSaveDialog(
             toplevel,
             default_name=default_name,
             components_dir=components_dir,
             bundled_var_count=bundled_count,
+            bundled_asset_count=asset_count,
+            bundled_asset_bytes=asset_bytes,
         )
         self.wait_window(dialog)
         if dialog.result is None:

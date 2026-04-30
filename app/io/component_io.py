@@ -39,13 +39,24 @@ from app.core.variables import (
     is_var_token, make_var_token, parse_var_token,
 )
 from app.core.widget_node import WidgetNode
+from app.io.component_assets import (
+    PROJECT_COMPONENTS_DIRNAME,
+    collect_assets_from_nodes,
+    count_assets_in_nodes,
+    extract_assets_to_folder,
+    pick_unique_component_folder,
+    rewrite_bundle_tokens_to_paths,
+    rewrite_image_props_to_bundle_tokens,
+    slugify_component_name,
+    write_assets_into_zip,
+)
 
 if TYPE_CHECKING:
     from app.core.document import Document
     from app.core.project import Project
     from app.core.variables import VariableEntry
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 PAYLOAD_FILENAME = "component.json"
 
 TYPE_FRAGMENT = "fragment"
@@ -72,6 +83,9 @@ def save_fragment(
     snapshots, var_bundle = _process_nodes_for_save(
         nodes, project, source_window_id,
     )
+    project_file = getattr(project, "path", None)
+    asset_map = collect_assets_from_nodes(snapshots, project_file)
+    rewrite_image_props_to_bundle_tokens(snapshots, asset_map, project_file)
     view_size = _compute_view_size(nodes)
     try:
         from app import __version__ as app_version
@@ -93,10 +107,23 @@ def save_fragment(
     with zipfile.ZipFile(
         target_path, "w", compression=zipfile.ZIP_DEFLATED,
     ) as zf:
+        manifest = write_assets_into_zip(zf, asset_map)
+        payload["assets"] = manifest
         zf.writestr(
             PAYLOAD_FILENAME,
             json.dumps(payload, indent=2, ensure_ascii=False),
         )
+
+
+def count_assets_to_bundle(
+    nodes: list[WidgetNode], project: "Project",
+) -> tuple[int, int]:
+    """Count + total bytes of asset files the given fragment would
+    bundle. Surfaced by the Save dialog hint.
+    """
+    snapshots = [n.to_dict() for n in nodes]
+    project_file = getattr(project, "path", None)
+    return count_assets_in_nodes(snapshots, project_file)
 
 
 def rewrite_payload_author(target_path: Path, author: str) -> None:
@@ -386,11 +413,19 @@ def instantiate_fragment(
     payload: dict,
     drop_offset: tuple[int, int],
     var_uuid_map: dict[str, str | None] | None = None,
+    asset_extracted_map: dict[str, Path] | None = None,
 ) -> list[WidgetNode]:
-    """Build live ``WidgetNode`` trees from a component payload."""
+    """Build live ``WidgetNode`` trees from a component payload.
+    ``asset_extracted_map`` supplies the on-disk paths for every
+    bundle token, produced by ``extract_component_assets`` before
+    this call.
+    """
     nodes: list[WidgetNode] = []
     dx, dy = drop_offset
-    for raw in payload.get("nodes", []):
+    raw_nodes = list(payload.get("nodes", []))
+    if asset_extracted_map is not None:
+        rewrite_bundle_tokens_to_paths(raw_nodes, asset_extracted_map)
+    for raw in raw_nodes:
         if var_uuid_map is not None:
             _rewrite_var_tokens(raw, var_uuid_map)
         node = WidgetNode.from_dict(raw)
@@ -400,6 +435,47 @@ def instantiate_fragment(
             node.properties["y"] = int(node.properties.get("y", 0) or 0) + dy
         nodes.append(node)
     return nodes
+
+
+def extract_component_assets(
+    component_path: Path,
+    target_project_file,
+    component_display_name: str,
+) -> tuple[dict[str, Path], Path | None]:
+    """Open the ``.ctkcomp`` and extract its assets into a fresh
+    folder under the target project's ``assets/components/<slug>/``.
+    Slug auto-suffixes (``_2``, ``_3``…) when the folder is taken so
+    multiple inserts of the same component never collide.
+
+    Returns ``(extracted_map, folder_path)``. When the target project
+    is unsaved or the bundle has no assets, returns ``({}, None)`` —
+    callers treat any leftover bundle tokens as broken on rewrite.
+    """
+    if target_project_file is None:
+        return {}, None
+    from app.core.assets import project_assets_dir
+    assets_root = project_assets_dir(target_project_file)
+    if assets_root is None:
+        return {}, None
+    components_root = assets_root / PROJECT_COMPONENTS_DIRNAME
+    components_root.mkdir(parents=True, exist_ok=True)
+    base_slug = slugify_component_name(component_display_name)
+    target_folder = pick_unique_component_folder(components_root, base_slug)
+    try:
+        with zipfile.ZipFile(component_path, "r") as zf:
+            extracted = extract_assets_to_folder(zf, target_folder)
+    except (OSError, zipfile.BadZipFile):
+        log_error(f"component_io extract_assets {component_path}")
+        return {}, None
+    if not extracted:
+        # Nothing to extract — clean up the empty folder we created
+        # so the project's components/ stays tidy.
+        try:
+            target_folder.rmdir()
+        except OSError:
+            pass
+        return {}, None
+    return extracted, target_folder
 
 
 def _rewrite_var_tokens(
