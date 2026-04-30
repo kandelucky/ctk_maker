@@ -126,23 +126,46 @@ def count_assets_to_bundle(
     return count_assets_in_nodes(snapshots, project_file)
 
 
+def _repack_with_payload(target_path: Path, new_payload: dict) -> None:
+    """Rewrite ``target_path`` so it holds ``new_payload`` as its
+    ``component.json`` while preserving every other archive entry
+    (notably ``assets/*``). Without preserving them, opening the zip
+    in ``"w"`` mode truncates the file and the bundled images are
+    lost on every author/publish rewrite.
+    """
+    other_entries: list[tuple[zipfile.ZipInfo, bytes]] = []
+    try:
+        with zipfile.ZipFile(target_path, "r") as zf_in:
+            for info in zf_in.infolist():
+                if info.filename == PAYLOAD_FILENAME:
+                    continue
+                with zf_in.open(info) as fh:
+                    other_entries.append((info, fh.read()))
+    except (OSError, zipfile.BadZipFile):
+        log_error(f"component repack read {target_path}")
+        return
+    with zipfile.ZipFile(
+        target_path, "w", compression=zipfile.ZIP_DEFLATED,
+    ) as zf_out:
+        zf_out.writestr(
+            PAYLOAD_FILENAME,
+            json.dumps(new_payload, indent=2, ensure_ascii=False),
+        )
+        for info, data in other_entries:
+            # Copy the original ZipInfo so per-entry compression /
+            # timestamps survive the repack.
+            zf_out.writestr(info, data)
+
+
 def rewrite_payload_author(target_path: Path, author: str) -> None:
-    """Repack a ``.ctkcomp`` zip with an updated ``author`` field —
-    used by the Export dialog when the user changes the author at
-    export time without touching the original file. The source file
-    is read via ``load_payload`` and re-emitted at ``target_path``.
+    """Repack a ``.ctkcomp`` with an updated ``author`` field — used
+    by the Personal export dialog. Bundled assets are preserved.
     """
     payload = load_payload(target_path)
     if payload is None:
         return
     payload["author"] = author
-    with zipfile.ZipFile(
-        target_path, "w", compression=zipfile.ZIP_DEFLATED,
-    ) as zf:
-        zf.writestr(
-            PAYLOAD_FILENAME,
-            json.dumps(payload, indent=2, ensure_ascii=False),
-        )
+    _repack_with_payload(target_path, payload)
 
 
 def rewrite_payload_for_publish(
@@ -152,10 +175,9 @@ def rewrite_payload_for_publish(
     category: str,
     description: str,
 ) -> None:
-    """Repack a ``.ctkcomp`` zip with the publish-time fields: updated
-    ``author``, an immutable ``license`` block recording the user's
-    consent, plus ``category`` and ``description`` for library
-    listing. Used by the Publish form.
+    """Repack a ``.ctkcomp`` with publish-time fields: updated
+    ``author``, an immutable ``license`` block, ``category``, and
+    ``description``. Bundled assets are preserved.
     """
     payload = load_payload(target_path)
     if payload is None:
@@ -164,13 +186,7 @@ def rewrite_payload_for_publish(
     payload["license"] = license_block
     payload["category"] = category
     payload["description"] = description
-    with zipfile.ZipFile(
-        target_path, "w", compression=zipfile.ZIP_DEFLATED,
-    ) as zf:
-        zf.writestr(
-            PAYLOAD_FILENAME,
-            json.dumps(payload, indent=2, ensure_ascii=False),
-        )
+    _repack_with_payload(target_path, payload)
 
 
 def count_bindings_to_bundle(
