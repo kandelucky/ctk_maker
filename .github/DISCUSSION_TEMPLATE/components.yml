@@ -13,13 +13,16 @@ body:
       label: Component type
       description: Pick the bucket that fits best.
       options:
-        - buttons
-        - inputs
-        - display
-        - layout
-        - navigation
-        - feedback
-        - templates
+        - Buttons
+        - Inputs
+        - Forms
+        - Layout
+        - Navigation
+        - Dialogs & Modals
+        - Cards & Panels
+        - Mini-Apps
+        - Templates & Starters
+        - Other
     validations:
       required: true
 
