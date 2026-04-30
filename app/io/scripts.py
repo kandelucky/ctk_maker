@@ -27,6 +27,10 @@ return empty / None rather than crashing the builder.
 from __future__ import annotations
 
 import ast
+import os
+import re
+import shutil
+import subprocess
 from pathlib import Path
 
 from app.core.script_paths import (
@@ -188,6 +192,131 @@ def add_handler_stub(
         return None
     # The blank line goes at insertion_idx; the ``def`` follows it.
     return insertion_idx + 2
+
+
+# ---------------------------------------------------------------------
+# Method-name resolution
+# ---------------------------------------------------------------------
+def slugify_method_part(text: str) -> str:
+    """Lowercase, strip every non-``[a-z0-9_]`` character, prefix
+    underscore when the result starts with a digit. Empty input falls
+    back to ``"x"`` so the caller always gets a usable identifier
+    fragment.
+
+    Used to turn widget / window display names into method-name parts
+    that Python's grammar accepts.
+    """
+    cleaned = re.sub(r"[^a-zA-Z0-9_]+", "_", text or "").strip("_").lower()
+    if not cleaned:
+        return "x"
+    if cleaned[0].isdigit():
+        cleaned = "_" + cleaned
+    return cleaned
+
+
+def collect_used_method_names(project) -> set[str]:
+    """Walk every document's tree and return every method name
+    currently bound to a handler. Used by ``suggest_method_name`` to
+    detect collisions across the whole page (main + dialogs share
+    one behavior class).
+    """
+    used: set[str] = set()
+    for doc in project.documents:
+        _walk_collect_handlers(doc.root_widgets, used)
+    return used
+
+
+def _walk_collect_handlers(nodes, used: set[str]) -> None:
+    for n in nodes:
+        for method in n.handlers.values():
+            if method:
+                used.add(method)
+        _walk_collect_handlers(n.children, used)
+
+
+def suggest_method_name(node, event_entry, project) -> str:
+    """Smart naming (Decision #2 = C):
+    - Default: ``on_<widget_slug>_<verb>``.
+    - On collision with an existing handler method anywhere in the
+      page, prefix with the containing window's slug:
+      ``on_<window_slug>_<widget_slug>_<verb>``.
+    - If even the prefixed name collides (rare — same window + same
+      widget name + same event already bound), append ``_2`` / ``_3``
+      until free.
+
+    ``event_entry`` is an ``EventEntry`` from
+    ``app.widgets.event_registry``.
+    """
+    widget_part = slugify_method_part(node.name or node.widget_type)
+    verb = event_entry.verb
+    base = f"on_{widget_part}_{verb}"
+    used = collect_used_method_names(project)
+    if base not in used:
+        return base
+    doc = project.find_document_for_widget(node.id)
+    window_part = slugify_method_part(doc.name) if doc else "win"
+    prefixed = f"on_{window_part}_{widget_part}_{verb}"
+    if prefixed not in used:
+        return prefixed
+    n = 2
+    while f"{prefixed}_{n}" in used:
+        n += 1
+    return f"{prefixed}_{n}"
+
+
+# ---------------------------------------------------------------------
+# Editor launch
+# ---------------------------------------------------------------------
+def launch_editor(
+    file_path: str | Path,
+    line: int | None = None,
+    editor_command: str | None = None,
+) -> bool:
+    """Open ``file_path`` in the user's editor, jumping to ``line``
+    when the editor supports it. Returns ``True`` on success.
+
+    Resolution order (Decision #1 = C — settings + OS-default
+    fallback):
+
+    1. ``editor_command`` — user-configured template from
+       ``settings.json:editor_command``. Substitutes ``{file}`` and
+       ``{line}`` placeholders. Empty / missing → fall through.
+    2. ``code -g <file>:<line>`` — VS Code, when ``code`` (or
+       ``code.cmd`` on Windows) is on PATH. Best UX because of the
+       line jump.
+    3. ``os.startfile(file)`` — Windows default file association
+       (notepad, IDLE, whatever the user picked for ``.py``).
+    4. Last resort: return ``False`` so the caller can surface a
+       "couldn't open editor" toast.
+    """
+    file_path = str(file_path)
+    if editor_command:
+        try:
+            cmd = editor_command.format(
+                file=file_path,
+                line=line if line is not None else "",
+            )
+            subprocess.Popen(cmd, shell=True)
+            return True
+        except (OSError, KeyError, IndexError):
+            pass
+    code_exe = shutil.which("code") or shutil.which("code.cmd")
+    if code_exe:
+        try:
+            target = (
+                f"{file_path}:{line}" if line is not None else file_path
+            )
+            subprocess.Popen([code_exe, "-g", target])
+            return True
+        except OSError:
+            pass
+    if hasattr(os, "startfile"):
+        try:
+            os.startfile(file_path)  # type: ignore[attr-defined]
+            return True
+        except OSError:
+            pass
+    return False
 
 
 # ---------------------------------------------------------------------

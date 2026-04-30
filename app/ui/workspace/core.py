@@ -22,6 +22,7 @@ import customtkinter as ctk
 
 from app.core.commands import (
     AddWidgetCommand,
+    BindHandlerCommand,
     BulkAddCommand,
     ChangePropertyCommand,
     DeleteMultipleCommand,
@@ -1873,6 +1874,13 @@ class Workspace(ctk.CTkFrame):
                 command=lambda: self._open_widget_description(nid),
             )
             menu.add_separator()
+            handler_submenu = self._build_handler_menu(target_node)
+            menu.add_cascade(
+                label="Add handler",
+                menu=handler_submenu,
+                state=("normal" if handler_submenu is not None else "disabled"),
+            )
+            menu.add_separator()
             menu.add_command(
                 label="Save as component…",
                 command=self._save_selection_as_component,
@@ -1968,6 +1976,121 @@ class Workspace(ctk.CTkFrame):
         properties panel subscribes and opens the same multiline
         editor it uses for its own square-pen button."""
         self.project.event_bus.publish("request_edit_description")
+
+    def _build_handler_menu(self, node) -> "tk.Menu | None":
+        """Cascade for the right-click "Add handler" entry. Returns
+        ``None`` when the widget type has no registered events — the
+        caller disables the parent cascade in that case so the user
+        sees "Add handler" greyed out rather than an empty submenu.
+
+        Each event row:
+        - **unbound** → click attaches a fresh stub + opens the
+          editor at the new line.
+        - **bound** → row is prefixed with ``▶`` and shows the bound
+          method name; click jumps the editor to that method.
+        """
+        from app.widgets.event_registry import events_for
+        if node is None:
+            return None
+        events = events_for(node.widget_type)
+        if not events:
+            return None
+        sub = tk.Menu(self.winfo_toplevel(), tearoff=0)
+        for entry in events:
+            method = node.handlers.get(entry.key, "")
+            if method:
+                sub.add_command(
+                    label=f"▶  {entry.label}  —  {method}",
+                    command=lambda nid=node.id, key=entry.key:
+                        self._jump_to_handler(nid, key),
+                )
+            else:
+                sub.add_command(
+                    label=entry.label,
+                    command=lambda nid=node.id, key=entry.key:
+                        self._attach_event_handler(nid, key),
+                )
+        return sub
+
+    def _attach_event_handler(self, widget_id: str, event_key: str) -> None:
+        """Right-click → "Add handler ▸ <event>" flow:
+        1. Validate the project's saved (we need ``<project>/scripts/``).
+        2. Resolve a method name (smart prefix on collision).
+        3. Materialise the behavior file + append a stub.
+        4. Push a ``BindHandlerCommand`` so undo restores the binding
+           (the .py file is the user's; we never reverse the file
+           write — same way components don't reverse user edits).
+        5. Open the editor at the new method.
+        """
+        from app.core.settings import load_settings
+        from app.io.scripts import (
+            add_handler_stub, behavior_class_name, launch_editor,
+            load_or_create_behavior_file, suggest_method_name,
+        )
+        from app.widgets.event_registry import event_by_key
+
+        node = self.project.get_widget(widget_id)
+        if node is None:
+            return
+        entry = event_by_key(node.widget_type, event_key)
+        if entry is None:
+            return
+        if not getattr(self.project, "path", None):
+            messagebox.showinfo(
+                "Save first",
+                "Save the project before adding event handlers — the "
+                "behavior file lives next to assets/ in the project folder.",
+                parent=self.winfo_toplevel(),
+            )
+            return
+        method_name = suggest_method_name(node, entry, self.project)
+        file_path = load_or_create_behavior_file(self.project.path)
+        if file_path is None:
+            messagebox.showerror(
+                "Couldn't write behavior file",
+                "Failed to create scripts/ folder. Check folder "
+                "permissions on the project directory.",
+                parent=self.winfo_toplevel(),
+            )
+            return
+        class_name = behavior_class_name(self.project.path)
+        line = add_handler_stub(
+            file_path, class_name, method_name, entry.signature,
+        )
+        self.project.history.push(
+            BindHandlerCommand(widget_id, event_key, method_name),
+        )
+        # Apply the binding now (history.push records but doesn't
+        # ``redo`` — the do-side already happened at the call site).
+        node.handlers[event_key] = method_name
+        self.project.event_bus.publish(
+            "widget_handler_changed", widget_id, event_key, method_name,
+        )
+        editor_command = load_settings().get("editor_command")
+        launch_editor(file_path, line=line, editor_command=editor_command)
+
+    def _jump_to_handler(self, widget_id: str, event_key: str) -> None:
+        """Open the editor at an already-bound handler method. Used
+        by the right-click cascade row when the event is wired."""
+        from app.core.settings import load_settings
+        from app.io.scripts import (
+            behavior_class_name, behavior_file_path,
+            find_handler_method, launch_editor,
+        )
+
+        node = self.project.get_widget(widget_id)
+        if node is None:
+            return
+        method = node.handlers.get(event_key, "")
+        if not method or not getattr(self.project, "path", None):
+            return
+        file_path = behavior_file_path(self.project.path)
+        if file_path is None or not file_path.exists():
+            return
+        class_name = behavior_class_name(self.project.path)
+        line = find_handler_method(file_path, class_name, method)
+        editor_command = load_settings().get("editor_command")
+        launch_editor(file_path, line=line, editor_command=editor_command)
 
     def _save_selection_as_component(self) -> None:
         """Bundle the current selection as a fragment component. Every

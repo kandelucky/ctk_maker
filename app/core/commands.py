@@ -400,6 +400,80 @@ class ChangeDescriptionCommand(Command):
         self._apply(project, self.after)
 
 
+class BindHandlerCommand(Command):
+    """Phase 2 visual scripting — attach an event handler binding to
+    a widget. ``event_key`` is the storage key (``"command"`` or
+    ``"bind:<seq>"``); ``method_name`` is the method on the page's
+    behavior class that the runtime / exporter will resolve. The
+    actual ``.py`` file mutation happens at the call site (the
+    command only carries undo/redo for the model field).
+    """
+
+    def __init__(
+        self, widget_id: str, event_key: str, method_name: str,
+    ):
+        self.widget_id = widget_id
+        self.event_key = event_key
+        self.method_name = method_name
+        self.description = "Bind handler"
+
+    def _apply(self, project: "Project", method_name: str | None) -> None:
+        node = project.get_widget(self.widget_id)
+        if node is None:
+            return
+        if method_name:
+            node.handlers[self.event_key] = method_name
+        else:
+            node.handlers.pop(self.event_key, None)
+        project.event_bus.publish(
+            "widget_handler_changed",
+            self.widget_id, self.event_key, method_name or "",
+        )
+        project.select_widget(self.widget_id)
+
+    def undo(self, project: "Project") -> None:
+        self._apply(project, None)
+
+    def redo(self, project: "Project") -> None:
+        self._apply(project, self.method_name)
+
+
+class UnbindHandlerCommand(Command):
+    """Reverse of ``BindHandlerCommand`` — clear an event binding
+    from a widget. Captures the previous method name at construction
+    so undo can restore it. Doesn't touch the ``.py`` file: the user
+    owns the script, we only manage the binding pointer.
+    """
+
+    def __init__(
+        self, widget_id: str, event_key: str, previous_method: str,
+    ):
+        self.widget_id = widget_id
+        self.event_key = event_key
+        self.previous_method = previous_method
+        self.description = "Unbind handler"
+
+    def _apply(self, project: "Project", method_name: str | None) -> None:
+        node = project.get_widget(self.widget_id)
+        if node is None:
+            return
+        if method_name:
+            node.handlers[self.event_key] = method_name
+        else:
+            node.handlers.pop(self.event_key, None)
+        project.event_bus.publish(
+            "widget_handler_changed",
+            self.widget_id, self.event_key, method_name or "",
+        )
+        project.select_widget(self.widget_id)
+
+    def undo(self, project: "Project") -> None:
+        self._apply(project, self.previous_method)
+
+    def redo(self, project: "Project") -> None:
+        self._apply(project, None)
+
+
 class MultiChangePropertyCommand(Command):
     """Bundle multiple property changes for a single widget into
     one undo step. Used when a single UI action triggers derived
