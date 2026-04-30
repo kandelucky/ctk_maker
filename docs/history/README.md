@@ -4,6 +4,7 @@ Visual snapshots of CTkMaker across releases. Screenshots only on the milestones
 
 | Version | Screenshot | Highlights |
 |---------|-----------|------------|
+| **v1.3.1** | _no screenshot_ | **Palette tab redesign + Edit › Export Component.** Widgets / Components tabs switch from icon-only to full-width text (stacked); collapse-to-icon-strip mode dropped. Edit menu gains Export Component… for the entry selected in the Components panel. |
 | **v1.3.0** | [![v1.3.0](v1.3.0.png)](v1.3.0.png) | **Cross-doc reparent dialog + per-project component library.** Moving a widget across windows (drag or Ctrl+C/V/X) asks how to handle its local-variable bindings — Keep / Delete in source, Duplicate / Unbind in target. Components live under `<project>/components/` with save / export / import / preview dialogs. |
 | **v1.2.0** | _no screenshot_ | **Local variables + prefab library.** Variables window splits into Global / Local tabs; bindings auto-migrate on cross-doc moves. Exporter routes globals to the main class, Toplevels read `self.master.var_*`. Prefabs save selections as reusable `.ctkprefab` files. |
 | **v1.1.0** | _no screenshot_ | **Group hide/lock + group-aware alignment.** Virtual `◆ Group` row gains eye + lock cells — batch toggle as one undo step. Alignment + distribution treat a selected group as a single block. Preview windows ship with a floating **Screenshot · F12** button. |

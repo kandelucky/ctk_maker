@@ -10,7 +10,7 @@ Schema (v1):
       "type": "fragment" | "window",
       "name": "Login Card",
       "created_at": "2026-04-30T12:00:00",
-      "ctk_maker_version": "1.3.0",
+      "ctk_maker_version": "1.3.1",
       "view_size": {"w": 320, "h": 240},
       "nodes": [ /* WidgetNode dicts */ ],
       "variables": [ /* {id, name, type, default} */ ],

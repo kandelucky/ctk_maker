@@ -140,15 +140,10 @@ class Palette(ctk.CTkFrame):
         self,
         master,
         project: Project,
-        on_collapse_changed: Callable[[bool], None] | None = None,
         path_provider: Callable[[], str | None] | None = None,
     ):
         super().__init__(master, fg_color=PANEL_BG, corner_radius=0)
         self.project = project
-        # Called when the collapse button toggles. Main window uses it
-        # to resize the paned-window pane width so the collapsed
-        # palette only takes up icon-wide space.
-        self._on_collapse_changed = on_collapse_changed
         # Returns the current ``.ctkproj`` path for the components
         # panel — components live next to assets/ inside the project
         # folder and can't resolve a root without one.
@@ -167,18 +162,12 @@ class Palette(ctk.CTkFrame):
         self._group_expanded: dict[str, bool] = {g.title: True for g in CATALOG}
         self._chevron_down = load_icon("chevron-down", size=12)
         self._chevron_right = load_icon("chevron-right", size=12)
-        # Collapse-button chevrons — direction flips when toggled so
-        # the arrow always points toward the action (left = collapse,
-        # right = expand).
-        self._chevron_left_btn = load_icon("chevron-left", size=14)
-        self._chevron_right_btn = load_icon("chevron-right", size=14)
 
-        self._collapsed: bool = False
         # Tab state — Widgets (the original CATALOG drag source) vs
         # Components (per-project saved widget bundles, see
-        # components_panel.py). Collapsed mode forces "widgets" since
-        # the component folder tree has no useful icon-only render.
+        # components_panel.py).
         self._active_tab: str = "widgets"
+        self._title_var = tk.StringVar(value="Widgets")
 
         self._build_header()
         self._build_tabs()
@@ -192,78 +181,62 @@ class Palette(ctk.CTkFrame):
     # ------------------------------------------------------------------
     def _build_header(self) -> None:
         self._header = ctk.CTkFrame(
-            self, fg_color="transparent", height=28,
+            self, fg_color="transparent", height=26,
         )
         self._header.pack(fill="x", pady=(6, 2), padx=4)
         self._header.pack_propagate(False)
 
         self._title_lbl = ctk.CTkLabel(
-            self._header, text="Widget Box",
+            self._header, textvariable=self._title_var,
             font=("Segoe UI", 13, "bold"), text_color=TITLE_FG,
         )
         self._title_lbl.pack(side="left", expand=True)
 
-        self._collapse_btn = ctk.CTkButton(
-            self._header, text="", image=self._chevron_left_btn,
-            width=22, height=22, corner_radius=3,
-            fg_color="transparent", hover_color=ITEM_HOVER_BG,
-            command=self._toggle_collapsed,
-        )
-        self._collapse_btn.pack(side="right", padx=(0, 4))
-        _attach_tooltip(self._collapse_btn, "Collapse")
-
     def _build_tabs(self) -> None:
-        """Two icon-only tab buttons below the header. Tooltip carries
-        the label so the strip stays narrow enough for the collapsed
-        Palette pane width.
+        """Two stacked text-only tab buttons below the header. Both
+        full-width so the active selection reads cleanly even at the
+        narrow Palette pane width.
         """
-        self._tab_bar = tk.Frame(self, bg=PANEL_BG, height=24)
+        self._tab_bar = tk.Frame(self, bg=PANEL_BG)
         self._tab_bar.pack(fill="x", padx=4, pady=(0, 4))
-        self._tab_bar.pack_propagate(False)
-
-        widgets_icon = load_icon("frame", size=14, color="#ffffff")
-        components_icon = load_icon("layout-list", size=14, color="#888888")
-        self._tab_widgets_icon_active = load_icon("frame", size=14, color="#ffffff")
-        self._tab_widgets_icon_inactive = load_icon("frame", size=14, color="#888888")
-        self._tab_components_icon_active = load_icon("layout-list", size=14, color="#ffffff")
-        self._tab_components_icon_inactive = load_icon("layout-list", size=14, color="#888888")
 
         btn_kw = dict(
-            text="", width=42, height=22, corner_radius=3, border_width=0,
+            height=24, corner_radius=3, border_width=0,
+            font=("Segoe UI", 10),
         )
         self._btn_widgets = ctk.CTkButton(
-            self._tab_bar, image=widgets_icon,
+            self._tab_bar, text="Widgets",
             command=lambda: self._show_tab("widgets"),
-            fg_color="#3a3a3a", hover_color="#3a3a3a", **btn_kw,
+            fg_color="#3a3a3a", text_color="#ffffff",
+            hover_color="#3a3a3a", **btn_kw,
         )
         self._btn_components = ctk.CTkButton(
-            self._tab_bar, image=components_icon,
+            self._tab_bar, text="Components",
             command=lambda: self._show_tab("components"),
-            fg_color="transparent", hover_color="#2d2d2d", **btn_kw,
+            fg_color="transparent", text_color="#888888",
+            hover_color="#2d2d2d", **btn_kw,
         )
-        self._btn_widgets.pack(side="left", padx=(0, 2))
-        self._btn_components.pack(side="left", padx=(0, 2))
-        _attach_tooltip(self._btn_widgets, "Widgets")
-        _attach_tooltip(self._btn_components, "Components")
+        self._btn_widgets.pack(fill="x", pady=(0, 2))
+        self._btn_components.pack(fill="x")
 
     def _update_tab_buttons(self, active: str) -> None:
         if active == "widgets":
             self._btn_widgets.configure(
-                image=self._tab_widgets_icon_active,
-                fg_color="#3a3a3a", hover_color="#3a3a3a",
+                fg_color="#3a3a3a", text_color="#ffffff",
+                hover_color="#3a3a3a",
             )
             self._btn_components.configure(
-                image=self._tab_components_icon_inactive,
-                fg_color="transparent", hover_color="#2d2d2d",
+                fg_color="transparent", text_color="#888888",
+                hover_color="#2d2d2d",
             )
         else:
             self._btn_components.configure(
-                image=self._tab_components_icon_active,
-                fg_color="#3a3a3a", hover_color="#3a3a3a",
+                fg_color="#3a3a3a", text_color="#ffffff",
+                hover_color="#3a3a3a",
             )
             self._btn_widgets.configure(
-                image=self._tab_widgets_icon_inactive,
-                fg_color="transparent", hover_color="#2d2d2d",
+                fg_color="transparent", text_color="#888888",
+                hover_color="#2d2d2d",
             )
 
     def _build_widgets_tab(self) -> None:
@@ -307,56 +280,39 @@ class Palette(ctk.CTkFrame):
         )
 
     def _show_tab(self, name: str) -> None:
-        """Swap the active tab content. Collapsed mode forces 'widgets'
-        regardless of the requested tab — the component folder tree
-        has no useful icon-only rendering.
-        """
-        if self._collapsed:
-            name = "widgets"
+        """Swap the active tab content + update the header title."""
         self._active_tab = name
+        self._title_var.set(
+            "Widgets" if name == "widgets" else "Components",
+        )
         self._apply_chrome_layout()
         if name == "components":
             self._components_panel.refresh()
 
     def _apply_chrome_layout(self) -> None:
         """Idempotent chrome layout: forget every chrome widget, then
-        re-pack in the canonical order based on (collapsed, active_tab).
-        Cleaner than surgical pack/unpack across multiple branches.
-        Order: header (already packed) → tab bar → active tab body.
-        Inside widgets body: filter → scroll. Collapsed mode hides
-        the tab bar + filter and forces widgets.
+        re-pack in the canonical order based on the active tab. Order:
+        header (always packed) → tab bar → active tab body. Inside
+        the widgets body: filter → scroll.
         """
         for w in (
-            self._title_lbl, self._tab_bar,
-            self._filter_entry, self.scroll,
             self._widgets_container, self._components_panel,
+            self._filter_entry, self.scroll,
         ):
             try:
                 w.pack_forget()
             except tk.TclError:
                 pass
 
-        if not self._collapsed:
-            self._title_lbl.pack(
-                side="left", expand=True, before=self._collapse_btn,
-            )
-            self._tab_bar.pack(fill="x", padx=4, pady=(0, 4))
-
-        active = self._active_tab if not self._collapsed else "widgets"
+        active = self._active_tab
         if active == "widgets":
             self._widgets_container.pack(fill="both", expand=True)
-            if not self._collapsed:
-                self._filter_entry.pack(fill="x", padx=8, pady=(0, 6))
+            self._filter_entry.pack(fill="x", padx=8, pady=(0, 6))
             self.scroll.pack(fill="both", expand=True)
         else:
             self._components_panel.pack(fill="both", expand=True)
 
         self._update_tab_buttons(active)
-        img = (
-            self._chevron_right_btn if self._collapsed
-            else self._chevron_left_btn
-        )
-        self._collapse_btn.configure(image=img)
 
     # ------------------------------------------------------------------
     # Catalog render
@@ -376,31 +332,8 @@ class Palette(ctk.CTkFrame):
                 continue
             self._render_group(group, visible_items, force_expanded=bool(needle))
 
-    # ------------------------------------------------------------------
-    # Collapse / expand
-    # ------------------------------------------------------------------
-    def _toggle_collapsed(self) -> None:
-        self._collapsed = not self._collapsed
-        self._apply_chrome_layout()
-        self._rebuild_catalog()
-        if self._on_collapse_changed is not None:
-            self._on_collapse_changed(self._collapsed)
-
     def _render_group(self, group: WidgetGroup, items: list[WidgetEntry], *,
                       force_expanded: bool) -> None:
-        # In collapsed mode group headers disappear — we render a thin
-        # separator before every group after the first, then the items.
-        if self._collapsed:
-            if getattr(self, "_first_group_rendered", False):
-                sep = tk.Frame(
-                    self.body, bg="#333333", height=1, highlightthickness=0,
-                )
-                sep.pack(fill="x", padx=6, pady=(4, 2))
-            self._first_group_rendered = True
-            for entry in items:
-                self._render_item(entry)
-            return
-
         header = ctk.CTkFrame(
             self.body, fg_color=GROUP_HEADER_BG, corner_radius=0,
             height=GROUP_HEADER_HEIGHT,
@@ -442,25 +375,15 @@ class Palette(ctk.CTkFrame):
         row.pack_propagate(False)
 
         icon = load_icon(entry.icon, size=ICON_SIZE)
-        if self._collapsed:
-            # icon-only: centered, no padding that reserves label room
-            icon_lbl = ctk.CTkLabel(row, text="", image=icon)
-            icon_lbl.pack(expand=True)
-            bind_targets = (row, icon_lbl)
-            # Tooltip replaces the visible label.
-            if implemented:
-                _attach_tooltip(icon_lbl, entry.display_name)
-                _attach_tooltip(row, entry.display_name)
-        else:
-            icon_lbl = ctk.CTkLabel(row, text="", image=icon, width=18)
-            icon_lbl.pack(side="left", padx=(12, 6))
-            fg = ITEM_FG if implemented else ITEM_DISABLED_FG
-            name_lbl = ctk.CTkLabel(
-                row, text=entry.display_name,
-                font=("Segoe UI", 10), text_color=fg, anchor="w",
-            )
-            name_lbl.pack(side="left", fill="x", expand=True)
-            bind_targets = (row, icon_lbl, name_lbl)
+        icon_lbl = ctk.CTkLabel(row, text="", image=icon, width=18)
+        icon_lbl.pack(side="left", padx=(12, 6))
+        fg = ITEM_FG if implemented else ITEM_DISABLED_FG
+        name_lbl = ctk.CTkLabel(
+            row, text=entry.display_name,
+            font=("Segoe UI", 10), text_color=fg, anchor="w",
+        )
+        name_lbl.pack(side="left", fill="x", expand=True)
+        bind_targets = (row, icon_lbl, name_lbl)
 
         if not implemented:
             return

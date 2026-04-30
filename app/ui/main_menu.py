@@ -236,6 +236,10 @@ class MenuMixin:
         self._add_cmd(
             edit_menu, "Send to Back", self._on_menu_send_to_back,
         )
+        edit_menu.add_separator()
+        self._add_cmd(
+            edit_menu, "Export Component…", self._on_menu_export_component,
+        )
         menubar.add_cascade(label="Edit", menu=edit_menu)
 
         # ---- Form ----
@@ -746,6 +750,30 @@ class MenuMixin:
     def _z_order_with_history(self, nid: str, direction: str) -> None:
         from app.core.commands import push_zorder_history
         push_zorder_history(self.project, nid, direction)
+
+    # ------------------------------------------------------------------
+    # Components — Edit menu entry point
+    # ------------------------------------------------------------------
+    def _on_menu_export_component(self) -> None:
+        """Export the component selected in the Components panel. If
+        nothing's selected, surface a hint instead of silently doing
+        nothing.
+        """
+        from tkinter import messagebox
+        from app.ui.component_export_dialog import ComponentExportDialog
+        panel = getattr(
+            getattr(self, "palette", None), "_components_panel", None,
+        )
+        path = panel.get_selected_path() if panel is not None else None
+        if path is None:
+            messagebox.showinfo(
+                "Pick a component",
+                "Select a component in the Components panel first.",
+                parent=self,
+            )
+            return
+        dlg = ComponentExportDialog(self, path)
+        self.wait_window(dlg)
 
     # ------------------------------------------------------------------
     # Advisory-dialog reset — clears every "don't show again" setting

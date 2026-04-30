@@ -177,7 +177,6 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
 
         self.palette = Palette(
             self.paned, self.project,
-            on_collapse_changed=self._on_palette_collapsed,
             path_provider=lambda: self._current_path,
         )
         self.workspace = Workspace(self.paned, self.project)
@@ -390,21 +389,6 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         self._autosave.start()
 
         self.after(120, self._show_startup_dialog)
-
-    # ------------------------------------------------------------------
-    # Palette collapse — Widget Box shrinks to an icon-only strip.
-    # Kept here (not in Palette) because only the main PanedWindow
-    # knows how to resize the pane that hosts it.
-    # ------------------------------------------------------------------
-    def _on_palette_collapsed(self, collapsed: bool) -> None:
-        width = 48 if collapsed else 200
-        minsize = 44 if collapsed else 150
-        try:
-            self.paned.paneconfigure(
-                self.palette, width=width, minsize=minsize,
-            )
-        except tk.TclError:
-            pass
 
     # ------------------------------------------------------------------
     # Dirty tracking
