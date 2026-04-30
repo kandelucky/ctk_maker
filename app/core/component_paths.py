@@ -14,7 +14,44 @@ from __future__ import annotations
 from pathlib import Path
 
 COMPONENT_DIR_NAME = "components"
+# Local on-disk extension. Used for Save and Personal export — clean
+# and short. GitHub Discussions blocks .ctkcomp uploads (extension
+# not on its allow-list), which is the desired behaviour: local
+# components stay local, sharing requires going through the Publish
+# flow (License accept) which writes the upload-friendly variant.
 COMPONENT_EXT = ".ctkcomp"
+# Hub-upload variant. Same zip on disk, different filename, so
+# GitHub recognises the trailing .zip and accepts the attachment.
+PUBLISH_COMPONENT_EXT = ".ctkcomp.zip"
+
+
+def is_component_file(path) -> bool:
+    """True if ``path`` ends in either the local or the Hub-upload
+    extension. Pass either a Path or a string.
+    """
+    name = str(path).lower()
+    return (
+        name.endswith(PUBLISH_COMPONENT_EXT)
+        or name.endswith(COMPONENT_EXT)
+    )
+
+
+def component_display_stem(path) -> str:
+    """User-facing stem with **either** extension stripped, so
+    ``LoginForm.ctkcomp.zip``, ``LoginForm.ctkcomp`` and a
+    non-component file all yield ``LoginForm`` consistently.
+    Strips the longer suffix first so a ``.ctkcomp.zip`` filename
+    doesn't collapse to ``LoginForm.ctkcomp``.
+    """
+    from pathlib import Path
+    p = Path(path)
+    name = p.name
+    lower = name.lower()
+    if lower.endswith(PUBLISH_COMPONENT_EXT):
+        return name[: -len(PUBLISH_COMPONENT_EXT)]
+    if lower.endswith(COMPONENT_EXT):
+        return name[: -len(COMPONENT_EXT)]
+    return p.stem
 
 
 def components_root(project_file_path: str | Path | None) -> Path | None:

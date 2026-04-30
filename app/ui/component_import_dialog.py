@@ -18,7 +18,7 @@ from tkinter import messagebox
 
 import customtkinter as ctk
 
-from app.core.component_paths import COMPONENT_EXT
+from app.core.component_paths import COMPONENT_EXT, component_display_stem
 from app.core.logger import log_error
 from app.io.component_io import load_metadata, load_payload
 
@@ -91,7 +91,7 @@ class ComponentImportDialog(ctk.CTkToplevel):
         body.pack(padx=20, pady=(18, 6), fill="x")
 
         ctk.CTkLabel(
-            body, text=meta.get("name") or source_path.stem,
+            body, text=meta.get("name") or component_display_stem(source_path),
             font=("Segoe UI", 14, "bold"),
             text_color="#e6e6e6", anchor="w",
         ).grid(row=0, column=0, sticky="w")
@@ -174,16 +174,19 @@ class ComponentImportDialog(ctk.CTkToplevel):
             target_dir = self._components_dir / folder_label
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        target_name = self._source_path.name
+        # Normalise to the local extension on import — the source
+        # file may carry the Hub-upload .ctkcomp.zip suffix from the
+        # community library, but the local library uses plain
+        # .ctkcomp so files stay short inside the user's project.
+        local_stem = component_display_stem(self._source_path)
+        target_name = f"{local_stem}{COMPONENT_EXT}"
         target_path = target_dir / target_name
         if target_path.exists():
             action = self._confirm_collision()
             if action == "cancel":
                 return
             if action == "rename":
-                target_name = _unique_name(
-                    target_dir, self._source_path.stem,
-                )
+                target_name = _unique_name(target_dir, local_stem)
                 target_path = target_dir / target_name
             # "overwrite" → keep target_path as-is; shutil.copy2 will
             # replace it.

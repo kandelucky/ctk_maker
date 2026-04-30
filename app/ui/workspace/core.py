@@ -1271,6 +1271,13 @@ class Workspace(ctk.CTkFrame):
         payload = load_payload(component_path)
         if payload is None or not payload.get("nodes"):
             return
+        # Window-type components don't slot into the current canvas
+        # the way fragments do — they create a new Toplevel document
+        # in the project. Confirmation modal makes the side-effect
+        # explicit since drag/double-click look identical to fragments.
+        if payload.get("type") == "window":
+            self._insert_window_component(component_path, payload)
+            return
 
         cx, cy = self._screen_to_canvas(x_root, y_root)
         container_node = self._find_container_at(cx, cy)
@@ -1340,10 +1347,11 @@ class Workspace(ctk.CTkFrame):
         # bundles return an empty map; rewrite_bundle_tokens then
         # leaves the property as an empty string for the descriptor
         # to handle.
+        from app.core.component_paths import component_display_stem
         extracted_assets, _component_folder = extract_component_assets(
             component_path,
             getattr(self.project, "path", None),
-            payload.get("name") or component_path.stem,
+            payload.get("name") or component_display_stem(component_path),
         )
         nodes = instantiate_fragment(
             payload,
@@ -1704,6 +1712,17 @@ class Workspace(ctk.CTkFrame):
             state=deselect_state,
         )
         menu.add_separator()
+        save_label = (
+            "Save Dialog as Component"
+            if doc.is_toplevel else "Save Window as Component"
+        )
+        save_state = "normal" if doc.root_widgets else "disabled"
+        menu.add_command(
+            label=save_label,
+            command=lambda d=doc: self._save_window_as_component(d),
+            state=save_state,
+        )
+        menu.add_separator()
         from app.core.project import WINDOW_ID
         props_label = (
             "Dialog Properties" if doc.is_toplevel else "Window Properties"
@@ -2019,6 +2038,152 @@ class Workspace(ctk.CTkFrame):
             return
         # Tell the components panel a new file appeared so its tree
         # repopulates without needing a tab switch.
+        self.project.event_bus.publish("component_library_changed")
+
+    def _insert_window_component(self, component_path, payload) -> None:
+        """Insert a window-type component as a brand-new Toplevel
+        document. Confirmation modal first; on accept, the new
+        document gets the component's display name (auto-suffixed
+        with ``_2``/``_3`` on collision), all bundled local
+        variables, the saved window properties, and the widget tree
+        with bundle-token assets extracted into the project.
+        """
+        from app.core.commands import (
+            AddDocumentCommand, _add_subtree_recursive,
+        )
+        from app.core.component_paths import component_display_stem
+        from app.io.component_io import (
+            extract_component_assets, instantiate_window_document,
+        )
+        from app.ui.component_window_insert_dialog import (
+            ComponentWindowInsertDialog,
+        )
+
+        component_name = (
+            payload.get("name") or component_display_stem(component_path)
+        )
+        target_name = self._pick_unique_document_name(component_name)
+        toplevel = self.winfo_toplevel()
+        confirm = ComponentWindowInsertDialog(
+            toplevel,
+            component_name=component_name,
+            target_doc_name=target_name,
+        )
+        toplevel.wait_window(confirm)
+        if not confirm.result:
+            return
+        # Re-resolve the unique name in case the user managed to
+        # add a document while the modal was open.
+        target_name = self._pick_unique_document_name(component_name)
+        extracted_assets, _component_folder = extract_component_assets(
+            component_path,
+            getattr(self.project, "path", None),
+            component_name,
+        )
+        new_doc, root_nodes = instantiate_window_document(
+            payload,
+            project=self.project,
+            target_name=target_name,
+            asset_extracted_map=extracted_assets,
+        )
+        # Place the new doc to the right of the rightmost existing
+        # one — same canvas-placement rule as the menubar Add Dialog.
+        max_right = 0
+        for doc in self.project.documents:
+            right = doc.canvas_x + doc.width
+            if right > max_right:
+                max_right = right
+        new_doc.canvas_x = max_right + 120
+        new_doc.canvas_y = 0
+        index = len(self.project.documents)
+        self.project.documents.append(new_doc)
+        self.project.set_active_document(new_doc.id)
+        # Each root subtree gets registered through add_widget so the
+        # workspace renderer fires widget_added per node and builds a
+        # tk widget for it. Appending to doc.root_widgets directly
+        # leaves the tree invisible (model present, never rendered) —
+        # same trap delete-snapshot restore hits.
+        for root in root_nodes:
+            _add_subtree_recursive(
+                self.project, root, parent_id=None, document_id=new_doc.id,
+            )
+        self.project.history.push(
+            AddDocumentCommand(new_doc.to_dict(), index),
+        )
+        self.project.event_bus.publish(
+            "project_renamed", self.project.name,
+        )
+
+    def _pick_unique_document_name(self, base: str) -> str:
+        existing = {doc.name for doc in self.project.documents}
+        if base not in existing:
+            return base
+        n = 2
+        while True:
+            candidate = f"{base}_{n}"
+            if candidate not in existing:
+                return candidate
+            n += 1
+
+    def _save_window_as_component(self, document) -> None:
+        """Save the entire Window/Dialog as a window-type component.
+        Every widget, the window_properties dict, and the document's
+        full local-variable list travel with the bundle. Even a main
+        window saves with ``is_toplevel=True`` in the payload — on
+        insert the component always becomes a Toplevel, since a
+        project only has one main window slot.
+        """
+        from tkinter import messagebox
+        from app.core.component_paths import ensure_components_root
+        from app.io.component_io import count_window_assets, save_window
+        from app.ui.component_save_dialog import ComponentSaveDialog
+
+        if not document.root_widgets:
+            messagebox.showinfo(
+                "Empty window",
+                "This window has no widgets yet — add some before "
+                "saving as a component.",
+                parent=self.winfo_toplevel(),
+            )
+            return
+        toplevel = self.winfo_toplevel()
+        current_path = getattr(toplevel, "_current_path", None)
+        components_dir = ensure_components_root(current_path)
+        if components_dir is None:
+            messagebox.showinfo(
+                "Save project first",
+                "Components are stored next to assets in the project "
+                "folder. Save the project before creating components.",
+                parent=toplevel,
+            )
+            return
+        bundled_count = len(document.local_variables)
+        asset_count, asset_bytes = count_window_assets(
+            document, self.project,
+        )
+        dialog = ComponentSaveDialog(
+            toplevel,
+            default_name=document.name,
+            components_dir=components_dir,
+            bundled_var_count=bundled_count,
+            bundled_asset_count=asset_count,
+            bundled_asset_bytes=asset_bytes,
+        )
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        name, target_path = dialog.result
+        try:
+            save_window(
+                target_path, name, document, self.project,
+            )
+        except OSError as exc:
+            messagebox.showerror(
+                "Save component failed",
+                f"Couldn't write component:\n{exc}",
+                parent=toplevel,
+            )
+            return
         self.project.event_bus.publish("component_library_changed")
 
     def _paste_at_widget(self, nid: str) -> None:

@@ -16,7 +16,7 @@ from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
-from app.core.component_paths import COMPONENT_EXT
+from app.core.component_paths import COMPONENT_EXT, component_display_stem
 from app.core.logger import log_error
 from app.core.settings import load_settings, save_setting
 from app.io.component_io import load_metadata, rewrite_payload_author
@@ -69,7 +69,7 @@ class ComponentExportDialog(ctk.CTkToplevel):
         body.pack(padx=20, pady=(18, 6), fill="x")
 
         ctk.CTkLabel(
-            body, text=meta.get("name") or source_path.stem,
+            body, text=meta.get("name") or component_display_stem(source_path),
             font=("Segoe UI", 14, "bold"),
             text_color="#e6e6e6", anchor="w",
         ).grid(row=0, column=0, sticky="w")
@@ -87,7 +87,9 @@ class ComponentExportDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             body, text="Name", font=("Segoe UI", 10),
         ).grid(row=2, column=0, sticky="w", pady=(0, 4))
-        self._name_var = tk.StringVar(value=self._source_path.stem)
+        self._name_var = tk.StringVar(
+            value=component_display_stem(self._source_path),
+        )
         ctk.CTkEntry(
             body, textvariable=self._name_var, width=320,
         ).grid(row=3, column=0, sticky="ew", pady=(0, 12))

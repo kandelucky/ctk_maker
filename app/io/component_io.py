@@ -126,6 +126,78 @@ def count_assets_to_bundle(
     return count_assets_in_nodes(snapshots, project_file)
 
 
+def save_window(
+    target_path: Path,
+    name: str,
+    document,
+    project: "Project",
+    author: str = "",
+) -> None:
+    """Write the entire document (root widgets + window properties +
+    full local variable list) as a window-type ``.ctkcomp``. Even a
+    main-window source becomes ``is_toplevel=True`` in the payload so
+    every insert lands as a Toplevel — projects only ever have one
+    main window, dialogs are the natural reusable shape.
+    """
+    snapshots = [w.to_dict() for w in document.root_widgets]
+    project_file = getattr(project, "path", None)
+    asset_map = collect_assets_from_nodes(snapshots, project_file)
+    rewrite_image_props_to_bundle_tokens(snapshots, asset_map, project_file)
+    # Local variables travel as full entries (id / name / type /
+    # default), not just the bindings the fragment flow bundles. The
+    # whole window's local namespace is preserved.
+    locals_payload = [
+        {
+            "id": v.id,
+            "name": v.name,
+            "type": v.type,
+            "default": v.default,
+        }
+        for v in getattr(document, "local_variables", [])
+    ]
+    try:
+        from app import __version__ as app_version
+    except ImportError:
+        app_version = "unknown"
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "type": TYPE_WINDOW,
+        "name": name,
+        "author": author,
+        "created_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "ctk_maker_version": app_version,
+        "view_size": {
+            "w": int(document.width), "h": int(document.height),
+        },
+        "is_toplevel": True,
+        "window_properties": dict(document.window_properties),
+        "description": document.description or "",
+        "nodes": snapshots,
+        "variables": locals_payload,
+        "assets": [],
+    }
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(
+        target_path, "w", compression=zipfile.ZIP_DEFLATED,
+    ) as zf:
+        manifest = write_assets_into_zip(zf, asset_map)
+        payload["assets"] = manifest
+        zf.writestr(
+            PAYLOAD_FILENAME,
+            json.dumps(payload, indent=2, ensure_ascii=False),
+        )
+
+
+def count_window_assets(document, project: "Project") -> tuple[int, int]:
+    """Asset count + total bytes for a whole-window save. Same shape
+    as ``count_assets_to_bundle`` but takes a Document instead of an
+    explicit node list.
+    """
+    snapshots = [w.to_dict() for w in document.root_widgets]
+    project_file = getattr(project, "path", None)
+    return count_assets_in_nodes(snapshots, project_file)
+
+
 def _repack_with_payload(target_path: Path, new_payload: dict) -> None:
     """Rewrite ``target_path`` so it holds ``new_payload`` as its
     ``component.json`` while preserving every other archive entry
@@ -310,6 +382,7 @@ def load_metadata(path: Path) -> dict | None:
     view_size = payload.get("view_size") or {}
     return {
         "type": payload.get("type", TYPE_FRAGMENT),
+        "is_window": payload.get("type") == TYPE_WINDOW,
         "name": payload.get("name", path.stem),
         "author": payload.get("author", ""),
         "created_at": payload.get("created_at", ""),
@@ -451,6 +524,68 @@ def instantiate_fragment(
             node.properties["y"] = int(node.properties.get("y", 0) or 0) + dy
         nodes.append(node)
     return nodes
+
+
+def instantiate_window_document(
+    payload: dict,
+    project,
+    target_name: str,
+    asset_extracted_map: dict[str, Path] | None = None,
+) -> tuple[object, list[WidgetNode]]:
+    """Build a fresh ``Document`` from a window-type component
+    payload. Returns ``(new_doc, root_nodes)``: the document carries
+    name + size + window properties + local variables, but its
+    ``root_widgets`` list is **empty** because the caller is expected
+    to register every root tree through ``project.add_widget`` so
+    each node fires the ``widget_added`` event the workspace renderer
+    needs to build its tk widget. The returned ``root_nodes`` list
+    is detached and ready for that pass.
+    """
+    from app.core.document import Document
+    from app.core.variables import VAR_TYPES, VariableEntry
+    width = int((payload.get("view_size") or {}).get("w", 800) or 800)
+    height = int((payload.get("view_size") or {}).get("h", 600) or 600)
+    window_properties = payload.get("window_properties") or {}
+    new_doc = Document(
+        name=target_name,
+        width=width,
+        height=height,
+        window_properties=dict(window_properties),
+        is_toplevel=True,
+    )
+    description = payload.get("description") or ""
+    if description:
+        new_doc.description = description
+    # Local variables: every entry in the payload becomes a fresh
+    # local with a new UUID. The uuid_map lets us rewrite var tokens
+    # in the widget tree below.
+    var_uuid_map: dict[str, str | None] = {}
+    for entry in payload.get("variables", []):
+        old_id = entry.get("id")
+        if not old_id:
+            continue
+        var_type = entry.get("type", "str")
+        if var_type not in VAR_TYPES:
+            var_type = "str"
+        new_var = VariableEntry(
+            name=entry.get("name", "var"),
+            type=var_type,
+            default=entry.get("default", ""),
+            scope="local",
+        )
+        new_doc.local_variables.append(new_var)
+        var_uuid_map[old_id] = new_var.id
+    raw_nodes = list(payload.get("nodes", []))
+    if asset_extracted_map is not None:
+        rewrite_bundle_tokens_to_paths(raw_nodes, asset_extracted_map)
+    root_nodes: list[WidgetNode] = []
+    for raw in raw_nodes:
+        if var_uuid_map:
+            _rewrite_var_tokens(raw, var_uuid_map)
+        node = WidgetNode.from_dict(raw)
+        _reassign_ids(node)
+        root_nodes.append(node)
+    return new_doc, root_nodes
 
 
 def extract_component_assets(

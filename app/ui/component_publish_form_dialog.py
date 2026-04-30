@@ -14,7 +14,9 @@ from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
-from app.core.component_paths import COMPONENT_EXT
+from app.core.component_paths import (
+    COMPONENT_EXT, PUBLISH_COMPONENT_EXT, component_display_stem,
+)
 from app.core.logger import log_error
 from app.core.settings import load_settings, save_setting
 from app.io.component_io import load_metadata, rewrite_payload_for_publish
@@ -97,7 +99,7 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
         body.pack(padx=22, pady=(18, 6), fill="x")
 
         ctk.CTkLabel(
-            body, text=meta.get("name") or source_path.stem,
+            body, text=meta.get("name") or component_display_stem(source_path),
             font=("Segoe UI", 14, "bold"),
             text_color="#e6e6e6", anchor="w",
         ).grid(row=0, column=0, sticky="w")
@@ -127,7 +129,9 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             body, text="Name", font=("Segoe UI", 10),
         ).grid(row=3, column=0, sticky="w", pady=(0, 4))
-        self._name_var = tk.StringVar(value=self._source_path.stem)
+        self._name_var = tk.StringVar(
+            value=component_display_stem(self._source_path),
+        )
         ctk.CTkEntry(
             body, textvariable=self._name_var, width=340,
         ).grid(row=4, column=0, sticky="ew", pady=(0, 12))
@@ -317,8 +321,12 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
             )
             return
         name = self._name_var.get().strip()
-        if name.lower().endswith(COMPONENT_EXT):
-            name = name[: -len(COMPONENT_EXT)]
+        # Strip whichever component suffix the user may have typed —
+        # we re-append the canonical Hub-upload one below.
+        for ext in (PUBLISH_COMPONENT_EXT, COMPONENT_EXT):
+            if name.lower().endswith(ext):
+                name = name[: -len(ext)]
+                break
         if not _is_valid_name(name):
             self.bell()
             messagebox.showwarning(
@@ -336,7 +344,7 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
                 parent=self,
             )
             return
-        dest_path = dest_dir / f"{name}{COMPONENT_EXT}"
+        dest_path = dest_dir / f"{name}{PUBLISH_COMPONENT_EXT}"
         if dest_path.exists():
             overwrite = messagebox.askyesno(
                 "Already exists",

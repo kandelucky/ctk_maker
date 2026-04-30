@@ -25,7 +25,9 @@ from typing import Callable
 import customtkinter as ctk
 
 from app.core.component_paths import (
-    COMPONENT_EXT, components_root, ensure_components_root,
+    COMPONENT_EXT, PUBLISH_COMPONENT_EXT,
+    component_display_stem, components_root, ensure_components_root,
+    is_component_file,
 )
 from app.core.logger import log_error
 
@@ -202,6 +204,13 @@ class ComponentsPanel(ctk.CTkFrame):
         self._tree.tag_configure(
             "component_type", foreground=TYPE_LABEL_FG,
         )
+        # Window-type components stand out from fragments with a
+        # dark-orange tint so the user sees at a glance that drop
+        # behaviour differs (creates a new Dialog instead of adding
+        # widgets to the current window).
+        self._tree.tag_configure(
+            "window_component", foreground="#cc7e1f",
+        )
         # Visual highlight for the folder row under a drag cursor —
         # blueish band signals "release here to move".
         self._tree.tag_configure(
@@ -209,6 +218,7 @@ class ComponentsPanel(ctk.CTkFrame):
         )
         self._drop_target_iid: str | None = None
         self._tree.bind("<Button-3>", self._on_tree_right_click)
+        self._tree.bind("<Double-Button-1>", self._on_tree_double_click)
         self._tree.bind("<Button-1>", self._on_tree_left_click, add="+")
         # Drag from a component row — release inside the tree on a
         # folder moves the file there; release outside the tree
@@ -312,20 +322,30 @@ class ComponentsPanel(ctk.CTkFrame):
                 any_inserted = True
                 if needle and child_visible:
                     self._tree.item(iid, open=True)
-            elif entry.suffix.lower() == COMPONENT_EXT:
+            elif is_component_file(entry):
                 from app.io.component_io import load_metadata
                 meta = load_metadata(entry) or {}
-                display_name = meta.get("name") or entry.stem
+                display_name = (
+                    meta.get("name") or component_display_stem(entry)
+                )
                 if needle and needle not in display_name.lower():
                     continue
+                is_window = bool(meta.get("is_window"))
                 type_label = self._format_type(meta)
-                row_icon = self._row_icon_for(meta) or component_icon
+                if is_window:
+                    row_icon = (
+                        self._row_icon("app-window") or component_icon
+                    )
+                    row_tag = "window_component"
+                else:
+                    row_icon = self._row_icon_for(meta) or component_icon
+                    row_tag = "component_type"
                 iid = self._tree.insert(
                     parent_iid, "end",
                     text=f" ({type_label}) {display_name}"
                     if type_label else f" {display_name}",
                     image=row_icon if row_icon else "",
-                    tags=("component_type",),
+                    tags=(row_tag,),
                 )
                 self._iid_meta[iid] = (entry, "component")
                 any_inserted = True
@@ -343,7 +363,7 @@ class ComponentsPanel(ctk.CTkFrame):
         if comp_type == "fragment":
             return "Frag"
         if comp_type == "window":
-            return "Win"
+            return "Window"
         return comp_type[:4].capitalize()
 
     def _row_icon_for(self, meta: dict) -> tk.PhotoImage | None:
@@ -431,6 +451,38 @@ class ComponentsPanel(ctk.CTkFrame):
             except tk.TclError:
                 pass
 
+    def _on_tree_double_click(self, event) -> str | None:
+        """Double-clicking a component is the keyboard-friendly twin
+        of drag-onto-canvas: same routing, same confirmation modal.
+        Folders fall through to the tree's native expand/collapse.
+        """
+        iid = self._tree.identify_row(event.y)
+        if not iid:
+            return None
+        meta = self._iid_meta.get(iid)
+        if meta is None or meta[1] != "component":
+            return None
+        self._request_insert(meta[0])
+        return "break"
+
+    def _request_insert(self, component_path: Path) -> None:
+        """Publish the same drop event drag-and-drop would, anchored
+        at the canvas's current screen center so the confirmation
+        modal opens predictably.
+        """
+        try:
+            toplevel = self.winfo_toplevel()
+            x = toplevel.winfo_rootx() + toplevel.winfo_width() // 2
+            y = toplevel.winfo_rooty() + toplevel.winfo_height() // 2
+        except tk.TclError:
+            x = y = 0
+        self._project.event_bus.publish(
+            "component_drop_request",
+            component_path=component_path,
+            x_root=x,
+            y_root=y,
+        )
+
     def _on_tree_right_click(self, event) -> None:
         iid = self._tree.identify_row(event.y)
         if iid:
@@ -493,6 +545,25 @@ class ComponentsPanel(ctk.CTkFrame):
                     lambda p=entry_path: self._on_delete_folder(p),
                 )
             else:
+                # Insert / Preview lead the menu — they're the most
+                # common actions on a component the user is browsing.
+                from app.io.component_io import load_metadata
+                meta = load_metadata(entry_path) or {}
+                if meta.get("is_window"):
+                    self._menu_command(
+                        menu, "Insert as new Dialog", "app-window",
+                        lambda p=entry_path: self._request_insert(p),
+                    )
+                else:
+                    self._menu_command(
+                        menu, "Insert into current window", "frame",
+                        lambda p=entry_path: self._request_insert(p),
+                    )
+                self._menu_command(
+                    menu, "Preview", "eye",
+                    lambda p=entry_path: self._on_preview(p),
+                )
+                menu.add_separator()
                 self._menu_command(
                     menu, "Export...", "save",
                     lambda p=entry_path: self._on_export(p),
@@ -563,7 +634,8 @@ class ComponentsPanel(ctk.CTkFrame):
         self.refresh()
 
     def _on_rename(self, path: Path) -> None:
-        old = path.stem if path.suffix == COMPONENT_EXT else path.name
+        is_component = is_component_file(path)
+        old = component_display_stem(path) if is_component else path.name
         name = simpledialog.askstring(
             "Rename", "New name:",
             initialvalue=old,
@@ -581,7 +653,7 @@ class ComponentsPanel(ctk.CTkFrame):
             return
         if name == old:
             return
-        if path.suffix == COMPONENT_EXT:
+        if is_component:
             target = path.with_name(name + COMPONENT_EXT)
         else:
             target = path.with_name(name)
@@ -627,7 +699,7 @@ class ComponentsPanel(ctk.CTkFrame):
     def _on_delete_file(self, path: Path) -> None:
         confirm = messagebox.askyesno(
             "Delete component",
-            f"Delete component '{path.stem}'?",
+            f"Delete component '{component_display_stem(path)}'?",
             parent=self.winfo_toplevel(),
         )
         if not confirm:
@@ -643,6 +715,23 @@ class ComponentsPanel(ctk.CTkFrame):
             )
             return
         self.refresh()
+
+    def _on_preview(self, path: Path) -> None:
+        """Open the same read-only preview the Import dialog uses —
+        builds widgets from the payload, extracts bundled assets to
+        a temp dir for the duration of the preview window.
+        """
+        from app.io.component_io import load_payload
+        from app.ui.component_preview_window import ComponentPreviewWindow
+        payload = load_payload(path)
+        if payload is None:
+            messagebox.showerror(
+                "Preview unavailable",
+                f"'{path.name}' isn't a readable component.",
+                parent=self.winfo_toplevel(),
+            )
+            return
+        ComponentPreviewWindow(self.winfo_toplevel(), payload, path)
 
     def _on_export(self, path: Path) -> None:
         from app.ui.component_export_choice_dialog import run_export_flow
@@ -665,7 +754,10 @@ class ComponentsPanel(ctk.CTkFrame):
             parent=self.winfo_toplevel(),
             title="Import component",
             filetypes=[
-                ("CTkMaker component", f"*{COMPONENT_EXT}"),
+                (
+                    "CTkMaker component",
+                    f"*{COMPONENT_EXT} *{PUBLISH_COMPONENT_EXT}",
+                ),
                 ("All files", "*.*"),
             ],
         )
@@ -726,7 +818,7 @@ class ComponentsPanel(ctk.CTkFrame):
             return
         self._drag_state = {
             "path": meta[0],
-            "name": meta[0].stem,
+            "name": component_display_stem(meta[0]),
             "source_iid": iid,
             "press_x": event.x_root,
             "press_y": event.y_root,
