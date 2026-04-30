@@ -645,9 +645,8 @@ class ComponentsPanel(ctk.CTkFrame):
         self.refresh()
 
     def _on_export(self, path: Path) -> None:
-        from app.ui.component_export_dialog import ComponentExportDialog
-        dlg = ComponentExportDialog(self.winfo_toplevel(), path)
-        self.wait_window(dlg)
+        from app.ui.component_export_choice_dialog import run_export_flow
+        run_export_flow(self.winfo_toplevel(), path)
 
     def _on_import(self) -> None:
         from tkinter import filedialog

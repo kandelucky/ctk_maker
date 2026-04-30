@@ -7,6 +7,9 @@ body:
         Share a `.ctkcomp` component for the CTkMaker Hub.
         After you submit, the component appears on the [CTkMaker Hub site](https://kandelucky.github.io/ctkMaker-component-library/) within ~30 minutes.
 
+        **Need help picking a category?** See the
+        [Component Categories guide](https://github.com/kandelucky/ctk_maker/wiki/Component-Categories).
+
   - type: dropdown
     id: type
     attributes:

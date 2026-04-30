@@ -118,6 +118,34 @@ def rewrite_payload_author(target_path: Path, author: str) -> None:
         )
 
 
+def rewrite_payload_for_publish(
+    target_path: Path,
+    author: str,
+    license_block: dict,
+    category: str,
+    description: str,
+) -> None:
+    """Repack a ``.ctkcomp`` zip with the publish-time fields: updated
+    ``author``, an immutable ``license`` block recording the user's
+    consent, plus ``category`` and ``description`` for library
+    listing. Used by the Publish form.
+    """
+    payload = load_payload(target_path)
+    if payload is None:
+        return
+    payload["author"] = author
+    payload["license"] = license_block
+    payload["category"] = category
+    payload["description"] = description
+    with zipfile.ZipFile(
+        target_path, "w", compression=zipfile.ZIP_DEFLATED,
+    ) as zf:
+        zf.writestr(
+            PAYLOAD_FILENAME,
+            json.dumps(payload, indent=2, ensure_ascii=False),
+        )
+
+
 def count_bindings_to_bundle(
     nodes: list[WidgetNode],
     project: "Project",
@@ -245,6 +273,7 @@ def load_metadata(path: Path) -> dict | None:
         "view_w": int(view_size.get("w", 0) or 0),
         "view_h": int(view_size.get("h", 0) or 0),
         "node_types": _summarise_node_types(payload.get("nodes", [])),
+        "license": payload.get("license"),
     }
 
 

@@ -760,7 +760,7 @@ class MenuMixin:
         nothing.
         """
         from tkinter import messagebox
-        from app.ui.component_export_dialog import ComponentExportDialog
+        from app.ui.component_export_choice_dialog import run_export_flow
         panel = getattr(
             getattr(self, "palette", None), "_components_panel", None,
         )
@@ -772,8 +772,7 @@ class MenuMixin:
                 parent=self,
             )
             return
-        dlg = ComponentExportDialog(self, path)
-        self.wait_window(dlg)
+        run_export_flow(self, path)
 
     # ------------------------------------------------------------------
     # Advisory-dialog reset — clears every "don't show again" setting
