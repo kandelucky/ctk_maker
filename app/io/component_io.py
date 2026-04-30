@@ -140,6 +140,11 @@ def save_window(
     main window, dialogs are the natural reusable shape.
     """
     snapshots = [w.to_dict() for w in document.root_widgets]
+    # Phase 2: strip handler bindings recursively (same reason as in
+    # ``_process_nodes_for_save`` — the fragment path goes through
+    # that helper, the window path doesn't).
+    for snap in snapshots:
+        _strip_handlers_recursive(snap)
     project_file = getattr(project, "path", None)
     asset_map = collect_assets_from_nodes(snapshots, project_file)
     rewrite_image_props_to_bundle_tokens(snapshots, asset_map, project_file)
@@ -338,6 +343,13 @@ def _process_nodes_for_save(
                 }
             cleaned[key] = value
         node_dict["properties"] = cleaned
+        # Phase 2 visual scripting: strip event handler bindings on
+        # save. Components stay self-contained — they never carry a
+        # reference to a method that lives in the source project's
+        # ``scripts/<page>.py``. Mirrors the v1.0 prefab var-strip
+        # behaviour: bindings inside a shared snippet are
+        # source-project-only, the user re-adds them after drop.
+        node_dict.pop("handlers", None)
         node_dict["children"] = [
             process(c) for c in node_dict.get("children", [])
         ]
@@ -345,6 +357,17 @@ def _process_nodes_for_save(
 
     snapshots = [process(n.to_dict()) for n in nodes]
     return snapshots, list(bundle.values())
+
+
+def _strip_handlers_recursive(node_dict: dict) -> None:
+    """In-place: drop ``handlers`` from this node and every descendant.
+    Used by ``save_window`` (the fragment flow strips inline inside
+    ``_process_nodes_for_save``).
+    """
+    node_dict.pop("handlers", None)
+    for child in node_dict.get("children", []):
+        if isinstance(child, dict):
+            _strip_handlers_recursive(child)
 
 
 def _compute_view_size(nodes: list[WidgetNode]) -> tuple[int, int]:

@@ -42,6 +42,12 @@ class WidgetNode:
         # the structure + intent and fill in the missing logic. Never
         # reaches CTk constructors.
         self.description: str = ""
+        # Phase 2 visual scripting — event handler bindings. Maps an
+        # event key (``"command"`` for click-style; ``"bind:<seq>"`` for
+        # Tk bind-style) to a method name on the page's behavior class.
+        # Empty by default. The behavior file lives at
+        # ``<project>/scripts/<page>.py`` and is co-edited by the user.
+        self.handlers: dict[str, str] = {}
 
     def to_dict(self) -> dict:
         # Shallow-copy ``properties`` so callers (project_saver
@@ -65,6 +71,8 @@ class WidgetNode:
             result["group_id"] = self.group_id
         if self.description:
             result["description"] = self.description
+        if self.handlers:
+            result["handlers"] = dict(self.handlers)
         return result
 
     @classmethod
@@ -83,6 +91,12 @@ class WidgetNode:
         node.parent_slot = data.get("parent_slot")
         node.group_id = data.get("group_id")
         node.description = data.get("description", "")
+        raw_handlers = data.get("handlers")
+        if isinstance(raw_handlers, dict):
+            node.handlers = {
+                str(k): str(v) for k, v in raw_handlers.items()
+                if isinstance(v, str) and v
+            }
         for child_data in data.get("children", []):
             child = cls.from_dict(child_data)
             child.parent = node
