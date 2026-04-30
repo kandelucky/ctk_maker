@@ -56,6 +56,17 @@ Full docs live in the [Wiki](https://github.com/kandelucky/ctk_maker/wiki):
 - [Keyboard Shortcuts](https://github.com/kandelucky/ctk_maker/wiki/Keyboard-Shortcuts) — full reference
 - [Version history](docs/history/) — screenshots and notes from each release
 
+## Community Hub
+
+[**kandelucky.github.io/ctkmaker-hub**](https://kandelucky.github.io/ctkmaker-hub/) is the
+community library where reusable components built in CTkMaker get shared. Browse cards
+by category (forms, buttons, mini-apps, …), click to preview, download the `.ctkcomp.zip`,
+drop it into your own project.
+
+To share one of your own — click **Publish to Community** in the builder, sign the MIT
+agreement, post the file in the [Components Discussion](https://github.com/kandelucky/ctk_maker/discussions/new?category=components).
+A sync workflow picks it up within ~30 minutes and your card appears on the site.
+
 ## Reporting issues
 
 Found a bug or have an idea? Use **Help → Report a Bug** (or the toolbar button on the right) — a guided form opens that submits straight to the GitHub issue tracker, or saves a markdown file you can email instead. You can also [open an issue directly](https://github.com/kandelucky/ctk_maker/issues).
