@@ -4,12 +4,18 @@ body:
   - type: markdown
     attributes:
       value: |
-        Share a `.ctkcomp` component for the CTkMaker Hub.
+        Share a `.ctkcomp.zip` component for the CTkMaker Hub.
 
         **Name, category, description, and license live inside the
-        `.ctkcomp` file itself** — set them in CTkMaker's "Publish to
-        Community" dialog before exporting. You don't need to fill
-        anything in here. Just drag your files below.
+        file itself** — set them in CTkMaker's "Publish to Community"
+        dialog before exporting. You don't need to fill anything in
+        here. Just drag your files below.
+
+        > The Publish dialog writes `<name>.ctkcomp.zip` so GitHub
+        > accepts the upload. Local Save / Personal export keep the
+        > shorter `.ctkcomp`, which GitHub blocks — that's the soft
+        > barrier that ensures every shared component went through
+        > the License agreement.
 
         **Help picking a category?** See the
         [Component Categories guide](https://github.com/kandelucky/ctk_maker/wiki/Component-Categories).
@@ -23,12 +29,17 @@ body:
     attributes:
       label: Files
       description: |
-        Drag your `.ctkcomp` and a screenshot `.png` directly into
-        this box. GitHub uploads them and replaces the drag with a
-        link automatically.
+        Drag your `.ctkcomp.zip` and a screenshot `.png` directly
+        into this box. GitHub uploads them and replaces the drag
+        with a link automatically.
+
+        **Screenshot tips:** the Hub renders previews in a 4 : 3
+        frame. Recommended size **1280 × 960** (or anything close
+        to 4 : 3) and ≤ 1 MB. Other ratios still work — they get
+        letterboxed instead of cropped.
       value: |
-        Drop the .ctkcomp and the screenshot .png below this line,
-        then delete this hint:
+        Drop the .ctkcomp.zip and the screenshot .png below this
+        line, then delete this hint:
 
     validations:
       required: true
