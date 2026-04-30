@@ -5,57 +5,41 @@ body:
     attributes:
       value: |
         Share a `.ctkcomp` component for the CTkMaker Hub.
-        After you submit, the component appears on the [CTkMaker Hub site](https://kandelucky.github.io/ctkMaker-component-library/) within ~30 minutes.
 
-        **Need help picking a category?** See the
+        **Name, category, description, and license live inside the
+        `.ctkcomp` file itself** — set them in CTkMaker's "Publish to
+        Community" dialog before exporting. You don't need to fill
+        anything in here. Just drag your files below.
+
+        **Help picking a category?** See the
         [Component Categories guide](https://github.com/kandelucky/ctk_maker/wiki/Component-Categories).
 
-  - type: dropdown
-    id: type
-    attributes:
-      label: Component type
-      description: Pick the bucket that fits best.
-      options:
-        - Buttons
-        - Inputs
-        - Forms
-        - Layout
-        - Navigation
-        - Dialogs & Modals
-        - Cards & Panels
-        - Mini-Apps
-        - Templates & Starters
-        - Other
-    validations:
-      required: true
-
-  - type: input
-    id: name
-    attributes:
-      label: Display name
-      description: How the component appears on the site (e.g. "Neon Button"). Free-form.
-      placeholder: Neon Button
-    validations:
-      required: true
-
-  - type: textarea
-    id: description
-    attributes:
-      label: Description
-      description: One short line — what it is and when to use it.
-      placeholder: A glowing accent button for primary actions on dark themes.
-    validations:
-      required: true
+        After you submit, your component appears on the
+        [CTkMaker Hub site](https://kandelucky.github.io/ctkMaker-component-library/)
+        within ~30 minutes.
 
   - type: textarea
     id: files
     attributes:
       label: Files
       description: |
-        Drag your `.ctkcomp` and a screenshot `.png` directly into this box.
-        GitHub will upload them and replace your drag with a link automatically.
+        Drag your `.ctkcomp` and a screenshot `.png` directly into
+        this box. GitHub uploads them and replaces the drag with a
+        link automatically.
       value: |
-        Drop the .ctkcomp and the screenshot .png below this line, then delete this hint:
+        Drop the .ctkcomp and the screenshot .png below this line,
+        then delete this hint:
 
     validations:
       required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes (optional)
+      description: |
+        Anything worth flagging — context, version it was tested
+        against, known limitations. Leave blank if there's nothing
+        to add.
+    validations:
+      required: false
