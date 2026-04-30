@@ -1,0 +1,55 @@
+title: "[component] "
+labels: ["component"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share a `.ctkcomp` component for the CTkMaker Hub.
+        After you submit, the component appears on the [CTkMaker Hub site](https://kandelucky.github.io/ctkMaker-component-library/) within ~30 minutes.
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Component type
+      description: Pick the bucket that fits best.
+      options:
+        - buttons
+        - inputs
+        - display
+        - layout
+        - navigation
+        - feedback
+        - templates
+    validations:
+      required: true
+
+  - type: input
+    id: name
+    attributes:
+      label: Display name
+      description: How the component appears on the site (e.g. "Neon Button"). Free-form.
+      placeholder: Neon Button
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: One short line — what it is and when to use it.
+      placeholder: A glowing accent button for primary actions on dark themes.
+    validations:
+      required: true
+
+  - type: textarea
+    id: files
+    attributes:
+      label: Files
+      description: |
+        Drag your `.ctkcomp` and a screenshot `.png` directly into this box.
+        GitHub will upload them and replace your drag with a link automatically.
+      value: |
+        Drop the .ctkcomp and the screenshot .png below this line, then delete this hint:
+
+    validations:
+      required: true
