@@ -258,7 +258,7 @@ class Workspace(ctk.CTkFrame):
             lambda *_a, **_k: self.selection.draw(),
         )
         bus.subscribe("palette_drop_request", self._on_palette_drop)
-        bus.subscribe("prefab_drop_request", self._on_prefab_drop)
+        bus.subscribe("component_drop_request", self._on_component_drop)
         bus.subscribe("document_resized", self._on_document_resized)
         bus.subscribe("project_renamed", self._on_project_renamed)
         bus.subscribe("dirty_changed", self._on_dirty_changed)
@@ -1240,18 +1240,25 @@ class Workspace(ctk.CTkFrame):
         if widget_id == self.project.selected_id:
             self._schedule_selection_redraw()
 
-    def _on_prefab_drop(
-        self, prefab_path, x_root: int, y_root: int,
+    def _on_component_drop(
+        self, component_path, x_root: int, y_root: int,
     ) -> None:
-        """Drop a prefab onto the canvas. Loads the ``.ctkprefab``
-        payload, instantiates fresh ``WidgetNode`` trees with new
-        UUIDs, offsets root coords so the prefab's bounding-box
-        top-left lands at the drop point, and inserts under the
-        container at the cursor (or top-level if outside any
-        container).
+        """Drop a component onto the canvas. Loads the ``.ctkcomp``
+        payload, reconciles bundled variables against the target
+        Window (auto-create / reuse / Rename / Skip via dialog),
+        instantiates fresh ``WidgetNode`` trees with new UUIDs,
+        offsets root coords so the component's bounding-box top-left
+        lands at the drop point, and inserts under the container at
+        the cursor (or top-level if outside any container).
         """
         from app.core.commands import _add_subtree_recursive
-        from app.io.prefab_io import instantiate_fragment, load_payload
+        from app.io.component_io import (
+            analyze_var_conflicts, apply_var_resolutions,
+            instantiate_fragment, load_payload,
+        )
+        from app.ui.component_var_conflict_dialog import (
+            ComponentVarConflictDialog,
+        )
 
         canvas_rx = self.canvas.winfo_rootx()
         canvas_ry = self.canvas.winfo_rooty()
@@ -1261,7 +1268,7 @@ class Workspace(ctk.CTkFrame):
         local_y = y_root - canvas_ry
         if not (0 <= local_x < canvas_w and 0 <= local_y < canvas_h):
             return
-        payload = load_payload(prefab_path)
+        payload = load_payload(component_path)
         if payload is None or not payload.get("nodes"):
             return
 
@@ -1299,6 +1306,29 @@ class Workspace(ctk.CTkFrame):
             owning_doc = self.project.find_document_for_widget(parent_id)
             document_id = owning_doc.id if owning_doc is not None else None
 
+        target_window = (
+            self.project.get_document(document_id) if document_id else None
+        )
+        # Variable bundle reconciliation. The target Window owns the
+        # local namespace the bundled vars will land in; any conflict
+        # gates the entire insert (Cancel = abort, no widgets / vars
+        # touched). Auto bundles + resolved conflicts then materialise
+        # via apply_var_resolutions, returning a uuid map that
+        # instantiate_fragment uses to rewrite ``var:<uuid>`` tokens.
+        uuid_map: dict | None = None
+        if target_window is not None and payload.get("variables"):
+            plan = analyze_var_conflicts(payload, target_window)
+            if plan.conflicts:
+                dialog = ComponentVarConflictDialog(
+                    self.winfo_toplevel(), plan.conflicts,
+                )
+                self.wait_window(dialog)
+                if not dialog.result:
+                    return
+            uuid_map = apply_var_resolutions(
+                self.project, target_window, plan,
+            )
+
         # Bounding-box top-left → drop point. Root nodes get offset;
         # children's coords stay relative to their parent so the
         # internal layout survives the move.
@@ -1306,7 +1336,9 @@ class Workspace(ctk.CTkFrame):
         bbox_x = min(int(n.get("properties", {}).get("x", 0) or 0) for n in roots)
         bbox_y = min(int(n.get("properties", {}).get("y", 0) or 0) for n in roots)
         nodes = instantiate_fragment(
-            payload, drop_offset=(target_x - bbox_x, target_y - bbox_y),
+            payload,
+            drop_offset=(target_x - bbox_x, target_y - bbox_y),
+            var_uuid_map=uuid_map,
         )
         new_ids: list[str] = []
         for root in nodes:
@@ -1325,7 +1357,11 @@ class Workspace(ctk.CTkFrame):
         from app.core.commands import build_bulk_add_entries
         entries = build_bulk_add_entries(self.project, new_ids)
         if entries:
-            label = payload.get("name") or "prefab"
+            label = payload.get("name") or "component"
+            # NOTE: undo of this command removes the widgets but leaves
+            # auto-created local variables behind. Rare edge; user can
+            # delete them via the Variables window. Phase D will swap
+            # in a proper composite InsertComponentCommand.
             self.project.history.push(
                 BulkAddCommand(entries, label=f"Insert {label}"),
             )
@@ -1344,7 +1380,19 @@ class Workspace(ctk.CTkFrame):
 
         cx, cy = self._screen_to_canvas(x_root, y_root)
         container_node = self._find_container_at(cx, cy)
+        self._create_node_from_entry(
+            entry, descriptor, container_node, cx, cy, x_root, y_root,
+        )
 
+    def _create_node_from_entry(
+        self, entry, descriptor, container_node,
+        cx: float, cy: float, x_root: int, y_root: int,
+    ) -> None:
+        """Materialise a palette entry as a new widget node. Shared
+        by drag-drop and the canvas/widget right-click "Add Widget"
+        menus so every entry path uses identical layout-nesting,
+        Tabview routing, grid-cell snapping, and history rules.
+        """
         properties = dict(descriptor.default_properties)
         for key, value in getattr(entry, "preset_overrides", ()) or ():
             properties[key] = value
@@ -1449,6 +1497,46 @@ class Workspace(ctk.CTkFrame):
                 parent_dim_changes=dim_changes,
             ),
         )
+
+    def _build_add_widget_menu(
+        self, parent_menu: tk.Menu, container_node,
+        cx: float, cy: float, x_root: int, y_root: int,
+    ) -> tk.Menu:
+        """Build the "Add Widget" / "Add Widget as Child" cascade —
+        same catalog structure as the menubar Widget menu. When
+        ``container_node`` is itself a managed-layout container,
+        Layouts entries that would nest layout-in-layout are disabled.
+        """
+        from app.ui.palette import CATALOG
+        parent_is_layout = (
+            container_node is not None
+            and is_layout_container(container_node.properties)
+        )
+        submenu = tk.Menu(parent_menu, tearoff=0)
+        for group in CATALOG:
+            group_menu = tk.Menu(submenu, tearoff=0)
+            for entry in group.items:
+                descriptor = get_descriptor(entry.type_name)
+                if descriptor is None:
+                    continue
+                entry_props = dict(descriptor.default_properties)
+                for k, v in entry.preset_overrides:
+                    entry_props[k] = v
+                disabled = (
+                    parent_is_layout and is_layout_container(entry_props)
+                )
+                group_menu.add_command(
+                    label=entry.display_name,
+                    command=(
+                        lambda e=entry, d=descriptor:
+                        self._create_node_from_entry(
+                            e, d, container_node, cx, cy, x_root, y_root,
+                        )
+                    ),
+                    state="disabled" if disabled else "normal",
+                )
+            submenu.add_cascade(label=group.title, menu=group_menu)
+        return submenu
 
     def _on_selection_changed(self, _widget_id: str | None) -> None:
         self.selection.draw()
@@ -1577,6 +1665,11 @@ class Workspace(ctk.CTkFrame):
             self.project.set_active_document(doc.id)
         lx, ly = self.zoom.canvas_to_logical(cx, cy, document=doc)
         menu = tk.Menu(self.winfo_toplevel(), tearoff=0)
+        add_submenu = self._build_add_widget_menu(
+            menu, None, cx, cy, event.x_root, event.y_root,
+        )
+        menu.add_cascade(label="Add Widget", menu=add_submenu)
+        menu.add_separator()
         paste_state = "normal" if self.project.clipboard else "disabled"
         menu.add_command(
             label="Paste",
@@ -1599,6 +1692,15 @@ class Workspace(ctk.CTkFrame):
             command=lambda: self.project.select_widget(None),
             state=deselect_state,
         )
+        menu.add_separator()
+        from app.core.project import WINDOW_ID
+        props_label = (
+            "Dialog Properties" if doc.is_toplevel else "Window Properties"
+        )
+        menu.add_command(
+            label=props_label,
+            command=lambda: self.project.select_widget(WINDOW_ID),
+        )
         try:
             menu.tk_popup(event.x_root, event.y_root)
         finally:
@@ -1608,9 +1710,16 @@ class Workspace(ctk.CTkFrame):
     def _paste_at_canvas(self, doc, logical_x: int, logical_y: int) -> None:
         if not self.project.clipboard:
             return
+        from app.ui.variables_window import confirm_clipboard_paste_policy
+        proceed, policy = confirm_clipboard_paste_policy(
+            self.winfo_toplevel(), self.project, doc,
+        )
+        if not proceed:
+            return
         new_ids = self.project.paste_from_clipboard(
             parent_id=None,
             base_position=(logical_x, logical_y),
+            var_policy=policy,
         )
         if not new_ids:
             return
@@ -1677,12 +1786,33 @@ class Workspace(ctk.CTkFrame):
             )
             menu.add_separator()
             menu.add_command(
-                label=f"Save {count} widgets as prefab…",
-                command=self._save_selection_as_prefab,
+                label=f"Save {count} widgets as component…",
+                command=self._save_selection_as_component,
             )
             self._add_group_entries_to_menu(menu, toplevel)
         else:
             self.project.select_widget(nid)
+            target_node = self.project.get_widget(nid)
+            target_descriptor = (
+                get_descriptor(target_node.widget_type)
+                if target_node is not None else None
+            )
+            target_is_container = (
+                target_descriptor is not None
+                and getattr(target_descriptor, "is_container", False)
+            )
+            cx_w, cy_w = self._screen_to_canvas(event.x_root, event.y_root)
+            add_submenu = self._build_add_widget_menu(
+                menu,
+                target_node if target_is_container else None,
+                cx_w, cy_w, event.x_root, event.y_root,
+            )
+            menu.add_cascade(
+                label="Add Widget as Child",
+                menu=add_submenu,
+                state="normal" if target_is_container else "disabled",
+            )
+            menu.add_separator()
             menu.add_command(
                 label="Copy",
                 command=lambda: self._copy_single(nid),
@@ -1714,8 +1844,8 @@ class Workspace(ctk.CTkFrame):
             )
             menu.add_separator()
             menu.add_command(
-                label="Save as prefab…",
-                command=self._save_selection_as_prefab,
+                label="Save as component…",
+                command=self._save_selection_as_component,
             )
             menu.add_separator()
             menu.add_command(
@@ -1809,14 +1939,20 @@ class Workspace(ctk.CTkFrame):
         editor it uses for its own square-pen button."""
         self.project.event_bus.publish("request_edit_description")
 
-    def _save_selection_as_prefab(self) -> None:
-        """Bundle the current selection as a fragment prefab. Variable
-        bindings inside the selection are stripped to literals on save
-        (Phase A — Phase B will bundle window-local variables instead).
+    def _save_selection_as_component(self) -> None:
+        """Bundle the current selection as a fragment component. Every
+        resolvable variable binding (local OR global) travels with the
+        component — globals get demoted to locals on insert into the
+        target Window. Deleted-var tokens drop silently. Requires a
+        saved project (components live next to ``assets/`` in the
+        project folder); blocks with a hint otherwise.
         """
         from tkinter import messagebox
-        from app.io.prefab_io import count_var_bindings, save_fragment
-        from app.ui.prefab_save_dialog import PrefabSaveDialog
+        from app.core.component_paths import ensure_components_root
+        from app.io.component_io import (
+            count_bindings_to_bundle, save_fragment,
+        )
+        from app.ui.component_save_dialog import ComponentSaveDialog
 
         ids = list(self.project.selected_ids)
         if not ids:
@@ -1827,37 +1963,65 @@ class Workspace(ctk.CTkFrame):
         nodes = [n for n in nodes if n is not None]
         if not nodes:
             return
-        # Default name from the first node's name (or widget type).
+        toplevel = self.winfo_toplevel()
+        current_path = getattr(toplevel, "_current_path", None)
+        components_dir = ensure_components_root(current_path)
+        if components_dir is None:
+            messagebox.showinfo(
+                "Save project first",
+                "Components are stored next to assets in the project "
+                "folder. Save the project before creating components.",
+                parent=toplevel,
+            )
+            return
+        owning_doc = self.project.find_document_for_widget(nodes[0].id)
+        source_window_id = owning_doc.id if owning_doc is not None else None
         first = nodes[0]
         default_name = first.name or first.widget_type
-        binding_count = count_var_bindings(nodes)
-        dialog = PrefabSaveDialog(
-            self.winfo_toplevel(),
+        bundled_count = count_bindings_to_bundle(nodes, self.project)
+        dialog = ComponentSaveDialog(
+            toplevel,
             default_name=default_name,
-            var_binding_count=binding_count,
+            components_dir=components_dir,
+            bundled_var_count=bundled_count,
         )
         self.wait_window(dialog)
         if dialog.result is None:
             return
         name, target_path = dialog.result
         try:
-            save_fragment(target_path, name, nodes, self.project)
+            save_fragment(
+                target_path, name, nodes, self.project,
+                source_window_id=source_window_id,
+            )
         except OSError as exc:
             messagebox.showerror(
-                "Save prefab failed",
-                f"Couldn't write prefab:\n{exc}",
-                parent=self.winfo_toplevel(),
+                "Save component failed",
+                f"Couldn't write component:\n{exc}",
+                parent=toplevel,
             )
             return
-        # Tell the prefab panel a new file appeared so its tree
+        # Tell the components panel a new file appeared so its tree
         # repopulates without needing a tab switch.
-        self.project.event_bus.publish("prefab_library_changed")
+        self.project.event_bus.publish("component_library_changed")
 
     def _paste_at_widget(self, nid: str) -> None:
         if not self.project.clipboard:
             return
         parent_id = paste_target_parent_id(self.project, nid)
-        new_ids = self.project.paste_from_clipboard(parent_id=parent_id)
+        target_doc = (
+            self.project.find_document_for_widget(parent_id)
+            if parent_id else self.project.active_document
+        )
+        from app.ui.variables_window import confirm_clipboard_paste_policy
+        proceed, policy = confirm_clipboard_paste_policy(
+            self.winfo_toplevel(), self.project, target_doc,
+        )
+        if not proceed:
+            return
+        new_ids = self.project.paste_from_clipboard(
+            parent_id=parent_id, var_policy=policy,
+        )
         if not new_ids:
             return
         entries = build_bulk_add_entries(self.project, new_ids)

@@ -178,6 +178,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         self.palette = Palette(
             self.paned, self.project,
             on_collapse_changed=self._on_palette_collapsed,
+            path_provider=lambda: self._current_path,
         )
         self.workspace = Workspace(self.paned, self.project)
         self.palette.drop_validator = self.workspace.is_cursor_over_document

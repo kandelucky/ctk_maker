@@ -1058,23 +1058,33 @@ def _emit_widget(
     # their values are attribute references (not Python literals) and
     # ``_py_literal`` would mangle them.
     var_kwargs: list[tuple[str, str]] = []
+    # Properties whose binding routed to a constructor kwarg via
+    # ``var_kwargs``. Tracked separately so the descriptor's
+    # ``export_state`` (post-init ``.insert(0, …)`` / ``.set(…)``
+    # / ``.select()`` lines) skips them — the textvariable kwarg
+    # already wires the runtime, and emitting a literal token on top
+    # would either insert ``var:<uuid>`` text or fight the live var.
+    wired_bound_keys: set[str] = set()
 
     for key, val in props.items():
-        if key in node_only or key in font_keys or key == "image":
-            continue
         # pack_* / grid_* / layout_type live on the node for export,
         # never as CTk constructor kwargs.
         if key in LAYOUT_NODE_ONLY_KEYS:
             continue
-        # Phase 1 binding: ``var:<uuid>`` token. Wired bindings emit a
-        # ``textvariable=self.var_X`` / ``variable=self.var_X`` kwarg
-        # so the runtime widget tracks the live tk.Variable. Unwired
-        # bindings substitute the variable's current default literal.
+        # Phase 1 binding: ``var:<uuid>`` token. Resolve BEFORE the
+        # node_only / font / image filter so wired bindings on
+        # editor-only properties (CTkEntry.initial_value,
+        # CTkSlider.initial_value, CTkSwitch.initially_checked, …)
+        # can still emit the matching textvariable / variable kwarg
+        # — those properties live in NODE_ONLY because they aren't
+        # CTk constructor args, but the BINDING_WIRINGS table maps
+        # them onto the kwargs CTk does accept.
         var_id = parse_var_token(val)
         if var_id is not None:
             wiring = BINDING_WIRINGS.get((node.widget_type, key))
             if wiring and var_id in _VAR_ID_TO_ATTR:
                 var_kwargs.append((wiring, _VAR_ID_TO_ATTR[var_id]))
+                wired_bound_keys.add(key)
                 continue
             entry = (
                 _EXPORT_PROJECT.get_variable(var_id)
@@ -1084,6 +1094,10 @@ def _emit_widget(
                 val = _entry_default_as_value(entry)
             else:
                 continue  # stale binding — drop the kwarg entirely
+        # Standard skip filter applies to non-binding (or
+        # literal-substituted) values only.
+        if key in node_only or key in font_keys or key == "image":
+            continue
         if key in overrides:
             val = overrides[key]
         if key in multiline_list_keys:
@@ -1269,7 +1283,17 @@ def _emit_widget(
             child_index, parent_cols, parent_rows,
         ),
     )
-    lines.extend(descriptor.export_state(full_name, props))
+    # Strip wired-bound keys before handing props to ``export_state``
+    # so descriptors don't emit ``.insert(0, 'var:<uuid>')`` /
+    # ``.set('var:<uuid>')`` / ``.select()`` lines for properties the
+    # constructor's textvariable kwarg already drives.
+    if wired_bound_keys:
+        state_props = {
+            k: v for k, v in props.items() if k not in wired_bound_keys
+        }
+    else:
+        state_props = props
+    lines.extend(descriptor.export_state(full_name, state_props))
     # ScrollableDropdown side-car wiring for ComboBox + OptionMenu. The
     # helper class lives in scrollable_dropdown.py beside this file.
     if node.widget_type in ("CTkComboBox", "CTkOptionMenu"):

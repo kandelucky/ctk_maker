@@ -141,6 +141,7 @@ class Palette(ctk.CTkFrame):
         master,
         project: Project,
         on_collapse_changed: Callable[[bool], None] | None = None,
+        path_provider: Callable[[], str | None] | None = None,
     ):
         super().__init__(master, fg_color=PANEL_BG, corner_radius=0)
         self.project = project
@@ -148,6 +149,10 @@ class Palette(ctk.CTkFrame):
         # to resize the paned-window pane width so the collapsed
         # palette only takes up icon-wide space.
         self._on_collapse_changed = on_collapse_changed
+        # Returns the current ``.ctkproj`` path for the components
+        # panel — components live next to assets/ inside the project
+        # folder and can't resolve a root without one.
+        self._path_provider = path_provider or (lambda: None)
 
         self._drag: dict | None = None
         self._ghost: tk.Toplevel | None = None
@@ -170,15 +175,15 @@ class Palette(ctk.CTkFrame):
 
         self._collapsed: bool = False
         # Tab state — Widgets (the original CATALOG drag source) vs
-        # Prefabs (user-saved widget bundles, see prefabs_panel.py).
-        # Collapsed mode forces "widgets" since prefab folders don't
-        # render meaningfully in icon-only width.
+        # Components (per-project saved widget bundles, see
+        # components_panel.py). Collapsed mode forces "widgets" since
+        # the component folder tree has no useful icon-only render.
         self._active_tab: str = "widgets"
 
         self._build_header()
         self._build_tabs()
         self._build_widgets_tab()
-        self._build_prefabs_tab()
+        self._build_components_tab()
         self._rebuild_catalog()
         self._show_tab("widgets")
 
@@ -217,11 +222,11 @@ class Palette(ctk.CTkFrame):
         self._tab_bar.pack_propagate(False)
 
         widgets_icon = load_icon("frame", size=14, color="#ffffff")
-        prefabs_icon = load_icon("layout-list", size=14, color="#888888")
+        components_icon = load_icon("layout-list", size=14, color="#888888")
         self._tab_widgets_icon_active = load_icon("frame", size=14, color="#ffffff")
         self._tab_widgets_icon_inactive = load_icon("frame", size=14, color="#888888")
-        self._tab_prefabs_icon_active = load_icon("layout-list", size=14, color="#ffffff")
-        self._tab_prefabs_icon_inactive = load_icon("layout-list", size=14, color="#888888")
+        self._tab_components_icon_active = load_icon("layout-list", size=14, color="#ffffff")
+        self._tab_components_icon_inactive = load_icon("layout-list", size=14, color="#888888")
 
         btn_kw = dict(
             text="", width=42, height=22, corner_radius=3, border_width=0,
@@ -231,15 +236,15 @@ class Palette(ctk.CTkFrame):
             command=lambda: self._show_tab("widgets"),
             fg_color="#3a3a3a", hover_color="#3a3a3a", **btn_kw,
         )
-        self._btn_prefabs = ctk.CTkButton(
-            self._tab_bar, image=prefabs_icon,
-            command=lambda: self._show_tab("prefabs"),
+        self._btn_components = ctk.CTkButton(
+            self._tab_bar, image=components_icon,
+            command=lambda: self._show_tab("components"),
             fg_color="transparent", hover_color="#2d2d2d", **btn_kw,
         )
         self._btn_widgets.pack(side="left", padx=(0, 2))
-        self._btn_prefabs.pack(side="left", padx=(0, 2))
+        self._btn_components.pack(side="left", padx=(0, 2))
         _attach_tooltip(self._btn_widgets, "Widgets")
-        _attach_tooltip(self._btn_prefabs, "Prefabs")
+        _attach_tooltip(self._btn_components, "Components")
 
     def _update_tab_buttons(self, active: str) -> None:
         if active == "widgets":
@@ -247,13 +252,13 @@ class Palette(ctk.CTkFrame):
                 image=self._tab_widgets_icon_active,
                 fg_color="#3a3a3a", hover_color="#3a3a3a",
             )
-            self._btn_prefabs.configure(
-                image=self._tab_prefabs_icon_inactive,
+            self._btn_components.configure(
+                image=self._tab_components_icon_inactive,
                 fg_color="transparent", hover_color="#2d2d2d",
             )
         else:
-            self._btn_prefabs.configure(
-                image=self._tab_prefabs_icon_active,
+            self._btn_components.configure(
+                image=self._tab_components_icon_active,
                 fg_color="#3a3a3a", hover_color="#3a3a3a",
             )
             self._btn_widgets.configure(
@@ -295,21 +300,23 @@ class Palette(ctk.CTkFrame):
         self.scroll._scrollbar.configure(width=10, corner_radius=4)
         self.body = self.scroll  # alias for children
 
-    def _build_prefabs_tab(self) -> None:
-        from app.ui.prefabs_panel import PrefabsPanel
-        self._prefabs_panel = PrefabsPanel(self, self.project)
+    def _build_components_tab(self) -> None:
+        from app.ui.components_panel import ComponentsPanel
+        self._components_panel = ComponentsPanel(
+            self, self.project, path_provider=self._path_provider,
+        )
 
     def _show_tab(self, name: str) -> None:
         """Swap the active tab content. Collapsed mode forces 'widgets'
-        regardless of the requested tab — the prefab folder tree has
-        no useful icon-only rendering.
+        regardless of the requested tab — the component folder tree
+        has no useful icon-only rendering.
         """
         if self._collapsed:
             name = "widgets"
         self._active_tab = name
         self._apply_chrome_layout()
-        if name == "prefabs":
-            self._prefabs_panel.refresh()
+        if name == "components":
+            self._components_panel.refresh()
 
     def _apply_chrome_layout(self) -> None:
         """Idempotent chrome layout: forget every chrome widget, then
@@ -322,7 +329,7 @@ class Palette(ctk.CTkFrame):
         for w in (
             self._title_lbl, self._tab_bar,
             self._filter_entry, self.scroll,
-            self._widgets_container, self._prefabs_panel,
+            self._widgets_container, self._components_panel,
         ):
             try:
                 w.pack_forget()
@@ -342,7 +349,7 @@ class Palette(ctk.CTkFrame):
                 self._filter_entry.pack(fill="x", padx=8, pady=(0, 6))
             self.scroll.pack(fill="both", expand=True)
         else:
-            self._prefabs_panel.pack(fill="both", expand=True)
+            self._components_panel.pack(fill="both", expand=True)
 
         self._update_tab_buttons(active)
         img = (

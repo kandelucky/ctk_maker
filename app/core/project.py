@@ -249,6 +249,11 @@ class Project:
         # full WidgetNode.to_dict() snapshot of a copied subtree.
         # Not persisted — lost when the app quits.
         self.clipboard: list[dict] = []
+        # Document the clipboard contents originated from. Tracked
+        # so cross-doc paste can detect that the clipboard's local
+        # var tokens reference a different doc's locals and ask the
+        # user how to handle them. ``None`` until the first copy.
+        self._clipboard_source_doc_id: str | None = None
         # Widget-id indexes — maintained on add / remove / reparent so
         # ``get_widget`` and ``find_document_for_widget`` stay O(1)
         # instead of walking every doc's tree on every call. Group
@@ -657,13 +662,23 @@ class Project:
         old_parent_id = old_parent.id if old_parent is not None else None
         parent_changed = old_parent_id != new_parent_id
         old_doc = self.find_document_for_widget(widget_id)
-        target_doc = (
-            self._resolve_target_document(document_id)
-            if new_parent is None else None
-        )
+        # Resolve target doc from whichever info is available:
+        #   1) when ``new_parent`` is set, the parent's own doc is the
+        #      most reliable source of truth (drop into a Frame in
+        #      another window).
+        #   2) explicit ``document_id`` arg (used by undo / redo / paste
+        #      replay against a specific doc).
+        #   3) fall back to the active document — last resort, may be
+        #      stale during a drag where the focus hasn't switched yet.
+        # The earlier "only when ``new_parent is None``" gate missed
+        # cross-doc moves that landed inside a Frame and missed top-
+        # level drops where the active doc was still the source.
+        if new_parent is not None:
+            target_doc = self.find_document_for_widget(new_parent.id)
+        else:
+            target_doc = self._resolve_target_document(document_id)
         doc_changed = (
-            new_parent is None
-            and old_doc is not None
+            old_doc is not None
             and target_doc is not None
             and old_doc.id != target_doc.id
         )
@@ -685,7 +700,14 @@ class Project:
         if new_parent is not None:
             target_siblings = new_parent.children
         else:
-            target_siblings = target_doc.root_widgets
+            # ``target_doc`` is None only when the project has no
+            # documents at all — defensively fall back to whichever
+            # doc still holds the node so we don't crash.
+            siblings_owner = target_doc or old_doc
+            target_siblings = (
+                siblings_owner.root_widgets
+                if siblings_owner is not None else []
+            )
 
         # If staying in the same sibling list and the original slot
         # was before the target slot, removing the node shifted
@@ -706,13 +728,14 @@ class Project:
         # Re-index the moved subtree under its new doc. Parent-only
         # reorder within the same doc doesn't change ``_doc_index``,
         # but doc-crossing moves would otherwise leave stale entries.
+        # Local-variable migration is the UI's responsibility now —
+        # the cross-doc reparent dialog asks the user for source and
+        # target policies and then calls
+        # ``migrate_local_var_bindings`` directly. Doing it here would
+        # bypass the dialog and pin every drag to the "Keep + Duplicate"
+        # default. The load-time repair path explicitly opts in.
         if doc_changed and target_doc is not None:
             self._index_subtree(node, target_doc)
-            # Cross-document move: any local-variable binding now
-            # references a variable owned by the source doc, which is
-            # invisible from the destination. Migrate (copy + retoken)
-            # so bindings keep working in their new home.
-            self.migrate_local_var_bindings(node, target_doc)
 
         if parent_changed or doc_changed:
             self.event_bus.publish(
@@ -1179,54 +1202,156 @@ class Project:
                 if parse_var_token(pvalue) == var_id:
                     yield node, pname
 
+    def collect_cross_doc_local_vars(
+        self, root_nodes, target_doc,
+    ) -> tuple[list, int]:
+        """Survey ``root_nodes`` for local-variable bindings that
+        cross into ``target_doc``.
+
+        Returns ``(var_entries, external_usage)``:
+            ``var_entries``    — unique local ``VariableEntry`` objects
+                                 referenced by the moved subtree(s)
+                                 whose owner is NOT ``target_doc``.
+            ``external_usage`` — total number of widgets *outside* the
+                                 moved subtree(s) that bind to those
+                                 same variables. Drives the dialog's
+                                 "used by N other widgets" hint.
+
+        Globals + dangling tokens skipped. The caller uses the return
+        value to decide whether the reparent dialog needs to fire.
+        """
+        if not root_nodes or target_doc is None:
+            return [], 0
+        moved_ids: set[str] = set()
+        roots = list(root_nodes)
+        for root in roots:
+            for node in _walk_tree([root]):
+                moved_ids.add(node.id)
+        seen: dict[str, VariableEntry] = {}
+        for root in roots:
+            for node in _walk_tree([root]):
+                for pvalue in node.properties.values():
+                    var_id = parse_var_token(pvalue)
+                    if var_id is None or var_id in seen:
+                        continue
+                    entry = self.get_variable(var_id)
+                    if entry is None or entry.scope != "local":
+                        continue
+                    owner = self.find_document_for_variable(var_id)
+                    if owner is None or owner is target_doc:
+                        continue
+                    seen[var_id] = entry
+        external = 0
+        for var_id in seen:
+            for node, _pname in self.iter_bindings_for(var_id):
+                if node.id not in moved_ids:
+                    external += 1
+        return list(seen.values()), external
+
     def migrate_local_var_bindings(
         self, root_node, target_doc,
+        source_policy: str = "keep",
+        target_policy: str = "duplicate",
     ) -> int:
         """Re-home local-variable bindings inside ``root_node``'s
-        subtree onto ``target_doc``.
+        subtree onto ``target_doc`` according to the given policies.
 
-        For each ``var:<uuid>`` token whose variable is local to a
-        document other than ``target_doc``, copy the variable into
-        ``target_doc.local_variables`` (suffix-deduped on name
-        collision) with a fresh UUID, then rewrite the token to point
-        at the copy. Globals are always reachable across documents so
-        they're left alone; dangling / missing tokens are left in
-        place so the runtime falls back to literal defaults.
+        ``source_policy``:
+            ``"keep"``   — variable stays in its source doc as-is
+                           (default; matches load-time repair behaviour
+                           and the no-dialog fast path).
+            ``"delete"`` — variable + all its bindings are removed via
+                           the standard ``remove_variable`` cascade.
+                           Other widgets in the source that referenced
+                           it lose their binding.
 
-        Returns the number of variables copied — 0 means nothing
-        needed migration. Publishes ``local_variables_migrated`` on a
-        non-zero count so the workspace can post a status-bar toast.
+        ``target_policy``:
+            ``"duplicate"`` — copy variable into ``target_doc``
+                              (suffix dedup on name collision; same
+                              name + type reuses the existing entry).
+                              Tokens in the moved subtree retoken to
+                              the target's UUID.
+            ``"unbind"``    — drop the binding from the moved
+                              subtree's properties; the descriptor's
+                              default literal takes over at the next
+                              read.
+
+        Globals + dangling tokens skipped. Returns the number of
+        unique source variables that triggered a write (copies under
+        ``"duplicate"``, deletions under ``"delete"``). Publishes
+        ``local_variables_migrated`` on a non-zero count so the
+        workspace can show the status toast.
         """
         if target_doc is None or root_node is None:
             return 0
-        remap: dict[str, str] = {}
-        stack = [root_node]
-        while stack:
-            node = stack.pop()
-            stack.extend(getattr(node, "children", ()))
-            for pname, pvalue in list(node.properties.items()):
-                old_id = parse_var_token(pvalue)
-                if old_id is None:
-                    continue
-                if old_id in remap:
-                    node.properties[pname] = make_var_token(
-                        remap[old_id],
-                    )
-                    continue
-                old_entry = self.get_variable(old_id)
-                if old_entry is None:
-                    continue
-                if old_entry.scope == "global":
-                    continue
-                owner = self.find_document_for_variable(old_id)
-                if owner is None or owner is target_doc:
-                    continue
-                new_entry = self.add_variable(
-                    old_entry.name, old_entry.type, old_entry.default,
-                    scope="local", document_id=target_doc.id,
-                )
-                remap[old_id] = new_entry.id
-                node.properties[pname] = make_var_token(new_entry.id)
+        roots = (
+            list(root_node) if isinstance(root_node, (list, tuple))
+            else [root_node]
+        )
+        # First pass: walk tokens, decide remap per source var.
+        remap: dict[str, str | None] = {}  # old_id -> new_id or None (unbind)
+        source_vars_to_delete: list[str] = []
+        for root in roots:
+            for node in _walk_tree([root]):
+                for pname, pvalue in list(node.properties.items()):
+                    old_id = parse_var_token(pvalue)
+                    if old_id is None:
+                        continue
+                    if old_id in remap:
+                        new_id = remap[old_id]
+                        if new_id is None:
+                            node.properties.pop(pname, None)
+                        else:
+                            node.properties[pname] = make_var_token(new_id)
+                        continue
+                    old_entry = self.get_variable(old_id)
+                    if old_entry is None:
+                        continue
+                    if old_entry.scope == "global":
+                        continue
+                    owner = self.find_document_for_variable(old_id)
+                    if owner is None or owner is target_doc:
+                        continue
+                    if target_policy == "duplicate":
+                        # Reuse a target entry whose name + type
+                        # match — keeps round-trips clean and avoids
+                        # ``name_2`` / ``name_3`` accumulation.
+                        existing = next(
+                            (
+                                v for v in target_doc.local_variables
+                                if v.name == old_entry.name
+                                and v.type == old_entry.type
+                            ),
+                            None,
+                        )
+                        if existing is not None:
+                            new_entry_id = existing.id
+                        else:
+                            new_entry = self.add_variable(
+                                old_entry.name, old_entry.type,
+                                old_entry.default,
+                                scope="local",
+                                document_id=target_doc.id,
+                            )
+                            new_entry_id = new_entry.id
+                        remap[old_id] = new_entry_id
+                        node.properties[pname] = make_var_token(new_entry_id)
+                    else:
+                        # ``unbind`` — drop the property so the
+                        # descriptor default (or literal default) takes
+                        # over at next read.
+                        remap[old_id] = None
+                        node.properties.pop(pname, None)
+                    if (
+                        source_policy == "delete"
+                        and old_id not in source_vars_to_delete
+                    ):
+                        source_vars_to_delete.append(old_id)
+        # Second pass: source-side cleanup. ``remove_variable`` handles
+        # cascade-unbind for any external widgets that were bound to
+        # the variable.
+        for var_id in source_vars_to_delete:
+            self.remove_variable(var_id)
         count = len(remap)
         if count > 0:
             self.event_bus.publish("local_variables_migrated", count)
@@ -1383,11 +1508,66 @@ class Project:
             if not is_descendant:
                 top_level.append(node)
         self.clipboard = [node.to_dict() for node in top_level]
+        # Track the doc the clipboard items came from. All snapshots
+        # share a single source by construction (copy operates on the
+        # current selection inside one doc). Use the first node's
+        # owning doc as the canonical source.
+        first_owner = (
+            self.find_document_for_widget(top_level[0].id)
+            if top_level else None
+        )
+        self._clipboard_source_doc_id = (
+            first_owner.id if first_owner is not None else None
+        )
         return len(self.clipboard)
+
+    def collect_clipboard_local_vars(
+        self, target_doc,
+    ) -> tuple[list, int]:
+        """Survey the clipboard for local-variable bindings whose
+        owner doc isn't ``target_doc`` — same scoping rule the
+        cross-doc reparent dialog uses. Returns
+        ``(var_entries, external_usage)``; empty list when no
+        cross-doc local bindings exist (caller skips the dialog).
+        ``external_usage`` is non-zero only when the clipboard's
+        source doc still holds the original widgets bound to those
+        same vars.
+        """
+        if not self.clipboard or target_doc is None:
+            return [], 0
+        seen: dict[str, VariableEntry] = {}
+
+        def walk(node_dict: dict) -> None:
+            for value in node_dict.get("properties", {}).values():
+                var_id = parse_var_token(value)
+                if var_id is None or var_id in seen:
+                    continue
+                entry = self.get_variable(var_id)
+                if entry is None or entry.scope != "local":
+                    continue
+                owner = self.find_document_for_variable(var_id)
+                if owner is None or owner is target_doc:
+                    continue
+                seen[var_id] = entry
+            for child in node_dict.get("children") or []:
+                walk(child)
+
+        for snap in self.clipboard:
+            walk(snap)
+        # External usage ignores the clipboard snapshots themselves
+        # (they're disk-style dicts, not live nodes) — only
+        # already-rooted widgets bound to the var count.
+        external = 0
+        for var_id in seen:
+            external += sum(
+                1 for _ in self.iter_bindings_for(var_id)
+            )
+        return list(seen.values()), external
 
     def paste_from_clipboard(
         self, parent_id: str | None = None,
         base_position: tuple[int, int] | None = None,
+        var_policy: tuple[str, str] | None = ("keep", "duplicate"),
     ) -> list[str]:
         """Recreate the clipboard snapshots under `parent_id` with
         fresh UUIDs + auto-generated names. Each top-level paste is
@@ -1398,6 +1578,15 @@ class Project:
         clone lands at that position plus a per-item cascade offset —
         overrides the default "nudge from original coords" so canvas
         right-click paste can place the widget where the cursor is.
+
+        ``var_policy`` controls how local-variable bindings in the
+        clipboard are migrated when the paste lands in a different
+        doc than the clipboard's source. ``("keep", "duplicate")`` is
+        the default and matches the no-dialog fast path. ``None``
+        skips migration entirely (the cross-doc reparent dialog has
+        already applied the user's choice via a prior call). The
+        full set of policies is documented on
+        ``migrate_local_var_bindings``.
 
         Returns the list of new top-level widget ids.
         """
@@ -1459,11 +1648,18 @@ class Project:
             self._paste_recursive(root, parent_id)
             new_top_ids.append(root.id)
             # Pasted bindings carry the source-doc's UUIDs verbatim;
-            # if the paste landed in a different doc, copy any local
-            # vars across so the chips don't end up dangling.
-            target_doc = self.find_document_for_widget(root.id)
-            if target_doc is not None:
-                self.migrate_local_var_bindings(root, target_doc)
+            # apply the requested migration policy so cross-doc
+            # paste bindings either copy / move / unbind to match
+            # the user's intent. ``var_policy=None`` opts out (the
+            # caller already migrated through the dialog).
+            if var_policy is not None:
+                target_doc = self.find_document_for_widget(root.id)
+                if target_doc is not None:
+                    self.migrate_local_var_bindings(
+                        root, target_doc,
+                        source_policy=var_policy[0],
+                        target_policy=var_policy[1],
+                    )
         if new_top_ids:
             if len(new_top_ids) == 1:
                 self.select_widget(new_top_ids[0])

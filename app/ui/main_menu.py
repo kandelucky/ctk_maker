@@ -547,10 +547,22 @@ class MenuMixin:
         if not self.project.clipboard:
             return
         from app.core.commands import paste_target_parent_id
+        from app.ui.variables_window import confirm_clipboard_paste_policy
         parent_id = paste_target_parent_id(
             self.project, self.project.selected_id,
         )
-        new_ids = self.project.paste_from_clipboard(parent_id=parent_id)
+        target_doc = (
+            self.project.find_document_for_widget(parent_id)
+            if parent_id else self.project.active_document
+        )
+        proceed, policy = confirm_clipboard_paste_policy(
+            self, self.project, target_doc,
+        )
+        if not proceed:
+            return
+        new_ids = self.project.paste_from_clipboard(
+            parent_id=parent_id, var_policy=policy,
+        )
         self._push_paste_history(new_ids)
 
     def _push_paste_history(self, new_ids: list[str]) -> None:

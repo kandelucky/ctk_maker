@@ -330,12 +330,40 @@ def load_project(
     # cleans up on the way in.
     _drop_invalid_groups(project)
 
+    # Cross-document binding repair: pre-1.2.0 reparent paths skipped
+    # the local-variable migration, leaving widgets in doc B bound to
+    # locals owned by doc A. Walk every widget and migrate bindings
+    # to its containing doc — this copies the affected vars into the
+    # right doc with fresh UUIDs and rewrites the tokens. The
+    # migrate helper publishes a single ``local_variables_migrated``
+    # event per call so MainWindow shows one toast per repaired doc.
+    _repair_cross_doc_local_bindings(project)
+
     # Name counters are now per-document (Document.name_counters) and
     # round-trip through Document.from_dict / to_dict. Legacy v1 files
     # with a top-level "name_counters" dict are ignored — new widgets
     # added into a legacy project will restart from 0 for each doc.
     # Harmless: the first new widget inherits the base name; rename
     # as needed.
+
+
+def _repair_cross_doc_local_bindings(project) -> None:
+    """One-shot scan over all widgets after a load.
+
+    For every root widget, ask the project to migrate any local
+    bindings whose owning doc differs from the widget's doc. The
+    migrate helper is idempotent (no-op when bindings already line up)
+    and publishes ``local_variables_migrated`` only when something
+    actually moved, so a clean project produces no toast.
+
+    Old project files (saved before the cross-doc reparent migration
+    landed) ride this path on first open — affected widgets get their
+    local vars copied into the doc they actually live in, and the
+    chips start resolving against same-doc storage.
+    """
+    for doc in project.documents:
+        for root in list(doc.root_widgets):
+            project.migrate_local_var_bindings(root, doc)
 
 
 def _drop_invalid_groups(project) -> None:

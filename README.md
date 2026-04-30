@@ -2,7 +2,7 @@
 
 Drag-and-drop visual designer for **[CustomTkinter](https://github.com/TomSchimansky/CustomTkinter)** — design Python GUIs without writing layout code by hand.
 
-> **v1.2.0** — **Local variables** (per-window) alongside the existing project-wide globals; cross-document widgets auto-migrate their bindings on reparent / paste. Code export routes globals onto the main window; Toplevels read them via `self.master.var_*`. **Prefab library** — save any selection as a reusable `.ctkprefab` and drag it back onto the canvas from the Palette's new Prefabs tab.
+> **v1.3.0** — **Cross-document reparent dialog** — moving a widget between windows now asks how to handle its local-variable bindings (Keep / Delete in source, Duplicate / Unbind in target); same flow on Ctrl+C/V/X across windows. **Component library** (per-project) — save any selection as a reusable `.ctkcomp`, browse / preview / drop back from the Palette's new Components tab; bundled variable conflicts get resolved on insert (Rename / Skip). **Add Widget cascade** on canvas + widget right-click. **Per-document Snap & Alignment** toggles on the Window properties panel. **Local Variables group** appears in the Properties panel when the Window itself is selected.
 >
 > ⚠️ **Tested on Windows only.** macOS and Linux are not verified for this release — feedback and contributions welcome.
 

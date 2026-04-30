@@ -167,6 +167,38 @@ class SchemaMixin:
             self._insert_prop(prop, properties, parent_iid)
             i += 1
 
+        # Window selection: append a read-only "Local Variables" group
+        # at the very end so the user can see what locals belong to the
+        # current document without opening the F11 Variables window.
+        if descriptor.type_name == WINDOW_ID:
+            self._populate_local_variables_group()
+
+    def _populate_local_variables_group(self) -> None:
+        doc = self.project.active_document if self.project else None
+        group_iid = "g:Local Variables"
+        self.tree.insert(
+            "", "end", iid=group_iid,
+            text="Local Variables", values=("",), open=True,
+            tags=("class",),
+        )
+        locals_list = list(doc.local_variables) if doc is not None else []
+        if not locals_list:
+            self.tree.insert(
+                group_iid, "end", iid="localvar:empty",
+                text="", values=("no local variables",),
+                tags=("disabled",),
+            )
+            return
+        for entry in locals_list:
+            default_str = str(entry.default or "")
+            if len(default_str) > 30:
+                default_str = default_str[:29] + "…"
+            self.tree.insert(
+                group_iid, "end", iid=f"localvar:{entry.id}",
+                text=entry.name,
+                values=(f"({entry.type}) {default_str}",),
+            )
+
     def _insert_pair(
         self, items: list[dict], properties: dict, parent_iid: str,
     ) -> None:

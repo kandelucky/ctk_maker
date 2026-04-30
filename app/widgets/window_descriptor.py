@@ -51,6 +51,11 @@ class WindowDescriptor(WidgetDescriptor):
          "min": 4, "max": 200,
          "disabled_when": lambda p: p.get("grid_style") == "none"},
 
+        {"name": "alignment_lines_enabled", "type": "boolean", "label": "",
+         "group": "Snap & Alignment", "row_label": "Alignment Lines"},
+        {"name": "snap_enabled", "type": "boolean", "label": "",
+         "group": "Snap & Alignment", "row_label": "Snap"},
+
         {"name": "fg_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Background",
          "clearable": True, "clear_value": "transparent"},

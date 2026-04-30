@@ -58,6 +58,30 @@ TREE_FONT_SIZE = 10
 EMPTY_TEXT_GLOBAL = "No global variables yet — click + Add to create one"
 EMPTY_TEXT_LOCAL = "No local variables for this document — click + Add"
 
+# 8px outer breathing room when clamping a window onto the screen so
+# its drop shadow / titlebar isn't flush against the screen edge.
+SCREEN_CLAMP_MARGIN = 8
+
+
+def _clamp_to_screen(window, x: int, y: int, w: int, h: int) -> tuple[int, int]:
+    """Push (x, y) inward so a (w x h) window fits within the screen.
+
+    Used by both VariablesWindow and VariableEditDialog: centring a
+    child on its parent works fine when the parent sits in the middle
+    of the screen, but a parent flush against an edge throws the
+    child off-screen. This pulls everything back inside without
+    changing size.
+    """
+    try:
+        sw = window.winfo_screenwidth()
+        sh = window.winfo_screenheight()
+    except tk.TclError:
+        return x, y
+    margin = SCREEN_CLAMP_MARGIN
+    max_x = max(margin, sw - w - margin)
+    max_y = max(margin, sh - h - margin)
+    return max(margin, min(x, max_x)), max(margin, min(y, max_y))
+
 TYPE_LABELS = {
     "str": "String",
     "int": "Integer",
@@ -65,6 +89,24 @@ TYPE_LABELS = {
     "bool": "Boolean",
 }
 LABEL_TO_TYPE = {label: t for t, label in TYPE_LABELS.items()}
+
+# Auto-fill values shown in the Add Variable dialog. Letting the user
+# hit OK on a brand-new dialog and end up with a sensible
+# placeholder cuts the create-flow from "type a name + a default" to
+# "click +Add → click OK". Suffix dedup at add_variable time turns
+# repeated OKs into ``StringValue``, ``StringValue_2``, …
+TYPE_DEFAULT_NAMES = {
+    "str": "StringValue",
+    "int": "IntValue",
+    "float": "FloatValue",
+    "bool": "BoolValue",
+}
+TYPE_DEFAULT_VALUES = {
+    "str": "",
+    "int": "0",
+    "float": "0.0",
+    "bool": "False",
+}
 
 
 class VariablesPanel(ctk.CTkFrame):
@@ -96,6 +138,13 @@ class VariablesPanel(ctk.CTkFrame):
             "variable_added", "variable_removed", "variable_renamed",
             "variable_type_changed", "variable_default_changed",
             "widget_added", "widget_removed", "property_changed",
+            # Project load / project switch publishes
+            # ``active_document_changed`` (3x during load_project).
+            # Without this subscription the panel keeps showing the
+            # previous project's empty list because variable_* events
+            # don't fire when ``project.variables`` is replaced
+            # wholesale by the loader.
+            "active_document_changed",
         ):
             bus.subscribe(event_name, self._on_changed)
             self._bus_subs.append((event_name, self._on_changed))
@@ -273,15 +322,18 @@ class VariablesPanel(ctk.CTkFrame):
     # ------------------------------------------------------------------
     def _on_add(self) -> None:
         existing_names = {v.name for v in self._scope_variables()}
+        # Pre-fill the Add dialog so a default OK lands a usable
+        # variable. Type change inside the dialog re-syncs the
+        # auto-fill while leaving any user-typed value alone.
         dialog = VariableEditDialog(
             self.winfo_toplevel(),
             title=(
                 "Add local variable" if self.scope == "local"
                 else "Add variable"
             ),
-            initial_name="",
+            initial_name=TYPE_DEFAULT_NAMES["str"],
             initial_type="str",
-            initial_default="",
+            initial_default=TYPE_DEFAULT_VALUES["str"],
             existing_names=existing_names,
         )
         dialog.wait_window()
@@ -447,6 +499,266 @@ class VariablesPanel(ctk.CTkFrame):
         self._bus_subs = []
 
 
+class ReparentVariablesDialog(ctk.CTkToplevel):
+    """Cross-doc reparent picker for local-variable handling.
+
+    Shown when the user moves widget(s) into another document and the
+    moved subtree binds at least one local variable owned by the
+    source doc. Two orthogonal radio choices:
+
+    Q1 — what happens to the variable in the source window:
+        ``"keep"``    — variable stays as-is.
+        ``"delete"``  — variable removed; cascade-unbinds any external
+                        widgets in the source still referencing it.
+
+    Q2 — how the moved widget(s) deal with the variable in the target:
+        ``"duplicate"`` — copy variable into the target doc (fresh
+                          UUID, suffix dedup; same-name + same-type
+                          reuses an existing target var).
+        ``"unbind"``    — drop the binding from the moved widget(s);
+                          the property reverts to its descriptor default.
+
+    Result is a tuple ``(source_policy, target_policy)`` on OK,
+    ``None`` on Cancel (which aborts the whole reparent).
+    """
+
+    def __init__(
+        self, parent,
+        source_doc_name: str,
+        target_doc_name: str,
+        var_entries: list,
+        external_usage: int,
+    ):
+        super().__init__(parent)
+        self.title("Move widget(s) across windows")
+        self.configure(fg_color=BG)
+        # Tight minsize so the dialog auto-sizes to its content
+        # rather than leaving a vertical gap when only 1-2 vars are
+        # listed. The list itself is fixed-height with a scrollbar
+        # so larger var sets don't grow the dialog past this either.
+        self.minsize(440, 0)
+        self.resizable(False, False)
+        try:
+            self.transient(parent)
+        except tk.TclError:
+            pass
+        self.grab_set()
+
+        self.result: tuple[str, str] | None = None
+        self._source_name = source_doc_name
+        self._target_name = target_doc_name
+        self._var_entries = list(var_entries)
+        self._external_usage = int(external_usage)
+
+        self._source_var = tk.StringVar(value="keep")
+        self._target_var = tk.StringVar(value="duplicate")
+
+        self._build()
+
+        self.bind("<Return>", lambda _e: self._on_ok())
+        self.bind("<Escape>", lambda _e: self._on_cancel())
+        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
+        self.after(50, self._center_on_parent)
+
+    def _build(self) -> None:
+        outer = ctk.CTkFrame(self, fg_color=PANEL_BG, corner_radius=6)
+        outer.pack(padx=18, pady=(18, 10), fill="both", expand=True)
+
+        ctk.CTkLabel(
+            outer,
+            text=(
+                f"The selection uses {len(self._var_entries)} "
+                f"local variable{'s' if len(self._var_entries) != 1 else ''} "
+                f"from `{self._source_name}`:"
+            ),
+            font=("Segoe UI", 11),
+            text_color="#cccccc", anchor="w", justify="left",
+        ).pack(fill="x", padx=14, pady=(12, 6))
+
+        self._build_var_list(outer)
+
+        self._build_source_section(outer)
+        self._build_target_section(outer)
+
+        ctk.CTkLabel(
+            outer,
+            text="Global variables are never affected.",
+            font=("Segoe UI", 10, "italic"),
+            text_color="#7da7d9", anchor="w",
+        ).pack(fill="x", padx=14, pady=(8, 12))
+
+        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer.pack(fill="x", padx=18, pady=(0, 14))
+        ctk.CTkButton(
+            footer, text="OK", width=110, height=30,
+            corner_radius=4, command=self._on_ok,
+        ).pack(side="right")
+        ctk.CTkButton(
+            footer, text="Cancel", width=80, height=30,
+            corner_radius=4,
+            fg_color="#3c3c3c", hover_color="#4a4a4a",
+            command=self._on_cancel,
+        ).pack(side="right", padx=(0, 8))
+
+    def _build_var_list(self, parent) -> None:
+        # Three visible rows max; scrollable beyond. Tk's
+        # ``Listbox(height=3)`` doesn't actually clamp the widget to
+        # 3 rows when its parent is given extra space — pack/expand
+        # rules let it grow vertically. Force the row count by
+        # wrapping in a fixed-pixel frame with ``pack_propagate(False)``
+        # so even a bigger dialog can't stretch the listbox.
+        # 3 rows × ~17px line height + 4px borders ≈ 56px.
+        ROW_HEIGHT_PX = 17
+        VISIBLE_ROWS = 3
+        WRAP_HEIGHT = ROW_HEIGHT_PX * VISIBLE_ROWS + 8
+        wrap = tk.Frame(
+            parent, bg=PANEL_BG,
+            height=WRAP_HEIGHT, highlightthickness=0,
+        )
+        wrap.pack(fill="x", padx=14, pady=(0, 10))
+        wrap.pack_propagate(False)
+
+        listbox = tk.Listbox(
+            wrap,
+            height=VISIBLE_ROWS,
+            bg=TREE_BG, fg=TREE_FG,
+            selectbackground=TREE_SELECTED_BG,
+            selectforeground="#ffffff",
+            font=("Segoe UI", 10),
+            borderwidth=0, highlightthickness=1,
+            highlightbackground=BORDER,
+            activestyle="none",
+            exportselection=False,
+        )
+        for entry in self._var_entries:
+            listbox.insert(
+                "end", f"  •  {entry.name}    ({entry.type})",
+            )
+
+        scrollbar = ctk.CTkScrollbar(
+            wrap, orientation="vertical",
+            command=listbox.yview,
+            width=10, corner_radius=4,
+            fg_color="transparent",
+            button_color="#3a3a3a",
+            button_hover_color="#4a4a4a",
+        )
+        listbox.configure(yscrollcommand=scrollbar.set)
+        listbox.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+    def _build_source_section(self, parent) -> None:
+        ctk.CTkLabel(
+            parent,
+            text=f"In the source window — `{self._source_name}`:",
+            font=("Segoe UI", 11, "bold"),
+            text_color="#cccccc", anchor="w",
+        ).pack(fill="x", padx=14, pady=(4, 4))
+        n = self._external_usage
+        keep_label = (
+            f"Keep variables  (used by {n} other widget"
+            f"{'s' if n != 1 else ''})"
+            if n > 0 else "Keep variables"
+        )
+        ctk.CTkRadioButton(
+            parent, text=keep_label,
+            variable=self._source_var, value="keep",
+            font=("Segoe UI", 11),
+        ).pack(fill="x", padx=24, pady=(0, 2), anchor="w")
+        ctk.CTkRadioButton(
+            parent, text="Delete variables",
+            variable=self._source_var, value="delete",
+            font=("Segoe UI", 11),
+        ).pack(fill="x", padx=24, pady=(0, 6), anchor="w")
+
+    def _build_target_section(self, parent) -> None:
+        ctk.CTkLabel(
+            parent,
+            text=f"In the target window — `{self._target_name}`:",
+            font=("Segoe UI", 11, "bold"),
+            text_color="#cccccc", anchor="w",
+        ).pack(fill="x", padx=14, pady=(4, 4))
+        ctk.CTkRadioButton(
+            parent,
+            text="Duplicate (or reuse existing same-name)",
+            variable=self._target_var, value="duplicate",
+            font=("Segoe UI", 11),
+        ).pack(fill="x", padx=24, pady=(0, 2), anchor="w")
+        ctk.CTkRadioButton(
+            parent, text="Unbind widgets from variables",
+            variable=self._target_var, value="unbind",
+            font=("Segoe UI", 11),
+        ).pack(fill="x", padx=24, pady=(0, 6), anchor="w")
+
+    def _on_ok(self) -> None:
+        self.result = (
+            self._source_var.get(),
+            self._target_var.get(),
+        )
+        self.destroy()
+
+    def _on_cancel(self) -> None:
+        self.result = None
+        self.destroy()
+
+    def _center_on_parent(self) -> None:
+        try:
+            parent = self.master
+            parent.update_idletasks()
+            self.update_idletasks()
+            w = self.winfo_width() or 460
+            h = self.winfo_height() or 380
+            px, py = parent.winfo_rootx(), parent.winfo_rooty()
+            pw, ph = parent.winfo_width(), parent.winfo_height()
+            x = px + (pw - w) // 2
+            y = py + (ph - h) // 2
+            x, y = _clamp_to_screen(self, x, y, w, h)
+            self.geometry(f"+{x}+{y}")
+        except tk.TclError:
+            pass
+
+
+def confirm_clipboard_paste_policy(
+    parent_window, project, target_doc,
+) -> tuple[bool, tuple[str, str] | None]:
+    """Drive the cross-doc variable dialog for a clipboard paste.
+
+    Returns the same shape the drag controller uses:
+
+    ``(True, None)``         no dialog needed — same-doc paste,
+                             empty clipboard, or no local-var
+                             bindings cross the boundary. Caller
+                             should pass ``var_policy=None`` (or the
+                             default) to ``paste_from_clipboard``.
+    ``(True, (src, tgt))``   user picked source / target policies;
+                             pass them through to
+                             ``paste_from_clipboard``.
+    ``(False, None)``        user cancelled — caller must abort the
+                             whole paste.
+    """
+    if target_doc is None or not project.clipboard:
+        return True, None
+    source_id = getattr(project, "_clipboard_source_doc_id", None)
+    if source_id is None or source_id == target_doc.id:
+        return True, None
+    var_entries, external = project.collect_clipboard_local_vars(target_doc)
+    if not var_entries:
+        return True, None
+    source_doc = project.get_document(source_id)
+    source_name = source_doc.name if source_doc is not None else ""
+    dialog = ReparentVariablesDialog(
+        parent_window,
+        source_doc_name=source_name,
+        target_doc_name=target_doc.name,
+        var_entries=var_entries,
+        external_usage=external,
+    )
+    dialog.wait_window()
+    if dialog.result is None:
+        return False, None
+    return True, dialog.result
+
+
 class VariableEditDialog(ctk.CTkToplevel):
     """Modal Add / Edit dialog. Result is ``(name, type, default)`` on
     OK, ``None`` on cancel.
@@ -475,6 +787,13 @@ class VariableEditDialog(ctk.CTkToplevel):
         )
         self._default_var = tk.StringVar(value=initial_default)
         self._error_var = tk.StringVar(value="")
+
+        # Track the most recent auto-filled values so a Type change
+        # only swaps Name / Default when the user hasn't customised
+        # them. Equality test against ``_last_auto_*`` is the cue.
+        self._last_auto_name = TYPE_DEFAULT_NAMES.get(initial_type, "")
+        self._last_auto_default = TYPE_DEFAULT_VALUES.get(initial_type, "")
+        self._type_var.trace_add("write", self._on_type_changed)
 
         self._build()
 
@@ -560,6 +879,23 @@ class VariableEditDialog(ctk.CTkToplevel):
         )
         self._default_entry.pack(side="left", fill="x", expand=True)
 
+    def _on_type_changed(self, *_args) -> None:
+        """Swap Name / Default to the new type's auto-fill values
+        only when the user hasn't customised them. ``_last_auto_*``
+        carries the previous auto values; if a field still equals
+        them, it's safe to update — anything else is the user's text
+        and stays put.
+        """
+        new_type = LABEL_TO_TYPE.get(self._type_var.get(), "str")
+        new_auto_name = TYPE_DEFAULT_NAMES.get(new_type, "")
+        new_auto_default = TYPE_DEFAULT_VALUES.get(new_type, "")
+        if self._name_var.get() == self._last_auto_name:
+            self._name_var.set(new_auto_name)
+        if self._default_var.get() == self._last_auto_default:
+            self._default_var.set(new_auto_default)
+        self._last_auto_name = new_auto_name
+        self._last_auto_default = new_auto_default
+
     def _on_ok(self) -> None:
         raw_name = self._name_var.get().strip()
         if not raw_name:
@@ -585,6 +921,11 @@ class VariableEditDialog(ctk.CTkToplevel):
         self.destroy()
 
     def _center_on_parent(self) -> None:
+        """Center on the Variables window, then clamp to the screen.
+        Clamp is the load-bearing part — the parent itself can sit
+        right on a screen edge after a Variables-window resize, so a
+        plain centre would push half the dialog off-screen.
+        """
         try:
             parent = self.master
             parent.update_idletasks()
@@ -593,6 +934,7 @@ class VariableEditDialog(ctk.CTkToplevel):
             pw, ph = parent.winfo_width(), parent.winfo_height()
             x = px + (pw - DIALOG_W) // 2
             y = py + (ph - DIALOG_H) // 2
+            x, y = _clamp_to_screen(self, x, y, DIALOG_W, DIALOG_H)
             self.geometry(f"{DIALOG_W}x{DIALOG_H}+{x}+{y}")
         except tk.TclError:
             pass
@@ -816,14 +1158,23 @@ class VariablesWindow(ctk.CTkToplevel):
             pass
 
     def _place_relative_to(self, parent) -> None:
+        """Center the window on its parent, then clamp to the screen
+        so a parent flush against the right / bottom edge doesn't
+        throw us off-screen. The earlier "30px from parent's right
+        edge" heuristic looked like a deliberate hide on monitors
+        where the builder occupied the full screen width.
+        """
+        w, h = 460, 440
         try:
             parent.update_idletasks()
             px = parent.winfo_rootx()
             py = parent.winfo_rooty()
             pw = parent.winfo_width()
-            x = px + pw - 460 - 30
-            y = py + 80
-            self.geometry(f"460x440+{x}+{y}")
+            ph = parent.winfo_height()
+            x = px + (pw - w) // 2
+            y = py + (ph - h) // 2
+            x, y = _clamp_to_screen(self, x, y, w, h)
+            self.geometry(f"{w}x{h}+{x}+{y}")
         except tk.TclError:
             pass
 

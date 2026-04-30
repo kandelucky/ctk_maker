@@ -37,6 +37,11 @@ DEFAULT_WINDOW_PROPERTIES = {
     # export time. Canvas always positions widgets by absolute x/y
     # in the editor — this only changes the .py output.
     "layout_type": "place",
+    # Builder-only drag aids. Both default ON; legacy projects use
+    # ``.get(key, True)`` at consumption sites so missing keys keep
+    # the original behaviour.
+    "alignment_lines_enabled": True,
+    "snap_enabled": True,
 }
 
 

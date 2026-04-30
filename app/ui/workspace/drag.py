@@ -926,17 +926,40 @@ class WidgetDragController:
         prev_snap_dx = self._drag.get("snap_dx_logical", 0)
         prev_snap_dy = self._drag.get("snap_dy_logical", 0)
         alt_held = bool(event.state & 0x20000)
+        # Per-document toggles in Window properties — both default ON
+        # for legacy projects (.get with True fallback) so existing
+        # behaviour is unchanged when the keys are missing.
+        active_doc = self.project.active_document
+        if active_doc is not None:
+            lines_enabled = bool(
+                active_doc.window_properties.get(
+                    "alignment_lines_enabled", True,
+                ),
+            )
+            snap_enabled = bool(
+                active_doc.window_properties.get("snap_enabled", True),
+            )
+        else:
+            lines_enabled = True
+            snap_enabled = True
         if (
             primary_node is not None
             and not hidden_mode
             and not alt_held
+            and (lines_enabled or snap_enabled)
         ):
             snap_dx_logical, snap_dy_logical, gxs, gys = (
                 self._compute_drag_snap(
                     primary_node, dx_logical, dy_logical,
                 )
             )
-            self._draw_snap_guides(primary_node, gxs, gys)
+            if lines_enabled:
+                self._draw_snap_guides(primary_node, gxs, gys)
+            else:
+                self._clear_snap_guides()
+            if not snap_enabled:
+                snap_dx_logical = 0
+                snap_dy_logical = 0
         else:
             self._clear_snap_guides()
         # Apply snap to the model coords; visual canvas item move
@@ -1535,6 +1558,21 @@ class WidgetDragController:
         cross_doc = new_doc is not None and new_doc is not old_doc
         if new_parent_id == old_parent_id and not cross_doc:
             return False  # same parent, same doc — in-place drag
+        # Cross-doc var policy dialog. Fires only when the moved
+        # subtree(s) bind ≥1 local variable owned by the source doc.
+        # Cancelled dialog aborts the whole reparent BEFORE any
+        # geometry or tree mutation happens. No-op when bindings are
+        # all global / absent. Stored on the drag dict so the
+        # subsequent branches (manual cross-doc move, in-doc group,
+        # single reparent) all reuse the same answer.
+        proceed, policy = self._resolve_cross_doc_var_policy(
+            drag, old_doc, new_doc, cross_doc,
+        )
+        if not proceed:
+            return True  # Treat cancel as "we handled this drop" —
+            # caller skips the per-widget Move record so the widget
+            # stays put in its original parent / doc.
+        drag["_var_policy"] = policy
         # Capture the pre-reparent state for undo BEFORE any mutation.
         old_siblings = (
             node.parent.children if node.parent is not None
@@ -1579,7 +1617,25 @@ class WidgetDragController:
             old_doc, new_doc, new_parent_slot, old_parent_slot,
         ):
             return True
-        self.project.reparent(nid, new_parent_id)
+        # Pass ``document_id`` so the project can detect a cross-doc
+        # drop without falling back to the (possibly stale) active
+        # document. Local-variable migration is policy-driven: the
+        # cross-doc dialog's pick lands in ``drag["_var_policy"]``;
+        # we apply it after the move completes so
+        # ``find_document_for_widget`` sees the widget at its new
+        # home before the migrate helper walks the subtree.
+        self.project.reparent(
+            nid, new_parent_id,
+            document_id=(new_doc.id if new_doc is not None else None),
+        )
+        policy = drag.get("_var_policy")
+        if policy is not None and new_doc is not None:
+            moved_node = self.project.get_widget(nid)
+            if moved_node is not None:
+                self.project.migrate_local_var_bindings(
+                    moved_node, new_doc,
+                    source_policy=policy[0], target_policy=policy[1],
+                )
         self._push_reparent_command(
             nid, old_parent_id, old_index,
             drag["start_x"], drag["start_y"],
@@ -1730,7 +1786,21 @@ class WidgetDragController:
                 w_node.properties["x"] = max(0, wx)
                 w_node.properties["y"] = max(0, wy)
                 w_node.parent_slot = new_parent_slot
-            self.project.reparent(wid, new_parent_id)
+            # Pass document_id so cross-doc moves resolve target doc
+            # without falling back to the active doc.
+            self.project.reparent(
+                wid, new_parent_id,
+                document_id=(new_doc.id if new_doc is not None else None),
+            )
+            policy = drag.get("_var_policy")
+            if policy is not None and new_doc is not None:
+                moved = self.project.get_widget(wid)
+                if moved is not None:
+                    self.project.migrate_local_var_bindings(
+                        moved, new_doc,
+                        source_policy=policy[0],
+                        target_policy=policy[1],
+                    )
         # Bulk undo command, one per member, in the same order they
         # were reparented so redo replays the original sequence.
         old_doc_id = old_doc.id if old_doc is not None else None
@@ -1775,6 +1845,92 @@ class WidgetDragController:
             self.project.history.push(BulkReparentCommand(reparent_cmds))
         return True
 
+    def _resolve_cross_doc_var_policy(
+        self, drag: dict, old_doc, new_doc, cross_doc: bool,
+    ) -> tuple[bool, tuple[str, str] | None]:
+        """Show the cross-doc variable dialog when the moved subtree
+        binds local vars from the source doc. Returns:
+
+        ``(True, None)``         no dialog needed (in-doc move, no
+                                 cross-doc bindings, etc.).
+        ``(True, (src, tgt))``   user picked source + target policies.
+        ``(False, None)``        user cancelled — caller aborts.
+
+        Aggregates all dragged top-level nodes (single + group) into
+        one survey so a multi-widget drag asks once for the whole
+        selection.
+        """
+        if not cross_doc or new_doc is None:
+            return True, None
+        moved_ids = set()
+        nid = drag.get("nid")
+        if nid:
+            moved_ids.add(nid)
+        for gid in (drag.get("group_starts") or {}):
+            moved_ids.add(gid)
+        moved_nodes = []
+        for wid in moved_ids:
+            n = self.project.get_widget(wid)
+            if n is not None:
+                moved_nodes.append(n)
+        var_entries, external = (
+            self.project.collect_cross_doc_local_vars(
+                moved_nodes, new_doc,
+            )
+        )
+        if not var_entries:
+            return True, None
+        from app.ui.variables_window import ReparentVariablesDialog
+        try:
+            parent = self.workspace.winfo_toplevel()
+        except Exception:
+            parent = self.canvas.winfo_toplevel()
+        dialog = ReparentVariablesDialog(
+            parent,
+            source_doc_name=old_doc.name if old_doc is not None else "",
+            target_doc_name=new_doc.name,
+            var_entries=var_entries,
+            external_usage=external,
+        )
+        dialog.wait_window()
+        if dialog.result is None:
+            self._revert_drag_visuals(drag)
+            return False, None
+        return True, dialog.result
+
+    def _revert_drag_visuals(self, drag: dict) -> None:
+        """Force a full destroy + recreate of each dragged widget so
+        the canvas re-renders at its (unchanged) model parent / x / y.
+
+        ``property_changed`` alone wasn't enough — during a cross-doc
+        drag the widget can end up visually inside the *other* doc's
+        canvas region, and only widget_lifecycle's ``on_widget_reparented``
+        path tears that view down and rebuilds it under the original
+        master. Publishing the event with same-parent on both ends
+        triggers exactly that destroy + recreate without changing the
+        model.
+        """
+        bus = self.project.event_bus
+        ids = set()
+        nid = drag.get("nid")
+        if nid:
+            ids.add(nid)
+        for gid in (drag.get("group_starts") or {}):
+            ids.add(gid)
+        for wid in ids:
+            node = self.project.get_widget(wid)
+            if node is None:
+                continue
+            try:
+                same_parent = (
+                    node.parent.id if node.parent is not None else None
+                )
+                bus.publish(
+                    "widget_reparented", wid, same_parent, same_parent,
+                )
+            except Exception:
+                pass
+
     def _perform_cross_doc_group_move(
         self, drag: dict, old_doc, new_doc,
         old_parent_id: str | None, new_parent_id: str | None,
@@ -1816,6 +1972,16 @@ class WidgetDragController:
             node.parent = None
             new_doc.root_widgets.append(node)
             self.project._index_subtree(node, new_doc)
+            # Local-variable migration runs with the policy picked by
+            # the cross-doc dialog (or skipped entirely when no local
+            # bindings cross). ``drag["_var_policy"]`` is set by
+            # ``_resolve_cross_doc_var_policy`` before any mutation.
+            policy = drag.get("_var_policy")
+            if policy is not None:
+                self.project.migrate_local_var_bindings(
+                    node, new_doc,
+                    source_policy=policy[0], target_policy=policy[1],
+                )
             self.project.event_bus.publish(
                 "widget_reparented", nid,
                 old_parent_id, new_parent_id,
@@ -1844,6 +2010,12 @@ class WidgetDragController:
                 old_doc.root_widgets.remove(other)
             new_doc.root_widgets.append(other)
             self.project._index_subtree(other, new_doc)
+            policy = drag.get("_var_policy")
+            if policy is not None:
+                self.project.migrate_local_var_bindings(
+                    other, new_doc,
+                    source_policy=policy[0], target_policy=policy[1],
+                )
             self.project.event_bus.publish(
                 "widget_reparented", wid, None, None,
             )

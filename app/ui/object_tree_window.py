@@ -1335,6 +1335,52 @@ class ObjectTreePanel(ctk.CTkFrame):
             old_x = old_y = 0
         old_doc = self.project.find_document_for_widget(source_id)
         old_doc_id = old_doc.id if old_doc is not None else None
+        # Determine target doc for the drop. When the user drops
+        # before / after a widget at another doc's root, parent_id is
+        # None and the project would otherwise default to the active
+        # doc — which during a tree drag may still be the source.
+        # Derive it from drop_info instead so cross-doc moves
+        # ``Project.migrate_local_var_bindings`` correctly.
+        target_iid = drop_info.get("target_iid", "")
+        if parent_id:
+            target_doc_node = self.project.find_document_for_widget(parent_id)
+        elif target_iid:
+            target_doc_node = self.project.find_document_for_widget(target_iid)
+        else:
+            target_doc_node = old_doc
+        target_doc_id = (
+            target_doc_node.id if target_doc_node is not None else None
+        )
+        # Cross-doc var policy dialog. Same path as the canvas drag —
+        # ask the user once when the dragged widget binds local vars
+        # owned by the source doc.
+        cross_doc = (
+            old_doc is not None
+            and target_doc_node is not None
+            and old_doc.id != target_doc_node.id
+        )
+        var_policy: tuple[str, str] | None = None
+        if cross_doc:
+            var_entries, external = (
+                self.project.collect_cross_doc_local_vars(
+                    [node], target_doc_node,
+                )
+            )
+            if var_entries:
+                from app.ui.variables_window import (
+                    ReparentVariablesDialog,
+                )
+                dialog = ReparentVariablesDialog(
+                    self,
+                    source_doc_name=old_doc.name,
+                    target_doc_name=target_doc_node.name,
+                    var_entries=var_entries,
+                    external_usage=external,
+                )
+                dialog.wait_window()
+                if dialog.result is None:
+                    return  # cancel — leave the widget where it was
+                var_policy = dialog.result
         # Tree drag has no cursor position — without a reset the widget
         # would keep its old absolute x/y (valid for the old parent's
         # space) and land off-screen or overlapping inside the new one.
@@ -1344,7 +1390,18 @@ class ObjectTreePanel(ctk.CTkFrame):
             new_y = int(node.properties.get("y", 0))
         except (TypeError, ValueError):
             new_x = new_y = 0
-        self.project.reparent(source_id, parent_id, index=index)
+        self.project.reparent(
+            source_id, parent_id, index=index,
+            document_id=target_doc_id,
+        )
+        if var_policy is not None and target_doc_node is not None:
+            moved = self.project.get_widget(source_id)
+            if moved is not None:
+                self.project.migrate_local_var_bindings(
+                    moved, target_doc_node,
+                    source_policy=var_policy[0],
+                    target_policy=var_policy[1],
+                )
         post_node = self.project.get_widget(source_id)
         if post_node is None:
             return
@@ -1835,7 +1892,16 @@ class ObjectTreePanel(ctk.CTkFrame):
             descriptor, "is_container", False,
         ):
             return
-        new_ids = self.project.paste_from_clipboard(parent_id=widget_id)
+        from app.ui.variables_window import confirm_clipboard_paste_policy
+        target_doc = self.project.find_document_for_widget(widget_id)
+        proceed, policy = confirm_clipboard_paste_policy(
+            self, self.project, target_doc,
+        )
+        if not proceed:
+            return
+        new_ids = self.project.paste_from_clipboard(
+            parent_id=widget_id, var_policy=policy,
+        )
         self._push_paste_history(new_ids)
 
     def _paste_in_window(self) -> None:
@@ -1843,7 +1909,15 @@ class ObjectTreePanel(ctk.CTkFrame):
         regardless of where the right-click landed."""
         if not self.project.clipboard:
             return
-        new_ids = self.project.paste_from_clipboard(parent_id=None)
+        from app.ui.variables_window import confirm_clipboard_paste_policy
+        proceed, policy = confirm_clipboard_paste_policy(
+            self, self.project, self.project.active_document,
+        )
+        if not proceed:
+            return
+        new_ids = self.project.paste_from_clipboard(
+            parent_id=None, var_policy=policy,
+        )
         self._push_paste_history(new_ids)
 
     def _duplicate_in_window(self, widget_id: str) -> None:
@@ -1895,7 +1969,19 @@ class ObjectTreePanel(ctk.CTkFrame):
         if not self.project.clipboard:
             return "break"
         parent_id = self._paste_target_parent_id()
-        new_ids = self.project.paste_from_clipboard(parent_id=parent_id)
+        from app.ui.variables_window import confirm_clipboard_paste_policy
+        target_doc = (
+            self.project.find_document_for_widget(parent_id)
+            if parent_id else self.project.active_document
+        )
+        proceed, policy = confirm_clipboard_paste_policy(
+            self, self.project, target_doc,
+        )
+        if not proceed:
+            return "break"
+        new_ids = self.project.paste_from_clipboard(
+            parent_id=parent_id, var_policy=policy,
+        )
         self._push_paste_history(new_ids)
         self.tree.focus_set()
         return "break"

@@ -880,9 +880,12 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         """Right-click on a property row → bind / unbind menu. Right
         click stays as a backup gesture — the visible 🔗 button on
         each row is the primary path."""
+        iid = self.tree.identify_row(event.y)
+        if iid and iid.startswith("localvar:") and iid != "localvar:empty":
+            self._show_local_var_menu(event)
+            return
         if self.current_id is None:
             return
-        iid = self.tree.identify_row(event.y)
         if not iid or not iid.startswith("p:"):
             return
         pname = iid[2:]
@@ -896,6 +899,23 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         if node is None:
             return
         self._show_binding_menu(event, pname, prop, node)
+
+    def _show_local_var_menu(self, event) -> None:
+        """Right-click on a Local Variables row → "Open Variables
+        Editor" entry that routes to the shared bus-open path. Same
+        mechanism the chrome strip uses (chrome.py:_on_vars_click)."""
+        doc_id = self.project.active_document_id if self.project else None
+        menu = tk.Menu(self.tree, tearoff=0)
+        menu.add_command(
+            label="Open Variables Editor",
+            command=lambda: self.project.event_bus.publish(
+                "request_open_variables_window", "local", doc_id,
+            ),
+        )
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
 
     def _open_binding_menu_for(self, event, pname: str, prop: dict) -> None:
         """Click handler for the per-row 🔗 button. Resolves the

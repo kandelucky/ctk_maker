@@ -1,13 +1,12 @@
-"""Save-as-prefab modal — name + target folder picker.
+"""Save-as-component modal — name + target folder picker.
 
-Returns ``(name, target_path)`` on OK; ``None`` on Cancel. ``target_path``
-is the full ``.ctkprefab`` file path inside the user's prefab library
-(see ``app/core/prefab_paths.py``).
+Returns ``(name, target_path)`` on OK; ``None`` on Cancel.
+``target_path`` is the full ``.ctkcomp`` file path inside the
+project's ``components/`` folder (passed in via ``components_dir``).
 
-If the selection contains any ``var:<uuid>`` token bindings, an
-inline warning shows that those bindings will be replaced with their
-current literal values — Phase A keeps prefabs portable across
-projects whose variable namespaces don't match.
+The orange warning shows how many variable bindings will travel with
+the component (locals + globals get bundled together; deleted-var
+tokens drop silently and aren't counted).
 """
 
 from __future__ import annotations
@@ -17,9 +16,7 @@ from pathlib import Path
 
 import customtkinter as ctk
 
-from app.core.prefab_paths import (
-    PREFAB_EXT, ensure_prefabs_root,
-)
+from app.core.component_paths import COMPONENT_EXT
 
 _FORBIDDEN = set('\\/:*?"<>|')
 _ROOT_LABEL = "(root)"
@@ -33,10 +30,6 @@ def _is_valid_name(name: str) -> bool:
 
 
 def _list_folders(root: Path) -> list[str]:
-    """Recursive list of subfolder paths relative to ``root``, sorted
-    by name. Returns POSIX-style paths so the dropdown reads
-    consistently across platforms.
-    """
     out: list[str] = []
     for path in root.rglob("*"):
         if path.is_dir():
@@ -46,22 +39,24 @@ def _list_folders(root: Path) -> list[str]:
     return out
 
 
-class PrefabSaveDialog(ctk.CTkToplevel):
+class ComponentSaveDialog(ctk.CTkToplevel):
     def __init__(
         self,
         parent,
         default_name: str,
-        var_binding_count: int = 0,
+        components_dir: Path,
+        bundled_var_count: int = 0,
         initial_folder: str = "",
     ):
         super().__init__(parent)
-        self.title("Save as prefab")
+        self.title("Save as component")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
 
         self.result: tuple[str, Path] | None = None
-        self._root_dir = ensure_prefabs_root()
+        self._root_dir = components_dir
+        self._root_dir.mkdir(parents=True, exist_ok=True)
 
         body = ctk.CTkFrame(self, fg_color="transparent")
         body.pack(padx=20, pady=(18, 10), fill="x")
@@ -88,19 +83,30 @@ class PrefabSaveDialog(ctk.CTkToplevel):
 
         body.grid_columnconfigure(0, weight=1)
 
-        if var_binding_count > 0:
+        if bundled_var_count > 0:
             warn = ctk.CTkLabel(
                 self,
                 text=(
-                    f"⚠ {var_binding_count} variable binding(s) will be "
-                    "replaced with their current values."
+                    f"⚠ {bundled_var_count} variable(s) will be saved "
+                    "with component."
                 ),
                 text_color="#cc7e1f",
                 font=("Segoe UI", 10),
-                wraplength=280,
+                wraplength=320,
                 justify="left",
             )
-            warn.pack(padx=20, pady=(0, 8), anchor="w")
+            warn.pack(padx=20, pady=(0, 2), anchor="w")
+            hint = ctk.CTkLabel(
+                self,
+                text=(
+                    "Global bindings become local in the target window."
+                ),
+                text_color="#888888",
+                font=("Segoe UI", 9),
+                wraplength=320,
+                justify="left",
+            )
+            hint.pack(padx=20, pady=(0, 8), anchor="w")
 
         footer = ctk.CTkFrame(self, fg_color="transparent")
         footer.pack(fill="x", padx=20, pady=(4, 16))
@@ -139,12 +145,12 @@ class PrefabSaveDialog(ctk.CTkToplevel):
             target_dir = self._root_dir
         else:
             target_dir = self._root_dir / folder_label
-        target_path = target_dir / f"{name}{PREFAB_EXT}"
+        target_path = target_dir / f"{name}{COMPONENT_EXT}"
         if target_path.exists():
             self.bell()
             overwrite = messagebox.askyesno(
                 "Already exists",
-                f"'{name}{PREFAB_EXT}' already exists in this folder. "
+                f"'{name}{COMPONENT_EXT}' already exists in this folder. "
                 "Overwrite?",
                 parent=self,
             )

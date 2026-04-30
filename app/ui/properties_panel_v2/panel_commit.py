@@ -183,13 +183,21 @@ class CommitMixin:
         get_editor(prop["type"]).on_single_click(self, pname, prop)
 
     def _on_double_click(self, event) -> str | None:
+        iid = self.tree.identify_row(event.y)
+        if iid and iid.startswith("localvar:") and iid != "localvar:empty":
+            doc_id = (
+                self.project.active_document_id if self.project else None
+            )
+            self.project.event_bus.publish(
+                "request_open_variables_window", "local", doc_id,
+            )
+            return "break"
         region = self.tree.identify_region(event.x, event.y)
         if region != "cell":
             return None
         col = self.tree.identify_column(event.x)
         if col != "#1":
             return None
-        iid = self.tree.identify_row(event.y)
         if not iid or not iid.startswith("p:"):
             return None
         pname = iid[2:]
