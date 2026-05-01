@@ -98,6 +98,56 @@ def _write_preview_runner(tmp_dir: Path) -> Path:
     return runner_path
 
 
+def _confirm_missing_handler_methods(parent) -> bool:
+    """If the most recent export had to skip handler bindings whose
+    methods don't exist in the behavior file, surface a yes/no
+    dialog so the user knows why their button no longer fires what
+    they bound. Returns ``True`` on Yes (proceed with preview) or
+    when the missing-methods list is empty; ``False`` when the user
+    backs out so the caller can abort the preview launch.
+    """
+    try:
+        from app.io.code_exporter import get_missing_behavior_methods
+    except ImportError:
+        return True
+    missing = get_missing_behavior_methods()
+    if not missing:
+        return True
+    # Cluster by document so the user can read the warning without
+    # parsing a flat repeating list. Hard-cap each doc at 5 method
+    # names so a project with 30 stale bindings doesn't blow out
+    # the dialog vertically.
+    by_doc: dict[str, list[str]] = {}
+    for doc_name, method_name in missing:
+        by_doc.setdefault(doc_name, []).append(method_name)
+    lines = [
+        "Some handler bindings reference methods that don't exist "
+        "in the behavior file:",
+        "",
+    ]
+    for doc_name, methods in by_doc.items():
+        head = methods[:5]
+        rest = len(methods) - len(head)
+        formatted = ", ".join(head)
+        if rest > 0:
+            formatted += f", … (+{rest} more)"
+        lines.append(f"  • {doc_name}: {formatted}")
+    lines.append("")
+    lines.append(
+        "These bindings will be skipped — the buttons / events "
+        "won't fire what was bound. Open the behavior file (F7) "
+        "to add the methods back, or unbind the rows in the "
+        "Properties panel.",
+    )
+    lines.append("")
+    lines.append("Continue with the preview anyway?")
+    return messagebox.askyesno(
+        "Missing handler methods",
+        "\n".join(lines),
+        parent=parent,
+    )
+
+
 def _preview_cwd(project, tmp_dir: Path) -> Path:
     """Pick the working directory for a preview subprocess. Multi-page
     projects expose ``project.folder_path`` — the project root holding
@@ -1590,6 +1640,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             log_error("preview export")
             messagebox.showerror("Preview failed", "Could not generate preview file.", parent=self)
             return
+        if not _confirm_missing_handler_methods(self):
+            return
         runner_path = _write_preview_runner(tmp_dir)
         try:
             proc = subprocess.Popen(
@@ -1639,6 +1691,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 "Could not generate preview file.",
                 parent=self,
             )
+            return
+        if not _confirm_missing_handler_methods(self):
             return
         runner_path = _write_preview_runner(tmp_dir)
         try:

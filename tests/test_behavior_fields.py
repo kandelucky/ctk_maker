@@ -451,3 +451,86 @@ def test_suggest_behavior_field_name_appends_suffix_on_collision():
         suggest_behavior_field_name("My Label", "CTkLabel", existing)
         == "my_label_3"
     )
+
+
+# ---------------------------------------------------------------------
+# Orphan handler filtering (v1.9.1 — defensive export)
+# ---------------------------------------------------------------------
+def test_filter_handlers_keeps_existing_drops_missing(monkeypatch):
+    """``_filter_handlers_to_existing_methods`` keeps method names
+    listed in the per-doc scan, drops ones that don't exist, and
+    appends drops to ``_MISSING_BEHAVIOR_METHODS`` so the caller
+    can surface them via ``get_missing_behavior_methods``.
+    """
+    import app.io.code_exporter as ce
+
+    class _FakeNode:
+        id = "widget-1"
+
+    class _FakeDoc:
+        id = "doc-1"
+        name = "Main"
+
+    class _FakeProject:
+        documents = [_FakeDoc()]
+
+        def find_document_for_widget(self, wid):
+            return _FakeDoc() if wid == "widget-1" else None
+
+    monkeypatch.setattr(ce, "_EXPORT_PROJECT", _FakeProject())
+    monkeypatch.setattr(
+        ce, "_BEHAVIOR_METHODS_BY_DOC_ID", {"doc-1": {"on_click"}},
+    )
+    monkeypatch.setattr(ce, "_MISSING_BEHAVIOR_METHODS", [])
+    kept = ce._filter_handlers_to_existing_methods(
+        _FakeNode(), ["on_click", "missing_method"],
+    )
+    assert kept == ["on_click"]
+    assert ce.get_missing_behavior_methods() == [
+        ("Main", "missing_method"),
+    ]
+
+
+def test_filter_handlers_no_op_without_scan_data(monkeypatch):
+    """When the doc has no scan data (file never materialised, or
+    project unsaved), the filter falls through unchanged so legacy
+    exports keep working.
+    """
+    import app.io.code_exporter as ce
+
+    class _FakeNode:
+        id = "widget-1"
+
+    class _FakeDoc:
+        id = "doc-1"
+        name = "Main"
+
+    class _FakeProject:
+        documents = [_FakeDoc()]
+
+        def find_document_for_widget(self, wid):
+            return _FakeDoc()
+
+    monkeypatch.setattr(ce, "_EXPORT_PROJECT", _FakeProject())
+    monkeypatch.setattr(ce, "_BEHAVIOR_METHODS_BY_DOC_ID", {})
+    monkeypatch.setattr(ce, "_MISSING_BEHAVIOR_METHODS", [])
+    kept = ce._filter_handlers_to_existing_methods(
+        _FakeNode(), ["on_click", "missing_method"],
+    )
+    assert kept == ["on_click", "missing_method"]
+    assert ce.get_missing_behavior_methods() == []
+
+
+def test_filter_handlers_no_op_without_export_project(monkeypatch):
+    import app.io.code_exporter as ce
+
+    class _FakeNode:
+        id = "widget-1"
+
+    monkeypatch.setattr(ce, "_EXPORT_PROJECT", None)
+    monkeypatch.setattr(ce, "_BEHAVIOR_METHODS_BY_DOC_ID", {})
+    monkeypatch.setattr(ce, "_MISSING_BEHAVIOR_METHODS", [])
+    kept = ce._filter_handlers_to_existing_methods(
+        _FakeNode(), ["on_click"],
+    )
+    assert kept == ["on_click"]
