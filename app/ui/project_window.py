@@ -1389,35 +1389,30 @@ class ProjectPanel(ctk.CTkFrame):
         """
         if not file_path.exists():
             return
+        # ``.py`` opens through the user's configured editor
+        # (Settings → Editor tab) so free-form scripts land in the
+        # same editor F7 uses for behavior files. ``launch_editor``
+        # falls back to the Auto chain (VS Code → Notepad++ → IDLE),
+        # so something runnable always wins out — no need for the
+        # ``.py``-specific OS branch below.
+        if file_path.suffix.lower() == ".py":
+            from app.core.settings import load_settings
+            from app.io.scripts import (
+                launch_editor,
+                resolve_project_root_for_editor,
+            )
+            editor_command = load_settings().get("editor_command")
+            if launch_editor(
+                file_path,
+                editor_command=editor_command,
+                project_root=resolve_project_root_for_editor(self.project),
+            ):
+                return
         try:
             if sys.platform == "win32":
-                ext = file_path.suffix.lower()
-                # ``.py`` default Windows verb is "open" which RUNS
-                # the script through python.exe — opens a console
-                # that flashes and closes when the script ends.
-                # Use the explicit "edit" verb instead so the
-                # registered editor (IDLE / VSCode / Notepad++)
-                # gets called.
-                if ext == ".py":
-                    try:
-                        os.startfile(str(file_path), "edit")
-                        return
-                    except OSError:
-                        # ``edit`` verb missing on this user's
-                        # machine — fall back to IDLE bundled with
-                        # the running Python interpreter.
-                        try:
-                            subprocess.Popen(
-                                [sys.executable, "-m", "idlelib",
-                                 str(file_path)],
-                            )
-                            return
-                        except (OSError, FileNotFoundError):
-                            pass
-                # Everything else routes through ``explorer.exe``,
-                # which delegates to Windows' normal double-click
-                # path. Handles UWP / Microsoft Store associations
-                # cleanly.
+                # Everything routes through ``explorer.exe``, which
+                # delegates to Windows' normal double-click path.
+                # Handles UWP / Microsoft Store associations cleanly.
                 subprocess.Popen(
                     ["explorer.exe", str(file_path)],
                 )
@@ -2233,38 +2228,19 @@ def _truncate_path(text: str, max_len: int = 32) -> str:
 
 def _python_starter_template(stem: str) -> str:
     """Body of every newly-created ``.py`` in the Assets panel.
-    Sets v0.1 behaviour-layer expectations + threads issue tracker
-    and support links. Plain text, no emoji — survives every
-    Windows default font cleanly.
+    Plain helper module — write functions / classes here and import
+    them from per-window behavior files when you want to share
+    logic between windows.
     """
-    title = f"{stem}.py — Script file"
-    underline = "=" * len(title)
     return (
-        f'"""\n'
-        f"{title}\n"
-        f"{underline}\n"
+        f'"""{stem}.py — helper module.\n'
         f"\n"
-        f"In v0.1, CTk Maker does not yet wire this script directly "
-        f"into your UI's\n"
-        f"behavior. After exporting, you can connect it to the "
-        f"generated code\n"
-        f"yourself.\n"
+        f"Free-form Python file. Use it to share helpers / classes\n"
+        f"between per-window behavior files (the .py files under\n"
+        f"assets/scripts/<page>/ that back each window's events).\n"
         f"\n"
-        f'v0.2 will add a "behavior layer" — attaching actions to '
-        f"buttons, forms,\n"
-        f"and events directly inside the builder, so the whole app "
-        f"can be built\n"
-        f"visually end to end.\n"
-        f"\n"
-        f"Want this feature? Let me know:\n"
-        f"    https://github.com/kandelucky/ctk_maker/issues\n"
-        f"\n"
-        f"The more requests I get, the faster I'll prioritize it.\n"
-        f"\n"
-        f"---\n"
-        f"\n"
-        f"If CTk Maker saves you time, you can support development:\n"
-        f"    https://buymeacoffee.com/Kandelucky_dev\n"
+        f"Per-widget event handlers belong in those per-window\n"
+        f"files (Events group in the Properties panel), not here.\n"
         f'"""\n'
         f"\n"
     )
