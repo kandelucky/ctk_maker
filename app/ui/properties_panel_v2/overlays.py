@@ -192,6 +192,7 @@ SLOT_EVENT_UNBIND = "event_unbind"
 # Phase 3 visual scripting — Behavior Fields group action buttons.
 SLOT_BEHAVIOR_PICK = "behavior_pick"
 SLOT_BEHAVIOR_CLEAR = "behavior_clear"
+SLOT_BEHAVIOR_FIELD_ADD = "behavior_field_add"
 
 
 def place_bind_clear(
@@ -224,6 +225,17 @@ def place_event_unbind(
     elsewhere in the panel.
     """
     _place_value_cell_right(tree, widget, iid, width=14, pad_y=4)
+
+
+def place_behavior_field_add(
+    tree: tk.Widget, widget: tk.Widget, iid: str,
+) -> None:
+    """``[+]`` button on the Behavior Fields group header. Mirrors
+    ``place_event_add`` so the visual rhythm matches the Events
+    group's "+" affordance — same width / pad_y, same right-edge
+    placement.
+    """
+    _place_value_cell_right(tree, widget, iid, width=20, pad_y=3)
 
 
 def place_behavior_field_pick(

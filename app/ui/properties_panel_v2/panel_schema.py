@@ -41,11 +41,13 @@ from .format_utils import (
 )
 from .overlays import (
     SLOT_BEHAVIOR_CLEAR,
+    SLOT_BEHAVIOR_FIELD_ADD,
     SLOT_BEHAVIOR_PICK,
     SLOT_BIND_BUTTON,
     SLOT_BIND_CLEAR,
     SLOT_EVENT_ADD,
     SLOT_EVENT_UNBIND,
+    place_behavior_field_add,
     place_behavior_field_clear,
     place_behavior_field_pick,
     place_bind_button,
@@ -180,12 +182,6 @@ class SchemaMixin:
         # current document without opening the F11 Variables window.
         if descriptor.type_name == WINDOW_ID:
             self._populate_local_variables_group()
-            # Phase 3 — Behavior Fields are class-level on the window's
-            # behavior file (one class per window), so we only render
-            # the group when the user selects the window itself, not
-            # for individual child widgets. Non-window widgets keep
-            # their tidy panel.
-            self._populate_behavior_fields_group()
 
         # Phase 2 visual scripting — Events group for event-capable
         # widgets (button, slider, entry, …). Renders below every
@@ -193,6 +189,18 @@ class SchemaMixin:
         # skip it entirely so their panels stay tidy.
         if node is not None:
             self._populate_events_group(node)
+
+        # Phase 3 — Behavior Fields render on every selection so the
+        # user can pick widgets for the window's Inspector slots from
+        # any panel they happen to be viewing. The slots are class-
+        # level on the window's behavior file (one class per window),
+        # but exposing them on every widget panel matters for
+        # discoverability — users tend to live on widget panels and
+        # rarely click the window background. Position itself right
+        # after the Events group when present so the visual rhythm
+        # mirrors Unity's "events first, references next" Inspector
+        # layout.
+        self._populate_behavior_fields_group()
 
     def _populate_local_variables_group(self) -> None:
         doc = self.project.active_document if self.project else None
@@ -222,14 +230,23 @@ class SchemaMixin:
 
     def _populate_behavior_fields_group(self) -> None:
         """Phase 3 visual scripting — render the active document's
-        Behavior Field slots in a dedicated group at the end of the
-        Window panel. Each ``<name>: ref[<WidgetType>]`` annotation
-        on the per-window behavior class becomes one row whose value
-        cell shows the bound widget's name and a ``[Pick…]`` button
-        that opens the modal widget picker.
+        Behavior Field slots in a dedicated group. Visible on every
+        selection (widget OR window) since the slots themselves are
+        class-level on the window's behavior file but the picker
+        affordance benefits from being reachable from any panel.
+
+        Each ``<name>: ref[<WidgetType>]`` annotation becomes one row
+        whose value cell shows the bound widget's name and a
+        ``[Pick…]`` button that opens the modal widget picker.
 
         Empty state (no annotations declared yet) shows a one-line
         hint pointing at the syntax users add to their behavior file.
+
+        Position: hoists the group right after the Events group when
+        present so it sits visually close to the other Phase 2/3
+        scripting affordances. Falls back to end-of-tree when the
+        Events group is absent (Window panel, or widgets without
+        events like Label / Frame / Image).
         """
         doc = self.project.active_document if self.project else None
         if doc is None:
@@ -240,6 +257,12 @@ class SchemaMixin:
             text="Behavior Fields", values=("",), open=True,
             tags=("class",),
         )
+        # Inline ``[+]`` lets the user create a field via the Add
+        # Behavior Field dialog instead of editing the .py source
+        # by hand. Routed through the panel layer so the dialog +
+        # the SetBehaviorFieldCommand push live next to the rest of
+        # the Phase 3 surface.
+        self._attach_behavior_field_add_button(group_iid)
         fields = self._lookup_behavior_fields(doc)
         if not fields:
             self.tree.insert(
@@ -248,45 +271,56 @@ class SchemaMixin:
                 values=("declare `name: ref[Type]` in behavior file",),
                 tags=("disabled",),
             )
-            return
-        values = doc.behavior_field_values
-        for spec in fields:
-            current_id = values.get(spec.name, "")
-            current_widget = (
-                self.project.get_widget(current_id)
-                if current_id else None
-            )
-            if current_widget is not None:
-                widget_label = (
-                    current_widget.name or current_widget.widget_type
+        else:
+            values = doc.behavior_field_values
+            for spec in fields:
+                current_id = values.get(spec.name, "")
+                current_widget = (
+                    self.project.get_widget(current_id)
+                    if current_id else None
                 )
-                # Compatibility check — if the user changed the field's
-                # type in the .py source after binding, surface the
-                # mismatch in the cell text rather than silently
-                # carrying on with the stale id.
-                if current_widget.widget_type != spec.type_name:
-                    value_text = (
-                        f"{widget_label}  — wrong type "
-                        f"({current_widget.widget_type})"
+                if current_widget is not None:
+                    widget_label = (
+                        current_widget.name or current_widget.widget_type
                     )
+                    # Compatibility check — if the user changed the
+                    # field's type in the .py source after binding,
+                    # surface the mismatch in the cell text rather
+                    # than silently carrying on with the stale id.
+                    if current_widget.widget_type != spec.type_name:
+                        value_text = (
+                            f"{widget_label}  — wrong type "
+                            f"({current_widget.widget_type})"
+                        )
+                    else:
+                        value_text = widget_label
+                elif current_id:
+                    value_text = "(missing widget)"
                 else:
-                    value_text = widget_label
-            elif current_id:
-                value_text = "(missing widget)"
-            else:
-                value_text = f"empty   ref[{spec.type_name}]"
-            row_iid = f"behaviorfield:{spec.name}"
-            self.tree.insert(
-                group_iid, "end", iid=row_iid,
-                text=spec.name, values=(value_text,),
-            )
-            self._attach_behavior_field_pick_button(
-                row_iid, spec.name, spec.type_name,
-            )
-            if current_id:
-                self._attach_behavior_field_clear_button(
-                    row_iid, spec.name,
+                    value_text = f"empty   ref[{spec.type_name}]"
+                row_iid = f"behaviorfield:{spec.name}"
+                self.tree.insert(
+                    group_iid, "end", iid=row_iid,
+                    text=spec.name, values=(value_text,),
                 )
+                self._attach_behavior_field_pick_button(
+                    row_iid, spec.name, spec.type_name,
+                )
+                if current_id:
+                    self._attach_behavior_field_clear_button(
+                        row_iid, spec.name,
+                    )
+
+        # Hoist right after the Events group when present — keeps the
+        # scripting-related groups adjacent so the panel reads as a
+        # single "behavior" cluster. Events group iid is "events:group"
+        # (set in ``_populate_events_group``); when no Events exist,
+        # leave Behavior Fields at its natural end-of-list position so
+        # it still appears below the regular property groups.
+        if not self.tree.exists("events:group"):
+            return
+        anchor_index = self.tree.index("events:group")
+        self.tree.move(group_iid, "", anchor_index + 1)
 
     def _lookup_behavior_fields(self, doc) -> list:
         """Build the FieldSpec list for the active document's behavior
@@ -306,6 +340,37 @@ class SchemaMixin:
         return parse_behavior_class_fields(
             file_path, behavior_class_name(doc),
         )
+
+    def _attach_behavior_field_add_button(self, header_iid: str) -> None:
+        """Inline ``[+]`` next to the Behavior Fields group header.
+        Click delegates to ``_show_add_behavior_field_dialog`` on
+        the panel — that runs the picker dialog, writes the new
+        annotation + missing imports to the behavior file, and
+        pushes the binding command.
+        """
+        btn = tk.Label(
+            self.tree,
+            text="+", bg=TREE_BG, fg="#7dd3fc",
+            font=("Segoe UI", 11, "bold"),
+            cursor="hand2", borderwidth=0, padx=0, pady=0,
+        )
+        btn.bind(
+            "<Enter>",
+            lambda _e, b=btn: b.configure(fg="#ffffff"),
+        )
+        btn.bind(
+            "<Leave>",
+            lambda _e, b=btn: b.configure(fg="#7dd3fc"),
+        )
+        btn.bind(
+            "<Button-1>",
+            lambda _e: self._show_add_behavior_field_dialog(),
+        )
+        if self.overlays is not None:
+            self.overlays.add(
+                header_iid, SLOT_BEHAVIOR_FIELD_ADD, btn,
+                place_behavior_field_add,
+            )
 
     def _attach_behavior_field_pick_button(
         self, row_iid: str, field_name: str, type_name: str,

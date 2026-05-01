@@ -1223,6 +1223,101 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             path, behavior_class_name(document), method_name,
         )
 
+    def _show_add_behavior_field_dialog(self) -> None:
+        """Phase 3 Step 1.x — open the Add Field dialog. Picks a
+        widget, auto-suggests a Python identifier, then performs
+        three coordinated mutations:
+
+        1. ``add_behavior_field_annotation`` writes the
+           ``<name>: ref[<Type>]`` line above the first method on
+           the active doc's behavior class.
+        2. ``ensure_imports_in_behavior_file`` adds the matching
+           ``from .._runtime import ref`` and ``from customtkinter
+           import <Type>`` rows when missing.
+        3. ``SetBehaviorFieldCommand`` pushes the resulting binding
+           through history so the picked widget id round-trips
+           through the project file + supports undo.
+        """
+        from tkinter import messagebox
+        from app.core.commands import SetBehaviorFieldCommand
+        from app.core.script_paths import (
+            behavior_class_name, behavior_file_path,
+        )
+        from app.io.scripts import (
+            add_behavior_field_annotation,
+            ensure_imports_in_behavior_file,
+            existing_behavior_field_names,
+            load_or_create_behavior_file,
+        )
+        from app.ui.add_behavior_field_dialog import (
+            run_add_behavior_field_dialog,
+        )
+
+        if self.project is None or self.project.active_document is None:
+            return
+        if not getattr(self.project, "path", None):
+            messagebox.showinfo(
+                "Save first",
+                "Save the project before adding behavior fields — "
+                "the annotation lands in assets/scripts/ inside the "
+                "project folder.",
+                parent=self.winfo_toplevel(),
+            )
+            return
+        document = self.project.active_document
+        # Materialise the behavior file if it doesn't exist yet so
+        # the dialog operates against a real file path.
+        file_path = load_or_create_behavior_file(
+            self.project.path, document,
+        )
+        if file_path is None:
+            messagebox.showerror(
+                "Couldn't write behavior file",
+                "Failed to create assets/scripts/ folder. Check "
+                "folder permissions on the project directory.",
+                parent=self.winfo_toplevel(),
+            )
+            return
+        class_name = behavior_class_name(document)
+        existing = existing_behavior_field_names(file_path, class_name)
+        result = run_add_behavior_field_dialog(
+            self.winfo_toplevel(),
+            document=document,
+            existing_field_names=existing,
+        )
+        if result is None:
+            return
+        widget_id, field_name, widget_type = result
+        # Imports first so the annotation lands in a file that
+        # already references ``ref`` — keeps the .py runnable as
+        # standalone Python at every save point. ``ref`` lives in
+        # ``assets/scripts/_runtime.py`` (level=2 relative from a
+        # behavior file at ``assets/scripts/<page>/<window>.py``),
+        # so the runtime import goes through a relative-aware
+        # helper. The widget type's import is a regular absolute
+        # ``from customtkinter import <Type>``.
+        from app.io.scripts import ensure_relative_import_in_behavior_file
+        ensure_relative_import_in_behavior_file(
+            file_path, level=2, module="_runtime", name="ref",
+        )
+        ensure_imports_in_behavior_file(
+            file_path, [("customtkinter", widget_type)],
+        )
+        added = add_behavior_field_annotation(
+            file_path, class_name, field_name, widget_type,
+        )
+        if not added:
+            messagebox.showerror(
+                "Couldn't add field",
+                "Failed to write the annotation into the behavior "
+                "file. The field name may have already been taken "
+                "or the file was changed externally.",
+                parent=self.winfo_toplevel(),
+            )
+            return
+        cmd = SetBehaviorFieldCommand(document.id, field_name, widget_id)
+        self.project.history.push(cmd)
+
     def _show_behavior_field_picker(
         self, field_name: str, type_name: str,
     ) -> None:

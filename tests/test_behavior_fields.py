@@ -21,8 +21,13 @@ import pytest
 from app.core.commands import SetBehaviorFieldCommand
 from app.core.document import Document
 from app.io.scripts import (
+    add_behavior_field_annotation,
+    ensure_imports_in_behavior_file,
+    ensure_relative_import_in_behavior_file,
     ensure_runtime_helpers,
+    existing_behavior_field_names,
     parse_behavior_class_fields,
+    suggest_behavior_field_name,
 )
 
 
@@ -256,3 +261,193 @@ def test_set_behavior_field_no_op_for_missing_doc():
     cmd.redo(project)
     assert doc.behavior_field_values == {}
     assert project.event_bus.events == []
+
+
+# ---------------------------------------------------------------------
+# existing_behavior_field_names
+# ---------------------------------------------------------------------
+def test_existing_behavior_field_names_includes_annotations_and_methods(tmp_path):
+    file = _write_behavior(tmp_path, """
+        class LoginPage:
+            target: ref[CTkLabel]
+            label_text: str = "hi"
+
+            def setup(self, window):
+                pass
+
+            def on_click(self):
+                pass
+    """)
+    names = existing_behavior_field_names(file, "LoginPage")
+    assert names == {"target", "label_text", "setup", "on_click"}
+
+
+def test_existing_behavior_field_names_empty_for_missing_file(tmp_path):
+    assert existing_behavior_field_names(
+        tmp_path / "missing.py", "LoginPage",
+    ) == set()
+
+
+# ---------------------------------------------------------------------
+# add_behavior_field_annotation
+# ---------------------------------------------------------------------
+def test_add_behavior_field_annotation_inserts_above_first_method(tmp_path):
+    file = _write_behavior(tmp_path, """
+        class LoginPage:
+            def setup(self, window):
+                self.window = window
+    """)
+    ok = add_behavior_field_annotation(
+        file, "LoginPage", "target", "CTkLabel",
+    )
+    assert ok is True
+    body = file.read_text(encoding="utf-8")
+    assert "target: ref[CTkLabel]" in body
+    # Annotation appears before "def setup"
+    assert body.index("target: ref[CTkLabel]") < body.index("def setup")
+
+
+def test_add_behavior_field_annotation_replaces_pass_in_empty_class(tmp_path):
+    file = _write_behavior(tmp_path, """
+        class LoginPage:
+            pass
+    """)
+    ok = add_behavior_field_annotation(
+        file, "LoginPage", "target", "CTkLabel",
+    )
+    assert ok is True
+    body = file.read_text(encoding="utf-8")
+    assert "target: ref[CTkLabel]" in body
+    assert "pass" not in body
+
+
+def test_add_behavior_field_annotation_appends_after_existing_fields(tmp_path):
+    file = _write_behavior(tmp_path, """
+        class LoginPage:
+            existing: ref[CTkLabel]
+
+            def setup(self, window):
+                pass
+    """)
+    add_behavior_field_annotation(
+        file, "LoginPage", "added", "CTkButton",
+    )
+    body = file.read_text(encoding="utf-8")
+    # Both annotations live above the method.
+    assert body.index("existing") < body.index("added")
+    assert body.index("added") < body.index("def setup")
+
+
+def test_add_behavior_field_annotation_returns_false_for_syntax_error(tmp_path):
+    file = tmp_path / "broken.py"
+    file.write_text("class LoginPage:\n    target = (", encoding="utf-8")
+    assert (
+        add_behavior_field_annotation(
+            file, "LoginPage", "target", "CTkLabel",
+        )
+        is False
+    )
+
+
+# ---------------------------------------------------------------------
+# ensure_imports_in_behavior_file
+# ---------------------------------------------------------------------
+def test_ensure_imports_adds_missing(tmp_path):
+    file = _write_behavior(tmp_path, '''
+        """Doc."""
+
+        class LoginPage:
+            pass
+    ''')
+    ok = ensure_imports_in_behavior_file(
+        file, [("customtkinter", "CTkLabel")],
+    )
+    assert ok is True
+    body = file.read_text(encoding="utf-8")
+    assert "from customtkinter import CTkLabel" in body
+
+
+def test_ensure_imports_skips_existing(tmp_path):
+    file = _write_behavior(tmp_path, """
+        from customtkinter import CTkLabel
+
+        class LoginPage:
+            pass
+    """)
+    before = file.read_text(encoding="utf-8")
+    ensure_imports_in_behavior_file(
+        file, [("customtkinter", "CTkLabel")],
+    )
+    after = file.read_text(encoding="utf-8")
+    # No duplicate added.
+    assert after.count("from customtkinter import CTkLabel") == 1
+    assert before.count("\n") == after.count("\n")
+
+
+def test_ensure_imports_groups_same_module(tmp_path):
+    file = _write_behavior(tmp_path, """
+        class LoginPage:
+            pass
+    """)
+    ensure_imports_in_behavior_file(
+        file, [("customtkinter", "CTkLabel"), ("customtkinter", "CTkButton")],
+    )
+    body = file.read_text(encoding="utf-8")
+    assert "from customtkinter import CTkLabel, CTkButton" in body
+
+
+# ---------------------------------------------------------------------
+# ensure_relative_import_in_behavior_file
+# ---------------------------------------------------------------------
+def test_ensure_relative_import_adds_runtime_ref(tmp_path):
+    file = _write_behavior(tmp_path, """
+        class LoginPage:
+            pass
+    """)
+    ok = ensure_relative_import_in_behavior_file(
+        file, level=2, module="_runtime", name="ref",
+    )
+    assert ok is True
+    body = file.read_text(encoding="utf-8")
+    assert "from .._runtime import ref" in body
+
+
+def test_ensure_relative_import_idempotent(tmp_path):
+    file = _write_behavior(tmp_path, """
+        from .._runtime import ref
+
+        class LoginPage:
+            pass
+    """)
+    before = file.read_text(encoding="utf-8")
+    ensure_relative_import_in_behavior_file(
+        file, level=2, module="_runtime", name="ref",
+    )
+    after = file.read_text(encoding="utf-8")
+    assert after.count("from .._runtime import ref") == 1
+    assert before == after
+
+
+# ---------------------------------------------------------------------
+# suggest_behavior_field_name
+# ---------------------------------------------------------------------
+def test_suggest_behavior_field_name_uses_widget_name():
+    assert (
+        suggest_behavior_field_name("My Label", "CTkLabel", set())
+        == "my_label"
+    )
+
+
+def test_suggest_behavior_field_name_falls_back_to_type():
+    assert (
+        suggest_behavior_field_name("", "CTkButton", set())
+        == "ctkbutton"
+    )
+
+
+def test_suggest_behavior_field_name_appends_suffix_on_collision():
+    existing = {"my_label", "my_label_2"}
+    assert (
+        suggest_behavior_field_name("My Label", "CTkLabel", existing)
+        == "my_label_3"
+    )

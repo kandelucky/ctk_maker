@@ -224,6 +224,341 @@ def _extract_ref_type(annotation: ast.expr) -> str | None:
     return None
 
 
+def existing_behavior_field_names(
+    file_path: str | Path,
+    class_name: str,
+) -> set[str]:
+    """Names of every annotated attribute on the named class — both
+    the ``ref`` slots Phase 3 cares about + plain typed attributes
+    the user might have declared. Used by the Add Field dialog to
+    detect collisions before writing a new annotation. Robust to
+    syntax errors / missing files (returns ``set()``).
+    """
+    source = _read_source(file_path)
+    if source is None:
+        return set()
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    target = _find_class(tree, class_name)
+    if target is None:
+        return set()
+    out: set[str] = set()
+    for stmt in target.body:
+        if isinstance(stmt, ast.AnnAssign) and isinstance(
+            stmt.target, ast.Name,
+        ):
+            out.add(stmt.target.id)
+        elif isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            # Methods can collide with fields — the runtime would
+            # silently shadow one with the other. Treat them as
+            # blocked names so the dialog refuses both directions.
+            out.add(stmt.name)
+    return out
+
+
+def add_behavior_field_annotation(
+    file_path: str | Path,
+    class_name: str,
+    field_name: str,
+    type_name: str,
+) -> bool:
+    """Insert ``<field_name>: ref[<type_name>]`` near the top of the
+    named class, preserving the user's blank lines + comments.
+
+    Insertion strategy: land the annotation right above the first
+    method of the class. When the class has no methods (just a
+    ``pass`` placeholder or only annotations), append at the end of
+    the class body. Indent is detected from the first body
+    statement and falls back to four spaces for empty classes.
+
+    Idempotent — returns ``True`` unconditionally on success even
+    when the field already existed (caller checks
+    ``existing_behavior_field_names`` first to surface the collision
+    to the user). Returns ``False`` for missing files / parse
+    failures / write errors.
+    """
+    path = Path(file_path)
+    source = _read_source(path)
+    if source is None:
+        return False
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    target = _find_class(tree, class_name)
+    if target is None:
+        return False
+    lines = source.splitlines()
+    body_indent = _detect_body_indent(target, lines)
+    annotation_line = (
+        f"{body_indent}{field_name}: ref[{type_name}]"
+    )
+    # Find the first FunctionDef so we can drop the annotation right
+    # above the methods cluster. Python's stdlib styling puts
+    # annotated attributes at the top of the class body — matching
+    # that convention keeps generated + hand-written code visually
+    # consistent.
+    first_method = None
+    for stmt in target.body:
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            first_method = stmt
+            break
+    if first_method is not None:
+        insert_idx = first_method.lineno - 1
+        # ast tracks decorators as separate top-of-method anchors —
+        # the actual visible "def" line might come after them. Pick
+        # the earliest line so we don't tunnel between a decorator
+        # and its function.
+        if first_method.decorator_list:
+            first_dec = min(
+                d.lineno for d in first_method.decorator_list
+            )
+            insert_idx = first_dec - 1
+        # Drop the annotation + a blank line so it doesn't touch the
+        # def below; cleaner read in the editor.
+        new_lines = (
+            lines[:insert_idx]
+            + [annotation_line, ""]
+            + lines[insert_idx:]
+        )
+    else:
+        # Empty / placeholder body — replace any trailing ``pass``
+        # statement with the annotation, otherwise append. Either
+        # way the annotation lands inside the class body because
+        # body_indent matches.
+        end_idx = (target.end_lineno or len(lines))
+        # Trim a trailing blank line so the new annotation joins
+        # the class body cleanly.
+        prev = lines[end_idx - 1] if end_idx <= len(lines) else ""
+        if prev.strip() == "pass":
+            new_lines = (
+                lines[:end_idx - 1]
+                + [annotation_line]
+                + lines[end_idx:]
+            )
+        else:
+            new_lines = (
+                lines[:end_idx]
+                + [annotation_line]
+                + lines[end_idx:]
+            )
+    new_source = "\n".join(new_lines)
+    if source.endswith("\n") and not new_source.endswith("\n"):
+        new_source += "\n"
+    try:
+        path.write_text(new_source, encoding="utf-8")
+    except OSError:
+        return False
+    return True
+
+
+def ensure_imports_in_behavior_file(
+    file_path: str | Path,
+    imports: list[tuple[str, str]],
+) -> bool:
+    """Make sure each ``(module, name)`` import in ``imports`` is
+    present in the file. Adds missing ones at the top — after the
+    module docstring + any ``from __future__`` lines, before the
+    first regular statement. Existing imports are detected via AST
+    so duplicate adds don't accumulate.
+
+    Returns ``True`` on success (even when no edits were needed).
+    Returns ``False`` for missing files / parse failures / write
+    errors.
+    """
+    path = Path(file_path)
+    source = _read_source(path)
+    if source is None:
+        return False
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    # Collect existing ``from <module> import <name>`` pairs so we
+    # know which entries to skip.
+    existing: set[tuple[str, str]] = set()
+    for stmt in tree.body:
+        if isinstance(stmt, ast.ImportFrom) and stmt.module:
+            for alias in stmt.names:
+                # Use the original name (not asname) — the dialog
+                # always writes plain ``ref`` / ``CTkLabel`` so an
+                # ``import as`` alias would still need its own row.
+                existing.add((stmt.module, alias.name))
+    missing = [
+        (m, n) for m, n in imports if (m, n) not in existing
+    ]
+    if not missing:
+        return True
+    # Pick the insertion line: after the module docstring (when
+    # present) and after any ``from __future__ import …`` lines.
+    # Anchor on the first non-future, non-docstring top-level
+    # statement.
+    insert_at_line = 1
+    if tree.body:
+        first = tree.body[0]
+        # Module docstring lands as Expr(Constant(str)) at body[0].
+        if (
+            isinstance(first, ast.Expr)
+            and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)
+        ):
+            insert_at_line = (first.end_lineno or 1) + 1
+    # Skip ``from __future__`` block — those must remain first.
+    for stmt in tree.body:
+        if (
+            isinstance(stmt, ast.ImportFrom)
+            and stmt.module == "__future__"
+        ):
+            insert_at_line = max(
+                insert_at_line, (stmt.end_lineno or 1) + 1,
+            )
+    lines = source.splitlines()
+    # Group imports by module so multiple ``from X import a, b`` land
+    # together — matches PEP 8 stylistic preference.
+    by_module: dict[str, list[str]] = {}
+    for module, name in missing:
+        by_module.setdefault(module, []).append(name)
+    new_blocks: list[str] = []
+    # Add a blank line above the import block when the slot it
+    # lands in isn't already empty — avoids welding the new lines
+    # to whatever comes right above (docstring close-quote, future
+    # import, etc.).
+    if insert_at_line - 1 < len(lines):
+        prev_line = lines[insert_at_line - 1 - 1] if (
+            insert_at_line - 1 - 1 >= 0
+        ) else ""
+        if prev_line.strip():
+            new_blocks.append("")
+    for module, names in by_module.items():
+        joined = ", ".join(names)
+        new_blocks.append(f"from {module} import {joined}")
+    # Trailing blank line so the class definition below has its
+    # usual two-line spacing.
+    if (
+        insert_at_line - 1 < len(lines)
+        and lines[insert_at_line - 1].strip()
+    ):
+        new_blocks.append("")
+    insert_idx = max(0, insert_at_line - 1)
+    new_lines = lines[:insert_idx] + new_blocks + lines[insert_idx:]
+    new_source = "\n".join(new_lines)
+    if source.endswith("\n") and not new_source.endswith("\n"):
+        new_source += "\n"
+    try:
+        path.write_text(new_source, encoding="utf-8")
+    except OSError:
+        return False
+    return True
+
+
+def ensure_relative_import_in_behavior_file(
+    file_path: str | Path,
+    level: int,
+    module: str,
+    name: str,
+) -> bool:
+    """Make sure ``from <"."*level><module> import <name>`` is
+    present in the file. Idempotent: scans existing ImportFrom AST
+    nodes by level + module + name tuple before deciding to write.
+
+    The ``level`` arg is the number of leading dots (1 = ``.``,
+    2 = ``..``); ``module`` may be empty when the relative import
+    targets the package itself (``from .. import foo`` style) but
+    Phase 3 only uses the ``from .._runtime import ref`` variant
+    so the helper requires a non-empty submodule name.
+
+    Insertion lands right after the docstring + future imports —
+    same anchor logic ``ensure_imports_in_behavior_file`` uses for
+    absolute imports — so a freshly created behavior file ends up
+    with imports clustered cleanly at the top.
+    """
+    if not module:
+        return False
+    path = Path(file_path)
+    source = _read_source(path)
+    if source is None:
+        return False
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    for stmt in tree.body:
+        if (
+            isinstance(stmt, ast.ImportFrom)
+            and (stmt.level or 0) == level
+            and stmt.module == module
+        ):
+            for alias in stmt.names:
+                if alias.name == name:
+                    return True
+    insert_at_line = 1
+    if tree.body:
+        first = tree.body[0]
+        if (
+            isinstance(first, ast.Expr)
+            and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)
+        ):
+            insert_at_line = (first.end_lineno or 1) + 1
+    for stmt in tree.body:
+        if (
+            isinstance(stmt, ast.ImportFrom)
+            and stmt.module == "__future__"
+        ):
+            insert_at_line = max(
+                insert_at_line, (stmt.end_lineno or 1) + 1,
+            )
+    lines = source.splitlines()
+    new_blocks: list[str] = []
+    if insert_at_line - 1 - 1 >= 0:
+        prev_line = lines[insert_at_line - 1 - 1]
+        if prev_line.strip():
+            new_blocks.append("")
+    dots = "." * max(1, level)
+    new_blocks.append(f"from {dots}{module} import {name}")
+    if (
+        insert_at_line - 1 < len(lines)
+        and lines[insert_at_line - 1].strip()
+    ):
+        new_blocks.append("")
+    insert_idx = max(0, insert_at_line - 1)
+    new_lines = lines[:insert_idx] + new_blocks + lines[insert_idx:]
+    new_source = "\n".join(new_lines)
+    if source.endswith("\n") and not new_source.endswith("\n"):
+        new_source += "\n"
+    try:
+        path.write_text(new_source, encoding="utf-8")
+    except OSError:
+        return False
+    return True
+
+
+def suggest_behavior_field_name(
+    widget_name: str,
+    widget_type: str,
+    existing_names: set[str],
+) -> str:
+    """Slugify the widget's display name into a Python identifier
+    suitable as a field name. Falls back to the widget's type when
+    name is empty. Auto-suffixes ``_2`` / ``_3`` on collision so the
+    dialog presents a name the user can accept or edit without
+    triggering an error.
+    """
+    base_source = widget_name.strip() if widget_name else ""
+    if not base_source:
+        # CTkLabel → ctk_label; Image → image
+        base_source = widget_type
+    base = slugify_method_part(base_source)
+    if base not in existing_names:
+        return base
+    n = 2
+    while f"{base}_{n}" in existing_names:
+        n += 1
+    return f"{base}_{n}"
+
+
 # ---------------------------------------------------------------------
 # Runtime helpers — `ref` marker class shipped with each project
 # ---------------------------------------------------------------------
