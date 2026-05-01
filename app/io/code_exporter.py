@@ -623,6 +623,23 @@ def export_project(
                             shutil.copy2(src_file, dst)
                         except OSError:
                             pass
+                    # asset_filter is built from widget property
+                    # tokens (image / font references) and doesn't
+                    # see Phase 2 behavior files. Without the copy
+                    # below, ``from assets.scripts.<page>.<window>
+                    # import <Class>Page`` lines emitted by the
+                    # exporter target a folder that doesn't exist
+                    # next to the export → ModuleNotFoundError on
+                    # first run. Walk every doc whose code was
+                    # emitted and copy its behavior subtree
+                    # alongside ``_runtime.py`` + the package
+                    # ``__init__.py`` chain.
+                    _copy_behavior_assets_for_filter(
+                        project,
+                        single_document_id,
+                        src_assets,
+                        out.parent / "assets",
+                    )
             except OSError:
                 pass
     # Side-car the ScrollableDropdown helper next to the export when
@@ -1183,6 +1200,82 @@ def _doc_needs_behavior(doc: Document) -> bool:
     if doc.behavior_field_values:
         return True
     return False
+
+
+def _copy_behavior_assets_for_filter(
+    project,
+    single_document_id: str | None,
+    src_assets: Path,
+    dst_assets: Path,
+) -> None:
+    """Bridge for the ``asset_filter`` export branch — Phase 2 / 3
+    behavior files don't show up in ``collect_used_assets`` (which
+    only walks widget property tokens for images + fonts), so an
+    export with the filter on emits ``from assets.scripts.<page>.
+    <window> import …`` against an ``assets/`` folder that's
+    missing the entire scripts subtree. Result: ModuleNotFoundError
+    at first run.
+
+    The fix copies, for every emitted doc that needs a behavior
+    class:
+
+    - ``assets/scripts/__init__.py`` (top-level package marker)
+    - ``assets/scripts/_runtime.py`` (Phase 3 ``ref`` marker)
+    - ``assets/scripts/<page_slug>/`` recursively (sibling helper
+      modules the user wrote — ``qr_encoder.py`` next to
+      ``qr_live.py`` — ride along automatically because we copy
+      the whole folder, not individual files)
+
+    No-op when the project isn't saved, when ``scripts_root`` can't
+    be located, or when no emitted doc actually needs behavior.
+    Errors during individual copies are swallowed so a partial
+    failure doesn't abort the rest of the export.
+    """
+    if not project.path:
+        return
+    from app.core.script_paths import page_scripts_dir, scripts_root
+    if single_document_id:
+        target = project.get_document(single_document_id)
+        docs_to_check = [target] if target is not None else []
+    else:
+        docs_to_check = list(project.documents)
+    if not any(d is not None and _doc_needs_behavior(d) for d in docs_to_check):
+        return
+    s_root = scripts_root(project.path)
+    if s_root is None or not s_root.exists():
+        return
+    src_resolved = src_assets.resolve()
+
+    # Skip ``__pycache__`` so the export bundle doesn't ship stale
+    # bytecode that the user's Python version may reject. Match the
+    # legacy whole-tree copytree fallback's silent ignore behaviour.
+    _ignore_pyc = shutil.ignore_patterns("__pycache__", "*.pyc")
+
+    def _copy_into_dst(src: Path) -> None:
+        try:
+            rel = src.resolve().relative_to(src_resolved)
+        except (OSError, ValueError):
+            return
+        dst = dst_assets / rel
+        try:
+            if src.is_dir():
+                shutil.copytree(
+                    src, dst,
+                    dirs_exist_ok=True,
+                    ignore=_ignore_pyc,
+                )
+            else:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+        except OSError:
+            pass
+
+    for marker in (s_root / "__init__.py", s_root / "_runtime.py"):
+        if marker.exists():
+            _copy_into_dst(marker)
+    page_dir = page_scripts_dir(project.path)
+    if page_dir is not None and page_dir.is_dir():
+        _copy_into_dst(page_dir)
 
 
 def _resolve_var_names(doc: Document) -> dict[str, str]:
