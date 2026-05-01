@@ -595,9 +595,9 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         self, widget_id: str, *_args, **_kwargs,
     ) -> None:
         """Repaint when a handler is bound / unbound / reordered.
-        Only rebuilds when the affected widget is the one currently
-        on screen — handlers on other widgets don't change this
-        panel's view.
+        Filters on ``widget_id == current_id`` so the rebuild only
+        fires for the currently-selected widget — handlers on
+        siblings shouldn't trigger a panel rebuild.
         """
         if self.current_id == widget_id:
             self._rebuild()
@@ -993,8 +993,8 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             )
             menu.add_separator()
             menu.add_command(
-                label="Unbind (keep method in file)",
-                command=lambda: self._unbind_event_method(
+                label="Delete action…",
+                command=lambda: self._delete_event_action(
                     self.current_id, event_key,
                     method_index, method_name,
                 ),
@@ -1016,11 +1016,9 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         """
         from tkinter import messagebox
         from app.core.commands import BindHandlerCommand
-        from app.core.settings import load_settings
         from app.io.scripts import (
-            add_handler_stub, behavior_class_name, launch_editor,
+            add_handler_stub, behavior_class_name,
             load_or_create_behavior_file,
-            resolve_project_root_for_editor as _resolve_project_root,
             suggest_method_name,
         )
         from app.widgets.event_registry import event_by_key
@@ -1056,7 +1054,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             )
             return
         class_name = behavior_class_name(document)
-        line = add_handler_stub(
+        add_handler_stub(
             file_path, class_name, method_name, entry.signature,
         )
         methods = node.handlers.setdefault(event_key, [])
@@ -1068,11 +1066,10 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         self.project.event_bus.publish(
             "widget_handler_changed", widget_id, event_key, method_name,
         )
-        editor_command = load_settings().get("editor_command")
-        launch_editor(
-            file_path, line=line, editor_command=editor_command,
-            project_root=_resolve_project_root(self.project),
-        )
+        # Editor launch is intentionally NOT chained here — the
+        # user kept losing focus to a flashing VS Code window every
+        # time they added an action. Double-clicking the row, F7,
+        # or right-click → "Open in editor" is the explicit jump.
 
     def _open_event_method(
         self, widget_id: str, method_name: str,
@@ -1125,16 +1122,21 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         cmd.redo(self.project)
         self.project.history.push(cmd)
 
-    def _unbind_event_method(
+    def _delete_event_action(
         self, widget_id: str, event_key: str,
         index: int, method_name: str,
     ) -> None:
-        """Remove the method binding at ``index`` while leaving the
-        underlying ``def`` alone (Decision #5 — user owns the file).
-        Captures the row position so undo restores the binding at
-        the same place in the chain.
+        """Phase 2 Step 3 (revised) — every delete now routes through
+        ``ActionDeleteDialog``. Choices: Cancel (no-op),
+        ``open_editor`` (jump to method, leave binding alone), or
+        ``delete`` (unbind + remove ``def`` from .py via the
+        text-based ``delete_method_from_file`` so blank lines and
+        comments survive). The "Unbind keep method" path is gone —
+        the active scripts folder always reflects what's actually
+        bound, matching the user's "working code only" principle.
         """
         from app.core.commands import UnbindHandlerCommand
+        from app.ui.handler_delete_dialogs import run_action_delete_flow
         node = self.project.get_widget(widget_id)
         if node is None:
             return
@@ -1143,11 +1145,77 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             return
         if methods[index] != method_name:
             return
+        decision = run_action_delete_flow(
+            self.winfo_toplevel(), self.project,
+            widget_id, event_key, index, method_name,
+        )
+        if decision is None:
+            return
+        if decision == "open_editor":
+            self._open_event_method(widget_id, method_name)
+            return
+        # decision == "delete" — drop the def from the .py first,
+        # then push the unbind command so undo restores the binding
+        # (the file write itself isn't undoable; this matches how
+        # ``BindHandlerCommand`` treats the stub-add path).
+        also_bound = self._method_used_elsewhere(
+            widget_id, event_key, index, method_name,
+        )
+        if not also_bound:
+            self._delete_method_def_from_file(widget_id, method_name)
         cmd = UnbindHandlerCommand(
             widget_id, event_key, method_name, index,
         )
         cmd.redo(self.project)
         self.project.history.push(cmd)
+
+    def _method_used_elsewhere(
+        self, widget_id: str, current_event_key: str,
+        current_index: int, method_name: str,
+    ) -> bool:
+        """True when ``method_name`` is bound to at least one OTHER
+        ``(event_key, index)`` slot in the same document. Guards
+        the ``delete_method_from_file`` step — if other rows still
+        reference the def, dropping it would silently break them.
+        """
+        doc = self.project.find_document_for_widget(widget_id)
+        if doc is None:
+            return False
+        stack = list(doc.root_widgets)
+        while stack:
+            node = stack.pop()
+            for ev_key, names in (node.handlers or {}).items():
+                for idx, name in enumerate(names):
+                    if name != method_name:
+                        continue
+                    if (
+                        node.id == widget_id
+                        and ev_key == current_event_key
+                        and idx == current_index
+                    ):
+                        continue
+                    return True
+            stack.extend(node.children)
+        return False
+
+    def _delete_method_def_from_file(
+        self, widget_id: str, method_name: str,
+    ) -> None:
+        if not getattr(self.project, "path", None):
+            return
+        document = self.project.find_document_for_widget(widget_id)
+        if document is None:
+            return
+        from app.core.script_paths import (
+            behavior_class_name, behavior_file_path,
+        )
+        from app.io.scripts import delete_method_from_file
+        path = behavior_file_path(self.project.path, document)
+        if path is None or not path.exists():
+            return
+        delete_method_from_file(
+            path, behavior_class_name(document), method_name,
+        )
 
     def _show_local_var_menu(self, event) -> None:
         """Right-click on a Local Variables row → "Open Variables

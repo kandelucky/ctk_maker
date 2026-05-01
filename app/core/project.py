@@ -530,8 +530,16 @@ class Project:
             doc = self.active_document
             if doc.name == new_name:
                 return
+            old_name = doc.name
             doc.name = new_name
             self.event_bus.publish("widget_renamed", widget_id, new_name)
+            # ``document_renamed`` carries old_name so subscribers can
+            # locate the previous behavior-file path on disk before
+            # the rename. Phase 2 Step 3 wires this to the per-window
+            # ``.py`` rename + class-name rewrite.
+            self.event_bus.publish(
+                "document_renamed", doc.id, old_name, new_name,
+            )
             return
         node = self.get_widget(widget_id)
         if node is None:

@@ -186,7 +186,13 @@ class ProjectPanel(ctk.CTkFrame):
         # changes — keeps the header text current after Save As, New
         # Project, etc.
         bus = project.event_bus
-        for evt in ("project_renamed", "dirty_changed"):
+        for evt in (
+            "project_renamed", "dirty_changed",
+            # Phase 2 Step 3 — document add/remove/rename can move
+            # behavior files in/out of ``assets/scripts/``; the asset
+            # tree was reading stale state until refresh fired again.
+            "document_added", "document_removed", "document_renamed",
+        ):
             bus.subscribe(evt, lambda *_a, **_k: self.refresh())
         self.after(0, self.refresh)
 

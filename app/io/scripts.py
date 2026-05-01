@@ -159,6 +159,212 @@ def parse_method_docstrings(
     return out
 
 
+def rename_behavior_file_and_class(
+    project_file_path: str | Path | None,
+    old_name: str,
+    new_name: str,
+) -> Path | None:
+    """Phase 2 Step 3 — rename ``<page>/<old_slug>.py`` →
+    ``<page>/<new_slug>.py`` and rewrite ``class <OldName>Page`` →
+    ``class <NewName>Page`` inside the file. Returns the new path
+    on success, ``None`` when the source file doesn't exist (legacy
+    docs that never gained a behavior file) or the rename hit a
+    collision / write error.
+
+    The class rewrite uses a plain string replace against the
+    expected ``class <Old>Page`` token rather than an AST round-trip
+    so the user's blank lines + comments survive untouched.
+    """
+    from app.core.script_paths import (
+        behavior_class_name,
+        behavior_file_path,
+        slugify_window_name,
+    )
+
+    class _Stub:
+        def __init__(self, name: str):
+            self.name = name
+
+    old_path = behavior_file_path(project_file_path, _Stub(old_name))
+    new_path = behavior_file_path(project_file_path, _Stub(new_name))
+    if old_path is None or new_path is None:
+        return None
+    if not old_path.exists():
+        return None
+    if slugify_window_name(old_name) == slugify_window_name(new_name):
+        # Display-name change that collapses to the same slug — no
+        # rename needed, but still rewrite the class declaration so
+        # the PascalCase identifier matches the user's intent.
+        try:
+            source = old_path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        old_class = behavior_class_name(_Stub(old_name))
+        new_class = behavior_class_name(_Stub(new_name))
+        if old_class != new_class:
+            updated = source.replace(
+                f"class {old_class}", f"class {new_class}", 1,
+            )
+            try:
+                old_path.write_text(updated, encoding="utf-8")
+            except OSError:
+                return None
+        return old_path
+    if new_path.exists():
+        # Target slug already in use — refuse to clobber the
+        # collision. The caller surfaces this as a no-op; the user
+        # ends up with two files until they manually reconcile.
+        return None
+    try:
+        source = old_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    old_class = behavior_class_name(_Stub(old_name))
+    new_class = behavior_class_name(_Stub(new_name))
+    updated = source.replace(
+        f"class {old_class}", f"class {new_class}", 1,
+    )
+    try:
+        new_path.write_text(updated, encoding="utf-8")
+        old_path.unlink()
+    except OSError:
+        return None
+    return new_path
+
+
+def recycle_behavior_file(
+    project_file_path: str | Path | None,
+    doc_name: str,
+) -> bool:
+    """Send ``<page>/<window>.py`` to the OS recycle bin (Phase 2
+    Step 3 default). Returns ``True`` on success, ``False`` when
+    the file doesn't exist or send2trash fails — caller surfaces
+    the failure as a toast so the window deletion can still
+    proceed (orphan files clean up via "Save copy" path next time).
+    """
+    from app.core.script_paths import behavior_file_path
+
+    class _Stub:
+        def __init__(self, name: str):
+            self.name = name
+
+    src = behavior_file_path(project_file_path, _Stub(doc_name))
+    if src is None or not src.exists():
+        return False
+    try:
+        # send2trash is a tiny pure-Python module — Windows uses
+        # IFileOperation, macOS uses Foundation, Linux walks the
+        # XDG trash spec. Cross-platform recovery without the user
+        # opening a "Restore" dialog inside the builder.
+        import send2trash
+        send2trash.send2trash(str(src))
+        return True
+    except (OSError, ImportError):
+        return False
+
+
+def save_behavior_file_copy(
+    project_file_path: str | Path | None,
+    doc_name: str,
+    target_path: str | Path,
+) -> Path | None:
+    """Move ``<page>/<window>.py`` to ``target_path`` (typically
+    inside ``<project>/assets/scripts_archive/``), auto-suffixing
+    ``_2`` / ``_3`` on filename collision. Returns the archived
+    path or ``None`` when the source file doesn't exist or the
+    move failed. The original file is removed — this is a "save
+    + delete" round-trip, not a copy — so the active scripts
+    folder stays clean.
+    """
+    from app.core.script_paths import behavior_file_path
+
+    class _Stub:
+        def __init__(self, name: str):
+            self.name = name
+
+    src = behavior_file_path(project_file_path, _Stub(doc_name))
+    if src is None or not src.exists():
+        return None
+    dst = Path(target_path)
+    try:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    final = dst
+    if final.exists():
+        base = dst.stem
+        suffix = dst.suffix
+        n = 2
+        candidate = dst.with_name(f"{base}_{n}{suffix}")
+        while candidate.exists():
+            n += 1
+            candidate = dst.with_name(f"{base}_{n}{suffix}")
+        final = candidate
+    try:
+        shutil.move(str(src), str(final))
+    except OSError:
+        return None
+    return final
+
+
+def delete_method_from_file(
+    file_path: str | Path,
+    class_name: str,
+    method_name: str,
+) -> bool:
+    """Text-based method removal (Decision K=B — preserves user's
+    blank lines + comments that ``ast.unparse`` round-trip would
+    drop). Walks the source line-by-line, detects the ``def`` line
+    indent, then drops every following line that's blank, more
+    indented than the def, or empty until the next non-blank line
+    sits at the def's indent or shallower. Returns ``True`` when
+    the method was found + removed, ``False`` for missing files /
+    parse failures / when the method isn't there.
+    """
+    path = Path(file_path)
+    source = _read_source(path)
+    if source is None:
+        return False
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    target = _find_class(tree, class_name)
+    if target is None:
+        return False
+    func = None
+    for stmt in target.body:
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if stmt.name == method_name:
+                func = stmt
+                break
+    if func is None:
+        return False
+    lines = source.splitlines()
+    start = func.lineno - 1
+    # Include any leading decorator lines so we don't strand them
+    # alone above the slot we're cutting.
+    if func.decorator_list:
+        first_dec = min(d.lineno for d in func.decorator_list) - 1
+        start = min(start, first_dec)
+    # ``end_lineno`` is 1-based and inclusive of the last body
+    # line. ast tracks the body proper but ignores trailing blank
+    # lines that visually belong to the method — sweep them too so
+    # the file doesn't end up with stranded gaps.
+    end = (func.end_lineno or len(lines)) - 1
+    while end + 1 < len(lines) and not lines[end + 1].strip():
+        end += 1
+    new_lines = lines[:start] + lines[end + 1:]
+    new_source = "\n".join(new_lines)
+    if source.endswith("\n") and not new_source.endswith("\n"):
+        new_source += "\n"
+    try:
+        path.write_text(new_source, encoding="utf-8")
+    except OSError:
+        return False
+    return True
+
+
 def find_handler_method(
     file_path: str | Path,
     class_name: str,

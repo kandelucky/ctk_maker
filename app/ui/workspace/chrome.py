@@ -685,21 +685,20 @@ class ChromeManager:
 
     def remove_document(self, doc_id: str) -> None:
         from app.core.commands import DeleteDocumentCommand
+        from app.ui.handler_delete_dialogs import run_window_delete_flow
         doc = self.project.get_document(doc_id)
         if doc is None or not doc.is_toplevel:
             return
-        # Confirm before destroying the dialog — chrome ✕ used to
-        # disappear silently, which was surprising when it happened
-        # on an accidental click.
-        confirmed = messagebox.askyesno(
-            title="Remove dialog",
-            message=f"Remove '{doc.name}' from the project?",
-            icon="warning",
-            parent=self.workspace.winfo_toplevel(),
-        )
-        if not confirmed:
+        # Phase 2 Step 3 — the dialog surfaces script + variable
+        # counts, lets the user route the .py to recycle bin or
+        # ``assets/scripts_archive/<page>/`` before the document
+        # itself goes (Decisions C=B, K=B, send2trash default).
+        if not run_window_delete_flow(
+            self.workspace.winfo_toplevel(), self.project, doc,
+        ):
             return
         snapshot = doc.to_dict()
+        doc_name = doc.name
         index = self.project.documents.index(doc)
         for node in list(doc.root_widgets):
             self.project.remove_widget(node.id)
@@ -713,6 +712,14 @@ class ChromeManager:
                 self.project.active_document_id,
             )
         self.workspace._redraw_document()
+        # Phase 2 Step 3 — fire ``document_removed`` so the auto-save
+        # subscriber in MainWindow persists the .ctkproj (otherwise
+        # the deleted dialog could come back after a reload) and the
+        # asset panel refreshes its tree to drop the now-deleted
+        # behavior file row.
+        self.project.event_bus.publish(
+            "document_removed", doc_id, doc_name,
+        )
         self.project.history.push(
             DeleteDocumentCommand(snapshot, index),
         )

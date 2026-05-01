@@ -240,6 +240,16 @@ class MenuMixin:
         self._add_cmd(
             edit_menu, "Export Component…", self._on_menu_export_component,
         )
+        edit_menu.add_separator()
+        # Phase 2 Step 3 — opens the active window's behavior ``.py``
+        # in the user's editor (Properties › Events writes the
+        # bindings; this entry jumps straight into the file body
+        # without going through a per-method right-click).
+        self._add_cmd(
+            edit_menu, "Edit behavior file…",
+            self._on_f7_edit_behavior_file,
+            accelerator="F7",
+        )
         menubar.add_cascade(label="Edit", menu=edit_menu)
 
         # ---- Form ----

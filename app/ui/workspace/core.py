@@ -2035,11 +2035,9 @@ class Workspace(ctk.CTkFrame):
            undo pops the row that was just added.
         5. Open the editor at the new method.
         """
-        from app.core.settings import load_settings
         from app.io.scripts import (
-            add_handler_stub, behavior_class_name, launch_editor,
+            add_handler_stub, behavior_class_name,
             load_or_create_behavior_file,
-            resolve_project_root_for_editor as _resolve_project_root,
             suggest_method_name,
         )
         from app.widgets.event_registry import event_by_key
@@ -2075,7 +2073,7 @@ class Workspace(ctk.CTkFrame):
             )
             return
         class_name = behavior_class_name(document)
-        line = add_handler_stub(
+        add_handler_stub(
             file_path, class_name, method_name, entry.signature,
         )
         # Apply the binding before pushing the command so undo can
@@ -2091,11 +2089,10 @@ class Workspace(ctk.CTkFrame):
         self.project.event_bus.publish(
             "widget_handler_changed", widget_id, event_key, method_name,
         )
-        editor_command = load_settings().get("editor_command")
-        launch_editor(
-            file_path, line=line, editor_command=editor_command,
-            project_root=_resolve_project_root(self.project),
-        )
+        # Editor doesn't auto-open on action creation — the flash
+        # of a VS Code window every right-click was disruptive.
+        # Double-click the row, F7, or right-click → "Open in
+        # editor" is the explicit jump path.
 
     def _jump_to_handler_method(
         self, widget_id: str, method_name: str,

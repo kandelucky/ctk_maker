@@ -137,6 +137,7 @@ class ShortcutsMixin:
         self.bind("<Control-Shift-S>", lambda e: self._on_save_as())
         self.bind("<Control-r>", lambda e: self._on_preview())
         self.bind("<Control-w>", lambda e: self._on_close_project())
+        self.bind("<F7>", lambda e: self._on_f7_edit_behavior_file())
         self.bind("<F8>", lambda e: self._on_f8_object_tree())
         self.bind("<F9>", lambda e: self._on_f9_history_window())
         self.bind("<F10>", lambda e: self._on_f10_project_window())

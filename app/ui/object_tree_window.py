@@ -193,6 +193,15 @@ class ObjectTreePanel(ctk.CTkFrame):
             # layout_type changes the container's name suffix, so we
             # need to repaint the affected row.
             ("property_changed", self._on_property_changed),
+            # Phase 2 — handler list mutations need to flip the ▶
+            # marker on / off in the affected row. Cheap repaint via
+            # the same renamed-row path since both kinds of change
+            # only touch the name cell text. The handler change
+            # publish sends (widget_id, event_key, method_name); the
+            # rename path sends (widget_id, new_name) — separate
+            # subscriber that ignores the extras keeps the event
+            # bus from crashing on signature mismatch.
+            ("widget_handler_changed", self._on_widget_handler_changed),
         ]
         bus = self.project.event_bus
         for event_name, handler in self._bus_subs:
@@ -958,6 +967,17 @@ class ObjectTreePanel(ctk.CTkFrame):
             return
         self.tree.set(widget_id, "name", self._build_name_cell(node))
 
+    def _on_widget_handler_changed(
+        self, widget_id: str, *_args, **_kwargs,
+    ) -> None:
+        """Refresh the tree row's name cell so the ▶ marker matches
+        the latest handler list. Event signature differs from
+        ``widget_renamed`` (3 args vs 2), so this thin wrapper
+        absorbs the extras before delegating to the rename refresh
+        path.
+        """
+        self._on_widget_renamed(widget_id, "")
+
     def _on_property_changed(
         self, widget_id: str, prop_name: str, _value,
     ) -> None:
@@ -1045,6 +1065,13 @@ class ObjectTreePanel(ctk.CTkFrame):
             )
             if layout != "place":
                 base_name = f"{base_name}  [{layout}]"
+        # Phase 2 visual scripting marker — show ▶ on widgets with at
+        # least one bound event handler so the user can spot wired
+        # behaviour at a glance, without expanding the Properties
+        # panel for every row. Hidden by default for unwired widgets
+        # so the tree stays uncluttered.
+        if any(methods for methods in node.handlers.values()):
+            base_name = f"{base_name}  ▶"
         depth = self._node_depth(node) + extra_depth
         has_children = bool(node.children)
         expanded = node.id not in self._collapsed_ids

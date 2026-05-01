@@ -367,10 +367,11 @@ class SchemaMixin:
         self, method_iid: str, widget_id: str,
         event_key: str, index: int, method_name: str,
     ) -> None:
-        """Inline ``[✕]`` on bound-method rows. Calls
-        ``_unbind_event_method`` — the same path the right-click
-        "Unbind" entry uses — so undo/redo behaviour matches
-        regardless of which surface the user clicked.
+        """Inline ``[✕]`` on bound-method rows. Routes through the
+        same ``_delete_event_action`` flow as the right-click
+        "Delete action…" entry so the user sees the
+        ``ActionDeleteDialog`` (Cancel / Open in editor / Delete)
+        regardless of which surface they clicked.
         """
         btn = tk.Label(
             self.tree,
@@ -390,7 +391,7 @@ class SchemaMixin:
             "<Button-1>",
             lambda _e, wid=widget_id, k=event_key,
             i=index, m=method_name:
-            self._unbind_event_method(wid, k, i, m),
+            self._delete_event_action(wid, k, i, m),
         )
         if self.overlays is not None:
             self.overlays.add(

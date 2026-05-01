@@ -1085,6 +1085,11 @@ def _remove_document_by_id(project: "Project", doc_id: str) -> None:
     doc = project.get_document(doc_id)
     if doc is None:
         return
+    # Capture before we mutate so the document_removed publish
+    # (Phase 2 Step 3) can pass the doc's display name to its
+    # behavior-file archiver — by the time the archive subscriber
+    # runs the doc is already gone from the project.
+    doc_name = doc.name
     for node in list(doc.root_widgets):
         project.remove_widget(node.id)
     if doc in project.documents:
@@ -1094,6 +1099,7 @@ def _remove_document_by_id(project: "Project", doc_id: str) -> None:
     project.event_bus.publish(
         "active_document_changed", project.active_document_id,
     )
+    project.event_bus.publish("document_removed", doc_id, doc_name)
 
 
 class ToggleFlagCommand(Command):

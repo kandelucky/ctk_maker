@@ -1,3 +1,4 @@
 customtkinter>=5.2.2
 Pillow>=10.0.0
 ctk-tint-color-picker>=0.3.2
+Send2Trash>=1.8.0

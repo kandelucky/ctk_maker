@@ -34,10 +34,13 @@ ASSETS_DIR_NAME = "assets"
 SCRIPTS_DIR_NAME = "scripts"
 BEHAVIOR_FILE_EXT = ".py"
 
-# Subfolder that holds windows whose Document was deleted (Decision
-# C=B). Files move here instead of being unlinked, so the user can
-# recover the code if they removed a window by mistake.
-DELETED_DIR_NAME = "_deleted"
+# Sibling under ``assets/`` that holds backup copies of behavior
+# files when the user picks "Save copy" instead of "Move to recycle
+# bin" in the window-delete dialog. Lives in the project so the
+# user keeps everything in one place; auto-created on first save.
+# Mirrors the live scripts/ layout (per-page subfolders) so the
+# archived path stays self-explanatory.
+ARCHIVE_DIR_NAME = "scripts_archive"
 
 
 def scripts_root(project_file_path: str | Path | None) -> Path | None:
@@ -181,18 +184,31 @@ def behavior_class_name(document=None) -> str:
     return "".join(p.capitalize() for p in parts) + "Page"
 
 
-def deleted_dir(
+def archive_dir(
     project_file_path: str | Path | None,
 ) -> Path | None:
-    """``<project>/assets/scripts/<page>/_deleted/`` — destination for
-    behavior files whose Document was removed. Mkdir on demand so the
-    folder only appears once a window is actually deleted (Decision
-    C=B). ``None`` for unsaved projects.
+    """``<project>/assets/scripts_archive/<page>/`` — default
+    destination for behavior files when the user picks "Save copy"
+    in the window-delete dialog. Mkdir on demand so the folder
+    appears only when the user has actually archived something;
+    ``None`` for unsaved projects.
+
+    Mirrors the live scripts/ layout (per-page subfolder) so the
+    archived path stays self-explanatory and survives a future
+    page rename via the same logic.
     """
-    page_dir = page_scripts_dir(project_file_path)
-    if page_dir is None:
+    if not project_file_path:
         return None
-    target = page_dir / DELETED_DIR_NAME
+    from app.core.project_folder import find_project_root
+    root = find_project_root(project_file_path)
+    if root is not None:
+        target = root / ASSETS_DIR_NAME / ARCHIVE_DIR_NAME / behavior_file_stem(project_file_path)
+    else:
+        target = (
+            Path(project_file_path).parent
+            / ASSETS_DIR_NAME / ARCHIVE_DIR_NAME
+            / behavior_file_stem(project_file_path)
+        )
     try:
         target.mkdir(parents=True, exist_ok=True)
     except OSError:
