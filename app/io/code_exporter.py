@@ -170,6 +170,146 @@ _GLOBAL_VAR_ATTR: dict = {}
 _VAR_ID_TO_ATTR: dict = {}
 
 
+def _is_non_textvariable_var_binding(
+    widget_type: str, prop_key: str, value,
+) -> bool:
+    """True when a property's value is a ``var:<uuid>`` token AND the
+    (widget, property) pair has no entry in ``BINDING_WIRINGS`` —
+    i.e. the binding can't be wired through Tk's native
+    ``textvariable=``/``variable=`` so it falls into the auto-trace
+    fallback path. Used both at scan-time (to gate helper-function
+    emission) and at emission-time.
+    """
+    from app.core.variables import BINDING_WIRINGS, parse_var_token
+    if parse_var_token(value) is None:
+        return False
+    return (widget_type, prop_key) not in BINDING_WIRINGS
+
+
+def _project_needs_auto_trace_helper(scoped_widgets) -> bool:
+    """True when at least one widget in the export scope has a var
+    binding to a property NOT covered by ``BINDING_WIRINGS``. Drives
+    the auto-trace helper-function emission so projects without any
+    such bindings keep their generated file lean.
+    """
+    for w in scoped_widgets:
+        for key, val in (w.properties or {}).items():
+            if _is_non_textvariable_var_binding(w.widget_type, key, val):
+                return True
+    return False
+
+
+def _project_needs_auto_trace_textbox_helper(scoped_widgets) -> bool:
+    """True when at least one CTkTextbox has a var binding on a
+    property whose update path is delete-then-insert rather than
+    ``configure(prop=…)``. Currently scoped to ``initial_text`` —
+    Textbox content. Other Textbox properties (state, etc.) go
+    through the normal configure helper.
+    """
+    for w in scoped_widgets:
+        if w.widget_type != "CTkTextbox":
+            continue
+        for key, val in (w.properties or {}).items():
+            if key != "initial_text":
+                continue
+            if _is_non_textvariable_var_binding(
+                w.widget_type, key, val,
+            ):
+                return True
+    return False
+
+
+_AUTO_TRACE_WIDGET_HELPER = '''def _bind_var_to_widget(var, widget, prop):
+    """Mirror ``var.get()`` into ``widget.configure(prop=…)`` whenever
+    the variable changes. Initial sync on attach so the widget paints
+    the var's current value even if the constructor kwarg already set
+    it to the same literal.
+    """
+    def _update(*_):
+        widget.configure(**{prop: var.get()})
+    var.trace_add("write", _update)
+    _update()
+'''
+
+_AUTO_TRACE_TEXTBOX_HELPER = '''def _bind_var_to_textbox(var, tb):
+    """Mirror ``var.get()`` into a CTkTextbox's content via
+    delete+insert. CTkTextbox has no ``textvariable=`` support, so
+    every change rewrites the whole buffer.
+    """
+    def _update(*_):
+        tb.delete("1.0", "end")
+        tb.insert("1.0", var.get())
+    var.trace_add("write", _update)
+    _update()
+'''
+
+
+def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
+    """Phase 3 — produce ``_bind_var_to_widget`` / ``_bind_var_to_textbox``
+    call lines for every property on ``node`` that's bound to a
+    variable but NOT in ``BINDING_WIRINGS``. Each line wires a
+    ``trace_add`` listener that mirrors ``var.set(…)`` calls into a
+    runtime ``configure`` (or ``delete``+``insert`` for Textbox).
+
+    Returns an empty list when the widget has no qualifying
+    bindings — preserves the pre-1.9.5 emit shape for widgets that
+    only carry textvariable-mapped bindings (CTkLabel, CTkSlider,
+    CTkSwitch, …).
+    """
+    from app.core.variables import parse_var_token
+    if _EXPORT_PROJECT is None:
+        return []
+    out: list[str] = []
+    for key, val in (node.properties or {}).items():
+        if not _is_non_textvariable_var_binding(node.widget_type, key, val):
+            continue
+        var_id = parse_var_token(val)
+        if var_id is None:
+            continue
+        var_attr = _VAR_ID_TO_ATTR.get(var_id)
+        if var_attr is None:
+            continue
+        # Textbox content uses the delete+insert helper because the
+        # widget has no ``configure(text=…)`` slot. Other widgets +
+        # other Textbox properties go through the configure helper.
+        if node.widget_type == "CTkTextbox" and key == "initial_text":
+            out.append(
+                f"_bind_var_to_textbox({var_attr}, {full_name})",
+            )
+        else:
+            out.append(
+                f'_bind_var_to_widget({var_attr}, {full_name}, "{key}")',
+            )
+    return out
+
+
+def _resolve_var_tokens_to_values(properties: dict) -> dict:
+    """Return a copy of ``properties`` with every ``var:<uuid>`` token
+    replaced by the variable's current default value. Used before
+    handing props to a descriptor's ``export_state`` so post-init
+    ``.insert()``/``.set()`` lines render the value, not the raw
+    token. Variables that can't be resolved (stale binding, no
+    project context) drop to an empty string — same fallback the
+    constructor-kwarg path uses.
+    """
+    from app.core.variables import parse_var_token
+    if _EXPORT_PROJECT is None:
+        return properties
+    resolved: dict | None = None
+    for key, val in properties.items():
+        var_id = parse_var_token(val)
+        if var_id is None:
+            continue
+        entry = _EXPORT_PROJECT.get_variable(var_id)
+        replacement: object = ""
+        if entry is not None:
+            replacement = _entry_default_as_value(entry)
+        if resolved is None:
+            resolved = dict(properties)
+        resolved[key] = replacement
+    return resolved if resolved is not None else properties
+
+
 def _build_global_var_attrs(project) -> dict:
     """Stable ``var_id → "var_<name>"`` for the project's globals.
 
@@ -645,6 +785,10 @@ def _generate_code_inner(
         )
     )
     needs_font_register = _project_uses_custom_fonts(project, scoped_widgets)
+    needs_auto_trace_helper = _project_needs_auto_trace_helper(scoped_widgets)
+    needs_auto_trace_textbox = _project_needs_auto_trace_textbox_helper(
+        scoped_widgets,
+    )
 
     lines: list[str] = [
         "# Generated by CTkMaker",
@@ -665,6 +809,18 @@ def _generate_code_inner(
 
     if needs_tint:
         lines.extend(_tint_helper_lines())
+        lines.append("")
+
+    # Phase 3 — auto-trace helpers for var bindings that don't map
+    # to Tk's native ``textvariable=``/``variable=`` (e.g. CTkButton.
+    # text, CTkButton.fg_color, CTkTextbox content). One helper per
+    # update strategy, emitted only when the project actually needs
+    # it so pure Phase 1.5 projects stay lean.
+    if needs_auto_trace_helper:
+        lines.extend(_AUTO_TRACE_WIDGET_HELPER.splitlines())
+        lines.append("")
+    if needs_auto_trace_textbox:
+        lines.extend(_AUTO_TRACE_TEXTBOX_HELPER.splitlines())
         lines.append("")
 
     if needs_icon_state:
@@ -1693,7 +1849,22 @@ def _emit_widget(
         }
     else:
         state_props = props
+    # Phase 3 — resolve any remaining ``var:<uuid>`` tokens in
+    # ``state_props`` to the variable's current value so the
+    # descriptor's post-init lines (``.insert("1.0", …)``,
+    # ``.set(…)``, etc.) render with real text instead of a literal
+    # token. The auto-trace bindings emitted below take care of
+    # later runtime updates.
+    state_props = _resolve_var_tokens_to_values(state_props)
     lines.extend(descriptor.export_state(full_name, state_props))
+    # Phase 3 — auto-trace bindings for properties that have a
+    # ``var:<uuid>`` token but no entry in ``BINDING_WIRINGS``.
+    # CTkButton.text, CTkButton.fg_color, CTkTextbox content etc.
+    # all fall here. Helper functions (emitted at module level when
+    # any project widget needs them) take care of the actual
+    # ``trace_add`` plumbing; this site just calls the right one
+    # with the variable + widget reference.
+    lines.extend(_emit_auto_trace_bindings(node, full_name))
     # ScrollableDropdown side-car wiring for ComboBox + OptionMenu. The
     # helper class lives in scrollable_dropdown.py beside this file.
     if node.widget_type in ("CTkComboBox", "CTkOptionMenu"):

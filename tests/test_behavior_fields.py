@@ -663,3 +663,122 @@ def test_restore_behavior_field_bindings_skips_missing_doc():
     cleared = [("ghost-doc", "label", "widget-1")]
     _restore_behavior_field_bindings(project, cleared)
     assert doc.behavior_field_values == {}
+
+
+# ---------------------------------------------------------------------
+# Auto-trace emission for non-textvariable var bindings (v1.9.5)
+# ---------------------------------------------------------------------
+def _build_export_project(extra_widgets=()):
+    """Synthesise a Project with one Document + a global ``status`` var.
+    Returns ``(project, var)``. Caller plops widgets into
+    ``doc.root_widgets``.
+    """
+    from app.core.project import Project
+    from app.core.variables import VariableEntry
+    project = Project()
+    project.path = "/tmp/probe.ctkproj"
+    var = VariableEntry(name="status", type="str", default="initial")
+    project.variables = [var]
+    doc = project.documents[0]
+    doc.name = "Main Window"
+    for w in extra_widgets:
+        doc.root_widgets.append(w)
+    return project, var
+
+
+def _export_to_string(project, tmp_path):
+    """Run ``export_project`` against ``tmp_path/out.py`` and return
+    the generated source as a string. Wraps the file IO so tests
+    don't have to.
+    """
+    from app.io.code_exporter import export_project
+    out = tmp_path / "out.py"
+    export_project(project, out, inject_preview_screenshot=False)
+    return out.read_text(encoding="utf-8")
+
+
+def test_export_emits_widget_helper_for_button_text_binding(tmp_path):
+    from app.core.widget_node import WidgetNode
+    button = WidgetNode("CTkButton")
+    button.properties = {
+        "x": 10, "y": 40, "width": 80, "height": 30,
+    }
+    project, var = _build_export_project([button])
+    button.properties["text"] = f"var:{var.id}"
+    src = _export_to_string(project, tmp_path)
+    assert "def _bind_var_to_widget" in src
+    assert (
+        '_bind_var_to_widget(self.var_status, self.button_1, "text")'
+        in src
+    )
+
+
+def test_export_emits_textbox_helper_for_initial_text_binding(tmp_path):
+    from app.core.widget_node import WidgetNode
+    tb = WidgetNode("CTkTextbox")
+    tb.properties = {
+        "x": 10, "y": 40, "width": 200, "height": 100,
+    }
+    project, var = _build_export_project([tb])
+    tb.properties["initial_text"] = f"var:{var.id}"
+    src = _export_to_string(project, tmp_path)
+    assert "def _bind_var_to_textbox" in src
+    assert "_bind_var_to_textbox(self.var_status, self.textbox_1)" in src
+
+
+def test_export_skips_helpers_for_pure_textvariable_projects(tmp_path):
+    """Label.text is in BINDING_WIRINGS — it routes through
+    ``textvariable=`` and shouldn't trigger the auto-trace
+    helpers.
+    """
+    from app.core.widget_node import WidgetNode
+    label = WidgetNode("CTkLabel")
+    label.properties = {
+        "x": 10, "y": 10, "width": 80, "height": 20,
+    }
+    project, var = _build_export_project([label])
+    label.properties["text"] = f"var:{var.id}"
+    src = _export_to_string(project, tmp_path)
+    assert "textvariable=" in src
+    assert "_bind_var_to_widget" not in src
+    assert "_bind_var_to_textbox" not in src
+
+
+def test_export_resolves_textbox_token_to_current_value(tmp_path):
+    """Pre-1.9.5 the exporter wrote ``self.textbox_1.insert("1.0",
+    "var:<uuid>")`` literally because the var-token sub layer only
+    rewrote constructor kwargs. v1.9.5 resolves the token to the
+    var's current value before passing props to ``export_state``.
+    """
+    from app.core.widget_node import WidgetNode
+    tb = WidgetNode("CTkTextbox")
+    tb.properties = {
+        "x": 10, "y": 40, "width": 200, "height": 100,
+    }
+    project, var = _build_export_project([tb])
+    tb.properties["initial_text"] = f"var:{var.id}"
+    src = _export_to_string(project, tmp_path)
+    assert f"var:{var.id}" not in src
+    assert "self.textbox_1.insert" in src
+    assert "'initial'" in src or '"initial"' in src
+
+
+def test_export_compiles_clean_python(tmp_path):
+    """Catches indentation / quoting bugs in the helper templates +
+    per-widget binding lines. Compile without raising = the
+    generated file is at least syntactically valid.
+    """
+    from app.core.widget_node import WidgetNode
+    button = WidgetNode("CTkButton")
+    button.properties = {
+        "x": 10, "y": 40, "width": 80, "height": 30,
+    }
+    tb = WidgetNode("CTkTextbox")
+    tb.properties = {
+        "x": 10, "y": 80, "width": 200, "height": 60,
+    }
+    project, var = _build_export_project([button, tb])
+    button.properties["text"] = f"var:{var.id}"
+    tb.properties["initial_text"] = f"var:{var.id}"
+    src = _export_to_string(project, tmp_path)
+    compile(src, "<exported>", "exec")  # raises on syntax error
