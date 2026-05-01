@@ -400,6 +400,14 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         self.tree.tag_configure(
             "bound", background=TREE_BG,
         )
+        # Phase 3 — orphan handler indicator. Method rows whose
+        # name doesn't resolve to a ``def`` on the behavior class
+        # render with a soft red foreground so the user spots the
+        # break before they hit F5. Pairs with the ``❌ `` label
+        # prefix added in ``_populate_events_group``.
+        self.tree.tag_configure(
+            "missing_method", foreground="#ef4444", background=TREE_BG,
+        )
 
         vscroll = ctk.CTkScrollbar(
             wrap, orientation="vertical", command=self._on_vscroll,

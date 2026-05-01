@@ -465,6 +465,15 @@ class SchemaMixin:
         # missing / the class can't be found — bare method names
         # render fine in those cases.
         docs = self._lookup_handler_docstrings(node)
+        # Phase 3 — set of method names that actually exist as
+        # ``def`` statements on the per-window class. Method rows
+        # whose name isn't in this set get the ``missing_method``
+        # tag + a ``❌`` prefix so orphan bindings show up before
+        # the user hits F5. Empty set means "couldn't scan" —
+        # treated as "all bindings allowed" so unsaved projects /
+        # missing files render the same as before.
+        existing_methods = self._lookup_existing_method_names(node)
+        scanned_existing = existing_methods is not None
         group_iid = "events:group"
         self.tree.insert(
             "", "end", iid=group_iid,
@@ -508,12 +517,29 @@ class SchemaMixin:
                     row_label = doc_text
                 else:
                     row_label = f"Action {m_idx + 1}"
+                missing = (
+                    scanned_existing
+                    and method not in (existing_methods or set())
+                )
+                # ``❌`` glyph + red row tag for orphan bindings —
+                # method name is recorded on the model but the
+                # behavior file's class doesn't define it. Caught
+                # here so the user spots the break in the panel
+                # before F5 surfaces it as an AttributeError.
+                if missing:
+                    row_label = f"❌ {row_label}"
+                    value_text = f"{method} (missing in file)"
+                    row_tags: tuple[str, ...] = ("missing_method",)
+                else:
+                    value_text = method
+                    row_tags = ()
                 # Method name in the value column as quiet metadata —
                 # useful when the user can't remember which action
                 # is which, but stays out of the primary label.
                 self.tree.insert(
                     header_iid, "end", iid=method_iid,
-                    text=row_label, values=(method,),
+                    text=row_label, values=(value_text,),
+                    tags=row_tags,
                 )
                 meta[method_iid] = ("method", entry.key, m_idx)
                 self._attach_event_unbind_button(
@@ -535,6 +561,31 @@ class SchemaMixin:
             return
         anchor_index = self.tree.index(anchor_iid)
         self.tree.move(group_iid, "", anchor_index + 1)
+
+    def _lookup_existing_method_names(self, node) -> set[str] | None:
+        """Phase 3 — return the set of method names defined on the
+        widget's per-window behavior class, used to flag orphan
+        bindings in ``_populate_events_group``. ``None`` when we
+        can't reach the file (unsaved project / missing .py / class
+        not found) — caller treats that as "skip the orphan check"
+        so legacy projects without behavior files render identically
+        to the pre-Phase-3 build.
+        """
+        if not getattr(self.project, "path", None):
+            return None
+        document = self.project.find_document_for_widget(node.id)
+        if document is None:
+            return None
+        from app.core.script_paths import (
+            behavior_class_name, behavior_file_path,
+        )
+        from app.io.scripts import parse_handler_methods
+        file_path = behavior_file_path(self.project.path, document)
+        if file_path is None or not file_path.exists():
+            return None
+        return set(parse_handler_methods(
+            file_path, behavior_class_name(document),
+        ))
 
     def _lookup_handler_docstrings(self, node) -> dict[str, str]:
         """Build a ``{method_name: first_docstring_line}`` map for the
