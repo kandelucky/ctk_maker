@@ -29,6 +29,11 @@ class WidgetDescriptor:
     # destroy + recreate via `recreate_triggers`. The exporter DOES emit
     # them because exported code builds the widget via `__init__`.
     init_only_keys: set[str] = set()
+    # When False, the exporter emits the constructor as a bare
+    # ``Name(...)`` call instead of ``ctk.Name(...)``. Used by custom
+    # widgets like CircularProgress whose class is inlined into the
+    # generated file rather than imported from customtkinter.
+    is_ctk_class: bool = True
     # Auto-fill hint for layout containers. When True, a fresh drop into
     # a vbox / hbox / grid parent commits ``stretch="fill"`` (pack) or
     # ``grid_sticky="nsew"`` instead of the schema default, so typical

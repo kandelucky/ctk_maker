@@ -114,6 +114,7 @@ CATALOG: tuple[WidgetGroup, ...] = (
         WidgetEntry("Image", "Image", "image"),
         WidgetEntry("Card", "Card", "circle-stop"),
         WidgetEntry("CTkProgressBar", "Progress Bar", "loader"),
+        WidgetEntry("CircularProgress", "Circular Progress", "circle-percent"),
     )),
     WidgetGroup("Selection", (
         WidgetEntry("CTkCheckBox", "Check Box", "square-check"),

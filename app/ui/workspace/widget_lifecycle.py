@@ -246,6 +246,17 @@ class WidgetLifecycle:
             self._wire_tabview_selection_refresh(widget)
         if not node.visible:
             self._set_widget_visibility(widget, window_id, node, False)
+        # CTkScrollableFrame with place layout: pin the inner frame's
+        # size so place'd children render. Two trigger points — when
+        # the scrollable itself is added (initial pin to its own dims)
+        # and when a place'd child is added (recompute bbox).
+        if node.widget_type == "CTkScrollableFrame":
+            self._pin_scrollable_inner_for_place(node)
+        if (
+            parent_node is not None
+            and parent_node.widget_type == "CTkScrollableFrame"
+        ):
+            self._pin_scrollable_inner_for_place(parent_node)
 
     def _wire_tabview_selection_refresh(self, tabview) -> None:
         """Route CTk's tab-switch callback to the selection controller
@@ -355,6 +366,91 @@ class WidgetLifecycle:
             except (tk.TclError, TypeError):
                 pass
 
+    def _pin_scrollable_inner_for_place(self, scrollable_node) -> None:
+        """When a CTkScrollableFrame uses place layout, the inner
+        ``tk.Frame`` (the one that hosts user widgets inside the
+        canvas viewport) needs explicit sizing — place children
+        don't fire the ``<Configure>``-driven auto-grow that
+        ``vbox`` / ``hbox`` / ``grid`` rely on, so without a manual
+        size the inner frame stays 0×0 and place'd children render
+        outside the visible canvas window (looks like the children
+        vanished).
+
+        Computes the inner frame size as
+        ``max(scrollable's own w/h, bbox of all place'd children)``
+        and configures the inner frame; the frame's own
+        ``<Configure>`` binding then updates ``scrollregion`` so
+        the scrollbar reflects the content. Inner frame propagate
+        is pinned False so a subsequent place doesn't shrink it.
+        """
+        if scrollable_node.widget_type != "CTkScrollableFrame":
+            return
+        if scrollable_node.properties.get("layout_type") != "place":
+            return
+        entry = self.widget_views.get(scrollable_node.id)
+        if entry is None:
+            return
+        inner_widget, _ = entry
+
+        try:
+            max_w = int(scrollable_node.properties.get("width", 0) or 0)
+            max_h = int(scrollable_node.properties.get("height", 0) or 0)
+        except (TypeError, ValueError):
+            max_w = max_h = 0
+        for child in scrollable_node.children:
+            try:
+                cx = int(child.properties.get("x", 0) or 0)
+                cy = int(child.properties.get("y", 0) or 0)
+                cw = int(child.properties.get("width", 0) or 0)
+                ch = int(child.properties.get("height", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if cx + cw > max_w:
+                max_w = cx + cw
+            if cy + ch > max_h:
+                max_h = cy + ch
+
+        if max_w <= 0 or max_h <= 0:
+            return
+
+        try:
+            inner_widget.pack_propagate(False)
+        except (tk.TclError, TypeError):
+            pass
+        try:
+            inner_widget.grid_propagate(False)
+        except (tk.TclError, TypeError):
+            pass
+        # CTkScrollableFrame.configure(width=, height=) is overridden
+        # to resize the OUTER viewport canvas, not the inner tk.Frame
+        # we actually want to grow. Bypass the override by calling
+        # tk.Frame.configure directly so the inner frame's reqsize
+        # updates — which fires <Configure> on the frame and bumps
+        # the parent canvas's scrollregion via CTk's own bind.
+        #
+        # CTk applies its own widget-scaling (DPI awareness) to the
+        # outer viewport canvas, so on a 1.5×-scaled display a
+        # nominally 340-tall viewport is actually ~510 pixels. The
+        # inner tk.Frame is a raw tk widget though — it doesn't
+        # inherit that scaling, so an unscaled `height=426` would
+        # leave the content shorter than the scaled viewport and
+        # scrolling never activates. Apply CTk's scaling here so the
+        # inner frame's reqsize is in the same pixel space as the
+        # canvas it's drawn on.
+        try:
+            scale = inner_widget._get_widget_scaling()
+        except (AttributeError, tk.TclError):
+            scale = 1.0
+        zoom = self.zoom.value
+        try:
+            tk.Frame.configure(
+                inner_widget,
+                width=max(1, int(max_w * zoom * scale)),
+                height=max(1, int(max_h * zoom * scale)),
+            )
+        except tk.TclError:
+            pass
+
     def _place_top_level(
         self, anchor_widget, owning_doc,
         lx: int, ly: int, lw: int, lh: int, is_composite: bool,
@@ -451,7 +547,6 @@ class WidgetLifecycle:
     def on_widget_removed(
         self, widget_id: str, parent_id: str | None = None,
     ) -> None:
-        _ = parent_id  # reserved for future per-parent hooks
         if widget_id not in self.widget_views:
             return
         widget, window_id = self.widget_views.pop(widget_id)
@@ -466,6 +561,16 @@ class WidgetLifecycle:
             (anchor or widget).destroy()
         except tk.TclError:
             pass
+        # Recompute the inner frame size if the removed widget lived
+        # inside a CTkScrollableFrame using place layout — the bbox
+        # may have shrunk and scrollregion needs to follow.
+        if parent_id:
+            parent_node = self.project.get_widget(parent_id)
+            if (
+                parent_node is not None
+                and parent_node.widget_type == "CTkScrollableFrame"
+            ):
+                self._pin_scrollable_inner_for_place(parent_node)
 
     # ------------------------------------------------------------------
     # Reparent + z-order

@@ -49,6 +49,7 @@ from app.core.script_paths import (
     behavior_class_name,
     behavior_file_path,
     ensure_scripts_root,
+    scripts_root,
     slugify_window_name,
 )
 
@@ -605,10 +606,18 @@ def ensure_runtime_helpers(
     """
     if not project_file_path:
         return None
-    scripts_root = ensure_scripts_root(project_file_path)
-    if scripts_root is None:
+    # Run ensure_scripts_root() for the side effect of creating the
+    # __init__.py at both ``scripts/`` and ``scripts/<page>/`` so the
+    # ``from assets.scripts.<page>.<window>`` import resolves; its
+    # return value is the per-page subfolder, which is the wrong
+    # level for ``_runtime.py``. Drop the helper at the parent root
+    # so behavior files' ``from .._runtime import ref`` resolves.
+    if ensure_scripts_root(project_file_path) is None:
         return None
-    runtime_path = scripts_root / _RUNTIME_MODULE_NAME
+    root = scripts_root(project_file_path)
+    if root is None:
+        return None
+    runtime_path = root / _RUNTIME_MODULE_NAME
     if runtime_path.exists():
         return runtime_path
     try:

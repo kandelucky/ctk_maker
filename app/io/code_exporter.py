@@ -152,6 +152,20 @@ _INCLUDE_DESCRIPTIONS_DEFAULT = True
 #       ``"self.master.var_X"`` so widget kwargs use the right form
 #       for whichever class is currently being emitted.
 _EXPORT_PROJECT = None
+# Phase 3 — populated at top of ``_generate_code_inner`` so
+# ``_emit_handler_lines`` can skip stale handler bindings whose
+# methods no longer exist in the per-window behavior file. Maps
+# ``Document.id`` → set of method names defined on the doc's
+# behavior class. Populated lazily; missing entry = "couldn't
+# scan the file" (treated as "all bindings allowed", matching
+# pre-1.8.3 behaviour so projects without behavior files still
+# export cleanly).
+_BEHAVIOR_METHODS_BY_DOC_ID: dict[str, set[str]] = {}
+# Logged for the export caller — list of ``(doc_name, method_name)``
+# tuples that the exporter skipped because the method wasn't found
+# in the file. Caller can surface these as a warning before
+# launching the subprocess.
+_MISSING_BEHAVIOR_METHODS: list[tuple[str, str]] = []
 _GLOBAL_VAR_ATTR: dict = {}
 _VAR_ID_TO_ATTR: dict = {}
 
@@ -511,6 +525,12 @@ def generate_code(
     _GLOBAL_VAR_ATTR = _build_global_var_attrs(project)
     # Per-class map is rebuilt inside ``_emit_class``; start empty.
     _VAR_ID_TO_ATTR = {}
+    # Pre-scan every doc's behavior file so handler bindings whose
+    # methods got removed externally (user edited the .py manually,
+    # AST scanner failed, etc.) are skipped instead of emitted as
+    # ``self._behavior.<missing>`` references that crash the preview
+    # at __init__ time.
+    _scan_behavior_methods_for_export(project)
     try:
         return _generate_code_inner(
             project,
@@ -602,12 +622,25 @@ def _generate_code_inner(
     has_local_vars = any(
         bool(d.local_variables) for d in docs_to_emit
     )
+    needs_circular_progress = any(
+        w.widget_type == "CircularProgress" for w in scoped_widgets
+    )
     needs_tk_import = (
         bool(project.variables)
         or has_local_vars
+        or needs_circular_progress
         or any(
             w.widget_type == "CTkRadioButton"
             and str(w.properties.get("group") or "").strip()
+            for w in scoped_widgets
+        )
+        # CTkScrollableFrame with place layout needs a manual
+        # ``tk.Frame.configure(inner, width=, height=)`` to size its
+        # inner content frame — see _emit_subtree for the why.
+        or any(
+            w.widget_type == "CTkScrollableFrame"
+            and w.properties.get("layout_type") == "place"
+            and w.children
             for w in scoped_widgets
         )
     )
@@ -636,6 +669,10 @@ def _generate_code_inner(
 
     if needs_icon_state:
         lines.extend(_icon_state_helper_lines())
+        lines.append("")
+
+    if needs_circular_progress:
+        lines.extend(_circular_progress_class_lines())
         lines.append("")
 
     if needs_auto_hover_text:
@@ -739,6 +776,76 @@ def _generate_code_inner(
 # ----------------------------------------------------------------------
 # Class + widget emission
 # ----------------------------------------------------------------------
+def _scan_behavior_methods_for_export(project: Project) -> None:
+    """Populate ``_BEHAVIOR_METHODS_BY_DOC_ID`` + reset the missing-
+    methods log. Per-doc AST parse against ``parse_handler_methods``
+    so ``_emit_handler_lines`` can answer "does method X exist on
+    the behavior class" in O(1).
+
+    Robust to unsaved projects (no path) and missing files (skip the
+    doc — its handlers fall through to "no filter" so the
+    pre-Phase-3 behaviour holds when files don't exist yet).
+    """
+    global _BEHAVIOR_METHODS_BY_DOC_ID, _MISSING_BEHAVIOR_METHODS
+    _BEHAVIOR_METHODS_BY_DOC_ID = {}
+    _MISSING_BEHAVIOR_METHODS = []
+    project_path = getattr(project, "path", None)
+    if not project_path:
+        return
+    from app.core.script_paths import (
+        behavior_class_name, behavior_file_path,
+    )
+    from app.io.scripts import parse_handler_methods
+    for doc in project.documents:
+        file_path = behavior_file_path(project_path, doc)
+        if file_path is None or not file_path.exists():
+            continue
+        methods = parse_handler_methods(
+            file_path, behavior_class_name(doc),
+        )
+        _BEHAVIOR_METHODS_BY_DOC_ID[doc.id] = set(methods)
+
+
+def _filter_handlers_to_existing_methods(
+    node: WidgetNode, methods: list[str],
+) -> list[str]:
+    """Drop method names that the per-doc scanner couldn't find on
+    the behavior class. Each drop appends to
+    ``_MISSING_BEHAVIOR_METHODS`` so the caller can surface a "your
+    behavior file is out of sync" warning to the user.
+
+    No-op when no scan data exists for the doc — happens for
+    unsaved projects or docs whose .py never materialised; in that
+    case we keep the pre-1.8.3 "trust the model" behaviour so we
+    don't break exports that worked before.
+    """
+    if _EXPORT_PROJECT is None:
+        return methods
+    doc = _EXPORT_PROJECT.find_document_for_widget(node.id)
+    if doc is None:
+        return methods
+    available = _BEHAVIOR_METHODS_BY_DOC_ID.get(doc.id)
+    if available is None:
+        return methods
+    kept: list[str] = []
+    for m in methods:
+        if m in available:
+            kept.append(m)
+        else:
+            _MISSING_BEHAVIOR_METHODS.append((doc.name, m))
+    return kept
+
+
+def get_missing_behavior_methods() -> list[tuple[str, str]]:
+    """Return the list of ``(doc_name, method_name)`` pairs the most
+    recent export had to skip because the methods didn't exist in
+    the behavior file. Read by the preview launchers to show a
+    pre-spawn warning so the user knows why their button no longer
+    fires what they bound.
+    """
+    return list(_MISSING_BEHAVIOR_METHODS)
+
+
 def _emit_handler_lines(
     node: WidgetNode, full_name: str,
 ) -> tuple[tuple[str, str] | None, list[str]]:
@@ -765,6 +872,16 @@ def _emit_handler_lines(
     post_lines: list[str] = []
     for key in node.handlers:
         methods = [m for m in node.handlers.get(key, []) if m]
+        if not methods:
+            continue
+        # Phase 3 — drop handler entries whose methods don't exist
+        # in the behavior file. Pre-1.8.3 these emitted as
+        # ``self._behavior.<missing>`` and crashed the preview at
+        # widget construction with AttributeError. Now the
+        # exporter filters them; the binding silently disappears
+        # for this run and the caller can warn the user via
+        # ``get_missing_behavior_methods()``.
+        methods = _filter_handlers_to_existing_methods(node, methods)
         if not methods:
             continue
         entry = event_by_key(node.widget_type, key)
@@ -1194,6 +1311,54 @@ def _emit_subtree(
                     f'{child_master}.grid_columnconfigure({cc}, weight=1, uniform="col")',
                 )
         lines.append("")
+    elif (
+        node.widget_type == "CTkScrollableFrame"
+        and child_layout == DEFAULT_LAYOUT_TYPE
+        and node.children
+    ):
+        # CTkScrollableFrame's inner ``tk.Frame`` (where children
+        # actually live) only auto-grows from pack/grid kids — place
+        # children leave it 0×0, so they render outside the canvas's
+        # visible window. Compute the bbox of all place children at
+        # export time and pin the inner frame to that size; the
+        # frame's own ``<Configure>`` bind then updates the canvas's
+        # scrollregion. ``CTkScrollableFrame.configure`` is overridden
+        # to retarget the outer viewport canvas, so go through
+        # ``tk.Frame.configure`` to actually hit the inner frame.
+        try:
+            max_w = int(node.properties.get("width", 0) or 0)
+            max_h = int(node.properties.get("height", 0) or 0)
+        except (TypeError, ValueError):
+            max_w = max_h = 0
+        for child in node.children:
+            try:
+                cx = int(child.properties.get("x", 0) or 0)
+                cy = int(child.properties.get("y", 0) or 0)
+                cw = int(child.properties.get("width", 0) or 0)
+                ch = int(child.properties.get("height", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if cx + cw > max_w:
+                max_w = cx + cw
+            if cy + ch > max_h:
+                max_h = cy + ch
+        if max_w > 0 and max_h > 0:
+            # CTk applies widget-scaling (DPI awareness) to the
+            # outer viewport canvas at runtime, so the unscaled
+            # bbox we computed at export time would leave the inner
+            # frame shorter than the scaled viewport on hi-DPI
+            # displays — scrolling never activates. Multiply by the
+            # widget-scaling factor at runtime via the CTk helper.
+            lines.append(
+                f"_sf_scale = {child_master}._get_widget_scaling()",
+            )
+            lines.append(
+                f"tk.Frame.configure({child_master}, "
+                f"width=int({max_w} * _sf_scale), "
+                f"height=int({max_h} * _sf_scale))",
+            )
+            lines.append(f"{child_master}.pack_propagate(False)")
+            lines.append("")
     try:
         child_spacing = int(
             node.properties.get(
@@ -1491,7 +1656,10 @@ def _emit_widget(
     if command_kwarg is not None:
         kwargs.append(command_kwarg)
 
-    lines.append(f"{full_name} = ctk.{ctk_class}(")
+    class_prefix = (
+        "ctk." if getattr(descriptor, "is_ctk_class", True) else ""
+    )
+    lines.append(f"{full_name} = {class_prefix}{ctk_class}(")
     lines.append(f"    {master_var},")
     for key, src in kwargs:
         lines.append(f"    {key}={src},")
@@ -1758,6 +1926,33 @@ def _image_source_with_color(
         f"_tint_image({_py_literal(normalised_path)}, "
         f"{_py_literal(color)}, ({iw}, {ih}))"
     )
+
+
+def _circular_progress_class_lines() -> list[str]:
+    """Inline the ``CircularProgress`` runtime class + its bg-resolver
+    helper into generated `.py` files. The class lives in
+    ``app/widgets/runtime/circular_progress.py`` for builder use; we
+    read its source via ``inspect`` so a single edit propagates to
+    every export. The runtime module's own imports
+    (``tkinter as tk`` / ``customtkinter as ctk``) are already emitted
+    by the standard import block, so we skip the module-level
+    ``import`` statements here.
+    """
+    import inspect
+
+    from app.widgets.runtime.circular_progress import (
+        CircularProgress,
+        _circular_progress_resolve_bg,
+    )
+
+    lines: list[str] = []
+    lines.extend(
+        inspect.getsource(_circular_progress_resolve_bg).splitlines(),
+    )
+    lines.append("")
+    lines.append("")
+    lines.extend(inspect.getsource(CircularProgress).splitlines())
+    return lines
 
 
 def _icon_state_helper_lines() -> list[str]:

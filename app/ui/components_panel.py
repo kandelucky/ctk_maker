@@ -54,6 +54,7 @@ _WIDGET_TYPE_ICONS = {
     "Image": "image",
     "Card": "circle-stop",
     "CTkProgressBar": "loader",
+    "CircularProgress": "circle-percent",
     "CTkCheckBox": "square-check",
     "CTkRadioButton": "circle-dot",
     "CTkSwitch": "toggle-left",

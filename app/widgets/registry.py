@@ -15,6 +15,7 @@ from app.widgets.ctk_switch import CTkSwitchDescriptor
 from app.widgets.ctk_tabview import CTkTabviewDescriptor
 from app.widgets.ctk_textbox import CTkTextboxDescriptor
 from app.widgets.card import CardDescriptor
+from app.widgets.circular_progress import CircularProgressDescriptor
 from app.widgets.image import ImageDescriptor
 from app.widgets.window_descriptor import WindowDescriptor
 
@@ -38,6 +39,7 @@ _REGISTRY: dict[str, type[WidgetDescriptor]] = {
     CTkTextboxDescriptor.type_name: CTkTextboxDescriptor,
     ImageDescriptor.type_name: ImageDescriptor,
     CardDescriptor.type_name: CardDescriptor,
+    CircularProgressDescriptor.type_name: CircularProgressDescriptor,
 }
 
 

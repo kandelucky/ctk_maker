@@ -19,6 +19,7 @@ _TYPE_ICON_NAMES = {
     "CTkScrollableFrame": "scroll-text",
     "CTkTabview": "layout-panel-top",
     "CTkProgressBar": "loader",
+    "CircularProgress": "circle-percent",
     "Image": "image",
     "Card": "circle-stop",
 }
