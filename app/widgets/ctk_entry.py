@@ -11,6 +11,8 @@ Groups shown in the Properties panel, in order:
     Main Colors        — field background
     Text               — font + style, text + placeholder colors
 """
+import tkinter as tk
+
 import customtkinter as ctk
 
 from app.core.logger import log_error
@@ -228,18 +230,22 @@ class CTkEntryDescriptor(WidgetDescriptor):
 
     @classmethod
     def apply_state(cls, widget, properties: dict) -> None:
-        # CTk's placeholder is literally the entry's text styled with
-        # placeholder_text_color, gated by the internal
-        # `_placeholder_text_active` flag. Touching the widget without
-        # respecting that flag either wipes the placeholder (and never
-        # re-arms) or leaves stale user text when the field is cleared.
-        #
-        # Disabled caveat: tkinter's Entry silently drops `insert()`
-        # when state=disabled, so CTk cannot actually show its
-        # placeholder on a disabled entry at runtime. We mirror that
-        # here — no placeholder on canvas when the field is disabled,
-        # so WYSIWYG matches preview. Read-only entries accept
-        # programmatic insert, so placeholder is fine there.
+        # When ``initial_value`` was bound to a variable, the
+        # constructor already received ``textvariable=<tk_var>`` via
+        # ``resolve_bindings`` and the entry mirrors the var's
+        # current value automatically. ``properties`` doesn't carry
+        # the original token (resolve_bindings stripped it), so the
+        # default initial="" path below would call ``widget.delete(
+        # 0, "end")`` — and because Tk's ``textvariable`` sync is
+        # bi-directional, the delete would clear the variable for
+        # every other widget bound to it too. Detect the bound state
+        # by inspecting the widget's ``textvariable`` cget and
+        # skip the rest of the placeholder/clear plumbing.
+        try:
+            if str(widget.cget("textvariable")):
+                return
+        except tk.TclError:
+            pass
         initial = properties.get("initial_value") or ""
         placeholder_active = bool(
             getattr(widget, "_placeholder_text_active", False),
