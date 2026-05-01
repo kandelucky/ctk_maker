@@ -1357,6 +1357,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         # Field to bring it back, same as Phase 2 method delete.
         if is_bound:
             cmd = SetBehaviorFieldCommand(document.id, field_name, "")
+            cmd.redo(self.project)
             self.project.history.push(cmd)
         delete_behavior_field_annotation(file_path, class_name, field_name)
         # Force a panel rebuild so the now-deleted row disappears
@@ -1458,6 +1459,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             )
             return
         cmd = SetBehaviorFieldCommand(document.id, field_name, widget_id)
+        cmd.redo(self.project)
         self.project.history.push(cmd)
 
     def _show_behavior_field_picker(
@@ -1488,10 +1490,15 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             return  # User cancelled.
         # Cleared (empty string) and picked-a-widget paths share the
         # same command — empty string instructs the command to drop
-        # the entry.
+        # the entry. ``history.push`` records an already-applied
+        # command (drop the redo stack and stop), so we apply via
+        # ``cmd.redo(project)`` first to actually mutate the model
+        # + publish the ``behavior_field_changed`` event the panel
+        # listens to.
         cmd = SetBehaviorFieldCommand(
             document.id, field_name, result,
         )
+        cmd.redo(self.project)
         self.project.history.push(cmd)
 
     def _clear_behavior_field(self, field_name: str) -> None:
@@ -1505,6 +1512,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         if field_name not in document.behavior_field_values:
             return
         cmd = SetBehaviorFieldCommand(document.id, field_name, "")
+        cmd.redo(self.project)
         self.project.history.push(cmd)
 
     def _on_behavior_field_changed(
