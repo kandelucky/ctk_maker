@@ -148,6 +148,57 @@ def _confirm_missing_handler_methods(parent) -> bool:
     )
 
 
+def _confirm_var_name_fallbacks(parent) -> bool:
+    """Surface widget Names the exporter had to drop / suffix during
+    the most recent ``generate_code`` call. Behavior files that
+    reference ``self.window.<user_name>`` would otherwise fail with
+    ``AttributeError`` at runtime — the user typed ``submit_btn`` but
+    the export emitted ``button_1`` because the name was a Python
+    keyword / duplicate / collided with a reserved attribute. Returns
+    ``True`` (proceed) on Yes or empty fallback list, ``False`` when
+    the user backs out so the caller can abort the preview.
+    """
+    try:
+        from app.io.code_exporter import get_var_name_fallbacks
+    except ImportError:
+        return True
+    fallbacks = get_var_name_fallbacks()
+    if not fallbacks:
+        return True
+    by_doc: dict[str, list[tuple[str, str, str]]] = {}
+    for doc_name, intent, fallback, reason in fallbacks:
+        by_doc.setdefault(doc_name, []).append((intent, fallback, reason))
+    lines = [
+        "Some widget Names from the Properties panel couldn't be "
+        "used as exported attribute names:",
+        "",
+    ]
+    for doc_name, rows in by_doc.items():
+        head = rows[:5]
+        rest = len(rows) - len(head)
+        lines.append(f"  • {doc_name}:")
+        for intent, fallback, reason in head:
+            lines.append(
+                f"      \"{intent}\" → {fallback}  ({reason})",
+            )
+        if rest > 0:
+            lines.append(f"      … (+{rest} more)")
+    lines.append("")
+    lines.append(
+        "Behavior files referencing self.window.<original_name> will "
+        "raise AttributeError. Use the suggested fallback name "
+        "instead, or rename the widget in the Properties panel to a "
+        "valid Python identifier.",
+    )
+    lines.append("")
+    lines.append("Continue with the preview anyway?")
+    return messagebox.askyesno(
+        "Widget name fallbacks",
+        "\n".join(lines),
+        parent=parent,
+    )
+
+
 def _preview_cwd(project, tmp_dir: Path) -> Path:
     """Pick the working directory for a preview subprocess. Multi-page
     projects expose ``project.folder_path`` — the project root holding
@@ -1642,6 +1693,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             return
         if not _confirm_missing_handler_methods(self):
             return
+        if not _confirm_var_name_fallbacks(self):
+            return
         runner_path = _write_preview_runner(tmp_dir)
         try:
             proc = subprocess.Popen(
@@ -1693,6 +1746,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             )
             return
         if not _confirm_missing_handler_methods(self):
+            return
+        if not _confirm_var_name_fallbacks(self):
             return
         runner_path = _write_preview_runner(tmp_dir)
         try:

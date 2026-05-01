@@ -168,6 +168,28 @@ _BEHAVIOR_METHODS_BY_DOC_ID: dict[str, set[str]] = {}
 _MISSING_BEHAVIOR_METHODS: list[tuple[str, str]] = []
 _GLOBAL_VAR_ATTR: dict = {}
 _VAR_ID_TO_ATTR: dict = {}
+# Var-name fallbacks the exporter applied during this run because the
+# user-set Properties-panel "Name" was empty / invalid / a duplicate.
+# Tuples are ``(doc_name, intended, fallback, reason)``; reset at the
+# start of each ``generate_code`` call. Surfaced via
+# ``get_var_name_fallbacks()`` so launchers (F5 preview, export
+# dialog) can show the user which names were silently rewritten.
+_VAR_NAME_FALLBACKS: list[tuple[str, str, str, str]] = []
+# Per-doc memoisation for ``_resolve_var_names`` so the resolver
+# runs once per ``generate_code`` call per doc — keeps the
+# ``_emit_subtree`` walk and the ``_build_id_to_var_name`` Phase 3
+# replay in lockstep without recomputing (and without double-
+# recording warnings).
+_NAME_MAP_CACHE: dict[str, dict[str, str]] = {}
+# Names the exporter declares on the window class that user-set
+# widget names must NOT shadow. Anything else (CTk inherited methods,
+# ``master``, Tk introspection) is the user's wound to inflict on
+# themselves — the warning system surfaces every fallback so they
+# can spot exotic shadowing the moment it engages.
+_RESERVED_VAR_NAMES = frozenset({
+    "_behavior",
+    "_build_ui",
+})
 
 
 def _is_non_textvariable_var_binding(
@@ -656,6 +678,7 @@ def generate_code(
     """
     global _INCLUDE_DESCRIPTIONS_DEFAULT, _EXPORT_PROJECT
     global _GLOBAL_VAR_ATTR, _VAR_ID_TO_ATTR
+    global _VAR_NAME_FALLBACKS, _NAME_MAP_CACHE
     _prev = (
         _INCLUDE_DESCRIPTIONS_DEFAULT, _EXPORT_PROJECT,
         _GLOBAL_VAR_ATTR, _VAR_ID_TO_ATTR,
@@ -665,6 +688,13 @@ def generate_code(
     _GLOBAL_VAR_ATTR = _build_global_var_attrs(project)
     # Per-class map is rebuilt inside ``_emit_class``; start empty.
     _VAR_ID_TO_ATTR = {}
+    # Reset the var-name fallback log + DFS-walk memoisation so this
+    # export run starts from a clean slate. The log survives past
+    # ``generate_code`` so launchers can read it via
+    # ``get_var_name_fallbacks()`` after the export — same lifecycle
+    # as ``_MISSING_BEHAVIOR_METHODS``.
+    _VAR_NAME_FALLBACKS = []
+    _NAME_MAP_CACHE = {}
     # Pre-scan every doc's behavior file so handler bindings whose
     # methods got removed externally (user edited the .py manually,
     # AST scanner failed, etc.) are skipped instead of emitted as
@@ -1002,6 +1032,19 @@ def get_missing_behavior_methods() -> list[tuple[str, str]]:
     return list(_MISSING_BEHAVIOR_METHODS)
 
 
+def get_var_name_fallbacks() -> list[tuple[str, str, str, str]]:
+    """Return ``(doc_name, intended, fallback, reason)`` rows for
+    every user-set widget Name the most recent export had to drop.
+    Reasons: ``duplicate``, ``Python keyword``, ``not a valid Python
+    identifier``, ``reserved by exported code``. Empty when every
+    user name made it through cleanly. Read by F5 preview / export
+    dialog launchers to show a pre-spawn notice — without one, a
+    behavior file's ``self.window.<user_name>`` reference would
+    raise ``AttributeError`` at runtime with no hint why.
+    """
+    return list(_VAR_NAME_FALLBACKS)
+
+
 def _emit_handler_lines(
     node: WidgetNode, full_name: str,
 ) -> tuple[tuple[str, str] | None, list[str]]:
@@ -1105,30 +1148,109 @@ def _doc_needs_behavior(doc: Document) -> bool:
     return False
 
 
-def _build_id_to_var_name(doc: Document) -> dict[str, str]:
-    """Replay ``_make_var_name``'s ordering against a doc's widget
-    tree to produce a stable ``{widget_id: var_name}`` map. Used by
-    ``_emit_behavior_field_lines`` so the post-build assignments
-    reference the same names ``_emit_subtree`` actually emitted.
+def _resolve_var_names(doc: Document) -> dict[str, str]:
+    """Walk a doc's widget tree DFS and produce the canonical
+    ``{widget_id: var_name}`` map for every node. Single source of
+    truth used by both ``_emit_subtree`` (live emission) and
+    ``_build_id_to_var_name`` (Phase 3 Behavior Field replay) so the
+    two walks can never drift.
 
-    The naming strategy is per-doc (counts dict resets each call),
-    matching how the exporter scopes the same dict per ``_emit_class``
-    invocation. As long as both walks visit children in the same DFS
-    order this stays in sync.
+    Naming priority per node:
+    1. ``node.name`` (user-set in the Properties panel) when it's a
+       valid Python identifier and not a Python keyword and not in
+       ``_RESERVED_VAR_NAMES``. Lets ``self.window.<user_name>``
+       references in behavior files actually resolve.
+    2. ``<type>_<N>`` counter fallback (``button_1`` / ``label_3`` /
+       …) — the legacy default.
+
+    Per-doc duplicate handling: first emission wins, second + later
+    occurrences of the same name auto-suffix ``_2`` / ``_3`` (mirrors
+    the variables-window naming convention). Counter-fallback
+    candidates that would collide with a user-set name bump the
+    counter forward until they land on something free.
+
+    Drops are recorded in ``_VAR_NAME_FALLBACKS`` so the launcher can
+    surface them — ``intended`` is the original name (or empty when
+    no user intent), ``fallback`` is what we emitted, ``reason`` is
+    one of ``duplicate`` / ``Python keyword`` / ``not a valid Python
+    identifier`` / ``reserved by exported code``.
+
+    Memoised per ``generate_code`` call via ``_NAME_MAP_CACHE`` so
+    repeat calls (Phase 3 replay path) don't double-record warnings.
     """
-    counts: dict[str, int] = {}
-    id_map: dict[str, str] = {}
+    import keyword as _kw
 
-    def walk(node: WidgetNode) -> None:
+    cached = _NAME_MAP_CACHE.get(doc.id)
+    if cached is not None:
+        return cached
+
+    counts: dict[str, int] = {}
+    taken: set[str] = set()
+    id_map: dict[str, str] = {}
+    doc_label = str(getattr(doc, "name", "") or "Window")
+
+    def _bad_reason(name: str) -> str | None:
+        if not name.isidentifier():
+            return "not a valid Python identifier"
+        if _kw.iskeyword(name):
+            return "Python keyword"
+        if name in _RESERVED_VAR_NAMES:
+            return "reserved by exported code"
+        return None
+
+    def _counter_fallback(node: WidgetNode) -> str:
         base = node.widget_type.replace("CTk", "").lower() or "widget"
         counts[base] = counts.get(base, 0) + 1
-        id_map[node.id] = f"{base}_{counts[base]}"
+        candidate = f"{base}_{counts[base]}"
+        # User may have already grabbed ``button_2`` as an explicit
+        # widget name. Bump the counter forward instead of stomping
+        # on it.
+        while candidate in taken:
+            counts[base] += 1
+            candidate = f"{base}_{counts[base]}"
+        return candidate
+
+    def walk(node: WidgetNode) -> None:
+        intent = (node.name or "").strip()
+        if intent:
+            reason = _bad_reason(intent)
+            if reason is None:
+                if intent in taken:
+                    n = 2
+                    while f"{intent}_{n}" in taken:
+                        n += 1
+                    final = f"{intent}_{n}"
+                    _VAR_NAME_FALLBACKS.append(
+                        (doc_label, intent, final, "duplicate"),
+                    )
+                else:
+                    final = intent
+            else:
+                final = _counter_fallback(node)
+                _VAR_NAME_FALLBACKS.append(
+                    (doc_label, intent, final, reason),
+                )
+        else:
+            final = _counter_fallback(node)
+        taken.add(final)
+        id_map[node.id] = final
         for child in node.children:
             walk(child)
 
     for root in doc.root_widgets:
         walk(root)
+    _NAME_MAP_CACHE[doc.id] = id_map
     return id_map
+
+
+def _build_id_to_var_name(doc: Document) -> dict[str, str]:
+    """Phase 3 Behavior Fields replay — alias of
+    ``_resolve_var_names`` so callers reading post-build assignments
+    line up with whatever ``_emit_subtree`` actually emitted.
+    Memoisation in ``_NAME_MAP_CACHE`` keeps this from re-walking the
+    tree or duplicating user warnings.
+    """
+    return _resolve_var_names(doc)
 
 
 def _emit_behavior_field_lines(
@@ -1329,7 +1451,13 @@ def _emit_class_body(
     lines.append("")
     lines.append(f"{INDENT}def _build_ui(self):")
 
-    counts: dict[str, int] = {}
+    # Pre-compute every widget's var name in DFS order. Threads the
+    # user-set Properties-panel "Name" through to the emitted
+    # ``self.<var> = ctk.<Type>(...)`` line so behavior files can
+    # reference widgets as ``self.window.<user_name>`` instead of
+    # the legacy ``<type>_<N>`` shape. Same map fuels the Phase 3
+    # Behavior Field replay above (memoised in ``_NAME_MAP_CACHE``).
+    id_to_var = _resolve_var_names(doc)
     body_lines: list[str] = []
     # Phase 1.5 binding: shared variables come BEFORE widget
     # construction so any constructor below can reference
@@ -1392,7 +1520,7 @@ def _emit_class_body(
                 node,
                 master_var="self",
                 lines=body_lines,
-                counts=counts,
+                id_to_var=id_to_var,
                 instance_prefix="self.",
                 parent_layout=doc_layout,
                 parent_spacing=doc_spacing,
@@ -1410,7 +1538,7 @@ def _emit_subtree(
     node: WidgetNode,
     master_var: str,
     lines: list[str],
-    counts: dict[str, int],
+    id_to_var: dict[str, str],
     instance_prefix: str = "",
     parent_layout: str = DEFAULT_LAYOUT_TYPE,
     parent_spacing: int = 0,
@@ -1419,7 +1547,7 @@ def _emit_subtree(
     parent_rows: int = 1,
     radio_var_map: dict[str, tuple[str, str]] | None = None,
 ) -> None:
-    var_name = _make_var_name(node, counts)
+    var_name = id_to_var[node.id]
     lines.extend(
         _emit_widget(
             node, var_name, master_var, instance_prefix,
@@ -1543,7 +1671,7 @@ def _emit_subtree(
             child,
             master_var=child_master_for_child,
             lines=lines,
-            counts=counts,
+            id_to_var=id_to_var,
             instance_prefix=instance_prefix,
             parent_layout=child_layout,
             parent_spacing=child_spacing,
@@ -1552,12 +1680,6 @@ def _emit_subtree(
             parent_rows=child_rows,
             radio_var_map=radio_var_map,
         )
-
-
-def _make_var_name(node: WidgetNode, counts: dict[str, int]) -> str:
-    base = node.widget_type.replace("CTk", "").lower() or "widget"
-    counts[base] = counts.get(base, 0) + 1
-    return f"{base}_{counts[base]}"
 
 
 def _emit_widget(
