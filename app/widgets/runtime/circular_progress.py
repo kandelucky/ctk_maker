@@ -6,13 +6,20 @@ exporter can inline this module's source verbatim into generated
 import tkinter as tk
 
 import customtkinter as ctk
+from customtkinter.windows.widgets.scaling import CTkScalingBaseClass
 
 
-class CircularProgress(tk.Canvas):
+class CircularProgress(tk.Canvas, CTkScalingBaseClass):
     """Circular progress indicator. Two arcs on a tk.Canvas — a
     full-circle track and a partial fill — plus an optional centered
     text. Call ``set(percent)`` at runtime to update; the widget
     auto-redraws on canvas resize.
+
+    Inherits ``CTkScalingBaseClass`` so the widget participates in
+    CTk's DPI-aware widget-scaling — without it, ``place(x=, y=)``
+    coords would land at literal pixel positions while every CTk
+    sibling's coords get scaled by the appearance scaling factor,
+    leaving this widget visibly misaligned in the runtime preview.
     """
 
     def __init__(
@@ -32,14 +39,28 @@ class CircularProgress(tk.Canvas):
         bg_color=None,
     ):
         bg = bg_color or _circular_progress_resolve_bg(master)
-        super().__init__(
+        # Construct the underlying tk.Canvas with CTk-scaled pixel
+        # dimensions so the widget renders at the same scale as its
+        # siblings on hi-DPI displays. CTkScalingBaseClass.__init__
+        # registers ``_set_scaling`` for live appearance changes.
+        tk.Canvas.__init__(
+            self,
             master,
-            width=width,
-            height=height,
             highlightthickness=0,
             bd=0,
             bg=bg,
         )
+        CTkScalingBaseClass.__init__(self, scaling_type="widget")
+        self._desired_width = int(width)
+        self._desired_height = int(height)
+        try:
+            tk.Canvas.configure(
+                self,
+                width=self._apply_widget_scaling(self._desired_width),
+                height=self._apply_widget_scaling(self._desired_height),
+            )
+        except tk.TclError:
+            pass
         self._percent = max(0, min(100, float(initial_percent)))
         self._fg_color = fg_color
         self._progress_color = progress_color
@@ -50,6 +71,36 @@ class CircularProgress(tk.Canvas):
         weight = "bold" if font_bold else "normal"
         self._font = ("TkDefaultFont", int(font_size), weight)
         self.bind("<Configure>", self._redraw)
+        self._redraw()
+
+    # ------------------------------------------------------------------
+    # Geometry manager overrides — scale x/y/width/height args so the
+    # widget aligns with CTk siblings on hi-DPI displays. Mirrors what
+    # ``CTkBaseClass`` does for first-class CTk widgets.
+    # ------------------------------------------------------------------
+    def place(self, **kwargs):
+        return super().place(**self._apply_argument_scaling(kwargs))
+
+    def pack(self, **kwargs):
+        return super().pack(**self._apply_argument_scaling(kwargs))
+
+    def grid(self, **kwargs):
+        return super().grid(**self._apply_argument_scaling(kwargs))
+
+    def _set_scaling(self, new_widget_scaling, new_window_scaling):
+        """Called by CTk's appearance manager when the user changes
+        scaling at runtime. Re-apply width/height in the new pixel
+        space so the canvas stays sized correctly.
+        """
+        super()._set_scaling(new_widget_scaling, new_window_scaling)
+        try:
+            tk.Canvas.configure(
+                self,
+                width=self._apply_widget_scaling(self._desired_width),
+                height=self._apply_widget_scaling(self._desired_height),
+            )
+        except tk.TclError:
+            pass
         self._redraw()
 
     # ------------------------------------------------------------------
@@ -65,6 +116,32 @@ class CircularProgress(tk.Canvas):
     def configure(self, **kwargs) -> None:
         dirty = False
         for key in list(kwargs):
+            if key == "width":
+                self._desired_width = int(kwargs.pop(key))
+                try:
+                    tk.Canvas.configure(
+                        self,
+                        width=self._apply_widget_scaling(
+                            self._desired_width,
+                        ),
+                    )
+                except tk.TclError:
+                    pass
+                dirty = True
+                continue
+            if key == "height":
+                self._desired_height = int(kwargs.pop(key))
+                try:
+                    tk.Canvas.configure(
+                        self,
+                        height=self._apply_widget_scaling(
+                            self._desired_height,
+                        ),
+                    )
+                except tk.TclError:
+                    pass
+                dirty = True
+                continue
             if key == "fg_color":
                 self._fg_color = kwargs.pop(key)
                 dirty = True

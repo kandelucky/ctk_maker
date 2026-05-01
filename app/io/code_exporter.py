@@ -1933,10 +1933,11 @@ def _circular_progress_class_lines() -> list[str]:
     helper into generated `.py` files. The class lives in
     ``app/widgets/runtime/circular_progress.py`` for builder use; we
     read its source via ``inspect`` so a single edit propagates to
-    every export. The runtime module's own imports
-    (``tkinter as tk`` / ``customtkinter as ctk``) are already emitted
-    by the standard import block, so we skip the module-level
-    ``import`` statements here.
+    every export. The runtime module's own ``tkinter as tk`` /
+    ``customtkinter as ctk`` imports are already emitted by the
+    standard import block; ``CTkScalingBaseClass`` is a deeper CTk
+    internal path that the standard imports don't cover, so we emit
+    it here as a sibling of the helper + class definitions.
     """
     import inspect
 
@@ -1945,7 +1946,11 @@ def _circular_progress_class_lines() -> list[str]:
         _circular_progress_resolve_bg,
     )
 
-    lines: list[str] = []
+    lines: list[str] = [
+        "from customtkinter.windows.widgets.scaling import "
+        "CTkScalingBaseClass",
+        "",
+    ]
     lines.extend(
         inspect.getsource(_circular_progress_resolve_bg).splitlines(),
     )
