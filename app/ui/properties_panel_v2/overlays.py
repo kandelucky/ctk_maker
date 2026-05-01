@@ -186,6 +186,9 @@ SLOT_IMAGE_BUTTONS = "image_buttons"
 SLOT_STYLE_PREVIEW = "style_preview"
 SLOT_BIND_BUTTON = "bind_button"
 SLOT_BIND_CLEAR = "bind_clear"
+# Phase 2 visual scripting — inline buttons on Events group rows.
+SLOT_EVENT_ADD = "event_add"
+SLOT_EVENT_UNBIND = "event_unbind"
 
 
 def place_bind_clear(
@@ -195,6 +198,27 @@ def place_bind_clear(
     far right of the value cell — when a row is bound the literal
     editor is skipped (no swatch / pencil / spinner there), so this
     spot is always free.
+    """
+    _place_value_cell_right(tree, widget, iid, width=14, pad_y=4)
+
+
+def place_event_add(
+    tree: tk.Widget, widget: tk.Widget, iid: str,
+) -> None:
+    """``[+]`` button on event header rows in the Events group.
+    Sits at the right edge of the value cell — the header preview
+    text ("(2 actions)") sits on the left, the button on the right.
+    Wider than the bind ✕ to make a primary action discoverable.
+    """
+    _place_value_cell_right(tree, widget, iid, width=20, pad_y=3)
+
+
+def place_event_unbind(
+    tree: tk.Widget, widget: tk.Widget, iid: str,
+) -> None:
+    """``[✕]`` button on bound-method rows. Mirrors place_bind_clear
+    geometry so the visual rhythm matches existing unbind buttons
+    elsewhere in the panel.
     """
     _place_value_cell_right(tree, widget, iid, width=14, pad_y=4)
 

@@ -42,8 +42,12 @@ from .format_utils import (
 from .overlays import (
     SLOT_BIND_BUTTON,
     SLOT_BIND_CLEAR,
+    SLOT_EVENT_ADD,
+    SLOT_EVENT_UNBIND,
     place_bind_button,
     place_bind_clear,
+    place_event_add,
+    place_event_unbind,
 )
 
 
@@ -173,6 +177,13 @@ class SchemaMixin:
         if descriptor.type_name == WINDOW_ID:
             self._populate_local_variables_group()
 
+        # Phase 2 visual scripting — Events group for event-capable
+        # widgets (button, slider, entry, …). Renders below every
+        # property group; event-less widgets (Label, Frame, Image)
+        # skip it entirely so their panels stay tidy.
+        if node is not None:
+            self._populate_events_group(node)
+
     def _populate_local_variables_group(self) -> None:
         doc = self.project.active_document if self.project else None
         group_iid = "g:Local Variables"
@@ -197,6 +208,193 @@ class SchemaMixin:
                 group_iid, "end", iid=f"localvar:{entry.id}",
                 text=entry.name,
                 values=(f"({entry.type}) {default_str}",),
+            )
+
+    def _populate_events_group(self, node) -> None:
+        """Phase 2 visual scripting — read-only display of every
+        event registered for the widget type plus the methods bound
+        to each. Empty events still render as headers so the user
+        sees what's available; right-click on a header attaches a
+        new action via the existing cascade flow.
+
+        Each renderable row is mirrored into ``self._event_row_meta``
+        so the right-click router can look up ``(kind, event_key,
+        index)`` without re-deriving it from the iid string.
+
+        The group inserts at the end of the walk and then re-positions
+        right after the ``Colors`` group when that group exists —
+        events sit conceptually closer to the visual styling rows
+        than to the trailing layout / state knobs, so this placement
+        matches the order the user reads the panel.
+        """
+        from app.widgets.event_registry import events_for
+        events = events_for(node.widget_type)
+        if not events:
+            return
+        # Resolve docstrings once per panel rebuild so each method
+        # row can show a human description when one is available.
+        # Empty when the project is unsaved / the behavior file is
+        # missing / the class can't be found — bare method names
+        # render fine in those cases.
+        docs = self._lookup_handler_docstrings(node)
+        group_iid = "events:group"
+        self.tree.insert(
+            "", "end", iid=group_iid,
+            text="Events", values=("",), open=True,
+            tags=("class",),
+        )
+        meta = self._event_row_meta
+        meta[group_iid] = ("group", "", None)
+        widget_id = node.id
+        for ev_idx, entry in enumerate(events):
+            methods = list(node.handlers.get(entry.key, []) or [])
+            header_iid = f"events:e:{ev_idx}"
+            label = entry.label[:1].upper() + entry.label[1:]
+            if methods:
+                preview = (
+                    f"({len(methods)} action"
+                    f"{'s' if len(methods) != 1 else ''})"
+                )
+            else:
+                preview = "no action"
+            self.tree.insert(
+                group_iid, "end", iid=header_iid,
+                text=label, values=(preview,), open=True,
+                tags=("group",),
+            )
+            meta[header_iid] = ("header", entry.key, None)
+            self._attach_event_add_button(
+                header_iid, widget_id, entry.key,
+            )
+            for m_idx, method in enumerate(methods):
+                method_iid = f"events:m:{ev_idx}:{m_idx}"
+                # Docstring (when the user wrote one) reads as the
+                # primary label. Otherwise we surface ``Action N`` —
+                # the auto-generated ``on_button_click_3`` method
+                # name carries no useful information for someone
+                # browsing the panel and reads as visual noise. The
+                # bare method name still lives on disk; the user
+                # sees it in the editor when they jump there.
+                doc_text = docs.get(method)
+                if doc_text:
+                    row_label = doc_text
+                else:
+                    row_label = f"Action {m_idx + 1}"
+                # Method name in the value column as quiet metadata —
+                # useful when the user can't remember which action
+                # is which, but stays out of the primary label.
+                self.tree.insert(
+                    header_iid, "end", iid=method_iid,
+                    text=row_label, values=(method,),
+                )
+                meta[method_iid] = ("method", entry.key, m_idx)
+                self._attach_event_unbind_button(
+                    method_iid, widget_id, entry.key, m_idx, method,
+                )
+
+        # Hoist the Events group up to live right after the LAST
+        # group whose name contains "Color" (CTkButton uses
+        # "Main Colors", CTkComboBox has "Main Colors" + "Dropdown
+        # Colors", etc. — the events sit conceptually closest to the
+        # final colour batch). When no colour-related group exists,
+        # leave Events at its natural end-of-list position.
+        anchor_iid: str | None = None
+        for child_iid in self.tree.get_children(""):
+            text = self.tree.item(child_iid, "text") or ""
+            if "color" in text.lower():
+                anchor_iid = child_iid
+        if anchor_iid is None:
+            return
+        anchor_index = self.tree.index(anchor_iid)
+        self.tree.move(group_iid, "", anchor_index + 1)
+
+    def _lookup_handler_docstrings(self, node) -> dict[str, str]:
+        """Build a ``{method_name: first_docstring_line}`` map for the
+        node's window's behavior class. Empty when the project is
+        unsaved, the behavior file is missing, or the class isn't
+        found. Used by ``_populate_events_group`` to label each
+        method row with the user's own description.
+        """
+        if not getattr(self.project, "path", None):
+            return {}
+        document = self.project.find_document_for_widget(node.id)
+        if document is None:
+            return {}
+        from app.core.script_paths import (
+            behavior_class_name, behavior_file_path,
+        )
+        from app.io.scripts import parse_method_docstrings
+        file_path = behavior_file_path(self.project.path, document)
+        if file_path is None or not file_path.exists():
+            return {}
+        return parse_method_docstrings(
+            file_path, behavior_class_name(document),
+        )
+
+    def _attach_event_add_button(
+        self, header_iid: str, widget_id: str, event_key: str,
+    ) -> None:
+        """Inline ``[+]`` next to the event-header row preview.
+        Click delegates to ``_add_event_action`` (same path the
+        right-click "Add action" entry uses) so the cascade flow
+        stays single-source.
+        """
+        btn = tk.Label(
+            self.tree,
+            text="+", bg=TREE_BG, fg="#7dd3fc",
+            font=("Segoe UI", 11, "bold"),
+            cursor="hand2", borderwidth=0, padx=0, pady=0,
+        )
+        btn.bind(
+            "<Enter>",
+            lambda _e, b=btn: b.configure(fg="#ffffff"),
+        )
+        btn.bind(
+            "<Leave>",
+            lambda _e, b=btn: b.configure(fg="#7dd3fc"),
+        )
+        btn.bind(
+            "<Button-1>",
+            lambda _e, wid=widget_id, k=event_key:
+            self._add_event_action(wid, k),
+        )
+        if self.overlays is not None:
+            self.overlays.add(
+                header_iid, SLOT_EVENT_ADD, btn, place_event_add,
+            )
+
+    def _attach_event_unbind_button(
+        self, method_iid: str, widget_id: str,
+        event_key: str, index: int, method_name: str,
+    ) -> None:
+        """Inline ``[✕]`` on bound-method rows. Calls
+        ``_unbind_event_method`` — the same path the right-click
+        "Unbind" entry uses — so undo/redo behaviour matches
+        regardless of which surface the user clicked.
+        """
+        btn = tk.Label(
+            self.tree,
+            text="✕", bg=TREE_BG, fg="#888888",
+            font=("Segoe UI", 9),
+            cursor="hand2", borderwidth=0, padx=0, pady=0,
+        )
+        btn.bind(
+            "<Enter>",
+            lambda _e, b=btn: b.configure(fg="#ef4444"),
+        )
+        btn.bind(
+            "<Leave>",
+            lambda _e, b=btn: b.configure(fg="#888888"),
+        )
+        btn.bind(
+            "<Button-1>",
+            lambda _e, wid=widget_id, k=event_key,
+            i=index, m=method_name:
+            self._unbind_event_method(wid, k, i, m),
+        )
+        if self.overlays is not None:
+            self.overlays.add(
+                method_iid, SLOT_EVENT_UNBIND, btn, place_event_unbind,
             )
 
     def _insert_pair(

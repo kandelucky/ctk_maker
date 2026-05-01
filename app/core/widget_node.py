@@ -44,10 +44,13 @@ class WidgetNode:
         self.description: str = ""
         # Phase 2 visual scripting — event handler bindings. Maps an
         # event key (``"command"`` for click-style; ``"bind:<seq>"`` for
-        # Tk bind-style) to a method name on the page's behavior class.
-        # Empty by default. The behavior file lives at
-        # ``<project>/scripts/<page>.py`` and is co-edited by the user.
-        self.handlers: dict[str, str] = {}
+        # Tk bind-style) to an ordered list of method names on the
+        # window's behavior class. Order is execution order — multi-
+        # method binding fans out via lambda chain (constructor kwarg)
+        # or repeated ``.bind(seq, fn, add="+")`` (Tk bind). Empty list
+        # = unbound. The behavior file lives at
+        # ``<project>/assets/scripts/<page>/<window>.py``.
+        self.handlers: dict[str, list[str]] = {}
 
     def to_dict(self) -> dict:
         # Shallow-copy ``properties`` so callers (project_saver
@@ -71,8 +74,15 @@ class WidgetNode:
             result["group_id"] = self.group_id
         if self.description:
             result["description"] = self.description
-        if self.handlers:
-            result["handlers"] = dict(self.handlers)
+        # Drop empty lists so the .ctkproj stays compact for projects
+        # that haven't bound anything; serialised handlers are always
+        # ``{event: [m1, m2, ...]}`` lists, never strings.
+        emitted = {
+            k: list(v) for k, v in self.handlers.items()
+            if v
+        }
+        if emitted:
+            result["handlers"] = emitted
         return result
 
     @classmethod
@@ -91,12 +101,27 @@ class WidgetNode:
         node.parent_slot = data.get("parent_slot")
         node.group_id = data.get("group_id")
         node.description = data.get("description", "")
+        # Accept both shapes for forward-compat with v1 .ctkproj files
+        # written before the multi-method migration. v1 wrote
+        # ``{event: "method_name"}`` (single string); v2 writes
+        # ``{event: ["m1", "m2"]}``. A bare string is wrapped into a
+        # one-element list. Empty / non-string entries are dropped.
         raw_handlers = data.get("handlers")
         if isinstance(raw_handlers, dict):
-            node.handlers = {
-                str(k): str(v) for k, v in raw_handlers.items()
-                if isinstance(v, str) and v
-            }
+            normalised: dict[str, list[str]] = {}
+            for k, v in raw_handlers.items():
+                key = str(k)
+                if isinstance(v, str):
+                    if v:
+                        normalised[key] = [v]
+                elif isinstance(v, list):
+                    methods = [
+                        str(m) for m in v
+                        if isinstance(m, str) and m
+                    ]
+                    if methods:
+                        normalised[key] = methods
+            node.handlers = normalised
         for child_data in data.get("children", []):
             child = cls.from_dict(child_data)
             child.parent = node

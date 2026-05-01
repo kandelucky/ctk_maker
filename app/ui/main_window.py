@@ -37,6 +37,22 @@ from app.ui.workspace import Workspace
 
 PROJECT_FILE_TYPES = [("CTkMaker project", "*.ctkproj"), ("All files", "*.*")]
 
+
+def _preview_console_flags() -> dict:
+    """Subprocess kwargs that pop a separate console window for the
+    preview process so the user sees the behavior file's ``print``
+    output and any tracebacks that would otherwise vanish into the
+    GUI subprocess's invisible stdout/stderr. Windows-only — other
+    platforms typically launch the builder from a terminal already,
+    so the subprocess inherits that terminal's stdio.
+    """
+    if sys.platform == "win32":
+        # CREATE_NEW_CONSOLE = 0x00000010. Using the int literal so
+        # the import works on non-Windows platforms (subprocess only
+        # exposes the constant on Windows).
+        return {"creationflags": 0x00000010}
+    return {}
+
 ABOUT_TEXT = (
     "CTkMaker\n"
     "v0.0.12\n\n"
@@ -362,6 +378,14 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         bus.subscribe(
             "request_export_document", self._on_export_active_document,
         )
+        # Phase 2 visual scripting — eager behavior-file creation
+        # (Decision #12). Every Document gets its own ``.py`` the
+        # moment it's added to a saved project, so the user can
+        # discover handlers + Edit Behavior File commands without
+        # needing to first attach a handler.
+        bus.subscribe(
+            "document_added", self._on_document_added_for_behavior,
+        )
         # Alignment toolbar buttons enable/disable on selection
         # change — also fire on widget add/remove since the same
         # selection might gain or lose siblings.
@@ -521,6 +545,12 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             # that reference those families resolve them as real fonts
             # instead of silently falling back to Tk's default.
             register_project_fonts(path, root=self)
+            # Phase 2 — once a path exists, materialise the behavior
+            # file for every Document. Catches up the eager-create
+            # logic for projects opened from disk (which never fired
+            # ``document_added``) and for the first save of an
+            # unsaved project (where the deferred queue lands here).
+            self._ensure_behavior_files_for_all_docs()
         # Refresh the active font cascade from whatever the just-loaded
         # (or just-saved-as) project carries. New projects start with
         # an empty cascade; this also clears stale defaults left over
@@ -1297,6 +1327,39 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             DeleteDocumentCommand(snapshot, index),
         )
 
+    def _on_document_added_for_behavior(self, doc_id: str) -> None:
+        """Subscriber for ``document_added`` — materialises the
+        per-window behavior file in ``assets/scripts/<page>/<window>.py``
+        eagerly (Decision #12). Silently no-ops for unsaved projects;
+        ``_set_current_path`` runs the catchup loop on first save.
+        """
+        if not getattr(self.project, "path", None):
+            return
+        doc = self.project.get_document(doc_id)
+        if doc is None:
+            return
+        try:
+            from app.io.scripts import load_or_create_behavior_file
+            load_or_create_behavior_file(self.project.path, doc)
+        except OSError:
+            log_error("eager behavior file create")
+
+    def _ensure_behavior_files_for_all_docs(self) -> None:
+        """One-shot catchup: walk every Document and ensure its
+        ``.py`` exists. Runs after open / save / save-as so a project
+        loaded from disk (or freshly given a path) lands with all
+        behavior files materialised even though no
+        ``document_added`` event fired for them.
+        """
+        if not getattr(self.project, "path", None):
+            return
+        try:
+            from app.io.scripts import load_or_create_behavior_file
+            for doc in self.project.documents:
+                load_or_create_behavior_file(self.project.path, doc)
+        except OSError:
+            log_error("behavior file catchup")
+
     def _on_preview(self) -> None:
         if not self.project.root_widgets:
             messagebox.showinfo(
@@ -1325,6 +1388,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         try:
             proc = subprocess.Popen(
                 [sys.executable, str(tmp_path)], cwd=str(tmp_dir),
+                **_preview_console_flags(),
             )
         except OSError:
             log_error("preview subprocess")
@@ -1372,6 +1436,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         try:
             proc = subprocess.Popen(
                 [sys.executable, str(tmp_path)], cwd=str(tmp_dir),
+                **_preview_console_flags(),
             )
         except OSError:
             log_error("preview dialog subprocess")

@@ -1,11 +1,19 @@
-"""Per-project visual-scripting (Phase 2) behavior file location.
+"""Per-window visual-scripting (Phase 2) behavior file location.
 
-Each project owns a ``scripts/`` folder next to ``components/`` and
-``assets/``::
+Each project owns an ``assets/scripts/`` folder beside ``components/``
+and ``assets/images/``::
 
-    <project_folder>/scripts/
+    <project_folder>/assets/scripts/
         __init__.py
-        <page_slug>.py     # one file per page
+        <page_slug>/
+            __init__.py
+            <window_slug>.py    # one file per Document (window/dialog)
+            <other_window>.py
+
+A page == one ``.ctkproj`` file. A window == one ``Document`` inside it
+(main window or any dialog). Per-window class scoping means each
+window owns its own ``<WindowName>Page`` class — no cross-window
+namespace collisions, no fat per-page classes.
 
 Behavior files hold the user-written Python that backs widget event
 handlers — generated method skeletons live here, the user writes the
@@ -19,23 +27,29 @@ method that doesn't exist in the target project.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
+ASSETS_DIR_NAME = "assets"
 SCRIPTS_DIR_NAME = "scripts"
 BEHAVIOR_FILE_EXT = ".py"
 
+# Subfolder that holds windows whose Document was deleted (Decision
+# C=B). Files move here instead of being unlinked, so the user can
+# recover the code if they removed a window by mistake.
+DELETED_DIR_NAME = "_deleted"
+
 
 def scripts_root(project_file_path: str | Path | None) -> Path | None:
-    """``<project_folder>/scripts/`` for the given ``.ctkproj`` path.
-    Returns ``None`` when no project is loaded — callers should fall
-    back to a "save project first" hint.
+    """``<project_folder>/assets/scripts/`` for the given ``.ctkproj``
+    path. ``None`` when no project is loaded.
 
     Two layouts (mirrors ``components_root``):
     - Multi-page (P1+): page lives at
       ``<root>/assets/pages/foo.ctkproj``. Walk up to find
-      ``project.json``; scripts sit at ``<root>/scripts/``.
+      ``project.json``; scripts sit at ``<root>/assets/scripts/``.
     - Legacy single-file: ``<folder>/foo.ctkproj`` with sibling
-      ``<folder>/scripts/``.
+      ``<folder>/assets/scripts/``.
     """
     if not project_file_path:
         return None
@@ -43,43 +57,65 @@ def scripts_root(project_file_path: str | Path | None) -> Path | None:
     from app.core.project_folder import find_project_root
     root = find_project_root(project_file_path)
     if root is not None:
-        return root / SCRIPTS_DIR_NAME
-    return Path(project_file_path).parent / SCRIPTS_DIR_NAME
+        return root / ASSETS_DIR_NAME / SCRIPTS_DIR_NAME
+    return (
+        Path(project_file_path).parent
+        / ASSETS_DIR_NAME
+        / SCRIPTS_DIR_NAME
+    )
+
+
+def page_scripts_dir(
+    project_file_path: str | Path | None,
+) -> Path | None:
+    """``<project>/assets/scripts/<page_slug>/``. The per-page
+    subfolder that holds every window's ``.py``. ``None`` when the
+    project isn't saved.
+    """
+    root = scripts_root(project_file_path)
+    if root is None:
+        return None
+    return root / behavior_file_stem(project_file_path)
 
 
 def ensure_scripts_root(
     project_file_path: str | Path | None,
 ) -> Path | None:
-    """Create the ``scripts/`` folder + its ``__init__.py`` if missing.
-    ``None`` for unsaved projects — caller decides whether to surface
-    a "save first" hint. The ``__init__.py`` makes ``scripts`` an
+    """Create ``assets/scripts/`` + the page subfolder + both
+    ``__init__.py`` files. ``None`` for unsaved projects.
+
+    The two ``__init__.py`` files make ``assets.scripts.<page>`` an
     importable package so the exporter can emit
-    ``from .scripts.<page> import <PageClass>``.
+    ``from assets.scripts.<page>.<window> import <Class>Page``.
     """
     root = scripts_root(project_file_path)
     if root is None:
         return None
+    page_dir = root / behavior_file_stem(project_file_path)
     try:
-        root.mkdir(parents=True, exist_ok=True)
+        page_dir.mkdir(parents=True, exist_ok=True)
     except OSError:
         return None
-    init_path = root / "__init__.py"
-    if not init_path.exists():
-        try:
-            init_path.write_text("", encoding="utf-8")
-        except OSError:
-            pass
-    return root
+    # Both levels need __init__.py — assets/scripts/ is the top
+    # package; <page>/ is the subpackage. Both files stay empty
+    # (Decision I=A) — the user can hand-edit if they want.
+    for init_path in (root / "__init__.py", page_dir / "__init__.py"):
+        if not init_path.exists():
+            try:
+                init_path.write_text("", encoding="utf-8")
+            except OSError:
+                pass
+    return page_dir
 
 
 def behavior_file_stem(project_file_path: str | Path | None) -> str:
-    """Stem of the page filename, lowercased.
+    """Stem of the page filename (the ``.ctkproj`` basename),
+    lowercased.
 
     ``"login.ctkproj"`` → ``"login"``
     ``"Dashboard.ctkproj"`` → ``"dashboard"``
 
-    Falls back to ``"page"`` when no path is available so callers
-    always have something to work with.
+    Falls back to ``"page"`` when no path is available.
     """
     if not project_file_path:
         return "page"
@@ -87,32 +123,78 @@ def behavior_file_stem(project_file_path: str | Path | None) -> str:
     return (stem.lower() or "page")
 
 
+def slugify_window_name(name: str | None) -> str:
+    """Window-name → file-stem slug.
+
+    Strip non-``[A-Za-z0-9_]`` to underscores, collapse repeats,
+    lowercase, prefix underscore when the result starts with a digit
+    (Decision J=A — silent fix for invalid module names). Falls back
+    to ``"window"`` for empty / all-symbol input.
+
+    ``"Main Window"`` → ``"main_window"``
+    ``"Confirm Dialog!"`` → ``"confirm_dialog"``
+    ``"1Setup"`` → ``"_1setup"``
+    """
+    cleaned = re.sub(r"[^A-Za-z0-9_]+", "_", name or "").strip("_").lower()
+    if not cleaned:
+        return "window"
+    if cleaned[0].isdigit():
+        cleaned = "_" + cleaned
+    return cleaned
+
+
 def behavior_file_path(
     project_file_path: str | Path | None,
+    document=None,
 ) -> Path | None:
-    """``<project>/scripts/<page>.py`` or ``None`` when unsaved.
-    The file may not exist yet — call ``load_or_create_behavior_file``
-    in ``app/io/scripts.py`` to materialise the skeleton.
+    """``<project>/assets/scripts/<page>/<window>.py`` or ``None``
+    when unsaved. ``document`` is a ``Document`` instance — its
+    ``.name`` drives the filename via ``slugify_window_name``. Pass
+    ``None`` to fall back to a ``page.py`` placeholder used by the
+    main-window default before any document exists.
     """
-    root = scripts_root(project_file_path)
-    if root is None:
+    page_dir = page_scripts_dir(project_file_path)
+    if page_dir is None:
         return None
-    return root / f"{behavior_file_stem(project_file_path)}{BEHAVIOR_FILE_EXT}"
+    window_slug = (
+        slugify_window_name(getattr(document, "name", None))
+        if document is not None else "main"
+    )
+    return page_dir / f"{window_slug}{BEHAVIOR_FILE_EXT}"
 
 
-def behavior_class_name(project_file_path: str | Path | None) -> str:
-    """PascalCase + ``Page`` suffix derived from the page filename.
+def behavior_class_name(document=None) -> str:
+    """PascalCase + ``Page`` suffix derived from the window name.
 
-    ``"login"`` → ``"LoginPage"``
-    ``"user_settings"`` → ``"UserSettingsPage"``
+    ``"Main Window"`` → ``"MainWindowPage"``
+    ``"confirm_dialog"`` → ``"ConfirmDialogPage"``
 
-    Used by the exporter for the ``from .scripts.<page> import …``
-    line and by the skeleton-generation step.
+    Per-window (Decision #13) — every Document gets its own class.
+    Empty / missing name falls back to ``"WindowPage"``.
     """
-    if not project_file_path:
-        return "Page"
-    stem = behavior_file_stem(project_file_path)
-    parts = [p for p in stem.split("_") if p]
+    if document is None:
+        return "WindowPage"
+    slug = slugify_window_name(getattr(document, "name", None))
+    parts = [p for p in slug.lstrip("_").split("_") if p]
     if not parts:
-        return "Page"
+        return "WindowPage"
     return "".join(p.capitalize() for p in parts) + "Page"
+
+
+def deleted_dir(
+    project_file_path: str | Path | None,
+) -> Path | None:
+    """``<project>/assets/scripts/<page>/_deleted/`` — destination for
+    behavior files whose Document was removed. Mkdir on demand so the
+    folder only appears once a window is actually deleted (Decision
+    C=B). ``None`` for unsaved projects.
+    """
+    page_dir = page_scripts_dir(project_file_path)
+    if page_dir is None:
+        return None
+    target = page_dir / DELETED_DIR_NAME
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    return target

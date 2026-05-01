@@ -107,6 +107,13 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         self._style_subgroup_iid: str | None = None
         # Subgroup iids we recompute previews for (e.g. Corners, Border)
         self._subgroup_preview_iids: dict[str, str] = {}
+        # Phase 2 visual scripting — Events group row metadata. Maps
+        # tree iid → ``(kind, event_key, method_index)`` so right-
+        # click handlers can resolve which event / method a row
+        # represents without parsing the iid string itself.
+        # ``kind`` is ``"group" | "header" | "method"``;
+        # ``method_index`` is ``None`` for non-method rows.
+        self._event_row_meta: dict[str, tuple[str, str, int | None]] = {}
         # Cached disabled_when results — diffed on every property change
         # so we can flip the "disabled" tag on the affected rows only.
         self._disabled_states: dict[str, bool] = {}
@@ -151,6 +158,12 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             "variable_default_changed", "variable_removed",
         ):
             bus.subscribe(ev, self._on_variable_state_changed)
+        # Phase 2 — handler list mutations (bind / unbind / reorder)
+        # need to repaint the Events group so action counts + method
+        # rows match the model.
+        bus.subscribe(
+            "widget_handler_changed", self._on_widget_handler_changed,
+        )
 
         self._show_empty()
 
@@ -578,6 +591,17 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         if self.current_id is not None:
             self._rebuild()
 
+    def _on_widget_handler_changed(
+        self, widget_id: str, *_args, **_kwargs,
+    ) -> None:
+        """Repaint when a handler is bound / unbound / reordered.
+        Only rebuilds when the affected widget is the one currently
+        on screen — handlers on other widgets don't change this
+        panel's view.
+        """
+        if self.current_id == widget_id:
+            self._rebuild()
+
     def _on_name_var_write(self, *_args) -> None:
         if self._suspend_name_trace or self.current_id is None:
             return
@@ -637,6 +661,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         self._style_subgroup_iid = None
         self._subgroup_preview_iids.clear()
         self._prop_iids.clear()
+        self._event_row_meta.clear()
 
     def _rebuild(self) -> None:
         self._clear_tree()
@@ -884,6 +909,13 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         if iid and iid.startswith("localvar:") and iid != "localvar:empty":
             self._show_local_var_menu(event)
             return
+        # Phase 2 visual scripting — Events group rows route to a
+        # dedicated menu. Side-table lookup avoids re-parsing iid
+        # strings; ``_event_row_meta`` is populated alongside the
+        # rows in ``_populate_events_group``.
+        if iid and iid in self._event_row_meta:
+            self._show_event_menu(event, iid)
+            return
         if self.current_id is None:
             return
         if not iid or not iid.startswith("p:"):
@@ -899,6 +931,223 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         if node is None:
             return
         self._show_binding_menu(event, pname, prop, node)
+
+    def _show_event_menu(self, event, iid: str) -> None:
+        """Phase 2 — right-click menus for the Events group rows.
+        Routing is driven by ``kind``:
+
+        - ``group`` — no actions; the top-level "Events" header is
+          a passive container. Skip.
+        - ``header`` — the per-event row. Offer "Add action" so the
+          user can attach a fresh stub via the same flow the canvas
+          right-click cascade uses.
+        - ``method`` — a bound method row. Offer Open / Move up /
+          Move down / Unbind.
+        """
+        kind, event_key, method_index = self._event_row_meta[iid]
+        if kind == "group":
+            return
+        if self.current_id is None:
+            return
+        node = self.project.get_widget(self.current_id)
+        if node is None:
+            return
+        menu = tk.Menu(self.tree, tearoff=0)
+        if kind == "header":
+            menu.add_command(
+                label="Add action",
+                command=lambda: self._add_event_action(
+                    self.current_id, event_key,
+                ),
+            )
+        elif kind == "method":
+            methods = list(node.handlers.get(event_key, []) or [])
+            if method_index is None or method_index >= len(methods):
+                return
+            method_name = methods[method_index]
+            menu.add_command(
+                label="Open in editor",
+                command=lambda: self._open_event_method(
+                    self.current_id, method_name,
+                ),
+            )
+            menu.add_separator()
+            menu.add_command(
+                label="Move up",
+                command=lambda: self._reorder_event_method(
+                    self.current_id, event_key,
+                    method_index, method_index - 1,
+                ),
+                state=("normal" if method_index > 0 else "disabled"),
+            )
+            menu.add_command(
+                label="Move down",
+                command=lambda: self._reorder_event_method(
+                    self.current_id, event_key,
+                    method_index, method_index + 1,
+                ),
+                state=(
+                    "normal" if method_index < len(methods) - 1
+                    else "disabled"
+                ),
+            )
+            menu.add_separator()
+            menu.add_command(
+                label="Unbind (keep method in file)",
+                command=lambda: self._unbind_event_method(
+                    self.current_id, event_key,
+                    method_index, method_name,
+                ),
+            )
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _add_event_action(
+        self, widget_id: str, event_key: str,
+    ) -> None:
+        """Materialise the per-window behavior file, append a fresh
+        stub, push the bind command, and open the editor. Mirrors
+        ``Workspace._attach_event_handler`` — duplicated rather than
+        cross-imported because the panel doesn't otherwise depend on
+        the workspace, and these two paths are the only ones that
+        attach handlers.
+        """
+        from tkinter import messagebox
+        from app.core.commands import BindHandlerCommand
+        from app.core.settings import load_settings
+        from app.io.scripts import (
+            add_handler_stub, behavior_class_name, launch_editor,
+            load_or_create_behavior_file,
+            resolve_project_root_for_editor as _resolve_project_root,
+            suggest_method_name,
+        )
+        from app.widgets.event_registry import event_by_key
+
+        node = self.project.get_widget(widget_id)
+        if node is None:
+            return
+        entry = event_by_key(node.widget_type, event_key)
+        if entry is None:
+            return
+        if not getattr(self.project, "path", None):
+            messagebox.showinfo(
+                "Save first",
+                "Save the project before adding event handlers — the "
+                "behavior file lives in assets/scripts/ in the project "
+                "folder.",
+                parent=self.winfo_toplevel(),
+            )
+            return
+        document = self.project.find_document_for_widget(widget_id)
+        if document is None:
+            return
+        method_name = suggest_method_name(node, entry, document)
+        file_path = load_or_create_behavior_file(
+            self.project.path, document,
+        )
+        if file_path is None:
+            messagebox.showerror(
+                "Couldn't write behavior file",
+                "Failed to create assets/scripts/ folder. Check folder "
+                "permissions on the project directory.",
+                parent=self.winfo_toplevel(),
+            )
+            return
+        class_name = behavior_class_name(document)
+        line = add_handler_stub(
+            file_path, class_name, method_name, entry.signature,
+        )
+        methods = node.handlers.setdefault(event_key, [])
+        methods.append(method_name)
+        appended_index = len(methods) - 1
+        cmd = BindHandlerCommand(widget_id, event_key, method_name)
+        cmd._appended_index = appended_index
+        self.project.history.push(cmd)
+        self.project.event_bus.publish(
+            "widget_handler_changed", widget_id, event_key, method_name,
+        )
+        editor_command = load_settings().get("editor_command")
+        launch_editor(
+            file_path, line=line, editor_command=editor_command,
+            project_root=_resolve_project_root(self.project),
+        )
+
+    def _open_event_method(
+        self, widget_id: str, method_name: str,
+    ) -> None:
+        """Resolve the per-window behavior file + jump to the
+        method. Mirrors the canvas cascade's ``_jump_to_handler_method``
+        so editor-launch behaviour is identical from both surfaces.
+        """
+        from app.core.settings import load_settings
+        from app.io.scripts import (
+            behavior_class_name, behavior_file_path,
+            find_handler_method, launch_editor,
+            resolve_project_root_for_editor as _resolve_project_root,
+        )
+        if not getattr(self.project, "path", None):
+            return
+        document = self.project.find_document_for_widget(widget_id)
+        if document is None:
+            return
+        file_path = behavior_file_path(self.project.path, document)
+        if file_path is None or not file_path.exists():
+            return
+        class_name = behavior_class_name(document)
+        line = find_handler_method(file_path, class_name, method_name)
+        editor_command = load_settings().get("editor_command")
+        launch_editor(
+            file_path, line=line, editor_command=editor_command,
+            project_root=_resolve_project_root(self.project),
+        )
+
+    def _reorder_event_method(
+        self, widget_id: str, event_key: str,
+        from_index: int, to_index: int,
+    ) -> None:
+        """Push a ``ReorderHandlerCommand`` for the method at
+        ``from_index`` → ``to_index``. The command itself publishes
+        ``widget_handler_changed`` after applying, which fans out to
+        the panel + workspace so neither has to refresh by hand.
+        """
+        from app.core.commands import ReorderHandlerCommand
+        node = self.project.get_widget(widget_id)
+        if node is None:
+            return
+        methods = node.handlers.get(event_key)
+        if not methods or not (0 <= to_index < len(methods)):
+            return
+        cmd = ReorderHandlerCommand(
+            widget_id, event_key, from_index, to_index,
+        )
+        cmd.redo(self.project)
+        self.project.history.push(cmd)
+
+    def _unbind_event_method(
+        self, widget_id: str, event_key: str,
+        index: int, method_name: str,
+    ) -> None:
+        """Remove the method binding at ``index`` while leaving the
+        underlying ``def`` alone (Decision #5 — user owns the file).
+        Captures the row position so undo restores the binding at
+        the same place in the chain.
+        """
+        from app.core.commands import UnbindHandlerCommand
+        node = self.project.get_widget(widget_id)
+        if node is None:
+            return
+        methods = node.handlers.get(event_key)
+        if not methods or index >= len(methods):
+            return
+        if methods[index] != method_name:
+            return
+        cmd = UnbindHandlerCommand(
+            widget_id, event_key, method_name, index,
+        )
+        cmd.redo(self.project)
+        self.project.history.push(cmd)
 
     def _show_local_var_menu(self, event) -> None:
         """Right-click on a Local Variables row → "Open Variables

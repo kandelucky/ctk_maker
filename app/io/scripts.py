@@ -1,14 +1,16 @@
-"""Read / write the per-page behavior file.
+"""Read / write the per-window behavior file.
 
 A behavior file holds the user-written Python that backs widget event
 handlers. CTkMaker generates method skeletons; the user writes the
 bodies in their own editor. The file lives at
-``<project>/scripts/<page>.py`` and is imported by exported code as
-``from .scripts.<page> import <PageClass>``.
+``<project>/assets/scripts/<page>/<window>.py`` (one per Document)
+and is imported by exported code as
+``from assets.scripts.<page>.<window> import <WindowName>Page``.
 
 Public API:
-- ``load_or_create_behavior_file(project_path)`` — return the .py path,
-  creating ``scripts/`` + a class skeleton if missing
+- ``load_or_create_behavior_file(project_path, document)`` — return
+  the .py path, creating ``assets/scripts/<page>/`` + a class
+  skeleton if missing
 - ``parse_handler_methods(file_path, class_name)`` — list method names
   on the named top-level class. Robust to syntax errors (returns ``[]``)
 - ``add_handler_stub(file_path, class_name, method_name, signature)`` —
@@ -29,55 +31,66 @@ from __future__ import annotations
 import ast
 import os
 import re
+import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from app.core.script_paths import (
     behavior_class_name,
     behavior_file_path,
-    behavior_file_stem,
     ensure_scripts_root,
+    slugify_window_name,
 )
 
-# Skeleton template written on first handler attach. Plain string —
-# no f-string at module level so the literal ``{class_name}`` markers
-# stay intact for ``.format`` at call time.
-_SKELETON_TEMPLATE = '''"""Behavior file for the {page_label} page.
+# Skeleton template written on first handler attach (or eager on
+# document creation). Plain string — no f-string at module level so
+# the literal ``{class_name}`` markers stay intact for ``.format``
+# at call time.
+_SKELETON_TEMPLATE = '''"""Behavior file for the {window_label} window.
 
 Methods here run in response to widget events. CTkMaker stubs new
-methods automatically when you right-click a widget → Add handler;
-fill in the bodies here. Each method maps to a handler binding
-configured in the Properties panel.
+methods automatically — fill in the bodies here. Each method maps
+to a handler binding configured in the Properties panel.
 """
 
 
 class {class_name}:
     def setup(self, window):
-        """Called once on page load. Stash references you'll need."""
+        """Called once on window load. Stash references you'll need."""
         self.window = window
 '''
 
 
 def load_or_create_behavior_file(
     project_file_path: str | Path | None,
+    document=None,
 ) -> Path | None:
-    """Return the behavior-file path, creating the scripts/ folder
-    and writing a class skeleton if the .py is missing. ``None`` for
+    """Return the behavior-file path, creating the page subfolder and
+    writing a class skeleton if the .py is missing. ``None`` for
     unsaved projects.
+
+    ``document`` controls the filename + class name (per-window
+    scope, Decision #13). When ``document`` is ``None`` the call is
+    a no-op probe — useful for callers that just want to know
+    whether the file would land in a writable location.
     """
     if not project_file_path:
         return None
     if ensure_scripts_root(project_file_path) is None:
         return None
-    file_path = behavior_file_path(project_file_path)
+    file_path = behavior_file_path(project_file_path, document)
     if file_path is None:
         return None
     if file_path.exists():
         return file_path
+    window_label = (
+        getattr(document, "name", None) or "Window"
+    )
     skeleton = _SKELETON_TEMPLATE.format(
-        class_name=behavior_class_name(project_file_path),
-        page_label=behavior_file_stem(project_file_path),
+        class_name=behavior_class_name(document),
+        window_label=window_label,
     )
     try:
         file_path.write_text(skeleton, encoding="utf-8")
@@ -109,6 +122,41 @@ def parse_handler_methods(
         if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
             names.append(stmt.name)
     return names
+
+
+def parse_method_docstrings(
+    file_path: str | Path,
+    class_name: str,
+) -> dict[str, str]:
+    """Return ``{method_name: first_docstring_line}`` for every
+    method on the named class that carries a docstring. Used by the
+    Properties panel "Events" group to surface a human description
+    next to each bound method ("Reset login form" beats
+    "on_button_click_2"). Methods without a docstring are absent
+    from the map — the caller falls back to the bare method name.
+    Robust to syntax errors / missing files (returns ``{}``).
+    """
+    source = _read_source(file_path)
+    if source is None:
+        return {}
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return {}
+    target = _find_class(tree, class_name)
+    if target is None:
+        return {}
+    out: dict[str, str] = {}
+    for stmt in target.body:
+        if not isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        doc = ast.get_docstring(stmt)
+        if not doc:
+            continue
+        first = doc.strip().splitlines()[0].strip()
+        if first:
+            out[stmt.name] = first
+    return out
 
 
 def find_handler_method(
@@ -214,63 +262,136 @@ def slugify_method_part(text: str) -> str:
     return cleaned
 
 
-def collect_used_method_names(project) -> set[str]:
-    """Walk every document's tree and return every method name
-    currently bound to a handler. Used by ``suggest_method_name`` to
-    detect collisions across the whole page (main + dialogs share
-    one behavior class).
+def collect_used_method_names(document) -> set[str]:
+    """Walk one Document's widget tree and return every method name
+    currently bound to a handler. Per-window scoping (Decision #13)
+    means collisions are checked only within this Document — each
+    window owns its own behavior class.
     """
     used: set[str] = set()
-    for doc in project.documents:
-        _walk_collect_handlers(doc.root_widgets, used)
+    if document is None:
+        return used
+    _walk_collect_handlers(document.root_widgets, used)
     return used
 
 
 def _walk_collect_handlers(nodes, used: set[str]) -> None:
     for n in nodes:
-        for method in n.handlers.values():
-            if method:
-                used.add(method)
+        for methods in n.handlers.values():
+            for m in methods:
+                if m:
+                    used.add(m)
         _walk_collect_handlers(n.children, used)
 
 
-def suggest_method_name(node, event_entry, project) -> str:
-    """Smart naming (Decision #2 = C):
+def suggest_method_name(node, event_entry, document) -> str:
+    """Smart naming (Decision #15):
     - Default: ``on_<widget_slug>_<verb>``.
-    - On collision with an existing handler method anywhere in the
-      page, prefix with the containing window's slug:
-      ``on_<window_slug>_<widget_slug>_<verb>``.
-    - If even the prefixed name collides (rare — same window + same
-      widget name + same event already bound), append ``_2`` / ``_3``
-      until free.
+    - On collision within the window's own bound methods, append
+      ``_2`` / ``_3`` until free. No cross-window prefix — per-window
+      classes mean each Document has its own namespace.
 
     ``event_entry`` is an ``EventEntry`` from
-    ``app.widgets.event_registry``.
+    ``app.widgets.event_registry``. ``document`` is the Document the
+    widget belongs to.
     """
     widget_part = slugify_method_part(node.name or node.widget_type)
     verb = event_entry.verb
     base = f"on_{widget_part}_{verb}"
-    used = collect_used_method_names(project)
+    used = collect_used_method_names(document)
     if base not in used:
         return base
-    doc = project.find_document_for_widget(node.id)
-    window_part = slugify_method_part(doc.name) if doc else "win"
-    prefixed = f"on_{window_part}_{widget_part}_{verb}"
-    if prefixed not in used:
-        return prefixed
     n = 2
-    while f"{prefixed}_{n}" in used:
+    while f"{base}_{n}" in used:
         n += 1
-    return f"{prefixed}_{n}"
+    return f"{base}_{n}"
 
 
 # ---------------------------------------------------------------------
 # Editor launch
 # ---------------------------------------------------------------------
+# Well-known Windows install paths for editors that ship a launcher
+# script. Probed in order; the first existing entry wins. Maps the
+# bare token the user types in Settings (``code``, ``code-insiders``)
+# to the actual ``.cmd`` / ``.exe`` on disk so we don't fall victim
+# to PATH ambiguity (Git Bash / MinGW / MSYS2 all ship a ``code``
+# that's not VS Code).
+_EDITOR_KNOWN_PATHS: dict[str, tuple[str, ...]] = {
+    "code": (
+        r"%LOCALAPPDATA%\Programs\Microsoft VS Code\bin\code.cmd",
+        r"%PROGRAMFILES%\Microsoft VS Code\bin\code.cmd",
+        r"%PROGRAMFILES(X86)%\Microsoft VS Code\bin\code.cmd",
+    ),
+    "code-insiders": (
+        r"%LOCALAPPDATA%\Programs\Microsoft VS Code Insiders\bin\code-insiders.cmd",
+        r"%PROGRAMFILES%\Microsoft VS Code Insiders\bin\code-insiders.cmd",
+    ),
+    "subl": (
+        r"%PROGRAMFILES%\Sublime Text\subl.exe",
+        r"%PROGRAMFILES(X86)%\Sublime Text\subl.exe",
+    ),
+    "notepad++": (
+        r"%PROGRAMFILES%\Notepad++\notepad++.exe",
+        r"%PROGRAMFILES(X86)%\Notepad++\notepad++.exe",
+    ),
+    # PyCharm's bin folder lives under a versioned directory; the
+    # Toolbox install also nests by channel + version. Probing every
+    # combination is brittle, so we only list the JetBrains-default
+    # paths the standard installer drops + the ``%LOCALAPPDATA%``
+    # JetBrains Toolbox shim that some users add to PATH manually.
+    "pycharm64": (
+        r"%PROGRAMFILES%\JetBrains\PyCharm Community Edition\bin\pycharm64.exe",
+        r"%PROGRAMFILES%\JetBrains\PyCharm\bin\pycharm64.exe",
+        r"%LOCALAPPDATA%\JetBrains\Toolbox\scripts\pycharm.cmd",
+    ),
+}
+
+
+def resolve_project_root_for_editor(project) -> str | None:
+    """Project-folder path the external editor should open as a
+    workspace, or ``None`` for unsaved / legacy single-file
+    projects. Lets VS Code / PyCharm / Sublime activate their
+    project-aware features (Python interpreter resolution, etc.)
+    when CTkMaker hands them the behavior file.
+    """
+    path = getattr(project, "path", None)
+    if not path:
+        return None
+    from app.core.project_folder import find_project_root
+    root = find_project_root(path)
+    if root is not None:
+        return str(root)
+    # Legacy single-file projects keep ``assets/scripts/`` next to
+    # the .ctkproj — open that folder instead so VS Code still
+    # gets a workspace context to run the Python tooling against.
+    return str(Path(path).parent)
+
+
+def _resolve_editor_binary(name: str) -> str | None:
+    """Look up a bare editor command name on disk. Tries the
+    well-known Windows install paths first (defeats Git Bash /
+    MinGW / Cygwin shadowing), then falls back to ``shutil.which``
+    for paths that do live on PATH legitimately. Names with path
+    separators are returned as-is — the user explicitly pinned a
+    full path and we shouldn't second-guess it.
+    """
+    if not name:
+        return None
+    if "/" in name or "\\" in name:
+        return name if Path(name).exists() else None
+    lookup_key = name.lower()
+    for raw in _EDITOR_KNOWN_PATHS.get(lookup_key, ()):
+        candidate = os.path.expandvars(raw)
+        if Path(candidate).exists():
+            return candidate
+    return shutil.which(name) or shutil.which(f"{name}.cmd")
+
+
 def launch_editor(
     file_path: str | Path,
     line: int | None = None,
     editor_command: str | None = None,
+    project_root: str | Path | None = None,
 ) -> bool:
     """Open ``file_path`` in the user's editor, jumping to ``line``
     when the editor supports it. Returns ``True`` on success.
@@ -290,26 +411,105 @@ def launch_editor(
        "couldn't open editor" toast.
     """
     file_path = str(file_path)
+    folder = str(project_root) if project_root else ""
     if editor_command:
+        # Strip the ``:{line}`` / ``--line {line}`` / ``-n{line}``
+        # tail when no line number is available — every editor has
+        # its own grammar for "no line", and the safe answer across
+        # all of them is to just open the file. Pattern: split on
+        # ``{line}`` and trim whitespace + colons / dashes from the
+        # right of the head before stitching together with the tail
+        # (which is usually the closing ``"`` or empty).
         try:
-            cmd = editor_command.format(
+            template = editor_command
+            if line is None and "{line}" in template:
+                head, _, tail = template.partition("{line}")
+                head = head.rstrip(": -+,")
+                template = head + tail
+            # ``{python}`` resolves to the interpreter running
+            # CTkMaker. Used by the IDLE preset so the call works
+            # whether the system has ``python`` on PATH (Windows),
+            # ``python3`` (mac/Ubuntu), or only the bundled
+            # py-launcher install — sys.executable is always right.
+            cmd = template.format(
                 file=file_path,
                 line=line if line is not None else "",
+                folder=folder,
+                python=f'"{sys.executable}"',
             )
+            # Bare-name editor binaries (``code``, ``code-insiders``,
+            # ``subl``, ``notepad++``, …) collide with unrelated
+            # tools that ship the same name — Git Bash / MinGW /
+            # MSYS2 / Cygwin all carry their own ``code`` that
+            # rejects ``-g``. Tokenise the formatted command and
+            # resolve the first arg to its real path before
+            # spawning, bypassing cmd.exe's PATH lookup. Falls back
+            # to the legacy shell=True path on any tokenise failure.
+            try:
+                tokens = shlex.split(cmd, posix=False)
+            except ValueError:
+                tokens = []
+            if tokens:
+                first = tokens[0].strip('"')
+                resolved = _resolve_editor_binary(first)
+                if resolved:
+                    argv = [resolved] + [
+                        t.strip('"') for t in tokens[1:]
+                    ]
+                    print(f"[editor] launching argv: {argv}")
+                    subprocess.Popen(argv)
+                    return True
+            print(f"[editor] launching shell form: {cmd}")
             subprocess.Popen(cmd, shell=True)
             return True
-        except (OSError, KeyError, IndexError):
-            pass
-    code_exe = shutil.which("code") or shutil.which("code.cmd")
+        except (OSError, KeyError, IndexError) as exc:
+            print(f"[editor] command failed: {exc}")
+    # Auto fallback chain: VS Code → Notepad++ (Windows) → IDLE.
+    # Every Python install ships IDLE, so this list always ends in
+    # something runnable — the user never gets a "couldn't open
+    # editor" toast as long as they're running CTkMaker itself.
+    code_exe = _resolve_editor_binary("code")
     if code_exe:
         try:
             target = (
                 f"{file_path}:{line}" if line is not None else file_path
             )
-            subprocess.Popen([code_exe, "-g", target])
+            argv = [code_exe]
+            if folder:
+                # Open the project folder as a workspace first so
+                # VS Code can resolve imports / activate the Python
+                # extension. ``-g`` then jumps to the method line
+                # inside that workspace.
+                argv.append(folder)
+            argv.extend(["-g", target])
+            print(f"[editor] auto VS Code: {argv}")
+            subprocess.Popen(argv)
             return True
-        except OSError:
-            pass
+        except OSError as exc:
+            print(f"[editor] auto VS Code failed: {exc}")
+    npp_exe = _resolve_editor_binary("notepad++")
+    if npp_exe:
+        try:
+            argv = [npp_exe]
+            if line is not None:
+                argv.append(f"-n{line}")
+            argv.append(file_path)
+            print(f"[editor] auto Notepad++: {argv}")
+            subprocess.Popen(argv)
+            return True
+        except OSError as exc:
+            print(f"[editor] auto Notepad++ failed: {exc}")
+    # IDLE is the universal fallback — it ships with every Python
+    # install (Windows / macOS / Ubuntu) and only needs ``sys.executable``
+    # to run, so it works even when the user's PATH carries no
+    # editor at all.
+    try:
+        argv = [sys.executable, "-m", "idlelib", file_path]
+        print(f"[editor] auto IDLE: {argv}")
+        subprocess.Popen(argv)
+        return True
+    except OSError as exc:
+        print(f"[editor] auto IDLE failed: {exc}")
     if hasattr(os, "startfile"):
         try:
             os.startfile(file_path)  # type: ignore[attr-defined]

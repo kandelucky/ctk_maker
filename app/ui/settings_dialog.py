@@ -56,6 +56,29 @@ KEY_DEFAULT_H = "default_project_height"
 KEY_GRID_STYLE = "grid_style"
 KEY_GRID_COLOR = "grid_color"
 KEY_GRID_SPACING = "grid_spacing"
+KEY_EDITOR_COMMAND = "editor_command"
+
+# Editor presets — labelled command templates for common Windows
+# editors. ``{file}`` and ``{line}`` are substituted by
+# ``app.io.scripts.launch_editor`` at click time. The empty string
+# means "auto-detect" (try VS Code on PATH, fall back to OS default).
+EDITOR_PRESETS: tuple[tuple[str, str], ...] = (
+    # Auto = try VS Code, then Notepad++ (Windows), then IDLE.
+    # The runtime walks this fallback chain in
+    # ``app.io.scripts.launch_editor`` — the empty template signals
+    # "no preset, use auto-detect".
+    ("Auto (VS Code → Notepad++ → IDLE)", ""),
+    # ``{folder}`` opens the project root as a workspace so the
+    # Python extension activates and IntelliSense resolves
+    # CTkMaker / customtkinter imports. ``-g`` then jumps to the
+    # method line inside that workspace.
+    ("VS Code", 'code "{folder}" -g "{file}:{line}"'),
+    ("Notepad++", 'notepad++ -n{line} "{file}"'),
+    # IDLE always works — ``{python}`` resolves to the same
+    # interpreter running CTkMaker (``sys.executable``), so the
+    # preset doesn't depend on a PATH-visible ``python`` shim.
+    ("IDLE (Python's built-in editor)", '{python} -m idlelib "{file}"'),
+)
 
 # Dark-themed CTkOptionMenu palette so the dropdowns inside the
 # Settings dialog don't render with CTk's default light-grey button
@@ -145,6 +168,7 @@ class SettingsDialog(tk.Toplevel):
 
         notebook.add(self._build_defaults(notebook), text="Defaults")
         notebook.add(self._build_workspace(notebook), text="Workspace")
+        notebook.add(self._build_editor(notebook), text="Editor")
         notebook.add(self._build_autosave(notebook), text="Autosave")
         notebook.add(
             self._build_notifications(notebook), text="Notifications",
@@ -375,6 +399,138 @@ class SettingsDialog(tk.Toplevel):
         except tk.TclError:
             pass
 
+    # ----- Editor tab -----
+
+    def _build_editor(self, parent: tk.Misc) -> tk.Frame:
+        """Behavior-file editor preference. The picker drops a
+        labelled preset into the command template; the textbox
+        underneath stays editable so power users can tweak the
+        flags or point at an editor that isn't on the preset list.
+        """
+        tab = self._tab_frame(parent)
+        self._section_label(tab, "External editor").pack(anchor="w")
+
+        current_cmd = str(
+            self._initial.get(KEY_EDITOR_COMMAND) or "",
+        ).strip()
+        # Match the current command against the preset list — if it
+        # matches, the dropdown surfaces the friendly label; if not,
+        # we surface the special ``Custom`` entry so the user knows
+        # the textbox holds something they hand-edited.
+        preset_label = self._editor_preset_label_for(current_cmd)
+        self._editor_preset_var = tk.StringVar(value=preset_label)
+
+        preset_row = tk.Frame(tab, bg=BG)
+        preset_row.pack(fill="x", pady=(10, 6))
+        tk.Label(
+            preset_row, text="Editor:", bg=BG, fg=HEADER_FG,
+            font=("Segoe UI", 10), width=14, anchor="w",
+        ).pack(side="left")
+        ctk.CTkOptionMenu(
+            preset_row,
+            values=[label for label, _ in EDITOR_PRESETS] + ["Custom"],
+            variable=self._editor_preset_var,
+            command=self._on_editor_preset_change,
+            width=320, height=28, dynamic_resizing=False,
+            **_DROPDOWN_STYLE,
+        ).pack(side="left", padx=(8, 0))
+
+        cmd_row = tk.Frame(tab, bg=BG)
+        cmd_row.pack(fill="x", pady=(0, 6))
+        tk.Label(
+            cmd_row, text="Command:", bg=BG, fg=HEADER_FG,
+            font=("Segoe UI", 10), width=14, anchor="w",
+        ).pack(side="left")
+        self._editor_cmd_var = tk.StringVar(value=current_cmd)
+        # Manual edits should flip the preset label to "Custom" so
+        # the dropdown stays honest about what the textbox holds.
+        self._editor_cmd_var.trace_add(
+            "write", lambda *_: self._sync_editor_preset_from_cmd(),
+        )
+        cmd_entry = ctk.CTkEntry(
+            cmd_row, textvariable=self._editor_cmd_var,
+            width=420, height=28,
+        )
+        cmd_entry.pack(side="left", padx=(8, 0))
+
+        self._hint(
+            tab,
+            "Used by Properties › Events ▸ double-click and the canvas "
+            "right-click cascade. \"Auto\" tries VS Code → Notepad++ → "
+            "IDLE in order. ``{file}`` is replaced with the path; "
+            "``{line}`` with the method's line number; ``{folder}`` "
+            "with the project root.",
+        ).pack(anchor="w", pady=(14, 0))
+
+        # Recommendation block — VS Code is what we test against
+        # most heavily and what the planned CTkMaker extension will
+        # plug into. The download link is a clickable text label so
+        # the user can grab it without leaving the dialog.
+        rec_frame = tk.Frame(tab, bg=BG)
+        rec_frame.pack(anchor="w", pady=(18, 0), fill="x")
+        tk.Label(
+            rec_frame,
+            text="★ Recommended:  VS Code",
+            bg=BG, fg="#7dd3fc",
+            font=("Segoe UI", 10, "bold"),
+            anchor="w",
+        ).pack(anchor="w")
+        tk.Label(
+            rec_frame,
+            text=(
+                "Best fit for CTkMaker — Python tooling, integrated "
+                "terminal, and a dedicated CTkMaker extension is on "
+                "the roadmap."
+            ),
+            bg=BG, fg=DIM_FG, font=("Segoe UI", 9),
+            anchor="w", justify="left",
+            wraplength=DIALOG_W - 80,
+        ).pack(anchor="w", pady=(2, 4))
+        link_lbl = tk.Label(
+            rec_frame,
+            text="https://code.visualstudio.com/download",
+            bg=BG, fg="#5eb3ff",
+            font=("Segoe UI", 9, "underline"),
+            anchor="w", cursor="hand2",
+        )
+        link_lbl.pack(anchor="w")
+        link_lbl.bind(
+            "<Button-1>",
+            lambda _e: self._open_vs_code_download(),
+        )
+        return tab
+
+    def _open_vs_code_download(self) -> None:
+        import webbrowser
+        try:
+            webbrowser.open("https://code.visualstudio.com/download")
+        except Exception:
+            pass
+
+    def _editor_preset_label_for(self, cmd: str) -> str:
+        cmd = (cmd or "").strip()
+        if not cmd:
+            return EDITOR_PRESETS[0][0]
+        for label, template in EDITOR_PRESETS:
+            if template and template.strip() == cmd:
+                return label
+        return "Custom"
+
+    def _on_editor_preset_change(self, label: str) -> None:
+        for preset_label, template in EDITOR_PRESETS:
+            if preset_label == label:
+                self._editor_cmd_var.set(template)
+                return
+        # ``Custom`` selected — leave the existing textbox value
+        # alone so the user can keep editing whatever they had.
+
+    def _sync_editor_preset_from_cmd(self) -> None:
+        target = self._editor_preset_label_for(
+            self._editor_cmd_var.get().strip(),
+        )
+        if self._editor_preset_var.get() != target:
+            self._editor_preset_var.set(target)
+
     # ----- Autosave tab -----
 
     def _build_autosave(self, parent: tk.Misc) -> tk.Frame:
@@ -515,6 +671,10 @@ class SettingsDialog(tk.Toplevel):
         save_setting(KEY_GRID_STYLE, self._grid_style_var.get())
         save_setting(KEY_GRID_COLOR, grid_color)
         save_setting(KEY_GRID_SPACING, grid_spacing)
+        save_setting(
+            KEY_EDITOR_COMMAND,
+            self._editor_cmd_var.get().strip(),
+        )
         if callable(self._on_workspace_changed):
             try:
                 self._on_workspace_changed()

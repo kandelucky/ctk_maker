@@ -192,6 +192,22 @@ class CommitMixin:
                 "request_open_variables_window", "local", doc_id,
             )
             return "break"
+        # Phase 2 visual scripting — double-click a bound-method row
+        # in the Events group to jump to the method in the user's
+        # editor. Single-click stays as plain Treeview row select so
+        # the user can land on the row before deciding to open it.
+        if iid and self._event_row_meta.get(iid, ("", "", None))[0] == "method":
+            kind, event_key, m_index = self._event_row_meta[iid]
+            if self.current_id is None:
+                return "break"
+            node = self.project.get_widget(self.current_id)
+            if node is None:
+                return "break"
+            methods = list(node.handlers.get(event_key, []) or [])
+            if m_index is None or m_index >= len(methods):
+                return "break"
+            self._open_event_method(self.current_id, methods[m_index])
+            return "break"
         region = self.tree.identify_region(event.x, event.y)
         if region != "cell":
             return None

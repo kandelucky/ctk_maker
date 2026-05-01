@@ -657,6 +657,31 @@ def _generate_code_inner(
         used_class_names.add(cls_name)
         class_names.append((doc, cls_name))
 
+    # Phase 2 — emit ``from assets.scripts.<page>.<window> import
+    # <WindowName>Page`` for every Document that actually binds at
+    # least one handler. Skipping zero-handler docs keeps generated
+    # code tidy + avoids ImportError on projects whose behavior file
+    # was never materialised (e.g. user copied a .ctkproj without
+    # the ``assets/scripts/`` folder). The behavior class instance
+    # lands on ``self._behavior`` inside each window's __init__ —
+    # see ``_emit_class_body``.
+    behavior_imports: list[tuple[Document, str]] = []
+    for doc, _cls in class_names:
+        if _doc_has_handlers(doc):
+            behavior_imports.append((doc, _behavior_class_for_doc(doc)))
+    if behavior_imports:
+        from app.core.script_paths import (
+            behavior_file_stem, slugify_window_name,
+        )
+        page_slug = behavior_file_stem(project.path)
+        for doc, beh_cls in behavior_imports:
+            window_slug = slugify_window_name(doc.name)
+            lines.append(
+                f"from assets.scripts.{page_slug}.{window_slug} "
+                f"import {beh_cls}",
+            )
+        lines.append("")
+
     # In single-document mode, force the class to subclass ctk.CTk so
     # the exported file is a standalone runnable app — even if the
     # source document is a CTkToplevel in the multi-doc project.
@@ -714,6 +739,94 @@ def _generate_code_inner(
 # ----------------------------------------------------------------------
 # Class + widget emission
 # ----------------------------------------------------------------------
+def _emit_handler_lines(
+    node: WidgetNode, full_name: str,
+) -> tuple[tuple[str, str] | None, list[str]]:
+    """Resolve a widget's ``handlers`` mapping into:
+    - one optional ``("command", "<expr>")`` kwarg tuple to fold into
+      the constructor call (command-style events: CTkButton, Slider,
+      ComboBox, OptionMenu, SegmentedButton, Switch, CheckBox,
+      RadioButton).
+    - a list of post-construction lines for bind-style events
+      (CTkEntry / CTkTextbox <Return>, <KeyRelease>, <FocusOut>).
+
+    Single method → bare reference (``self._behavior.foo``); multiple
+    methods on the same event → lambda chain so every method fires
+    in order. Bind-style events use ``add="+"`` so each method gets
+    its own bind call without clobbering the previous one.
+
+    Empty ``handlers`` → returns ``(None, [])`` and no plumbing is
+    emitted at all.
+    """
+    if not node.handlers:
+        return None, []
+    from app.widgets.event_registry import event_by_key
+    command_kwarg: tuple[str, str] | None = None
+    post_lines: list[str] = []
+    for key in node.handlers:
+        methods = [m for m in node.handlers.get(key, []) if m]
+        if not methods:
+            continue
+        entry = event_by_key(node.widget_type, key)
+        if entry is None:
+            # Stale binding — registry doesn't list this event for the
+            # widget any more. Skip silently rather than emit broken
+            # code; the Properties panel surfaces the dangling row.
+            continue
+        if entry.wiring_kind == "command":
+            command_kwarg = ("command", _format_method_chain(methods))
+        elif entry.wiring_kind == "bind":
+            seq = key.split(":", 1)[1] if ":" in key else key
+            for method in methods:
+                post_lines.append(
+                    f'{full_name}.bind('
+                    f'"{seq}", self._behavior.{method}, add="+")',
+                )
+    return command_kwarg, post_lines
+
+
+def _format_method_chain(methods: list[str]) -> str:
+    """Render an ordered list of behavior methods as the source for
+    a ``command=`` kwarg. One method becomes a bare reference;
+    several get wrapped in a lambda that calls each in turn so the
+    fan-out is visible at the call site (no hidden registration).
+    """
+    if len(methods) == 1:
+        return f"self._behavior.{methods[0]}"
+    calls = ", ".join(f"self._behavior.{m}()" for m in methods)
+    return f"lambda: ({calls})"
+
+
+def _doc_has_handlers(doc: Document) -> bool:
+    """True when at least one widget under ``doc`` has a non-empty
+    handler list. Used to gate the per-window behavior import + the
+    ``self._behavior = …`` lines in __init__ so docs without any
+    bound events emit no Phase 2 plumbing.
+    """
+    for root in doc.root_widgets:
+        if _node_has_handlers(root):
+            return True
+    return False
+
+
+def _node_has_handlers(node: WidgetNode) -> bool:
+    if any(node.handlers.get(k) for k in node.handlers):
+        return True
+    for child in node.children:
+        if _node_has_handlers(child):
+            return True
+    return False
+
+
+def _behavior_class_for_doc(doc: Document) -> str:
+    """Per-window behavior class name — ``<WindowSlug>Page``.
+    Centralised here so the exporter, F5 preview, and the Properties
+    panel agree on the symbol that lives in the user's .py file.
+    """
+    from app.core.script_paths import behavior_class_name
+    return behavior_class_name(doc)
+
+
 def _iter_descendants(node):
     """DFS walk — yields every descendant of ``node`` (not ``node``
     itself). Mirrors ``project.iter_all_widgets`` but scoped to a
@@ -818,6 +931,22 @@ def _emit_class_body(
             lines.append(
                 f"{INDENT}{INDENT}_register_project_fonts(self)",
             )
+
+    # Phase 2 — instantiate the per-window behavior class + run its
+    # ``setup`` hook BEFORE building the UI. Doing it pre-_build_ui
+    # means handler kwargs in widget constructors can reference
+    # ``self._behavior.<method>`` and the user's ``setup`` body has
+    # a chance to stash references the handlers will use. Skipped
+    # for docs without any bound handlers — see
+    # ``_doc_has_handlers``.
+    if _doc_has_handlers(doc):
+        beh_cls = _behavior_class_for_doc(doc)
+        lines.append(
+            f"{INDENT}{INDENT}self._behavior = {beh_cls}()",
+        )
+        lines.append(
+            f"{INDENT}{INDENT}self._behavior.setup(self)",
+        )
 
     title = str(doc.name or "Window").replace('"', '\\"')
     geometry = f"{doc.width}x{doc.height}"
@@ -1266,6 +1395,18 @@ def _emit_widget(
             for line in desc.splitlines() or [desc]:
                 description_lines.append(f"# {line}")
     lines: list[str] = description_lines + list(pre_lines)
+    # Phase 2 — fold event handler bindings into the constructor or
+    # collect them as post-init ``.bind(...)`` lines. Inspecting the
+    # node's ``handlers`` mapping against the widget's event registry
+    # lets us route command-style events to a kwarg (so the runtime
+    # call is single-pass) and bind-style events to ``widget.bind``
+    # statements emitted after the constructor.
+    command_kwarg, post_handler_lines = _emit_handler_lines(
+        node, full_name,
+    )
+    if command_kwarg is not None:
+        kwargs.append(command_kwarg)
+
     lines.append(f"{full_name} = ctk.{ctk_class}(")
     lines.append(f"    {master_var},")
     for key, src in kwargs:
@@ -1283,6 +1424,13 @@ def _emit_widget(
             child_index, parent_cols, parent_rows,
         ),
     )
+
+    # Phase 2 — bind-style events (CTkEntry / CTkTextbox <Return> etc.)
+    # land here, AFTER geometry so the widget is fully constructed and
+    # its underlying tk widget exists for ``widget.bind``. Multiple
+    # methods on the same sequence chain through ``add="+"`` so they
+    # all fire in registration order.
+    lines.extend(post_handler_lines)
     # Strip wired-bound keys before handing props to ``export_state``
     # so descriptors don't emit ``.insert(0, 'var:<uuid>')`` /
     # ``.set('var:<uuid>')`` / ``.select()`` lines for properties the
