@@ -930,6 +930,16 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         if iid and iid in self._event_row_meta:
             self._show_event_menu(event, iid)
             return
+        # Phase 3 — Behavior Field rows route to their own menu.
+        # iid shape is ``behaviorfield:<field_name>`` (the empty-state
+        # row uses ``behaviorfield:empty`` so we exclude it
+        # explicitly to keep that hint passive).
+        if (
+            iid and iid.startswith("behaviorfield:")
+            and iid != "behaviorfield:empty"
+        ):
+            self._show_behavior_field_menu(event, iid)
+            return
         if self.current_id is None:
             return
         if not iid or not iid.startswith("p:"):
@@ -1230,6 +1240,130 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         delete_method_from_file(
             path, behavior_class_name(document), method_name,
         )
+
+    def _show_behavior_field_menu(self, event, iid: str) -> None:
+        """Right-click menu for a Behavior Field row. Three entries:
+        Open in editor (jump cursor to the annotation line),
+        Clear binding (only when bound), and Delete field… (rewrites
+        the .py to drop the annotation, clears the binding from
+        ``Document.behavior_field_values``).
+        """
+        field_name = iid.split(":", 1)[1]
+        if self.project is None or self.project.active_document is None:
+            return
+        document = self.project.active_document
+        is_bound = field_name in document.behavior_field_values
+        menu = tk.Menu(self.tree, tearoff=0)
+        menu.add_command(
+            label="Open in editor",
+            command=lambda: self._open_behavior_field_in_editor(field_name),
+        )
+        menu.add_separator()
+        menu.add_command(
+            label="Clear binding",
+            command=lambda: self._clear_behavior_field(field_name),
+            state=("normal" if is_bound else "disabled"),
+        )
+        menu.add_command(
+            label="Delete field…",
+            command=lambda: self._delete_behavior_field(field_name),
+        )
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _open_behavior_field_in_editor(self, field_name: str) -> None:
+        """Jump the editor cursor to the field's annotation line so
+        the user can fix the type / rename / inline-edit. Falls back
+        to opening the file at line 1 when AST scan can't locate the
+        field (out of date scan, syntax error, etc.).
+        """
+        from app.core.settings import load_settings
+        from app.core.script_paths import (
+            behavior_class_name, behavior_file_path,
+        )
+        from app.io.scripts import (
+            launch_editor,
+            parse_behavior_class_fields,
+            resolve_project_root_for_editor as _resolve_project_root,
+        )
+        if not getattr(self.project, "path", None):
+            return
+        if self.project.active_document is None:
+            return
+        document = self.project.active_document
+        file_path = behavior_file_path(self.project.path, document)
+        if file_path is None or not file_path.exists():
+            return
+        class_name = behavior_class_name(document)
+        line = None
+        for spec in parse_behavior_class_fields(file_path, class_name):
+            if spec.name == field_name:
+                line = spec.lineno or None
+                break
+        settings = load_settings() or {}
+        editor_command = settings.get("editor_command", "")
+        launch_editor(
+            file_path,
+            line=line,
+            editor_command=editor_command,
+            project_root=_resolve_project_root(self.project),
+        )
+
+    def _delete_behavior_field(self, field_name: str) -> None:
+        """Remove the field's annotation from the per-window
+        behavior class + clear any saved widget binding. Confirms
+        first via a yes/no dialog so an accidental right-click drag
+        doesn't nuke a slot the user spent time wiring.
+        """
+        from tkinter import messagebox
+        from app.core.commands import SetBehaviorFieldCommand
+        from app.core.script_paths import (
+            behavior_class_name, behavior_file_path,
+        )
+        from app.io.scripts import delete_behavior_field_annotation
+        if self.project is None or self.project.active_document is None:
+            return
+        if not getattr(self.project, "path", None):
+            return
+        document = self.project.active_document
+        file_path = behavior_file_path(self.project.path, document)
+        if file_path is None or not file_path.exists():
+            return
+        class_name = behavior_class_name(document)
+        is_bound = field_name in document.behavior_field_values
+        bound_hint = (
+            "\n\nThis will also clear the widget binding."
+            if is_bound else ""
+        )
+        if not messagebox.askyesno(
+            "Delete behavior field",
+            (
+                f"Remove `{field_name}` from the {class_name} class?"
+                f"{bound_hint}\n\n"
+                "The annotation line will be deleted from the "
+                "behavior file. Methods that reference "
+                f"`self.{field_name}` will need to be updated by hand."
+            ),
+            parent=self.winfo_toplevel(),
+        ):
+            return
+        # Clear the binding first via the standard command so the
+        # mutation lands on the undo stack (a future undo restores
+        # the binding even though the annotation lives on a separate
+        # text-mutation path that does NOT undo). The annotation
+        # delete is a permanent text edit — the user re-runs Add
+        # Field to bring it back, same as Phase 2 method delete.
+        if is_bound:
+            cmd = SetBehaviorFieldCommand(document.id, field_name, "")
+            self.project.history.push(cmd)
+        delete_behavior_field_annotation(file_path, class_name, field_name)
+        # Force a panel rebuild so the now-deleted row disappears
+        # from the Behavior Fields group — the file change isn't
+        # tied to a project event the panel listens to, so push a
+        # synthetic refresh.
+        self._on_behavior_field_changed(document.id, field_name)
 
     def _show_add_behavior_field_dialog(self) -> None:
         """Phase 3 Step 1.x — open the Add Field dialog. Picks a

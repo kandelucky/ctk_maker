@@ -355,6 +355,58 @@ def add_behavior_field_annotation(
     return True
 
 
+def delete_behavior_field_annotation(
+    file_path: str | Path,
+    class_name: str,
+    field_name: str,
+) -> bool:
+    """Remove a single ``<field_name>: <annotation>`` line from the
+    named class. Text-based delete (Decision K=B) — preserves the
+    user's blank lines + comments inside the class. Returns
+    ``True`` when a line was removed, ``False`` for missing files /
+    parse failures / when the annotation isn't there.
+    """
+    path = Path(file_path)
+    source = _read_source(path)
+    if source is None:
+        return False
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    target = _find_class(tree, class_name)
+    if target is None:
+        return False
+    ann = None
+    for stmt in target.body:
+        if (
+            isinstance(stmt, ast.AnnAssign)
+            and isinstance(stmt.target, ast.Name)
+            and stmt.target.id == field_name
+        ):
+            ann = stmt
+            break
+    if ann is None:
+        return False
+    lines = source.splitlines()
+    start = ann.lineno - 1
+    end = (ann.end_lineno or ann.lineno) - 1
+    # Sweep one trailing blank line so the annotation block doesn't
+    # leave a visible gap in the class body — keeps the code tidy
+    # for users who delete several fields back-to-back.
+    if end + 1 < len(lines) and not lines[end + 1].strip():
+        end += 1
+    new_lines = lines[:start] + lines[end + 1:]
+    new_source = "\n".join(new_lines)
+    if source.endswith("\n") and not new_source.endswith("\n"):
+        new_source += "\n"
+    try:
+        path.write_text(new_source, encoding="utf-8")
+    except OSError:
+        return False
+    return True
+
+
 def ensure_imports_in_behavior_file(
     file_path: str | Path,
     imports: list[tuple[str, str]],

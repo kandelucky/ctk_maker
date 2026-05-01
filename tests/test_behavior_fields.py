@@ -18,10 +18,16 @@ from pathlib import Path
 
 import pytest
 
-from app.core.commands import SetBehaviorFieldCommand
+from app.core.commands import (
+    SetBehaviorFieldCommand,
+    _clear_behavior_field_bindings_for_ids,
+    _collect_ids_from_snapshot,
+    _restore_behavior_field_bindings,
+)
 from app.core.document import Document
 from app.io.scripts import (
     add_behavior_field_annotation,
+    delete_behavior_field_annotation,
     ensure_imports_in_behavior_file,
     ensure_relative_import_in_behavior_file,
     ensure_runtime_helpers,
@@ -534,3 +540,126 @@ def test_filter_handlers_no_op_without_export_project(monkeypatch):
         _FakeNode(), ["on_click"],
     )
     assert kept == ["on_click"]
+
+
+# ---------------------------------------------------------------------
+# delete_behavior_field_annotation (v1.9.3 — UI delete flow)
+# ---------------------------------------------------------------------
+def test_delete_behavior_field_annotation_removes_line(tmp_path):
+    file = _write_behavior(tmp_path, """
+        class LoginPage:
+            target: ref[CTkLabel]
+            other: ref[CTkButton]
+
+            def setup(self, window):
+                pass
+    """)
+    ok = delete_behavior_field_annotation(file, "LoginPage", "target")
+    assert ok is True
+    body = file.read_text(encoding="utf-8")
+    assert "target: ref[CTkLabel]" not in body
+    # Sibling annotation survives — single-line removal only.
+    assert "other: ref[CTkButton]" in body
+    # Method below stays put.
+    assert "def setup" in body
+
+
+def test_delete_behavior_field_annotation_no_op_for_missing_field(tmp_path):
+    file = _write_behavior(tmp_path, """
+        class LoginPage:
+            target: ref[CTkLabel]
+    """)
+    before = file.read_text(encoding="utf-8")
+    ok = delete_behavior_field_annotation(file, "LoginPage", "ghost")
+    assert ok is False
+    assert file.read_text(encoding="utf-8") == before
+
+
+def test_delete_behavior_field_annotation_no_op_for_syntax_error(tmp_path):
+    file = tmp_path / "broken.py"
+    file.write_text("class LoginPage:\n    target = (", encoding="utf-8")
+    assert (
+        delete_behavior_field_annotation(file, "LoginPage", "target")
+        is False
+    )
+
+
+# ---------------------------------------------------------------------
+# Widget delete cascade — Behavior Field cleanup (v1.9.3)
+# ---------------------------------------------------------------------
+def test_collect_ids_from_snapshot_walks_descendants():
+    snapshot = {
+        "id": "root",
+        "children": [
+            {"id": "child-1", "children": []},
+            {
+                "id": "child-2",
+                "children": [
+                    {"id": "grandchild", "children": []},
+                ],
+            },
+        ],
+    }
+    ids = _collect_ids_from_snapshot(snapshot)
+    assert ids == {"root", "child-1", "child-2", "grandchild"}
+
+
+def test_clear_behavior_field_bindings_clears_pointing_entries():
+    doc = Document(name="Main")
+    doc.behavior_field_values = {
+        "label": "widget-1",
+        "button": "widget-2",
+    }
+    project = _FakeProject(doc)
+    cleared = _clear_behavior_field_bindings_for_ids(
+        project, {"widget-1"},
+    )
+    assert cleared == [(doc.id, "label", "widget-1")]
+    assert doc.behavior_field_values == {"button": "widget-2"}
+    # Single behavior_field_changed event for the cleared slot.
+    assert any(
+        e[0] == "behavior_field_changed"
+        for e in project.event_bus.events
+    )
+
+
+def test_clear_behavior_field_bindings_walks_every_doc():
+    doc1 = Document(name="Main")
+    doc1.behavior_field_values = {"shared": "widget-1"}
+    doc2 = Document(name="Dialog")
+    doc2.behavior_field_values = {"local": "widget-1"}
+
+    class _MultiDocProject(_FakeProject):
+        def __init__(self):
+            self.documents = [doc1, doc2]
+            self.event_bus = _FakeBus()
+
+    project = _MultiDocProject()
+    cleared = _clear_behavior_field_bindings_for_ids(
+        project, {"widget-1"},
+    )
+    assert {(d, f) for d, f, _ in cleared} == {
+        (doc1.id, "shared"), (doc2.id, "local"),
+    }
+    assert doc1.behavior_field_values == {}
+    assert doc2.behavior_field_values == {}
+
+
+def test_restore_behavior_field_bindings_replays_cleared_entries():
+    doc = Document(name="Main")
+    project = _FakeProject(doc)
+    cleared = [(doc.id, "label", "widget-1")]
+    _restore_behavior_field_bindings(project, cleared)
+    assert doc.behavior_field_values == {"label": "widget-1"}
+    assert any(
+        e[0] == "behavior_field_changed"
+        for e in project.event_bus.events
+    )
+
+
+def test_restore_behavior_field_bindings_skips_missing_doc():
+    doc = Document(name="Main")
+    project = _FakeProject(doc)
+    cleared = [("ghost-doc", "label", "widget-1")]
+    _restore_behavior_field_bindings(project, cleared)
+    assert doc.behavior_field_values == {}
