@@ -667,7 +667,7 @@ def _generate_code_inner(
     # see ``_emit_class_body``.
     behavior_imports: list[tuple[Document, str]] = []
     for doc, _cls in class_names:
-        if _doc_has_handlers(doc):
+        if _doc_needs_behavior(doc):
             behavior_imports.append((doc, _behavior_class_for_doc(doc)))
     if behavior_imports:
         from app.core.script_paths import (
@@ -818,6 +818,75 @@ def _node_has_handlers(node: WidgetNode) -> bool:
     return False
 
 
+def _doc_needs_behavior(doc: Document) -> bool:
+    """Phase 3 — broader behavior-class gate. Returns True when the
+    doc has either bound handlers OR Behavior Field values to wire.
+    Field-only docs (declared annotations, picked widgets, no event
+    handlers) still require the ``self._behavior = X()`` instance so
+    setup() can run + the field assignments have a target.
+    """
+    if _doc_has_handlers(doc):
+        return True
+    if doc.behavior_field_values:
+        return True
+    return False
+
+
+def _build_id_to_var_name(doc: Document) -> dict[str, str]:
+    """Replay ``_make_var_name``'s ordering against a doc's widget
+    tree to produce a stable ``{widget_id: var_name}`` map. Used by
+    ``_emit_behavior_field_lines`` so the post-build assignments
+    reference the same names ``_emit_subtree`` actually emitted.
+
+    The naming strategy is per-doc (counts dict resets each call),
+    matching how the exporter scopes the same dict per ``_emit_class``
+    invocation. As long as both walks visit children in the same DFS
+    order this stays in sync.
+    """
+    counts: dict[str, int] = {}
+    id_map: dict[str, str] = {}
+
+    def walk(node: WidgetNode) -> None:
+        base = node.widget_type.replace("CTk", "").lower() or "widget"
+        counts[base] = counts.get(base, 0) + 1
+        id_map[node.id] = f"{base}_{counts[base]}"
+        for child in node.children:
+            walk(child)
+
+    for root in doc.root_widgets:
+        walk(root)
+    return id_map
+
+
+def _emit_behavior_field_lines(
+    doc: Document,
+    id_to_var: dict[str, str],
+    instance_prefix: str,
+) -> list[str]:
+    """Phase 3 — produce the ``self._behavior.<field> = <expr>`` lines
+    that wire Inspector slots after ``_build_ui()`` returns. Skips
+    bindings whose target widget no longer exists (silent drop —
+    panel already shows ``(missing widget)`` so the user has been
+    warned in the editor).
+
+    Indentation is two levels (``__init__`` body inside ``class``);
+    the caller appends them right after the ``self._build_ui()``
+    call.
+    """
+    if not doc.behavior_field_values:
+        return []
+    lines: list[str] = []
+    for field_name, widget_id in doc.behavior_field_values.items():
+        var_name = id_to_var.get(widget_id)
+        if not var_name:
+            continue
+        lines.append(
+            f"{INDENT}{INDENT}self._behavior.{field_name} = "
+            f"{instance_prefix}{var_name}",
+        )
+    return lines
+
+
 def _behavior_class_for_doc(doc: Document) -> str:
     """Per-window behavior class name — ``<WindowSlug>Page``.
     Centralised here so the exporter, F5 preview, and the Properties
@@ -932,20 +1001,16 @@ def _emit_class_body(
                 f"{INDENT}{INDENT}_register_project_fonts(self)",
             )
 
-    # Phase 2 — instantiate the per-window behavior class + run its
-    # ``setup`` hook BEFORE building the UI. Doing it pre-_build_ui
-    # means handler kwargs in widget constructors can reference
-    # ``self._behavior.<method>`` and the user's ``setup`` body has
-    # a chance to stash references the handlers will use. Skipped
-    # for docs without any bound handlers — see
-    # ``_doc_has_handlers``.
-    if _doc_has_handlers(doc):
+    # Phase 2 — instantiate the per-window behavior class. Done
+    # BEFORE _build_ui so widget constructor kwargs like
+    # ``command=self._behavior.on_click`` can resolve. The actual
+    # ``setup(self)`` call moves AFTER build + Phase 3 field
+    # assignments so user code can lean on widgets + fields being
+    # available — see the post-build block further down.
+    if _doc_needs_behavior(doc):
         beh_cls = _behavior_class_for_doc(doc)
         lines.append(
             f"{INDENT}{INDENT}self._behavior = {beh_cls}()",
-        )
-        lines.append(
-            f"{INDENT}{INDENT}self._behavior.setup(self)",
         )
 
     title = str(doc.name or "Window").replace('"', '\\"')
@@ -969,6 +1034,25 @@ def _emit_class_body(
             f'{INDENT}{INDENT}self.configure(fg_color="{fg_color}")',
         )
     lines.append(f"{INDENT}{INDENT}self._build_ui()")
+    # Phase 3 — Behavior Field assignments must run AFTER _build_ui()
+    # since they reference widgets created inside it. Per-doc id-to-
+    # var map mirrors the naming the subtree walk emits, so the
+    # right-hand sides line up with the actual ``self.<widget_var>``
+    # attributes set during the build.
+    if _doc_needs_behavior(doc) and doc.behavior_field_values:
+        id_to_var = _build_id_to_var_name(doc)
+        field_lines = _emit_behavior_field_lines(doc, id_to_var, "self.")
+        lines.extend(field_lines)
+    # Phase 2 setup() — runs AFTER _build_ui + Phase 3 field
+    # assignments so user code can reference both ``self.<widget>``
+    # attributes and the bound ``self._behavior.<field>`` slots
+    # without worrying about ordering. Widget command kwargs
+    # captured ``self._behavior.<method>`` during _build_ui; those
+    # bindings are stable references whose call sites fire later.
+    if _doc_needs_behavior(doc):
+        lines.append(
+            f"{INDENT}{INDENT}self._behavior.setup(self)",
+        )
     lines.append("")
     lines.append(f"{INDENT}def _build_ui(self):")
 

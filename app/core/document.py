@@ -95,6 +95,14 @@ class Document:
         # project. Not persisted — load_project rebuilds it from
         # existing widget names.
         self.name_counters: dict[str, int] = {}
+        # Phase 3 visual scripting — Behavior Field bindings. Maps the
+        # field name declared as ``<name>: ref[<WidgetType>]`` on the
+        # window's behavior class to the widget id its Inspector slot
+        # currently targets. Field declarations live in the .py
+        # source (read via AST), only the widget choice persists here.
+        # Empty dict for documents that have no behavior fields or no
+        # bindings yet.
+        self.behavior_field_values: dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # Serialisation
@@ -119,6 +127,10 @@ class Document:
             result["local_variables"] = [
                 v.to_dict() for v in self.local_variables
             ]
+        if self.behavior_field_values:
+            result["behavior_field_values"] = dict(
+                self.behavior_field_values,
+            )
         return result
 
     @classmethod
@@ -166,5 +178,11 @@ class Document:
             doc.name_counters = {
                 str(k): int(v) for k, v in raw_counters.items()
                 if isinstance(v, (int, float))
+            }
+        raw_fields = data.get("behavior_field_values")
+        if isinstance(raw_fields, dict):
+            doc.behavior_field_values = {
+                str(k): str(v) for k, v in raw_fields.items()
+                if isinstance(v, str) and v
             }
         return doc

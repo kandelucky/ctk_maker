@@ -40,10 +40,14 @@ from .format_utils import (
     format_value,
 )
 from .overlays import (
+    SLOT_BEHAVIOR_CLEAR,
+    SLOT_BEHAVIOR_PICK,
     SLOT_BIND_BUTTON,
     SLOT_BIND_CLEAR,
     SLOT_EVENT_ADD,
     SLOT_EVENT_UNBIND,
+    place_behavior_field_clear,
+    place_behavior_field_pick,
     place_bind_button,
     place_bind_clear,
     place_event_add,
@@ -176,6 +180,12 @@ class SchemaMixin:
         # current document without opening the F11 Variables window.
         if descriptor.type_name == WINDOW_ID:
             self._populate_local_variables_group()
+            # Phase 3 — Behavior Fields are class-level on the window's
+            # behavior file (one class per window), so we only render
+            # the group when the user selects the window itself, not
+            # for individual child widgets. Non-window widgets keep
+            # their tidy panel.
+            self._populate_behavior_fields_group()
 
         # Phase 2 visual scripting — Events group for event-capable
         # widgets (button, slider, entry, …). Renders below every
@@ -208,6 +218,159 @@ class SchemaMixin:
                 group_iid, "end", iid=f"localvar:{entry.id}",
                 text=entry.name,
                 values=(f"({entry.type}) {default_str}",),
+            )
+
+    def _populate_behavior_fields_group(self) -> None:
+        """Phase 3 visual scripting — render the active document's
+        Behavior Field slots in a dedicated group at the end of the
+        Window panel. Each ``<name>: ref[<WidgetType>]`` annotation
+        on the per-window behavior class becomes one row whose value
+        cell shows the bound widget's name and a ``[Pick…]`` button
+        that opens the modal widget picker.
+
+        Empty state (no annotations declared yet) shows a one-line
+        hint pointing at the syntax users add to their behavior file.
+        """
+        doc = self.project.active_document if self.project else None
+        if doc is None:
+            return
+        group_iid = "g:Behavior Fields"
+        self.tree.insert(
+            "", "end", iid=group_iid,
+            text="Behavior Fields", values=("",), open=True,
+            tags=("class",),
+        )
+        fields = self._lookup_behavior_fields(doc)
+        if not fields:
+            self.tree.insert(
+                group_iid, "end", iid="behaviorfield:empty",
+                text="",
+                values=("declare `name: ref[Type]` in behavior file",),
+                tags=("disabled",),
+            )
+            return
+        values = doc.behavior_field_values
+        for spec in fields:
+            current_id = values.get(spec.name, "")
+            current_widget = (
+                self.project.get_widget(current_id)
+                if current_id else None
+            )
+            if current_widget is not None:
+                widget_label = (
+                    current_widget.name or current_widget.widget_type
+                )
+                # Compatibility check — if the user changed the field's
+                # type in the .py source after binding, surface the
+                # mismatch in the cell text rather than silently
+                # carrying on with the stale id.
+                if current_widget.widget_type != spec.type_name:
+                    value_text = (
+                        f"{widget_label}  — wrong type "
+                        f"({current_widget.widget_type})"
+                    )
+                else:
+                    value_text = widget_label
+            elif current_id:
+                value_text = "(missing widget)"
+            else:
+                value_text = f"empty   ref[{spec.type_name}]"
+            row_iid = f"behaviorfield:{spec.name}"
+            self.tree.insert(
+                group_iid, "end", iid=row_iid,
+                text=spec.name, values=(value_text,),
+            )
+            self._attach_behavior_field_pick_button(
+                row_iid, spec.name, spec.type_name,
+            )
+            if current_id:
+                self._attach_behavior_field_clear_button(
+                    row_iid, spec.name,
+                )
+
+    def _lookup_behavior_fields(self, doc) -> list:
+        """Build the FieldSpec list for the active document's behavior
+        class. Empty when the project is unsaved, the file is missing,
+        or the class isn't found — those map naturally onto the
+        "no fields" empty state.
+        """
+        if not getattr(self.project, "path", None):
+            return []
+        from app.core.script_paths import (
+            behavior_class_name, behavior_file_path,
+        )
+        from app.io.scripts import parse_behavior_class_fields
+        file_path = behavior_file_path(self.project.path, doc)
+        if file_path is None or not file_path.exists():
+            return []
+        return parse_behavior_class_fields(
+            file_path, behavior_class_name(doc),
+        )
+
+    def _attach_behavior_field_pick_button(
+        self, row_iid: str, field_name: str, type_name: str,
+    ) -> None:
+        """Inline ``[Pick…]`` button on a Behavior Field row. Routes
+        through ``_show_behavior_field_picker`` on the panel which
+        opens the modal picker, applies the resulting widget id via
+        ``SetBehaviorFieldCommand``, and triggers a panel rebuild via
+        the ``behavior_field_changed`` event subscription.
+        """
+        btn = tk.Label(
+            self.tree,
+            text="Pick…", bg=TREE_BG, fg="#7dd3fc",
+            font=("Segoe UI", 9),
+            cursor="hand2", borderwidth=0, padx=2, pady=0,
+        )
+        btn.bind(
+            "<Enter>",
+            lambda _e, b=btn: b.configure(fg="#ffffff"),
+        )
+        btn.bind(
+            "<Leave>",
+            lambda _e, b=btn: b.configure(fg="#7dd3fc"),
+        )
+        btn.bind(
+            "<Button-1>",
+            lambda _e, fn=field_name, tn=type_name:
+            self._show_behavior_field_picker(fn, tn),
+        )
+        if self.overlays is not None:
+            self.overlays.add(
+                row_iid, SLOT_BEHAVIOR_PICK, btn,
+                place_behavior_field_pick,
+            )
+
+    def _attach_behavior_field_clear_button(
+        self, row_iid: str, field_name: str,
+    ) -> None:
+        """Inline ``[✕]`` to clear an existing Behavior Field binding.
+        Hidden on empty slots — the empty value cell + Pick… button
+        is enough surface area; ``[✕]`` would just be visual noise.
+        """
+        btn = tk.Label(
+            self.tree,
+            text="✕", bg=TREE_BG, fg="#888888",
+            font=("Segoe UI", 9),
+            cursor="hand2", borderwidth=0, padx=0, pady=0,
+        )
+        btn.bind(
+            "<Enter>",
+            lambda _e, b=btn: b.configure(fg="#ef4444"),
+        )
+        btn.bind(
+            "<Leave>",
+            lambda _e, b=btn: b.configure(fg="#888888"),
+        )
+        btn.bind(
+            "<Button-1>",
+            lambda _e, fn=field_name:
+            self._clear_behavior_field(fn),
+        )
+        if self.overlays is not None:
+            self.overlays.add(
+                row_iid, SLOT_BEHAVIOR_CLEAR, btn,
+                place_behavior_field_clear,
             )
 
     def _populate_events_group(self, node) -> None:

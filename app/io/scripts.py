@@ -7,6 +7,14 @@ bodies in their own editor. The file lives at
 and is imported by exported code as
 ``from assets.scripts.<page>.<window> import <WindowName>Page``.
 
+Phase 3 adds Behavior Fields — annotated class attributes typed as
+``ref[<WidgetType>]`` declare Inspector slots that the Properties
+panel renders with a widget picker. Resolution happens at export
+time via ``self._behavior.<field> = self.<widget_var>`` lines after
+``_build_ui()``. The ``ref`` marker class lives in an auto-generated
+``assets/scripts/_runtime.py`` so behavior files stay importable
+outside CTkMaker (IDE typing, standalone tests, etc.).
+
 Public API:
 - ``load_or_create_behavior_file(project_path, document)`` — return
   the .py path, creating ``assets/scripts/<page>/`` + a class
@@ -53,12 +61,21 @@ _SKELETON_TEMPLATE = '''"""Behavior file for the {window_label} window.
 Methods here run in response to widget events. CTkMaker stubs new
 methods automatically — fill in the bodies here. Each method maps
 to a handler binding configured in the Properties panel.
+
+Phase 3 — to add an Inspector slot, declare a ``ref[<WidgetType>]``
+annotation on the class (e.g. ``target_label: ref[CTkLabel]``).
+The Properties panel's "Behavior Fields" group will render a
+widget picker for it. Import ``ref`` from the auto-generated
+``_runtime`` module and the widget class from ``customtkinter``.
 """
 
 
 class {class_name}:
     def setup(self, window):
-        """Called once on window load. Stash references you'll need."""
+        """Called once after the UI is built and Behavior Fields are
+        wired. ``self.<field>`` slots and ``window.<widget>``
+        attributes are both available at this point.
+        """
         self.window = window
 '''
 
@@ -80,6 +97,13 @@ def load_or_create_behavior_file(
         return None
     if ensure_scripts_root(project_file_path) is None:
         return None
+    # Phase 3 — drop ``_runtime.py`` next to the per-page subfolders
+    # so Behavior Field annotations (``target: ref[CTkLabel]``) have
+    # an importable ``ref`` marker. Idempotent: existing file is
+    # left untouched. Runs on every behavior-file create so legacy
+    # Phase 2 projects pick it up the first time the user adds
+    # any handler in v1.8.0+ without a separate migration step.
+    ensure_runtime_helpers(project_file_path)
     file_path = behavior_file_path(project_file_path, document)
     if file_path is None:
         return None
@@ -122,6 +146,141 @@ def parse_handler_methods(
         if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
             names.append(stmt.name)
     return names
+
+
+# ---------------------------------------------------------------------
+# Behavior Fields — Phase 3 Step 1
+# ---------------------------------------------------------------------
+class FieldSpec:
+    """One Inspector-bindable annotation found on a behavior class.
+
+    ``name`` is the Python attribute name; ``type_name`` is the
+    referenced widget type (e.g., ``"CTkLabel"``) extracted from
+    ``ref[<TypeName>]``; ``lineno`` is the 1-based source line for
+    F7-style jump (0 when unknown).
+    """
+
+    __slots__ = ("name", "type_name", "lineno")
+
+    def __init__(self, name: str, type_name: str, lineno: int = 0) -> None:
+        self.name = name
+        self.type_name = type_name
+        self.lineno = lineno
+
+
+def parse_behavior_class_fields(
+    file_path: str | Path,
+    class_name: str,
+) -> list[FieldSpec]:
+    """Scan a behavior file for ``<name>: ref[<TypeName>]`` annotations
+    on the named top-level class. Returns one ``FieldSpec`` per match
+    in source order. Empty list when the file's missing, unparseable,
+    the class isn't there, or no ref-annotations were declared.
+
+    The scanner only recognises the bare ``ref[<Name>]`` shape — bare
+    type hints (``target: CTkLabel``) and ``Optional[ref[CTkLabel]]``
+    style wraps are intentionally ignored so the user can still keep
+    plain Python typing on attributes without exposing them as
+    Inspector slots.
+    """
+    source = _read_source(file_path)
+    if source is None:
+        return []
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    target = _find_class(tree, class_name)
+    if target is None:
+        return []
+    out: list[FieldSpec] = []
+    for stmt in target.body:
+        if not isinstance(stmt, ast.AnnAssign):
+            continue
+        if not isinstance(stmt.target, ast.Name):
+            continue
+        type_name = _extract_ref_type(stmt.annotation)
+        if type_name is None:
+            continue
+        out.append(FieldSpec(stmt.target.id, type_name, stmt.lineno))
+    return out
+
+
+def _extract_ref_type(annotation: ast.expr) -> str | None:
+    """Return the inner type name from ``ref[<Name>]``. ``None`` when
+    the annotation isn't a ref subscript or the slice isn't a bare
+    ``Name`` node — anything more elaborate (parametrised generics,
+    string literals, attribute access) falls outside the supported
+    surface for v1.
+    """
+    if not isinstance(annotation, ast.Subscript):
+        return None
+    value = annotation.value
+    if not isinstance(value, ast.Name) or value.id != "ref":
+        return None
+    slice_node = annotation.slice
+    if isinstance(slice_node, ast.Name):
+        return slice_node.id
+    return None
+
+
+# ---------------------------------------------------------------------
+# Runtime helpers — `ref` marker class shipped with each project
+# ---------------------------------------------------------------------
+_RUNTIME_MODULE_NAME = "_runtime.py"
+_RUNTIME_TEMPLATE = '''"""CTkMaker behavior-runtime helpers — auto-generated.
+
+The ``ref`` marker lets behavior files declare Inspector-bindable
+attributes without forcing a CTkMaker package install. CTkMaker
+detects ``<name>: ref[<WidgetType>]`` annotations at parse time and
+exposes them as widget picker slots in the Properties panel; the
+exported app then assigns the real widget to each slot at runtime.
+
+Edits to this file are overwritten when CTkMaker regenerates it.
+"""
+from __future__ import annotations
+
+from typing import Generic, TypeVar
+
+T = TypeVar("T")
+
+
+class ref(Generic[T]):
+    """Inspector-bindable widget reference marker.
+
+    Has no runtime behavior on its own — annotations of the form
+    ``target: ref[CTkLabel]`` are resolved by the exporter into
+    ``self._behavior.target = self.<widget_var>`` assignments after
+    the UI is built.
+    """
+
+    pass
+'''
+
+
+def ensure_runtime_helpers(
+    project_file_path: str | Path | None,
+) -> Path | None:
+    """Write ``<project>/assets/scripts/_runtime.py`` if missing.
+    Idempotent — does not overwrite an existing file (so user edits
+    survive even though the docstring warns otherwise; a future
+    "regenerate runtime" command can clobber explicitly). Returns
+    the runtime-file path on success, ``None`` for unsaved projects
+    or write failures.
+    """
+    if not project_file_path:
+        return None
+    scripts_root = ensure_scripts_root(project_file_path)
+    if scripts_root is None:
+        return None
+    runtime_path = scripts_root / _RUNTIME_MODULE_NAME
+    if runtime_path.exists():
+        return runtime_path
+    try:
+        runtime_path.write_text(_RUNTIME_TEMPLATE, encoding="utf-8")
+    except OSError:
+        return None
+    return runtime_path
 
 
 def parse_method_docstrings(

@@ -576,6 +576,78 @@ class UnbindHandlerCommand(Command):
         self._do(project)
 
 
+class SetBehaviorFieldCommand(Command):
+    """Phase 3 visual scripting — assign / clear an Inspector slot
+    on a window's behavior class. ``new_widget_id`` may be ``""`` to
+    unbind the slot. Captures both before + after so the undo path
+    restores the prior binding (or empty state) precisely.
+
+    Field declarations live in the ``.py`` source — this command only
+    persists the user's widget-picker choice on the Document model.
+    """
+
+    def __init__(
+        self,
+        document_id: str,
+        field_name: str,
+        new_widget_id: str,
+    ):
+        self.document_id = document_id
+        self.field_name = field_name
+        self.new_widget_id = new_widget_id
+        # Captured on first redo() so undo can restore the precise
+        # previous mapping (including the absent-key state — we
+        # delete the entry rather than write back an empty string).
+        self._previous_widget_id: str | None = None
+        self._had_entry: bool = False
+        self.description = "Set behavior field"
+
+    def _doc(self, project: "Project"):
+        for d in project.documents:
+            if d.id == self.document_id:
+                return d
+        return None
+
+    def _do(self, project: "Project") -> None:
+        doc = self._doc(project)
+        if doc is None:
+            return
+        if self._previous_widget_id is None:
+            self._had_entry = self.field_name in doc.behavior_field_values
+            self._previous_widget_id = doc.behavior_field_values.get(
+                self.field_name, "",
+            )
+        if self.new_widget_id:
+            doc.behavior_field_values[self.field_name] = self.new_widget_id
+        else:
+            doc.behavior_field_values.pop(self.field_name, None)
+        project.event_bus.publish(
+            "behavior_field_changed",
+            self.document_id, self.field_name,
+        )
+
+    def _undo(self, project: "Project") -> None:
+        doc = self._doc(project)
+        if doc is None:
+            return
+        if self._had_entry and self._previous_widget_id:
+            doc.behavior_field_values[self.field_name] = (
+                self._previous_widget_id
+            )
+        else:
+            doc.behavior_field_values.pop(self.field_name, None)
+        project.event_bus.publish(
+            "behavior_field_changed",
+            self.document_id, self.field_name,
+        )
+
+    def undo(self, project: "Project") -> None:
+        self._undo(project)
+
+    def redo(self, project: "Project") -> None:
+        self._do(project)
+
+
 class MultiChangePropertyCommand(Command):
     """Bundle multiple property changes for a single widget into
     one undo step. Used when a single UI action triggers derived

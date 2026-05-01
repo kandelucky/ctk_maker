@@ -164,6 +164,12 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         bus.subscribe(
             "widget_handler_changed", self._on_widget_handler_changed,
         )
+        # Phase 3 — Behavior Field assignments mutate the active doc's
+        # field map; repaint the Window panel so Behavior Fields rows
+        # reflect the new bound widget label.
+        bus.subscribe(
+            "behavior_field_changed", self._on_behavior_field_changed,
+        )
 
         self._show_empty()
 
@@ -1216,6 +1222,69 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         delete_method_from_file(
             path, behavior_class_name(document), method_name,
         )
+
+    def _show_behavior_field_picker(
+        self, field_name: str, type_name: str,
+    ) -> None:
+        """Phase 3 — open the modal widget picker for a Behavior
+        Field row. Resolves the active document, runs
+        ``WidgetPickerDialog``, and on a positive pick (or explicit
+        Clear) dispatches a ``SetBehaviorFieldCommand`` so the choice
+        round-trips through history. Cancel returns ``None`` and the
+        slot stays as-is.
+        """
+        from app.core.commands import SetBehaviorFieldCommand
+        from app.ui.widget_picker_dialog import run_widget_picker
+
+        if self.project is None or self.project.active_document is None:
+            return
+        document = self.project.active_document
+        current_id = document.behavior_field_values.get(field_name, "")
+        result = run_widget_picker(
+            self.winfo_toplevel(),
+            document=document,
+            expected_type=type_name,
+            field_name=field_name,
+            current_widget_id=current_id,
+        )
+        if result is None:
+            return  # User cancelled.
+        # Cleared (empty string) and picked-a-widget paths share the
+        # same command — empty string instructs the command to drop
+        # the entry.
+        cmd = SetBehaviorFieldCommand(
+            document.id, field_name, result,
+        )
+        self.project.history.push(cmd)
+
+    def _clear_behavior_field(self, field_name: str) -> None:
+        """Inline ``[✕]`` shortcut — bypasses the picker for one-click
+        unbind from a slot the user already filled.
+        """
+        from app.core.commands import SetBehaviorFieldCommand
+        if self.project is None or self.project.active_document is None:
+            return
+        document = self.project.active_document
+        if field_name not in document.behavior_field_values:
+            return
+        cmd = SetBehaviorFieldCommand(document.id, field_name, "")
+        self.project.history.push(cmd)
+
+    def _on_behavior_field_changed(
+        self, document_id: str, *_args, **_kwargs,
+    ) -> None:
+        """Repaint after a SetBehaviorFieldCommand mutates the active
+        document's field map. Filtered to the active document so
+        cross-document edits (rare; mostly undo / redo on inactive
+        windows) don't trigger spurious rebuilds.
+        """
+        if self.project is None:
+            return
+        active = self.project.active_document
+        if active is None or active.id != document_id:
+            return
+        if self.current_id is not None:
+            self._rebuild()
 
     def _show_local_var_menu(self, event) -> None:
         """Right-click on a Local Variables row → "Open Variables
