@@ -13,8 +13,7 @@ Result is exposed via `.result` as one of:
 from __future__ import annotations
 
 import tkinter as tk
-from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import messagebox
 
 import customtkinter as ctk
 
@@ -156,17 +155,14 @@ class StartupDialog(ctk.CTkToplevel):
         self.destroy()
 
     def _on_browse(self) -> None:
-        path = filedialog.askopenfilename(
-            parent=self,
-            title="Open project",
-            filetypes=[
-                ("CTkMaker project", "*.ctkproj"),
-                ("All files", "*.*"),
-            ],
+        from app.core.paths import get_default_projects_dir
+        from app.ui.dialogs import prompt_open_project_folder
+        picked = prompt_open_project_folder(
+            self, initial_dir=str(get_default_projects_dir()),
         )
-        if not path:
+        if picked is None:
             return
-        self.result = ("open", path)
+        self.result = ("open", str(picked))
         self.destroy()
 
     def _on_create(self) -> None:

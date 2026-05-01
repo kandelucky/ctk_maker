@@ -22,7 +22,7 @@ from app.core.settings import load_settings, save_setting
 from app.io.code_exporter import export_project
 from app.io.project_loader import ProjectLoadError, load_project
 from app.io.project_saver import save_project
-from app.ui.dialogs import NewProjectSizeDialog
+from app.ui.dialogs import NewProjectSizeDialog, prompt_open_project_folder
 from app.ui.history_window import HistoryPanel, HistoryWindow
 from app.ui.variables_window import VariablesWindow
 from app.ui.main_menu import APPEARANCE_MODES, MenuMixin
@@ -704,14 +704,21 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
     def _on_open(self) -> None:
         if not self._confirm_discard_if_dirty():
             return
-        path = filedialog.askopenfilename(
-            parent=self,
-            title="Open project",
-            filetypes=PROJECT_FILE_TYPES,
-        )
-        if not path:
+        # Default to the parent of the currently-open project (or
+        # the user's projects root) so the picker lands one level
+        # above where the user actually clicks — i.e. on the list of
+        # projects, not inside one.
+        if self.project.folder_path:
+            initial = str(Path(self.project.folder_path).parent)
+        elif self._current_path:
+            initial = str(Path(self._current_path).parent.parent)
+        else:
+            from app.core.paths import get_default_projects_dir
+            initial = str(get_default_projects_dir())
+        picked = prompt_open_project_folder(self, initial_dir=initial)
+        if picked is None:
             return
-        self._open_path(path)
+        self._open_path(str(picked))
 
     def _on_recover_from_backup(self) -> None:
         """Open a ``.ctkproj.bak`` file as an untitled project so the

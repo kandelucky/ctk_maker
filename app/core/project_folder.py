@@ -142,6 +142,97 @@ def is_multi_page_project(scene_path: str | Path | None) -> bool:
 
 
 # ---------------------------------------------------------------------
+# Folder-pick inspection (Open-as-folder UX)
+# ---------------------------------------------------------------------
+class PickedFolderResult:
+    """What a folder the user picked in the Open dialog actually is.
+
+    ``kind`` distinguishes:
+        ``"multi_page"``    — has ``project.json``; ``folder`` is the
+                               root and the loader can take it as-is.
+        ``"legacy_single"`` — no ``project.json`` but exactly one
+                               ``.ctkproj`` at the root; ``page_path``
+                               points at it.
+        ``"ambiguous"``     — no ``project.json`` and >1 ``.ctkproj``
+                               at the root; ``candidates`` lists them
+                               so the caller can prompt.
+        ``"none"``          — neither marker found; not a CTkMaker
+                               project folder. ``message`` carries a
+                               user-facing hint.
+    """
+
+    __slots__ = ("kind", "folder", "page_path", "candidates", "message")
+
+    def __init__(
+        self,
+        kind: str,
+        folder: Path | None = None,
+        page_path: Path | None = None,
+        candidates: list[Path] | None = None,
+        message: str = "",
+    ) -> None:
+        self.kind = kind
+        self.folder = folder
+        self.page_path = page_path
+        self.candidates = candidates or []
+        self.message = message
+
+
+def inspect_picked_folder(folder: str | Path | None) -> PickedFolderResult:
+    """Classify a folder picked in the Open dialog.
+
+    Used by File → Open and the Welcome dialog so the user can pick
+    a project folder instead of hunting for the right ``.ctkproj``
+    inside ``assets/pages/``.
+    """
+    if not folder:
+        return PickedFolderResult(
+            "none", message="No folder selected.",
+        )
+    p = Path(folder)
+    if not p.is_dir():
+        return PickedFolderResult(
+            "none",
+            folder=p,
+            message=f"Not a folder:\n{p}",
+        )
+    if (p / PROJECT_META_FILE).is_file():
+        return PickedFolderResult("multi_page", folder=p)
+    # No project.json — fall back to legacy single-file detection by
+    # listing .ctkproj files at the root only (we don't recurse —
+    # the user picked *this* folder, not its descendants).
+    try:
+        ctkproj_files = sorted(
+            entry for entry in p.iterdir()
+            if entry.is_file() and entry.suffix.lower() == ".ctkproj"
+        )
+    except OSError as exc:
+        return PickedFolderResult(
+            "none",
+            folder=p,
+            message=f"Could not read folder:\n{exc}",
+        )
+    if len(ctkproj_files) == 1:
+        return PickedFolderResult(
+            "legacy_single", folder=p, page_path=ctkproj_files[0],
+        )
+    if len(ctkproj_files) > 1:
+        return PickedFolderResult(
+            "ambiguous", folder=p, candidates=ctkproj_files,
+        )
+    return PickedFolderResult(
+        "none",
+        folder=p,
+        message=(
+            "This folder isn't a CTkMaker project.\n\n"
+            "A project folder contains a 'project.json' marker "
+            "(multi-page projects) or a single '.ctkproj' file "
+            "(legacy single-file projects)."
+        ),
+    )
+
+
+# ---------------------------------------------------------------------
 # Read / write
 # ---------------------------------------------------------------------
 def read_project_meta(folder: str | Path) -> dict:
