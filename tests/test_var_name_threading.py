@@ -189,6 +189,40 @@ def test_reserved_name_build_ui_falls_back():
     assert id_map[btn.id] == "button_1"
 
 
+def test_inherited_ctk_method_names_fall_back():
+    """Names that shadow Tk root / CTk inherited methods (``title``,
+    ``geometry``, ``mainloop``, ``destroy``, ``configure``,
+    ``protocol``, ``after``, ``bind``, …) crash anything that
+    touches the window — CTkScrollableDropdown calling
+    ``root.title()``, CTk's own appearance / scaling internals,
+    even ``__init__``'s ``self.geometry(...)``. Validation pulls
+    the list dynamically from ``dir(ctk.CTk) ∪ dir(ctk.CTkToplevel)``
+    so we stay in sync as CTk evolves.
+    """
+    doc = _make_doc()
+    forbidden = [
+        "title", "geometry", "mainloop", "destroy",
+        "configure", "protocol", "after", "bind",
+    ]
+    for name in forbidden:
+        # Each gets its own widget — the resolver shares state per
+        # doc, so reuse would let the first non-rejection mask
+        # later ones.
+        n = _node("CTkButton", name)
+        doc.root_widgets.append(n)
+    id_map = _resolve_var_names(doc)
+    fallbacks = get_var_name_fallbacks()
+    intents_rejected = {row[1] for row in fallbacks}
+    for name in forbidden:
+        assert name in intents_rejected, (
+            f"expected '{name}' to be rejected as inherited"
+        )
+    # Every fallback should be a counter-shape (button_N), not the
+    # original name.
+    for n in doc.root_widgets:
+        assert id_map[n.id].startswith("button_")
+
+
 # ---------------------------------------------------------------------
 # Memoisation cache
 # ---------------------------------------------------------------------

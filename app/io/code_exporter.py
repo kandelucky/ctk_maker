@@ -181,15 +181,52 @@ _VAR_NAME_FALLBACKS: list[tuple[str, str, str, str]] = []
 # replay in lockstep without recomputing (and without double-
 # recording warnings).
 _NAME_MAP_CACHE: dict[str, dict[str, str]] = {}
-# Names the exporter declares on the window class that user-set
-# widget names must NOT shadow. Anything else (CTk inherited methods,
-# ``master``, Tk introspection) is the user's wound to inflict on
-# themselves — the warning system surfaces every fallback so they
-# can spot exotic shadowing the moment it engages.
+# Static reserved set — names the exporter itself emits on the window
+# class. Joined at check time with the lazy ``_ctk_inherited_names()``
+# set below so user-set widget names can't shadow Tk root methods like
+# ``title`` / ``geometry`` / ``mainloop`` / ``destroy`` / ``bind`` /
+# ``configure`` / ``after`` / ``protocol`` / ``winfo_*`` / ``wm_*``,
+# whose silent override breaks anything that touches the window
+# (CTkScrollableDropdown calling ``root.title()``, CTk's own
+# scaling, ``__init__`` calling ``self.geometry(...)``, etc.).
 _RESERVED_VAR_NAMES = frozenset({
     "_behavior",
     "_build_ui",
 })
+_CTK_INHERITED_NAMES_CACHE: frozenset[str] | None = None
+
+
+def _ctk_inherited_names() -> frozenset[str]:
+    """Every non-dunder attribute on ``ctk.CTk`` ∪ ``ctk.CTkToplevel``,
+    lazily computed once per process. Joined with
+    ``_RESERVED_VAR_NAMES`` at validation time so the resolver
+    rejects user-set widget Names that would shadow inherited
+    methods. Pulled lazily to keep ``code_exporter`` import-free of
+    CustomTkinter when nothing's actually exporting (test suites,
+    cold imports).
+
+    Filters dunders (``__init__``, ``__class__``, …) — those bounce
+    on ``str.isidentifier`` ∪ private-by-convention rules anyway, no
+    extra value in flagging them as "reserved". Single-underscore
+    names (``_widget_scaling``, ``_apply_appearance_mode``) DO stay
+    in the set — CTk's runtime touches them and a name collision
+    would break appearance switching / DPI scaling silently.
+    """
+    global _CTK_INHERITED_NAMES_CACHE
+    if _CTK_INHERITED_NAMES_CACHE is None:
+        try:
+            import customtkinter as _ctk
+            names = (
+                {n for n in dir(_ctk.CTk) if not n.startswith("__")}
+                | {
+                    n for n in dir(_ctk.CTkToplevel)
+                    if not n.startswith("__")
+                }
+            )
+        except Exception:
+            names = set()
+        _CTK_INHERITED_NAMES_CACHE = frozenset(names)
+    return _CTK_INHERITED_NAMES_CACHE
 
 
 def _is_non_textvariable_var_binding(
@@ -1189,12 +1226,14 @@ def _resolve_var_names(doc: Document) -> dict[str, str]:
     id_map: dict[str, str] = {}
     doc_label = str(getattr(doc, "name", "") or "Window")
 
+    inherited = _ctk_inherited_names()
+
     def _bad_reason(name: str) -> str | None:
         if not name.isidentifier():
             return "not a valid Python identifier"
         if _kw.iskeyword(name):
             return "Python keyword"
-        if name in _RESERVED_VAR_NAMES:
+        if name in _RESERVED_VAR_NAMES or name in inherited:
             return "reserved by exported code"
         return None
 
