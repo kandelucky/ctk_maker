@@ -38,7 +38,7 @@ DIM_FG = "#888888"
 TREE_BG = "#1e1e1e"
 TREE_FG = "#cccccc"
 TREE_SEL_BG = "#094771"
-TREE_ROW_HEIGHT = 20
+TREE_ROW_HEIGHT = 28
 TYPE_LABEL_FG = "#3b8ed0"
 FILTER_BG = "#1e1e1e"
 FILTER_BORDER = "#3c3c3c"
@@ -126,24 +126,30 @@ class ComponentsPanel(ctk.CTkFrame):
     # Layout
     # ------------------------------------------------------------------
     def _build_header(self) -> None:
+        # Full-width "Library actions" button — opens the New Folder /
+        # Import / Open-in-Explorer menu. The previous compact "+" was
+        # too cryptic; pairing the icon with a label and stretching the
+        # button across the panel width makes the affordance obvious.
         type_bar = ctk.CTkFrame(
-            self, fg_color=HEADER_BG, height=22, corner_radius=0,
+            self, fg_color=HEADER_BG, height=24, corner_radius=0,
         )
         type_bar.pack(fill="x", pady=(0, 2))
         type_bar.pack_propagate(False)
 
         from app.ui.icons import load_icon
-        plus_icon = load_icon("square-plus", size=14, color="#cccccc")
+        plus_icon = load_icon("square-plus", size=18, color="#cccccc")
         self._add_btn = ctk.CTkButton(
-            type_bar, text="" if plus_icon else "+",
+            type_bar, text="Library actions",
             image=plus_icon,
-            width=22, height=18, corner_radius=3,
+            compound="left",
+            height=24, corner_radius=3,
             font=("Segoe UI", 11, "bold"),
             fg_color=HEADER_BG, hover_color="#3a3a3a",
             text_color="#cccccc",
+            anchor="w",
             command=self._on_show_add_menu,
         )
-        self._add_btn.pack(side="right", padx=(0, 4))
+        self._add_btn.pack(fill="x", padx=4)
 
     def _build_filter(self) -> None:
         self._filter_var = tk.StringVar()
@@ -180,8 +186,19 @@ class ComponentsPanel(ctk.CTkFrame):
             style_name,
             background=TREE_BG, fieldbackground=TREE_BG,
             foreground=TREE_FG, rowheight=TREE_ROW_HEIGHT,
-            borderwidth=0, font=("Segoe UI", 9),
+            borderwidth=0, font=("Segoe UI", 11),
         )
+        # The default ttk Treeview layout wraps the tree area in a
+        # "Treeview.field" element that paints a 1px border on focus
+        # (the cyan rectangle the user sees around the panel). Strip
+        # the wrapper so only the bare tree area renders.
+        try:
+            style.layout(
+                style_name,
+                [("Treeview.treearea", {"sticky": "nswe"})],
+            )
+        except tk.TclError:
+            pass
 
         def _fixed_map(option: str):
             return [
@@ -200,7 +217,16 @@ class ComponentsPanel(ctk.CTkFrame):
         self._tree = ttk.Treeview(
             self._tree_wrap, columns=(), show="tree", style=style_name,
             selectmode="browse",
+            takefocus=False,
         )
+        # ttk.Treeview keeps the tk-level highlight border even with
+        # the wrap frame's highlightthickness zeroed — visible as a
+        # cyan rectangle around the panel when the tree gets focus.
+        # Strip it directly on the widget.
+        try:
+            self._tree.configure(highlightthickness=0, borderwidth=0)
+        except tk.TclError:
+            pass
         self._tree.pack(fill="both", expand=True)
         self._tree.tag_configure(
             "component_type", foreground=TYPE_LABEL_FG,

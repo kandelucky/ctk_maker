@@ -386,6 +386,7 @@ class MenuMixin:
     def _rebuild_recent_menu(self) -> None:
         from pathlib import Path
         from app.core.recent_files import load_recent
+        from app.core.project_folder import find_project_root
         self._recent_menu.delete(0, "end")
         # Filter missing files — the entry stays in recent.json so a
         # temporarily-unmounted drive doesn't lose its history, but
@@ -395,7 +396,12 @@ class MenuMixin:
             self._recent_menu.add_command(label="(empty)", state="disabled")
         else:
             for p in paths:
-                label = Path(p).name
+                # For multi-page projects the recent.json path points at
+                # `<project>/assets/pages/<page>.ctkproj`, so `Path(p).name`
+                # would surface the page filename. Walk up to the project
+                # root so the user sees the project's name in the menu.
+                root = find_project_root(p)
+                label = root.name if root is not None else Path(p).stem
                 self._recent_menu.add_command(
                     label=label,
                     command=lambda path=p: self._open_path(path),
