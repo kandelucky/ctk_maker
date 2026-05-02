@@ -54,6 +54,17 @@ _CURRENT_PROJECT_PATH: str | None = None
 _PREVIEW_SCREENSHOT_TEMPLATE = '''\
 # CTkMaker preview tools — title marker, orange ring, draggable F12 button.
 import tkinter as _ctkmaker_tk
+from tkinter.font import nametofont as _ctkmaker_nametofont
+from app.core.platform_compat import MOD_KEY
+
+def _ctkmaker_ui_font(**kw):
+    # Derive from Tk's named UI font so the floater + toast pick the
+    # platform's native UI face (Segoe UI on Win, .AppleSystemUIFont
+    # on Mac, DejaVu Sans on Linux) instead of a Win-only hardcode.
+    f = _ctkmaker_nametofont("TkDefaultFont").copy()
+    if kw:
+        f.configure(**kw)
+    return f
 
 # --- Title + ring — make it obvious this is a preview, not the
 # production window. 4 thin orange Frames at the edges (Tk's
@@ -126,7 +137,7 @@ _ctkmaker_inner.pack()
 def _ctkmaker_make_btn(text):
     return _ctkmaker_tk.Button(
         _ctkmaker_inner, text=text,
-        font=("Segoe UI", 9, "bold"), bg="#2d2d30", fg="#cccccc",
+        font=_ctkmaker_ui_font(size=9, weight="bold"), bg="#2d2d30", fg="#cccccc",
         activebackground="#3e3e42", activeforeground="#ffffff",
         bd=0, padx=10, pady=4,
         relief="flat",
@@ -150,7 +161,7 @@ def _ctkmaker_toast(message):
                         highlightbackground="#3a3a3a")
         lbl = _ctkmaker_tk.Label(
             toast, text=message,
-            font=("Segoe UI", 9, "bold"),
+            font=_ctkmaker_ui_font(size=9, weight="bold"),
             bg="#2d2d30", fg="#cccccc",
             padx=14, pady=6,
         )
@@ -2715,7 +2726,7 @@ def _text_clipboard_helper_lines() -> list[str]:
         '            return "break"',
         '    for cls in ("Entry", "Text"):',
         '        root.bind_class(cls, "<Button-3>", _popup, add="+")',
-        '        root.bind_class(cls, "<Control-KeyPress>", _ctrl, add="+")',
+        '        root.bind_class(cls, f"<{MOD_KEY}-KeyPress>", _ctrl, add="+")',
         "    # Clicks on non-text widgets (Frame, root, Button, etc.)",
         "    # force focus to the root so any previously-focused",
         "    # Entry / Text fires FocusOut — that's what CTk relies on",

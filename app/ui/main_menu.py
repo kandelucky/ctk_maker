@@ -25,6 +25,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox
 
+from app.core.platform_compat import MOD_LABEL_PLUS
 from app.ui.icons import load_tk_icon
 from app.ui.palette import CATALOG
 
@@ -139,8 +140,8 @@ class MenuMixin:
 
         # ---- File ----
         file_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
-        self._add_cmd(file_menu, "New...", self._on_new, icon="file-plus", accelerator="Ctrl+N")
-        self._add_cmd(file_menu, "Open...", self._on_open, icon="folder-open", accelerator="Ctrl+O")
+        self._add_cmd(file_menu, "New...", self._on_new, icon="file-plus", accelerator=f"{MOD_LABEL_PLUS}N")
+        self._add_cmd(file_menu, "Open...", self._on_open, icon="folder-open", accelerator=f"{MOD_LABEL_PLUS}O")
         self._add_cmd(
             file_menu, "Recover from Backup...",
             self._on_recover_from_backup, icon="rotate-ccw",
@@ -151,8 +152,8 @@ class MenuMixin:
         self._rebuild_recent_menu()
 
         file_menu.add_separator()
-        self._add_cmd(file_menu, "Save", self._on_save, icon="save", accelerator="Ctrl+S")
-        self._add_cmd(file_menu, "Save As...", self._on_save_as, icon="save-all", accelerator="Ctrl+Shift+S")
+        self._add_cmd(file_menu, "Save", self._on_save, icon="save", accelerator=f"{MOD_LABEL_PLUS}S")
+        self._add_cmd(file_menu, "Save As...", self._on_save_as, icon="save-all", accelerator=f"{MOD_LABEL_PLUS}Shift+S")
         file_menu.add_separator()
         self._add_cmd(
             file_menu, "Convert to Multi-Page Project...",
@@ -169,7 +170,7 @@ class MenuMixin:
             self._on_run_script, icon="tv-minimal-play",
         )
         file_menu.add_separator()
-        self._add_cmd(file_menu, "Quit", self._on_quit, icon="log-out", accelerator="Ctrl+Q")
+        self._add_cmd(file_menu, "Quit", self._on_quit, icon="log-out", accelerator=f"{MOD_LABEL_PLUS}Q")
         menubar.add_cascade(label="File", menu=file_menu)
 
         # ---- Edit ----
@@ -183,31 +184,31 @@ class MenuMixin:
         )
         self._edit_menu = edit_menu
         self._add_cmd(
-            edit_menu, "Undo", self._on_undo, accelerator="Ctrl+Z",
+            edit_menu, "Undo", self._on_undo, accelerator=f"{MOD_LABEL_PLUS}Z",
         )
         self._add_cmd(
-            edit_menu, "Redo", self._on_redo, accelerator="Ctrl+Y",
+            edit_menu, "Redo", self._on_redo, accelerator=f"{MOD_LABEL_PLUS}Y",
         )
         edit_menu.add_separator()
         self._add_cmd(
             edit_menu, "Cut", self._on_menu_cut,
-            accelerator="Ctrl+X",
+            accelerator=f"{MOD_LABEL_PLUS}X",
         )
         self._add_cmd(
             edit_menu, "Copy", self._on_menu_copy,
-            accelerator="Ctrl+C",
+            accelerator=f"{MOD_LABEL_PLUS}C",
         )
         self._add_cmd(
             edit_menu, "Paste", self._on_menu_paste,
-            accelerator="Ctrl+V",
+            accelerator=f"{MOD_LABEL_PLUS}V",
         )
         self._add_cmd(
             edit_menu, "Duplicate", self._on_menu_duplicate,
-            accelerator="Ctrl+D",
+            accelerator=f"{MOD_LABEL_PLUS}D",
         )
         self._add_cmd(
             edit_menu, "Rename", self._on_menu_rename,
-            accelerator="Ctrl+I",
+            accelerator=f"{MOD_LABEL_PLUS}I",
         )
         self._add_cmd(
             edit_menu, "Delete", self._on_menu_delete,
@@ -216,16 +217,16 @@ class MenuMixin:
         edit_menu.add_separator()
         self._add_cmd(
             edit_menu, "Select All", self._on_menu_select_all,
-            accelerator="Ctrl+A",
+            accelerator=f"{MOD_LABEL_PLUS}A",
         )
         edit_menu.add_separator()
         self._add_cmd(
             edit_menu, "Group", self._on_group_shortcut,
-            accelerator="Ctrl+G",
+            accelerator=f"{MOD_LABEL_PLUS}G",
         )
         self._add_cmd(
             edit_menu, "Ungroup", self._on_ungroup_shortcut,
-            accelerator="Ctrl+Shift+G",
+            accelerator=f"{MOD_LABEL_PLUS}Shift+G",
         )
         edit_menu.add_separator()
         self._build_align_submenu(edit_menu)
@@ -264,17 +265,17 @@ class MenuMixin:
         #          6=Rename, 7=Form Settings, 8=sep,
         #          9=Move Up, 10=Move Down
         self._add_cmd(form_menu, "Preview", self._on_preview,
-                      icon="play", accelerator="Ctrl+R")
+                      icon="play", accelerator=f"{MOD_LABEL_PLUS}R")
         self._add_cmd(form_menu, "Preview Active Dialog", self._on_preview_active,
-                      icon="square-play", accelerator="Ctrl+P")
+                      icon="square-play", accelerator=f"{MOD_LABEL_PLUS}P")
         form_menu.add_separator()
         self._add_cmd(form_menu, "Add Dialog", self._on_add_dialog,
-                      icon="plus", accelerator="Ctrl+M")
+                      icon="plus", accelerator=f"{MOD_LABEL_PLUS}M")
         self._add_cmd(form_menu, "Remove", self._on_remove_current_document,
                       icon="trash-2")
         form_menu.add_separator()
         self._add_cmd(form_menu, "Rename", self._on_rename_current_doc,
-                      icon="pencil", accelerator="Ctrl+I")
+                      icon="pencil", accelerator=f"{MOD_LABEL_PLUS}I")
         self._add_cmd(form_menu, "Window Settings", self._on_form_settings,
                       icon="settings")
         form_menu.add_separator()
@@ -346,7 +347,7 @@ class MenuMixin:
         self._add_cmd(
             settings_menu, "Preferences...",
             self._on_open_preferences, icon="settings",
-            accelerator="Ctrl+,",
+            accelerator=f"{MOD_LABEL_PLUS},",
         )
         menubar.add_cascade(label="Settings", menu=settings_menu)
 
@@ -354,7 +355,7 @@ class MenuMixin:
         help_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
         self._add_cmd(
             help_menu, "Documentation", self._on_widget_docs,
-            icon="book-open", accelerator="Ctrl+Shift+I",
+            icon="book-open", accelerator=f"{MOD_LABEL_PLUS}Shift+I",
         )
         help_menu.add_separator()
         self._add_cmd(

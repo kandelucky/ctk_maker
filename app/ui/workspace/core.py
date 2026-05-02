@@ -66,6 +66,7 @@ from app.widgets.layout_schema import (
     resolve_grid_drop_cell,
 )
 from app.widgets.registry import get_descriptor
+from app.core.platform_compat import MOD_KEY, MOD_LABEL_PLUS
 
 # ---- Drag + canvas ----------------------------------------------------------
 DRAG_THRESHOLD = 5
@@ -229,7 +230,7 @@ class Workspace(ctk.CTkFrame):
             "<ButtonRelease-2>", self.controls.on_middle_release,
         )
         self.canvas.bind("<Configure>", self._on_canvas_configure)
-        self.canvas.bind("<Control-MouseWheel>", self.zoom.handle_ctrl_wheel)
+        self.canvas.bind(f"<{MOD_KEY}-MouseWheel>", self.zoom.handle_ctrl_wheel)
         self.canvas.bind("<Button-3>", self._on_canvas_right_click)
 
     def _after_zoom_changed(self) -> None:
@@ -1609,7 +1610,7 @@ class Workspace(ctk.CTkFrame):
             # when the pointer happens to hover a widget instead of
             # empty canvas area.
             _safe_bind(
-                "<Control-MouseWheel>", self.zoom.handle_ctrl_wheel,
+                f"<{MOD_KEY}-MouseWheel>", self.zoom.handle_ctrl_wheel,
             )
             _safe_bind(
                 "<Button-3>",
@@ -1939,7 +1940,7 @@ class Workspace(ctk.CTkFrame):
         if can_group:
             menu.add_command(
                 label="Group",
-                accelerator="Ctrl+G",
+                accelerator=f"{MOD_LABEL_PLUS}G",
                 command=toplevel._on_group_shortcut,
             )
         if select_group_id:
@@ -1950,7 +1951,7 @@ class Workspace(ctk.CTkFrame):
         if can_ungroup:
             menu.add_command(
                 label="Ungroup",
-                accelerator="Ctrl+Shift+G",
+                accelerator=f"{MOD_LABEL_PLUS}Shift+G",
                 command=toplevel._on_ungroup_shortcut,
             )
 
