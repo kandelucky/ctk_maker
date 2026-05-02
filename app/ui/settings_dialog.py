@@ -57,6 +57,8 @@ KEY_GRID_STYLE = "grid_style"
 KEY_GRID_COLOR = "grid_color"
 KEY_GRID_SPACING = "grid_spacing"
 KEY_EDITOR_COMMAND = "editor_command"
+KEY_PREVIEW_FLOATER = "preview_show_floater"
+KEY_PREVIEW_CONSOLE = "preview_show_console"
 
 # Editor presets — labelled command templates for common Windows
 # editors. ``{file}`` and ``{line}`` are substituted by
@@ -169,6 +171,7 @@ class SettingsDialog(tk.Toplevel):
         notebook.add(self._build_defaults(notebook), text="Defaults")
         notebook.add(self._build_workspace(notebook), text="Workspace")
         notebook.add(self._build_editor(notebook), text="Editor")
+        notebook.add(self._build_preview(notebook), text="Preview")
         notebook.add(self._build_autosave(notebook), text="Autosave")
         notebook.add(
             self._build_notifications(notebook), text="Notifications",
@@ -531,6 +534,53 @@ class SettingsDialog(tk.Toplevel):
         if self._editor_preset_var.get() != target:
             self._editor_preset_var.set(target)
 
+    # ----- Preview tab -----
+
+    def _build_preview(self, parent: tk.Misc) -> tk.Frame:
+        tab = self._tab_frame(parent)
+        self._section_label(tab, "F5 preview window").pack(anchor="w")
+
+        # Defaults preserve existing behavior — both on.
+        self._preview_floater_var = tk.BooleanVar(
+            value=bool(self._initial.get(KEY_PREVIEW_FLOATER, True)),
+        )
+        self._preview_console_var = tk.BooleanVar(
+            value=bool(self._initial.get(KEY_PREVIEW_CONSOLE, True)),
+        )
+
+        cb_row = tk.Frame(tab, bg=BG)
+        cb_row.pack(fill="x", pady=(10, 4))
+        ctk.CTkCheckBox(
+            cb_row, text="Show preview tools (orange ring + Save/Copy buttons + title prefix)",
+            variable=self._preview_floater_var,
+            checkbox_width=18, checkbox_height=18,
+            font=("Segoe UI", 10),
+            fg_color="#0e639c", hover_color="#1177bb",
+        ).pack(anchor="w")
+
+        cb_row2 = tk.Frame(tab, bg=BG)
+        cb_row2.pack(fill="x", pady=(8, 4))
+        ctk.CTkCheckBox(
+            cb_row2, text="Show preview console (Windows console window for print + tracebacks)",
+            variable=self._preview_console_var,
+            checkbox_width=18, checkbox_height=18,
+            font=("Segoe UI", 10),
+            fg_color="#0e639c", hover_color="#1177bb",
+        ).pack(anchor="w")
+
+        self._hint(
+            tab,
+            "Both options apply to the next F5 preview launch — close "
+            "and re-open any active preview to see the change. The "
+            "preview-tools toggle controls the visible PREVIEW marker "
+            "(orange edge ring, title prefix) and the floating "
+            "Save / Copy buttons. The console toggle suppresses the "
+            "separate Windows console window — turn it off if you "
+            "don't want preview output to appear; turn it on to see "
+            "behavior-file print() output and crash tracebacks.",
+        ).pack(anchor="w", pady=(14, 0))
+        return tab
+
     # ----- Autosave tab -----
 
     def _build_autosave(self, parent: tk.Misc) -> tk.Frame:
@@ -675,6 +725,8 @@ class SettingsDialog(tk.Toplevel):
             KEY_EDITOR_COMMAND,
             self._editor_cmd_var.get().strip(),
         )
+        save_setting(KEY_PREVIEW_FLOATER, bool(self._preview_floater_var.get()))
+        save_setting(KEY_PREVIEW_CONSOLE, bool(self._preview_console_var.get()))
         if callable(self._on_workspace_changed):
             try:
                 self._on_workspace_changed()

@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 import tempfile
@@ -38,20 +39,80 @@ from app.ui.workspace import Workspace
 PROJECT_FILE_TYPES = [("CTkMaker project", "*.ctkproj"), ("All files", "*.*")]
 
 
+def _preview_show_console() -> bool:
+    """Read Settings → Preview → "Show preview console" (default True).
+    Surfaced as a helper so both ``_preview_console_flags`` and the
+    runner-vs-bare launch decision read the same value."""
+    if sys.platform != "win32":
+        return False
+    try:
+        from app.core.settings import load_settings
+        from app.ui.settings_dialog import KEY_PREVIEW_CONSOLE
+        return bool(load_settings().get(KEY_PREVIEW_CONSOLE, True))
+    except ImportError:
+        return True
+
+
+def _preview_show_floater() -> bool:
+    """Read Settings → Preview → "Show preview tools" (default True).
+    Off → exporter skips ``inject_preview_screenshot`` so no orange
+    ring, no Save/Copy buttons, no PREVIEW title prefix."""
+    try:
+        from app.core.settings import load_settings
+        from app.ui.settings_dialog import KEY_PREVIEW_FLOATER
+        return bool(load_settings().get(KEY_PREVIEW_FLOATER, True))
+    except ImportError:
+        return True
+
+
 def _preview_console_flags() -> dict:
-    """Subprocess kwargs that pop a separate console window for the
-    preview process so the user sees the behavior file's ``print``
-    output and any tracebacks that would otherwise vanish into the
-    GUI subprocess's invisible stdout/stderr. Windows-only — other
-    platforms typically launch the builder from a terminal already,
-    so the subprocess inherits that terminal's stdio.
+    """Subprocess kwargs controlling the preview process's console
+    visibility. Windows-only — other platforms inherit launching
+    terminal stdio.
+
+    - Console ON  → ``CREATE_NEW_CONSOLE`` (0x00000010) so behavior
+      ``print()`` and crash tracebacks land in a visible window.
+    - Console OFF → ``CREATE_NO_WINDOW`` (0x08000000) so no console
+      pops at all (preview runs silent — output is discarded).
     """
-    if sys.platform == "win32":
-        # CREATE_NEW_CONSOLE = 0x00000010. Using the int literal so
-        # the import works on non-Windows platforms (subprocess only
-        # exposes the constant on Windows).
-        return {"creationflags": 0x00000010}
-    return {}
+    if sys.platform != "win32":
+        return {}
+    return {"creationflags": 0x00000010 if _preview_show_console() else 0x08000000}
+
+
+def _spawn_preview(tmp_dir: Path, tmp_path: Path, cwd: str) -> subprocess.Popen:
+    """Launch the preview subprocess. When the console is on, route
+    through ``preview_runner.py`` so a crashing preview pauses on
+    "Press Enter" before its console disappears. When the console
+    is off, skip the runner — pause-on-error has nothing to display
+    against a hidden console — and spawn the preview directly with
+    ``CREATE_NO_WINDOW`` + ``DEVNULL`` stdio so output is silently
+    discarded.
+
+    The injected preview tools include ``print()`` calls with non-ASCII
+    characters (em-dash, arrow). When stdout is redirected to DEVNULL,
+    Python falls back to ``locale.getpreferredencoding()`` (cp1252 on
+    most Windows installs), which can't encode those — preview crashed
+    silently before mainloop. ``PYTHONIOENCODING=utf-8`` forces UTF-8
+    on the child process regardless of where stdio points.
+    """
+    py = _preview_python_executable()
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    if _preview_show_console():
+        runner_path = _write_preview_runner(tmp_dir)
+        return subprocess.Popen(
+            [py, str(runner_path)], cwd=cwd,
+            env=env,
+            **_preview_console_flags(),
+        )
+    return subprocess.Popen(
+        [py, str(tmp_path)], cwd=cwd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=env,
+        **_preview_console_flags(),
+    )
 
 
 def _preview_python_executable() -> str:
@@ -1711,7 +1772,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         try:
             export_project(
                 self.project, tmp_path,
-                inject_preview_screenshot=True,
+                inject_preview_screenshot=_preview_show_floater(),
             )
         except OSError:
             log_error("preview export")
@@ -1721,12 +1782,10 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             return
         if not _confirm_var_name_fallbacks(self):
             return
-        runner_path = _write_preview_runner(tmp_dir)
         try:
-            proc = subprocess.Popen(
-                [_preview_python_executable(), str(runner_path)],
-                cwd=str(_preview_cwd(self.project, tmp_dir)),
-                **_preview_console_flags(),
+            proc = _spawn_preview(
+                tmp_dir, tmp_path,
+                str(_preview_cwd(self.project, tmp_dir)),
             )
         except OSError:
             log_error("preview subprocess")
@@ -1761,7 +1820,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         try:
             export_project(
                 self.project, tmp_path, preview_dialog_id=doc_id,
-                inject_preview_screenshot=True,
+                inject_preview_screenshot=_preview_show_floater(),
             )
         except OSError:
             log_error("preview dialog export")
@@ -1775,12 +1834,10 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             return
         if not _confirm_var_name_fallbacks(self):
             return
-        runner_path = _write_preview_runner(tmp_dir)
         try:
-            proc = subprocess.Popen(
-                [_preview_python_executable(), str(runner_path)],
-                cwd=str(_preview_cwd(self.project, tmp_dir)),
-                **_preview_console_flags(),
+            proc = _spawn_preview(
+                tmp_dir, tmp_path,
+                str(_preview_cwd(self.project, tmp_dir)),
             )
         except OSError:
             log_error("preview dialog subprocess")
