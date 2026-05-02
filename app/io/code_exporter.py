@@ -55,7 +55,6 @@ _PREVIEW_SCREENSHOT_TEMPLATE = '''\
 # CTkMaker preview tools — title marker, orange ring, draggable F12 button.
 import tkinter as _ctkmaker_tk
 from tkinter.font import nametofont as _ctkmaker_nametofont
-from app.core.platform_compat import MOD_KEY
 
 def _ctkmaker_ui_font(**kw):
     # Derive from Tk's named UI font so the floater + toast pick the
@@ -2695,7 +2694,11 @@ def _text_clipboard_helper_lines() -> list[str]:
     return [
         "def _setup_text_clipboard(root):",
         '    """Add right-click menu and keyboard shortcuts to all text fields."""',
+        "    import sys",
         "    import tkinter as tk",
+        '    # Resolve at runtime so the exported app adapts to the END',
+        "    # USER's platform — not the platform that ran the exporter.",
+        '    _mod_key = "Command" if sys.platform == "darwin" else "Control"',
         "    def _popup(event):",
         "        widget = event.widget",
         "        # tk.Entry uses .selection_present(); tk.Text uses",
@@ -2726,7 +2729,7 @@ def _text_clipboard_helper_lines() -> list[str]:
         '            return "break"',
         '    for cls in ("Entry", "Text"):',
         '        root.bind_class(cls, "<Button-3>", _popup, add="+")',
-        '        root.bind_class(cls, f"<{MOD_KEY}-KeyPress>", _ctrl, add="+")',
+        '        root.bind_class(cls, f"<{_mod_key}-KeyPress>", _ctrl, add="+")',
         "    # Clicks on non-text widgets (Frame, root, Button, etc.)",
         "    # force focus to the root so any previously-focused",
         "    # Entry / Text fires FocusOut — that's what CTk relies on",
