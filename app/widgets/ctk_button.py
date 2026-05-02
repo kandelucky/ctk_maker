@@ -24,6 +24,15 @@ class CTkButtonDescriptor(WidgetDescriptor):
     type_name = "CTkButton"
     display_name = "Button"
     prefers_fill_in_layout = True
+    # Live workspace + exported .py both render through ``CircleButton``
+    # — a CTkButton override that lifts the rounded-corner reservation
+    # in ``_create_grid`` so full-circle / pill buttons with text stop
+    # overflowing their nominal frame size. ``is_ctk_class = False`` +
+    # ``ctk_class_name = "CircleButton"`` make the exporter emit a bare
+    # ``CircleButton(...)`` constructor call (the class definition is
+    # inlined into the generated file by ``code_exporter``).
+    is_ctk_class = False
+    ctk_class_name = "CircleButton"
 
     default_properties = {
         # Geometry
@@ -398,7 +407,8 @@ class CTkButtonDescriptor(WidgetDescriptor):
         kwargs = cls.transform_properties(properties)
         if init_kwargs:
             kwargs.update(init_kwargs)
-        widget = ctk.CTkButton(master, **kwargs)
+        from app.widgets.runtime.circle_button import CircleButton
+        widget = CircleButton(master, **kwargs)
         cls.apply_state(widget, properties)
         return widget
 

@@ -849,6 +849,9 @@ def _generate_code_inner(
     needs_circular_progress = any(
         w.widget_type == "CircularProgress" for w in scoped_widgets
     )
+    needs_circle_button = any(
+        w.widget_type == "CTkButton" for w in scoped_widgets
+    )
     needs_tk_import = (
         bool(project.variables)
         or has_local_vars
@@ -913,6 +916,10 @@ def _generate_code_inner(
 
     if needs_circular_progress:
         lines.extend(_circular_progress_class_lines())
+        lines.append("")
+
+    if needs_circle_button:
+        lines.extend(_circle_button_class_lines())
         lines.append("")
 
     if needs_auto_hover_text:
@@ -2351,6 +2358,21 @@ def _image_source_with_color(
         f"_tint_image({_py_literal(normalised_path)}, "
         f"{_py_literal(color)}, ({iw}, {ih}))"
     )
+
+
+def _circle_button_class_lines() -> list[str]:
+    """Inline the ``CircleButton`` runtime class (CTkButton override
+    that lifts the rounded-corner reservation in ``_create_grid``) into
+    generated ``.py`` files. Source lives at
+    ``app/widgets/runtime/circle_button.py`` for builder use; reading
+    via ``inspect`` keeps a single edit propagating to every export.
+    The standard import block already covers ``customtkinter as ctk``.
+    """
+    import inspect
+
+    from app.widgets.runtime.circle_button import CircleButton
+
+    return inspect.getsource(CircleButton).splitlines()
 
 
 def _circular_progress_class_lines() -> list[str]:
