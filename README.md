@@ -8,7 +8,7 @@ Drag-and-drop visual designer for **[CustomTkinter](https://github.com/TomSchima
 >
 > **Major additions since v1.3.0:** **Phase 2 visual scripting** (v1.6.0+) — pick any event-firing widget on the canvas, the Properties panel grows a Unity-style **Events** group with per-method action rows; each window owns a behavior class in `<project>/assets/scripts/<page>/<window>.py` that the exporter wires up automatically. **Phase 3 Behavior Fields** (v1.8.0+) — declare typed slots `target_label: ref[CTkLabel]` on the behavior class and the Inspector grows a `[Pick…]` button per slot for assigning canvas widgets. **CircularProgress widget** (v1.9.0+). **Publish-to-Community** flow with MIT license gate (v1.4.0+) + Window components + the [Community Hub site](https://kandelucky.github.io/ctkmaker-hub/) (v1.5.0+).
 >
-> ⚠️ **Tested on Windows only.** macOS and Linux are not verified for this release — feedback and contributions welcome.
+> ⚠️ **Tested on Windows only.** macOS and Linux are not verified — see [issue #5](https://github.com/kandelucky/ctk_maker/issues/5) for the running list of known incompatibilities + how to help.
 
 [![CTkMaker canvas](docs/screenshots/canvas.png)](docs/screenshots/canvas.png)
 
