@@ -27,8 +27,16 @@ import customtkinter as ctk
 
 from app.core.settings import load_settings, save_setting
 
-DIALOG_W = 600
-DIALOG_H = 500
+DIALOG_W = 700
+DIALOG_H = 520
+
+SIDEBAR_W = 170
+SIDEBAR_BG = "#252526"
+SIDEBAR_ROW_BG = "#252526"
+SIDEBAR_ROW_HOVER_BG = "#2a2d2e"
+SIDEBAR_ROW_SELECTED_BG = "#37373d"
+SIDEBAR_ROW_FG = "#cccccc"
+SIDEBAR_ROW_SELECTED_FG = "#ffffff"
 
 BG = "#1e1e1e"
 PANEL_BG = "#252526"
@@ -131,31 +139,13 @@ class SettingsDialog(tk.Toplevel):
     # Style
     # ------------------------------------------------------------------
     def _configure_ttk_style(self) -> None:
-        # Dark notebook tabs to match the rest of the dialog.
-        style = ttk.Style(self)
-        style_name = "Settings.TNotebook"
-        tab_style = "Settings.TNotebook.Tab"
+        # ttk style left in place for any future ttk widgets used inside
+        # the panes (filedialog, etc.) — the main layout no longer uses
+        # ttk.Notebook, so no Settings.TNotebook style is needed here.
         try:
-            style.theme_use("default")
+            ttk.Style(self).theme_use("default")
         except tk.TclError:
             pass
-        style.configure(
-            style_name,
-            background=BG, borderwidth=0,
-            tabmargins=(8, 8, 8, 0),
-        )
-        style.configure(
-            tab_style,
-            background=PANEL_BG, foreground=HEADER_FG,
-            padding=(16, 8),
-            font=("Segoe UI", 10),
-            borderwidth=0,
-        )
-        style.map(
-            tab_style,
-            background=[("selected", "#094771")],
-            foreground=[("selected", "#ffffff")],
-        )
 
     # ------------------------------------------------------------------
     # Layout
@@ -164,24 +154,85 @@ class SettingsDialog(tk.Toplevel):
         outer = tk.Frame(self, bg=BG)
         outer.pack(fill="both", expand=True)
 
-        notebook = ttk.Notebook(outer, style="Settings.TNotebook")
-        notebook.pack(fill="both", expand=True, padx=12, pady=(12, 6))
-        self._notebook = notebook
+        body = tk.Frame(outer, bg=BG)
+        body.pack(fill="both", expand=True)
 
-        notebook.add(self._build_defaults(notebook), text="Defaults")
-        notebook.add(self._build_workspace(notebook), text="Workspace")
-        notebook.add(self._build_editor(notebook), text="Editor")
-        notebook.add(self._build_preview(notebook), text="Preview")
-        notebook.add(self._build_autosave(notebook), text="Autosave")
-        notebook.add(
-            self._build_notifications(notebook), text="Notifications",
-        )
-        notebook.add(self._build_appearance(notebook), text="Appearance")
+        # Sidebar — fixed-width column of clickable rows on the left.
+        sidebar = tk.Frame(body, bg=SIDEBAR_BG, width=SIDEBAR_W)
+        sidebar.pack(side="left", fill="y")
+        sidebar.pack_propagate(False)
+        self._sidebar = sidebar
 
+        # Content host — selected pane fills the remaining width.
+        content = tk.Frame(body, bg=BG)
+        content.pack(side="left", fill="both", expand=True)
+        self._content = content
+
+        # Per-tab state. Panes built up-front so their tk.Variables
+        # exist when ``_persist`` reads them, regardless of which tab
+        # the user clicked. Sidebar rows render in declared order.
+        self._tab_panels: dict[str, tk.Frame] = {}
+        self._tab_rows: dict[str, tk.Label] = {}
+        self._selected_tab: str | None = None
+        # Priority order — Workspace + Preview on top because they
+        # affect every working session; Appearance last because the
+        # theme dropdown is currently disabled.
+        tabs = [
+            ("Workspace", self._build_workspace),
+            ("Preview", self._build_preview),
+            ("Defaults", self._build_defaults),
+            ("Editor", self._build_editor),
+            ("Autosave", self._build_autosave),
+            ("Notifications", self._build_notifications),
+            ("Appearance", self._build_appearance),
+        ]
+        for name, builder in tabs:
+            panel = builder(content)
+            # Built but not packed — _select_tab will pack the active
+            # one and forget the previous.
+            self._tab_panels[name] = panel
+            row = self._make_sidebar_row(name)
+            self._tab_rows[name] = row
+
+        self._select_tab("Workspace")
         self._build_footer()
 
+    def _make_sidebar_row(self, name: str) -> tk.Label:
+        row = tk.Label(
+            self._sidebar, text=name, anchor="w",
+            bg=SIDEBAR_ROW_BG, fg=SIDEBAR_ROW_FG,
+            font=("Segoe UI", 11),
+            padx=14, pady=7,
+            cursor="hand2",
+        )
+        row.pack(fill="x")
+        row.bind("<Button-1>", lambda _e, n=name: self._select_tab(n))
+        row.bind("<Enter>", lambda _e, n=name: self._on_row_hover(n, True))
+        row.bind("<Leave>", lambda _e, n=name: self._on_row_hover(n, False))
+        return row
+
+    def _on_row_hover(self, name: str, entering: bool) -> None:
+        if name == self._selected_tab:
+            return
+        row = self._tab_rows[name]
+        row.configure(bg=SIDEBAR_ROW_HOVER_BG if entering else SIDEBAR_ROW_BG)
+
+    def _select_tab(self, name: str) -> None:
+        if name == self._selected_tab:
+            return
+        if self._selected_tab is not None:
+            self._tab_panels[self._selected_tab].pack_forget()
+            self._tab_rows[self._selected_tab].configure(
+                bg=SIDEBAR_ROW_BG, fg=SIDEBAR_ROW_FG,
+            )
+        self._tab_panels[name].pack(fill="both", expand=True)
+        self._tab_rows[name].configure(
+            bg=SIDEBAR_ROW_SELECTED_BG, fg=SIDEBAR_ROW_SELECTED_FG,
+        )
+        self._selected_tab = name
+
     def _tab_frame(self, parent: tk.Misc) -> tk.Frame:
-        f = tk.Frame(parent, bg=BG, padx=22, pady=20)
+        f = tk.Frame(parent, bg=BG, padx=14, pady=12)
         return f
 
     def _section_label(self, parent: tk.Misc, text: str) -> tk.Label:
@@ -193,8 +244,11 @@ class SettingsDialog(tk.Toplevel):
     def _hint(self, parent: tk.Misc, text: str) -> tk.Label:
         return tk.Label(
             parent, text=text, bg=BG, fg=DIM_FG,
-            font=("Segoe UI", 9), anchor="w", justify="left",
-            wraplength=DIALOG_W - 80,
+            font=("Segoe UI", 10), anchor="w", justify="left",
+            # Sidebar takes SIDEBAR_W on the left + tab_frame padx — give
+            # the hint room to wrap without bleeding past the content
+            # pane's right edge.
+            wraplength=DIALOG_W - SIDEBAR_W - 60,
         )
 
     # ----- Appearance tab -----
@@ -206,7 +260,7 @@ class SettingsDialog(tk.Toplevel):
         row.pack(anchor="w", pady=(8, 4))
         tk.Label(
             row, text="Mode:", bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 10), width=12, anchor="w",
+            font=("Segoe UI", 11), width=12, anchor="w",
         ).pack(side="left")
         self._theme_var = tk.StringVar(
             value=self._initial.get(KEY_THEME, "Dark"),
@@ -214,7 +268,7 @@ class SettingsDialog(tk.Toplevel):
         # Disabled until the Light theme polish lands — leaving it
         # visible keeps the user's mental model of where the option is.
         self._theme_menu = ctk.CTkOptionMenu(
-            row, values=list(THEME_OPTIONS), width=160, height=28,
+            row, values=list(THEME_OPTIONS), width=160, height=24,
             variable=self._theme_var, dynamic_resizing=False,
             state="disabled",
             **_DROPDOWN_STYLE,
@@ -224,7 +278,7 @@ class SettingsDialog(tk.Toplevel):
             tab,
             "Theme switching is being polished; coming soon. Use the "
             "toolbar toggle if you need to switch ad-hoc in the meantime.",
-        ).pack(anchor="w", pady=(8, 0))
+        ).pack(anchor="w", pady=(6, 0))
         return tab
 
     # ----- Defaults tab -----
@@ -234,10 +288,10 @@ class SettingsDialog(tk.Toplevel):
         self._section_label(tab, "New Project").pack(anchor="w")
 
         loc_row = tk.Frame(tab, bg=BG)
-        loc_row.pack(fill="x", pady=(10, 6))
+        loc_row.pack(fill="x", pady=(6, 4))
         tk.Label(
             loc_row, text="Save location:", bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 10), width=14, anchor="w",
+            font=("Segoe UI", 11), width=14, anchor="w",
         ).pack(side="left")
         self._dir_var = tk.StringVar(
             value=self._initial.get(KEY_DEFAULT_DIR)
@@ -245,11 +299,11 @@ class SettingsDialog(tk.Toplevel):
         )
         ctk.CTkEntry(
             loc_row, textvariable=self._dir_var,
-            width=300, height=28,
+            width=300, height=24,
         ).pack(side="left", padx=(8, 6))
         ctk.CTkButton(
-            loc_row, text="Browse...", width=80, height=28,
-            corner_radius=4, fg_color="#3c3c3c", hover_color="#4a4a4a",
+            loc_row, text="Browse...", width=80, height=24,
+            corner_radius=3, fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_browse_dir,
         ).pack(side="left")
 
@@ -257,7 +311,7 @@ class SettingsDialog(tk.Toplevel):
         size_row.pack(fill="x")
         tk.Label(
             size_row, text="Project size:", bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 10), width=14, anchor="w",
+            font=("Segoe UI", 11), width=14, anchor="w",
         ).pack(side="left")
         self._w_var = tk.StringVar(
             value=str(
@@ -265,7 +319,7 @@ class SettingsDialog(tk.Toplevel):
             ),
         )
         ctk.CTkEntry(
-            size_row, textvariable=self._w_var, width=80, height=28,
+            size_row, textvariable=self._w_var, width=80, height=24,
         ).pack(side="left", padx=(8, 4))
         tk.Label(
             size_row, text="×", bg=BG, fg=DIM_FG,
@@ -277,11 +331,11 @@ class SettingsDialog(tk.Toplevel):
             ),
         )
         ctk.CTkEntry(
-            size_row, textvariable=self._h_var, width=80, height=28,
+            size_row, textvariable=self._h_var, width=80, height=24,
         ).pack(side="left", padx=(4, 0))
         tk.Label(
             size_row, text="px", bg=BG, fg=DIM_FG,
-            font=("Segoe UI", 10),
+            font=("Segoe UI", 11),
         ).pack(side="left", padx=(6, 0))
 
         self._hint(
@@ -289,7 +343,7 @@ class SettingsDialog(tk.Toplevel):
             "These defaults are used by the Welcome screen on launch. "
             "File → New always uses the active project's dimensions "
             "as a starting point.",
-        ).pack(anchor="w", pady=(14, 0))
+        ).pack(anchor="w", pady=(10, 0))
         return tab
 
     def _on_browse_dir(self) -> None:
@@ -309,10 +363,10 @@ class SettingsDialog(tk.Toplevel):
         self._section_label(tab, "Builder grid").pack(anchor="w")
 
         style_row = tk.Frame(tab, bg=BG)
-        style_row.pack(fill="x", pady=(10, 6))
+        style_row.pack(fill="x", pady=(6, 4))
         tk.Label(
             style_row, text="Style:", bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 10), width=14, anchor="w",
+            font=("Segoe UI", 11), width=14, anchor="w",
         ).pack(side="left")
         self._grid_style_var = tk.StringVar(
             value=str(
@@ -322,7 +376,7 @@ class SettingsDialog(tk.Toplevel):
         ctk.CTkOptionMenu(
             style_row, values=list(GRID_STYLE_OPTIONS),
             variable=self._grid_style_var,
-            width=160, height=28, dynamic_resizing=False,
+            width=160, height=24, dynamic_resizing=False,
             **_DROPDOWN_STYLE,
         ).pack(side="left", padx=(8, 0))
 
@@ -330,7 +384,7 @@ class SettingsDialog(tk.Toplevel):
         color_row.pack(fill="x", pady=(0, 6))
         tk.Label(
             color_row, text="Color:", bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 10), width=14, anchor="w",
+            font=("Segoe UI", 11), width=14, anchor="w",
         ).pack(side="left")
         self._grid_color_var = tk.StringVar(
             value=str(
@@ -339,7 +393,7 @@ class SettingsDialog(tk.Toplevel):
         )
         ctk.CTkEntry(
             color_row, textvariable=self._grid_color_var,
-            width=110, height=28,
+            width=110, height=24,
         ).pack(side="left", padx=(8, 6))
         self._grid_swatch = tk.Frame(
             color_row, bg=self._grid_color_var.get(),
@@ -357,7 +411,7 @@ class SettingsDialog(tk.Toplevel):
         spacing_row.pack(fill="x")
         tk.Label(
             spacing_row, text="Spacing (px):", bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 10), width=14, anchor="w",
+            font=("Segoe UI", 11), width=14, anchor="w",
         ).pack(side="left")
         self._grid_spacing_var = tk.StringVar(
             value=str(
@@ -366,7 +420,7 @@ class SettingsDialog(tk.Toplevel):
         )
         ctk.CTkEntry(
             spacing_row, textvariable=self._grid_spacing_var,
-            width=80, height=28,
+            width=80, height=24,
         ).pack(side="left", padx=(8, 0))
 
         self._hint(
@@ -375,7 +429,7 @@ class SettingsDialog(tk.Toplevel):
             "own Window Settings grid controls are kept (loadable .ctkproj "
             "files still carry them) but are overridden globally as long "
             "as these values are set.",
-        ).pack(anchor="w", pady=(14, 0))
+        ).pack(anchor="w", pady=(10, 0))
         return tab
 
     def _pick_grid_color(self) -> None:
@@ -424,17 +478,17 @@ class SettingsDialog(tk.Toplevel):
         self._editor_preset_var = tk.StringVar(value=preset_label)
 
         preset_row = tk.Frame(tab, bg=BG)
-        preset_row.pack(fill="x", pady=(10, 6))
+        preset_row.pack(fill="x", pady=(6, 4))
         tk.Label(
             preset_row, text="Editor:", bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 10), width=14, anchor="w",
+            font=("Segoe UI", 11), width=14, anchor="w",
         ).pack(side="left")
         ctk.CTkOptionMenu(
             preset_row,
             values=[label for label, _ in EDITOR_PRESETS] + ["Custom"],
             variable=self._editor_preset_var,
             command=self._on_editor_preset_change,
-            width=320, height=28, dynamic_resizing=False,
+            width=320, height=24, dynamic_resizing=False,
             **_DROPDOWN_STYLE,
         ).pack(side="left", padx=(8, 0))
 
@@ -442,7 +496,7 @@ class SettingsDialog(tk.Toplevel):
         cmd_row.pack(fill="x", pady=(0, 6))
         tk.Label(
             cmd_row, text="Command:", bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 10), width=14, anchor="w",
+            font=("Segoe UI", 11), width=14, anchor="w",
         ).pack(side="left")
         self._editor_cmd_var = tk.StringVar(value=current_cmd)
         # Manual edits should flip the preset label to "Custom" so
@@ -452,7 +506,7 @@ class SettingsDialog(tk.Toplevel):
         )
         cmd_entry = ctk.CTkEntry(
             cmd_row, textvariable=self._editor_cmd_var,
-            width=420, height=28,
+            width=420, height=24,
         )
         cmd_entry.pack(side="left", padx=(8, 0))
 
@@ -463,19 +517,19 @@ class SettingsDialog(tk.Toplevel):
             "IDLE in order. ``{file}`` is replaced with the path; "
             "``{line}`` with the method's line number; ``{folder}`` "
             "with the project root.",
-        ).pack(anchor="w", pady=(14, 0))
+        ).pack(anchor="w", pady=(10, 0))
 
         # Recommendation block — VS Code is what we test against
         # most heavily and what the planned CTkMaker extension will
         # plug into. The download link is a clickable text label so
         # the user can grab it without leaving the dialog.
         rec_frame = tk.Frame(tab, bg=BG)
-        rec_frame.pack(anchor="w", pady=(18, 0), fill="x")
+        rec_frame.pack(anchor="w", pady=(12, 0), fill="x")
         tk.Label(
             rec_frame,
             text="★ Recommended:  VS Code",
             bg=BG, fg="#7dd3fc",
-            font=("Segoe UI", 10, "bold"),
+            font=("Segoe UI", 11, "bold"),
             anchor="w",
         ).pack(anchor="w")
         tk.Label(
@@ -485,7 +539,7 @@ class SettingsDialog(tk.Toplevel):
                 "terminal, and a dedicated CTkMaker extension is on "
                 "the roadmap."
             ),
-            bg=BG, fg=DIM_FG, font=("Segoe UI", 9),
+            bg=BG, fg=DIM_FG, font=("Segoe UI", 10),
             anchor="w", justify="left",
             wraplength=DIALOG_W - 80,
         ).pack(anchor="w", pady=(2, 4))
@@ -549,12 +603,12 @@ class SettingsDialog(tk.Toplevel):
         )
 
         cb_row = tk.Frame(tab, bg=BG)
-        cb_row.pack(fill="x", pady=(10, 4))
+        cb_row.pack(fill="x", pady=(6, 2))
         ctk.CTkCheckBox(
             cb_row, text="Show preview tools (orange ring + Save/Copy buttons + title prefix)",
             variable=self._preview_floater_var,
-            checkbox_width=18, checkbox_height=18,
-            font=("Segoe UI", 10),
+            checkbox_width=16, checkbox_height=16,
+            font=("Segoe UI", 11),
             fg_color="#0e639c", hover_color="#1177bb",
         ).pack(anchor="w")
 
@@ -563,8 +617,8 @@ class SettingsDialog(tk.Toplevel):
         ctk.CTkCheckBox(
             cb_row2, text="Show preview console (Windows console window for print + tracebacks)",
             variable=self._preview_console_var,
-            checkbox_width=18, checkbox_height=18,
-            font=("Segoe UI", 10),
+            checkbox_width=16, checkbox_height=16,
+            font=("Segoe UI", 11),
             fg_color="#0e639c", hover_color="#1177bb",
         ).pack(anchor="w")
 
@@ -578,7 +632,7 @@ class SettingsDialog(tk.Toplevel):
             "separate Windows console window — turn it off if you "
             "don't want preview output to appear; turn it on to see "
             "behavior-file print() output and crash tracebacks.",
-        ).pack(anchor="w", pady=(14, 0))
+        ).pack(anchor="w", pady=(10, 0))
         return tab
 
     # ----- Autosave tab -----
@@ -591,7 +645,7 @@ class SettingsDialog(tk.Toplevel):
         row.pack(fill="x", pady=(10, 0))
         tk.Label(
             row, text="Interval (minutes):", bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 10), width=18, anchor="w",
+            font=("Segoe UI", 11), width=18, anchor="w",
         ).pack(side="left")
         self._autosave_var = tk.StringVar(
             value=str(
@@ -599,7 +653,7 @@ class SettingsDialog(tk.Toplevel):
             ),
         )
         ctk.CTkEntry(
-            row, textvariable=self._autosave_var, width=80, height=28,
+            row, textvariable=self._autosave_var, width=80, height=24,
         ).pack(side="left", padx=(8, 0))
 
         self._hint(
@@ -608,7 +662,7 @@ class SettingsDialog(tk.Toplevel):
             "written to a sibling .autosave file every N minutes. "
             "0 disables the timer. Untitled projects are not autosaved. "
             "Changes apply on next launch.",
-        ).pack(anchor="w", pady=(14, 0))
+        ).pack(anchor="w", pady=(10, 0))
         return tab
 
     # ----- Notifications tab -----
@@ -619,12 +673,12 @@ class SettingsDialog(tk.Toplevel):
 
         self._reset_advisories_var = tk.BooleanVar(value=False)
         cb_row = tk.Frame(tab, bg=BG)
-        cb_row.pack(fill="x", pady=(10, 4))
+        cb_row.pack(fill="x", pady=(6, 2))
         ctk.CTkCheckBox(
             cb_row, text="Reset dismissed warnings on OK",
             variable=self._reset_advisories_var,
-            checkbox_width=18, checkbox_height=18,
-            font=("Segoe UI", 10),
+            checkbox_width=16, checkbox_height=16,
+            font=("Segoe UI", 11),
             fg_color="#0e639c", hover_color="#1177bb",
         ).pack(anchor="w")
 
@@ -645,21 +699,21 @@ class SettingsDialog(tk.Toplevel):
         sep = tk.Frame(self, bg="#3a3a3a", height=1)
         sep.pack(fill="x")
         foot = tk.Frame(self, bg=BG)
-        foot.pack(fill="x", padx=18, pady=12)
+        foot.pack(fill="x", padx=14, pady=10)
         ctk.CTkButton(
-            foot, text="OK", width=90, height=32, corner_radius=4,
+            foot, text="OK", width=80, height=24, corner_radius=3,
             command=self._on_ok,
         ).pack(side="right")
         ctk.CTkButton(
-            foot, text="Cancel", width=90, height=32, corner_radius=4,
+            foot, text="Cancel", width=80, height=24, corner_radius=3,
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_cancel,
-        ).pack(side="right", padx=(0, 8))
+        ).pack(side="right", padx=(0, 6))
         ctk.CTkButton(
-            foot, text="Apply", width=90, height=32, corner_radius=4,
+            foot, text="Apply", width=80, height=24, corner_radius=3,
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_apply,
-        ).pack(side="right", padx=(0, 8))
+        ).pack(side="right", padx=(0, 6))
 
     # ------------------------------------------------------------------
     # Persistence
