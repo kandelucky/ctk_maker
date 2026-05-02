@@ -23,6 +23,7 @@ import customtkinter as ctk
 
 from app.core.assets import copy_to_assets, resolve_asset_token
 from app.core.logger import log_error
+from app.ui.dialog_utils import safe_grab_set
 from app.core.paths import ASSETS_DIR_NAME
 from app.ui.icons import load_tk_icon
 
@@ -64,7 +65,7 @@ class ImagePickerDialog(tk.Toplevel):
         self.configure(bg=BG)
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
 
         self.geometry(f"{DIALOG_W}x{DIALOG_H}")
         self._center_on_parent(parent)

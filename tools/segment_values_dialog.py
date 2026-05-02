@@ -16,6 +16,8 @@ import tkinter as tk
 
 import customtkinter as ctk
 
+from app.ui.dialog_utils import safe_grab_set
+
 
 BG = "#1e1e1e"
 ROW_BG = "#2d2d2d"
@@ -43,7 +45,7 @@ class SegmentValuesDialog(ctk.CTkToplevel):
         self.minsize(280, 240)
         self.resizable(True, True)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
 
         self.result: list[str] | None = None
 

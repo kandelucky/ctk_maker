@@ -11,6 +11,7 @@ from pathlib import Path
 
 import customtkinter as ctk
 
+from app.ui.dialog_utils import safe_grab_set
 from app.ui.system_fonts import derive_mono_font
 
 
@@ -25,7 +26,7 @@ class ComponentExportChoiceDialog(ctk.CTkToplevel):
         self.title("Export component")
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
 
         self._source_path = source_path
         self._parent = parent
@@ -182,7 +183,7 @@ class _MITTextWindow(ctk.CTkToplevel):
         self.title("MIT License — full text")
         self.geometry("560x440")
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
         self.configure(fg_color="#1a1a1a")
 
         textbox = ctk.CTkTextbox(
@@ -214,7 +215,7 @@ class ComponentPublishLicenseDialog(ctk.CTkToplevel):
         self.title("License agreement")
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
         self.configure(fg_color="#1a1a1a")
 
         self._source_path = source_path

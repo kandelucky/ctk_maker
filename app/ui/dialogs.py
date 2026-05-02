@@ -22,6 +22,7 @@ from app.core.project_folder import (
     page_file_path,
     read_project_meta,
 )
+from app.ui.dialog_utils import safe_grab_set
 from app.ui.new_project_form import NewProjectForm
 
 
@@ -91,7 +92,7 @@ class AddDialogSizeDialog(ctk.CTkToplevel):
         self.title("Add dialog")
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
 
         self.result: tuple[str, int, int] | None = None
         self._main_w = int(main_w)
@@ -269,7 +270,7 @@ class NewProjectSizeDialog(ctk.CTkToplevel):
         self.title("New project")
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
 
         self.result: tuple[str, str, int, int] | None = None
 
@@ -514,7 +515,7 @@ class ConfirmDialog(tk.Toplevel):
         self.geometry(f"{W}x{H}+{px - W // 2}+{py - H // 2}")
         self.lift()
         self.focus_set()
-        self.grab_set()
+        safe_grab_set(self)
 
     def _build(
         self, message: str, ok_text: str, cancel_text: str,
@@ -582,7 +583,7 @@ class ChoiceDialog(tk.Toplevel):
         self.geometry(f"{W}x{H}+{px - W // 2}+{py - H // 2}")
         self.lift()
         self.focus_set()
-        self.grab_set()
+        safe_grab_set(self)
 
     def _build(
         self, message: str,
@@ -700,7 +701,7 @@ class _AmbiguousProjectPicker(tk.Toplevel):
         self.geometry(f"{W}x{H}+{px - W // 2}+{py - H // 2}")
         self.lift()
         self._listbox.focus_set()
-        self.grab_set()
+        safe_grab_set(self)
 
     def _on_ok(self) -> None:
         sel = self._listbox.curselection()

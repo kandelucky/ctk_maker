@@ -35,6 +35,8 @@ except Exception:
     def load_icon(*_args, **_kwargs):
         return None
 
+from app.ui.dialog_utils import safe_grab_set
+
 REPO = "kandelucky/ctk_maker"
 NEW_ISSUE_URL = f"https://github.com/{REPO}/issues/new"
 KNOWN_ISSUES_URL = f"https://github.com/{REPO}/issues"
@@ -349,10 +351,7 @@ class BugReporterWindow(ctk.CTkToplevel):
         self.geometry("660x590")
         self.minsize(560, 540)
         self.transient(master)
-        try:
-            self.grab_set()
-        except Exception:
-            pass
+        safe_grab_set(self)
 
         self._mode = ctk.StringVar(value="Bug Report")
         self._title_var = ctk.StringVar()
@@ -1065,10 +1064,7 @@ class ReportDialog(ctk.CTkToplevel):
         self.geometry("520x460")
         self.minsize(480, 420)
         self.transient(master)
-        try:
-            self.grab_set()
-        except Exception:
-            pass
+        safe_grab_set(self)
 
         ctk.CTkLabel(
             self,

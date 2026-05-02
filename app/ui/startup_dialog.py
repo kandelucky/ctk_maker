@@ -17,6 +17,7 @@ from tkinter import messagebox
 
 import customtkinter as ctk
 
+from app.ui.dialog_utils import safe_grab_set
 from app.ui.new_project_form import NewProjectForm
 from app.ui.recent_list import RecentList
 
@@ -34,7 +35,7 @@ class StartupDialog(ctk.CTkToplevel):
         self.title("CTkMaker")
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
         self.configure(fg_color=BG)
 
         self.result: tuple | None = None

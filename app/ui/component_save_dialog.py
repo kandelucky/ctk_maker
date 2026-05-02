@@ -17,6 +17,7 @@ from pathlib import Path
 import customtkinter as ctk
 
 from app.core.component_paths import COMPONENT_EXT
+from app.ui.dialog_utils import safe_grab_set
 
 _FORBIDDEN = set('\\/:*?"<>|')
 _ROOT_LABEL = "(root)"
@@ -54,7 +55,7 @@ class ComponentSaveDialog(ctk.CTkToplevel):
         self.title("Save as component")
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
 
         self.result: tuple[str, Path] | None = None
         self._root_dir = components_dir

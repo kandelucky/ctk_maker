@@ -22,6 +22,8 @@ from tkinter import messagebox
 import customtkinter as ctk
 from PIL import Image, ImageTk
 
+from app.ui.dialog_utils import safe_grab_set
+
 LUCIDE_DIR = Path(__file__).resolve().parent.parent / "assets" / "lucide"
 PNG_DIR = LUCIDE_DIR / "png-icons"
 CATS_FILE = LUCIDE_DIR / "categories.json"
@@ -73,7 +75,7 @@ class LucideIconPickerDialog(tk.Toplevel):
         self.configure(bg=BG)
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
         self.geometry(f"{DIALOG_W}x{DIALOG_H}")
         self._center_on_parent(parent)
 

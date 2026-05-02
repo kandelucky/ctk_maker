@@ -31,6 +31,7 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
 from app.core.paths import get_default_projects_dir
+from app.ui.dialog_utils import safe_grab_set
 from app.ui.icons import load_icon
 
 DIALOG_W = 540
@@ -72,7 +73,7 @@ class SaveAsDialog(ctk.CTkToplevel):
         self.title("Save As")
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
         self.geometry(f"{DIALOG_W}x{DIALOG_H}")
         self.configure(fg_color="#1e1e1e")
 

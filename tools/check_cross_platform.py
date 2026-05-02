@@ -53,6 +53,12 @@ PATTERNS: dict[str, str] = {
     # Accelerator labels of the form "Ctrl+S" — Win/Linux convention.
     # Use ``f"{MOD_LABEL_PLUS}S"`` so Mac users see ``"⌘S"`` instead.
     "ctrl_label": r'"Ctrl\+',
+    # Raw ``.grab_set()`` on a Toplevel silently crashes the dialog on
+    # macOS when the window isn't yet mapped. Use
+    # ``safe_grab_set(toplevel)`` from ``app.ui.dialog_utils`` — it
+    # waits for visibility first. The helper itself is the only file
+    # allowed to keep one raw call (the implementation).
+    "raw_grab_set": r'\.grab_set\(\)',
 }
 
 

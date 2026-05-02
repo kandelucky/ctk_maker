@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING
 
 import customtkinter as ctk
 
+from app.ui.dialog_utils import safe_grab_set
+
 if TYPE_CHECKING:
     from app.io.component_io import VarConflict
 
@@ -32,7 +34,7 @@ class ComponentVarConflictDialog(ctk.CTkToplevel):
         super().__init__(parent)
         self.title("Resolve variable conflicts")
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
 
         self._conflicts = conflicts
         self._row_state: list[dict] = []

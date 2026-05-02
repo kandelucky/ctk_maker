@@ -31,6 +31,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 import customtkinter as ctk
 
+from app.ui.dialog_utils import safe_grab_set
 from app.ui.icons import load_icon
 from app.core.settings import (
     load_description_hints, save_description_hints,
@@ -98,7 +99,7 @@ class TextEditorDialog(ctk.CTkToplevel):
         self.minsize(560 if show_hints else 440, 340)
         self.resizable(True, True)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
 
         self.result: str | None = None
         self._show_hints = show_hints
@@ -463,7 +464,7 @@ class _AddHintDialog(ctk.CTkToplevel):
         self.minsize(360, 140)
         self.resizable(True, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
         self.result: str | None = None
 
         ctk.CTkLabel(
@@ -514,7 +515,7 @@ class _ManageHintsDialog(ctk.CTkToplevel):
         self.geometry("520x360")
         self.minsize(380, 240)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
 
         wrap = tk.Frame(self, bg=BG, highlightthickness=0)
         wrap.pack(fill="both", expand=True, padx=14, pady=(14, 0))

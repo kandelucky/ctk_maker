@@ -22,6 +22,9 @@
   "app/ui/component_window_insert_dialog.py": {
     "segoe_ui": 3
   },
+  "app/ui/dialog_utils.py": {
+    "raw_grab_set": 1
+  },
   "app/ui/dialogs.py": {
     "segoe_ui": 23
   },

@@ -29,6 +29,7 @@ from app.core.commands import (
     ChangePropertyCommand,
     MultiChangePropertyCommand,
 )
+from app.ui.dialog_utils import safe_grab_set
 from app.ui.icons import load_tk_icon
 from app.widgets.layout_schema import (
     LAYOUT_DISPLAY_NAMES,
@@ -677,7 +678,7 @@ class CommitMixin:
         dialog = tk.Toplevel(top)
         dialog.title("Disabled icon colour")
         dialog.transient(top)
-        dialog.grab_set()
+        safe_grab_set(dialog)
         dialog.configure(bg="#2b2b2b")
         dialog.resizable(False, False)
         msg = (
