@@ -67,11 +67,20 @@ class CTkSliderDescriptor(WidgetDescriptor):
         {"name": "y", "type": "number", "label": "Y",
          "group": "Geometry", "pair": "pos"},
 
+        # Min depends on orientation: the "long axis" (length) needs a
+        # bigger minimum than the "short axis" (thickness). For a
+        # horizontal slider width=length and height=thickness; flipping
+        # to vertical swaps both the dimensions (via on_prop_recreate)
+        # AND the role of each property, so the schema constraint has
+        # to follow.
         {"name": "width", "type": "number", "label": "W",
          "group": "Geometry", "pair": "size", "row_label": "Size",
-         "min": 20, "max": 2000},
+         "min": lambda p: 20 if p.get("orientation") == "horizontal" else 8,
+         "max": 2000},
         {"name": "height", "type": "number", "label": "H",
-         "group": "Geometry", "pair": "size", "min": 8, "max": 2000},
+         "group": "Geometry", "pair": "size",
+         "min": lambda p: 8 if p.get("orientation") == "horizontal" else 20,
+         "max": 2000},
 
         # --- Rectangle ---------------------------------------------------
         {"name": "corner_radius", "type": "number", "label": "",
@@ -80,10 +89,20 @@ class CTkSliderDescriptor(WidgetDescriptor):
         {"name": "button_corner_radius", "type": "number", "label": "",
          "group": "Rectangle",
          "row_label": "Button Radius", "min": 1, "max": 50},
+        # Button length caps at half the slider's long axis. For a
+        # horizontal slider that's width; for a vertical slider it's
+        # height (since on_prop_recreate swaps dimensions on flip).
         {"name": "button_length", "type": "number", "label": "",
          "group": "Rectangle",
          "row_label": "Button Length", "min": 1,
-         "max": lambda p: max(1, int(p.get("width", 200)) // 2)},
+         "max": lambda p: max(
+             1,
+             int(
+                 p.get("width", 200)
+                 if p.get("orientation") == "horizontal"
+                 else p.get("height", 200)
+             ) // 2,
+         )},
         {"name": "border_enabled", "type": "boolean", "label": "",
          "group": "Rectangle", "subgroup": "Border",
          "row_label": "Enabled"},

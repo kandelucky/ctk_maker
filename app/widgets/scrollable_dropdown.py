@@ -294,8 +294,15 @@ class ScrollableDropdown:
             pass
 
     def _on_root_configure(self, _event) -> None:
-        if str(self.top.state()) != "withdrawn":
-            self._reposition()
+        # Mirror _on_root_click's tk.TclError guard — root window can
+        # fire <Configure> after the dropdown Toplevel was destroyed
+        # (e.g. F5 preview teardown), and `self.top.state()` then raises
+        # "bad window path" four times per dropdown into the console.
+        try:
+            if str(self.top.state()) != "withdrawn":
+                self._reposition()
+        except tk.TclError:
+            pass
 
     def _on_root_click(self, event) -> None:
         if str(self.top.state()) == "withdrawn":

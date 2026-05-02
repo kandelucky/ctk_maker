@@ -48,11 +48,20 @@ class CTkProgressBarDescriptor(WidgetDescriptor):
         {"name": "y", "type": "number", "label": "Y",
          "group": "Geometry", "pair": "pos"},
 
+        # Min depends on orientation: the "long axis" (length) needs a
+        # bigger minimum than the "short axis" (thickness). For a
+        # horizontal bar width=length and height=thickness; flipping to
+        # vertical swaps both the dimensions (via on_prop_recreate) AND
+        # the role of each property, so the schema constraint has to
+        # follow.
         {"name": "width", "type": "number", "label": "W",
          "group": "Geometry", "pair": "size", "row_label": "Size",
-         "min": 10, "max": 2000},
+         "min": lambda p: 10 if p.get("orientation") == "horizontal" else 4,
+         "max": 2000},
         {"name": "height", "type": "number", "label": "H",
-         "group": "Geometry", "pair": "size", "min": 4, "max": 2000},
+         "group": "Geometry", "pair": "size",
+         "min": lambda p: 4 if p.get("orientation") == "horizontal" else 10,
+         "max": 2000},
 
         # --- Rectangle ---------------------------------------------------
         {"name": "corner_radius", "type": "number", "label": "",
