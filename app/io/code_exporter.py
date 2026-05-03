@@ -676,11 +676,21 @@ _PACK_BALANCE_HELPER = '''def _ctkmaker_balance_pack(container, axis):
     children = container.pack_slaves()
     if not children:
         return
+    # CTkScrollableFrame is itself the inner tk.Frame (its __init__
+    # does ``tkinter.Frame.__init__(self, master=self._parent_canvas)``)
+    # which auto-grows to fit children's natural size. Reading
+    # ``container.winfo_*`` here returns that grown content size, so
+    # flex math against it never shrinks anything (avail == content
+    # total → slot == nominal width). Read from the outer
+    # ``_parent_canvas`` instead so distribution targets the actual
+    # viewport — that's what the user sees and what the canvas
+    # preview already pivots on.
+    size_source = getattr(container, "_parent_canvas", None) or container
     if axis == "width":
-        raw_size = container.winfo_width()
+        raw_size = size_source.winfo_width()
         pad_key = "padx"
     else:
-        raw_size = container.winfo_height()
+        raw_size = size_source.winfo_height()
         pad_key = "pady"
     if raw_size <= 1:
         return
@@ -731,8 +741,23 @@ _PACK_BALANCE_HELPER = '''def _ctkmaker_balance_pack(container, axis):
     slot = max(1, avail // len(grow_kids))
     for c in grow_kids:
         floor = getattr(c, "_ctkmaker_min", 1)
+        target = max(floor, slot)
+        # Image (CTkLabel + CTkImage) needs the embedded CTkImage
+        # resized explicitly — configuring the label alone leaves
+        # the picture at its constructor-time size=(W, H).
+        if getattr(c, "_ctkmaker_image", False):
+            ctk_img = getattr(c, "_image", None)
+            if ctk_img is not None:
+                try:
+                    cur_size = ctk_img.cget("size")
+                    if axis == "width":
+                        ctk_img.configure(size=(target, cur_size[1]))
+                    else:
+                        ctk_img.configure(size=(cur_size[0], target))
+                except Exception:
+                    pass
         try:
-            c.configure(**{axis: max(floor, slot)})
+            c.configure(**{axis: target})
         except Exception:
             pass
 '''
@@ -2284,16 +2309,30 @@ def _emit_subtree(
     # runtime helper redistributes pack children's main-axis size
     # whenever the container resizes (initial map fires <Configure>
     # too — covers first paint without an extra after_idle call).
+    # CTkScrollableFrame needs add="+" — its __init__ already binds
+    # <Configure> to update the inner canvas's scrollregion, and a
+    # plain bind() would replace it (default add=None), leaving the
+    # scrollbar with no content bbox to size against. The +variant
+    # lets both fire so grow children get their flex slot AND the
+    # scrollregion stays accurate. The helper itself works on SF
+    # because SF inherits tk.Frame as its inner content frame —
+    # children pack onto SF directly and SF.pack_slaves() returns
+    # them.
     if (
         child_layout in ("vbox", "hbox") and node.children
         and not is_tabview
     ):
         _balance_axis = "height" if child_layout == "vbox" else "width"
+        _bind_extra = (
+            ', add="+"'
+            if node.widget_type == "CTkScrollableFrame" else ""
+        )
         lines.append(
             f"{child_master}.bind("
             f"\"<Configure>\", "
             f"lambda _e, _c={child_master}: "
-            f"_ctkmaker_balance_pack(_c, {_balance_axis!r}))",
+            f"_ctkmaker_balance_pack(_c, {_balance_axis!r})"
+            f"{_bind_extra})",
         )
         lines.append("")
 
@@ -2645,6 +2684,11 @@ def _emit_widget(
         lines.append(f"{full_name}._ctkmaker_min = {_min}")
         if str(props.get("stretch", "fixed")) in ("fixed", "fill"):
             lines.append(f"{full_name}._ctkmaker_fixed = True")
+        # Image is a CTkLabel + CTkImage; the helper needs to resize
+        # the embedded CTkImage, not just the label box. Marker tells
+        # _ctkmaker_balance_pack to reach through to widget._image.
+        if node.widget_type == "Image":
+            lines.append(f"{full_name}._ctkmaker_image = True")
 
     # Phase 2 — bind-style events (CTkEntry / CTkTextbox <Return> etc.)
     # land here, AFTER geometry so the widget is fully constructed and

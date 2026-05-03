@@ -494,6 +494,7 @@ class LayoutOverlayManager:
             return
 
         fixed_total = 0
+        fixed_siblings: list = []
         grow_siblings: list = []
         for sib in all_siblings:
             stretch = str(sib.properties.get("stretch", "fixed"))
@@ -507,6 +508,7 @@ class LayoutOverlayManager:
                 except (TypeError, ValueError):
                     w = 0
                 fixed_total += max(0, w)
+                fixed_siblings.append((sib, max(0, w)))
             else:
                 grow_siblings.append(sib)
         total_spacing = spacing * max(0, len(all_siblings) - 1)
@@ -518,6 +520,38 @@ class LayoutOverlayManager:
 
         widget_views = getattr(self.workspace, "widget_views", {}) or {}
         anchor_views = getattr(self.workspace, "_anchor_views", {}) or {}
+        # Restore fixed/fill siblings to their model-stored size on
+        # the main axis. Without this, a stretch transition (grow →
+        # fixed / fill) leaves the widget at whatever slot the helper
+        # had configured under the previous stretch — visually stuck
+        # at the old grow_slot instead of jumping to the user's
+        # nominal width. Cross-axis is left to pack's fill kwarg.
+        #
+        # Note on DPI: ``widget.configure(width=N)`` takes N in CTk
+        # units and ScalingTracker multiplies by the DPI factor
+        # internally, so the canvas helper must NOT divide by scale
+        # again — the runtime ``_ctkmaker_balance_pack`` does because
+        # there ``container.winfo_width()`` arrives in raw pixels and
+        # the helper needs to convert into CTk units before configure;
+        # the canvas helper already starts from ``container_size`` in
+        # model units, which is the same coordinate space configure()
+        # expects. See ``zoom_controller._dpi_factor`` for the rule.
+        for sibling, model_size in fixed_siblings:
+            if model_size <= 0:
+                continue
+            entry = widget_views.get(sibling.id)
+            if entry is None:
+                continue
+            widget, _ = entry
+            sib_anchor = anchor_views.get(sibling.id, widget)
+            target = max(1, int(model_size * zoom))
+            self._resize_image_if_needed(
+                sibling, widget, axis_key, target, zoom,
+            )
+            try:
+                sib_anchor.configure(**{axis_key: target})
+            except tk.TclError:
+                pass
         for sibling in grow_siblings:
             entry = widget_views.get(sibling.id)
             if entry is None:
@@ -526,24 +560,49 @@ class LayoutOverlayManager:
             sib_anchor = anchor_views.get(sibling.id, widget)
             floor = content_min_axis(sibling, axis_key)
             slot = max(floor, grow_slot)
-            # CTk widgets render configure(width=N) at N × DPI scaling
-            # raw pixels, so feeding ``slot * zoom`` (which is what we
-            # want as the *raw* pixel size) directly would over-allocate
-            # by the scaling factor on hi-DPI displays. Divide by the
-            # widget's own scaling so the rendered raw size matches
-            # ``slot * zoom`` and pack's parcel math stays in sync.
+            target = max(1, int(slot * zoom))
+            self._resize_image_if_needed(
+                sibling, widget, axis_key, target, zoom,
+            )
             try:
-                scale = float(sib_anchor._get_widget_scaling())
-            except (AttributeError, Exception):
-                scale = 1.0
-            if scale <= 0:
-                scale = 1.0
-            try:
-                sib_anchor.configure(
-                    **{axis_key: max(1, int(slot * zoom / scale))},
-                )
+                sib_anchor.configure(**{axis_key: target})
             except tk.TclError:
                 pass
+
+    def _resize_image_if_needed(
+        self, sibling, widget, axis_key, target_main, zoom,
+    ) -> None:
+        """Image is a CTkLabel wrapping a CTkImage. The label box
+        shrinks via ``configure(width=N)`` like every other widget,
+        but the embedded CTkImage carries its own ``size=(W, H)``
+        from its constructor and ignores the label's resize. Reach
+        through to the CTkImage and resize it explicitly so the
+        rendered picture actually shrinks/grows alongside the label.
+        Cross axis follows the model — pack's fill kwarg handles
+        cross-axis stretch separately and the user-set value is the
+        right reference here.
+        """
+        if getattr(sibling, "widget_type", "") != "Image":
+            return
+        ctk_img = getattr(widget, "_image", None)
+        if ctk_img is None:
+            return
+        cross_key = "height" if axis_key == "width" else "width"
+        try:
+            cross_model = int(sibling.properties.get(cross_key, 0) or 0)
+        except (TypeError, ValueError):
+            cross_model = 0
+        target_cross = (
+            max(1, int(cross_model * zoom)) if cross_model > 0
+            else target_main
+        )
+        try:
+            if axis_key == "width":
+                ctk_img.configure(size=(target_main, target_cross))
+            else:
+                ctk_img.configure(size=(target_cross, target_main))
+        except Exception:
+            pass
 
     def _apply_grid_manager(
         self, anchor_widget, parent_node, child_node,
