@@ -892,6 +892,37 @@ class Workspace(ctk.CTkFrame):
             widget_id, prop_name, value, node, descriptor,
             widget, window_id,
         )
+        # v1.10.2 flex-shrink: width/height edits propagate to the
+        # vbox/hbox rebalance loop in two directions.
+        # 1. Edit on a child whose parent uses pack layout → re-budget
+        #    siblings (a fixed sibling growing eats budget away from
+        #    the grow ones).
+        # 2. Edit on a container that *itself* uses pack layout →
+        #    re-budget its children (the container's main axis
+        #    changed, so each grow child's slot follows).
+        if prop_name in ("width", "height") and node is not None:
+            self._maybe_rebalance_after_size_edit(node)
+
+    def _maybe_rebalance_after_size_edit(self, node) -> None:
+        """Trigger ``rebalance_pack_siblings`` when a width/height
+        edit lands on (a) a child of a vbox/hbox parent or (b) a
+        vbox/hbox container itself. Either way the budget shifts and
+        grow siblings need fresh slot math.
+        """
+        parent_node = getattr(node, "parent", None)
+        if parent_node is not None:
+            parent_layout = normalise_layout_type(
+                parent_node.properties.get("layout_type", "place"),
+            )
+            if parent_layout in ("vbox", "hbox"):
+                self.layout_overlay.rebalance_pack_siblings(
+                    parent_node, parent_layout,
+                )
+        own_layout = normalise_layout_type(
+            node.properties.get("layout_type", "place"),
+        )
+        if own_layout in ("vbox", "hbox") and node.children:
+            self.layout_overlay.rebalance_pack_siblings(node, own_layout)
 
     def _handle_window_property(self, prop_name: str) -> None:
         """Window (virtual) node props don't touch a real CTk widget —

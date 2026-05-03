@@ -540,17 +540,29 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         node = self.project.get_widget(widget_id)
         if node is None:
             return
-        new_states = self._compute_disabled_states(
+        # Capture the pre-update state before the rebuild so the
+        # row-tag flip loop below can detect transitions correctly.
+        prev_states = dict(self._disabled_states)
+        self._disabled_states = self._compute_disabled_states(
             descriptor, node.properties,
         )
+        # Re-apply managed-layout disable AFTER the schema-driven
+        # recompute — _compute_disabled_states returns a fresh dict
+        # without the parent-layout-aware x/y/W/H entries, so without
+        # this call the geometry fields would re-open whenever any
+        # property changes (notably ``stretch``: changing grow→fill
+        # in an hbox child should disable height but leave width
+        # editable, and that flip won't show up unless we re-derive
+        # the managed-layout state on every commit).
+        self._apply_managed_layout_disabled(node)
+        new_states = self._disabled_states
         changed: list[str] = []
         for p in self._effective_schema(descriptor):
             name = p["name"]
-            before = self._disabled_states.get(name, False)
+            before = prev_states.get(name, False)
             after = new_states.get(name, False)
             if before != after:
                 changed.append(name)
-        self._disabled_states = new_states
         for name in changed:
             p = self._find_prop(descriptor, name)
             if p is None:

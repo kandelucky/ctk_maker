@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import tkinter as tk
 
+from app.widgets.content_min import content_min_axis
 from app.widgets.layout_schema import (
     LAYOUT_DEFAULTS,
     LAYOUT_NODE_ONLY_KEYS,
@@ -409,10 +410,13 @@ class LayoutOverlayManager:
         parent_layout = normalise_layout_type(
             parent_node.properties.get("layout_type", "place"),
         ) if parent_node is not None else "place"
-        if stretch == "grow" and parent_layout in ("vbox", "hbox"):
-            self._apply_grow_equal_split(
-                anchor_widget, parent_node, parent_layout,
-            )
+        if parent_layout in ("vbox", "hbox"):
+            # Always rebalance — fixed siblings keep their nominal
+            # width, grow/fill siblings flex-shrink with content_min
+            # floor. Old behavior gated on stretch=="grow" only,
+            # which left fresh "fill"/"fixed" drops un-rebalanced
+            # against existing siblings.
+            self.rebalance_pack_siblings(parent_node, parent_layout)
         elif is_composite:
             _composite_configure(anchor_widget, lw, lh, self.zoom.value)
         # pack()-ing a fresh widget appends it to the end of its
@@ -438,29 +442,40 @@ class LayoutOverlayManager:
         except tk.TclError:
             pass
 
-    def _apply_grow_equal_split(
-        self, anchor_widget, parent_node, parent_layout: str,
+    def rebalance_pack_siblings(
+        self, parent_node, parent_layout: str,
     ) -> None:
-        """Equal-split the parent's main axis among grow siblings.
-        tk pack's ``expand=True`` alone won't shrink a widget below
-        its configured natural size, so a Grid → vbox swap (or a
-        fresh grow drop) leaves widgets at their prior cell-sized
-        configure. We size each grow child explicitly to
-        ``(container - spacing*(N-1)) / N``; cross-axis stays on
-        ``fill=both`` from the pack kwargs.
+        """Flex-shrink the parent's main axis across pack children.
 
-        Resizes EVERY grow sibling — not just the one being re-applied.
-        The previous version configured only ``anchor_widget``, which
-        left earlier grow siblings stuck at their pre-split size when
-        a new grow child joined the row (e.g. dropping a 2nd button
-        into an hbox: the 1st button kept its old width, the 2nd got
-        half the container width).
+        Mirrors CSS flex on a vbox/hbox container, with three
+        ``stretch`` semantics:
+
+        - ``"fixed"`` — user controls both axes (CSS ``flex: 0 0 W``).
+          Main-axis size = ``node.properties[axis]`` at face value;
+          cross-axis stays at its configured size.
+        - ``"fill"`` — user controls main axis (same as fixed),
+          cross axis fills the container (CSS ``flex: 0 0 W`` with
+          ``align-self: stretch``). Helper does NOT touch main axis.
+        - ``"grow"`` — main axis is auto-distributed (CSS ``flex: 1``):
+          ``slot = avail / N_grow`` floored at ``content_min_axis``.
+          Cross axis fills the container.
+
+        When even content-min × N exceeds the container's remaining
+        budget, every grow sibling sits at its floor and tk silently
+        clips the overflow at the right/bottom edge — matches the
+        user's "no scrollbar" requirement (v1.10.2).
+
+        Replaces the old ``_apply_grow_equal_split`` which (a) didn't
+        subtract fixed siblings from the budget, (b) had no min-floor
+        so grow children could squash text into nothing, (c) was
+        only invoked on layout-type swaps, not on fresh add/remove —
+        leaving newly-packed siblings to overflow off the right edge,
+        and (d) treated ``fill`` like ``grow`` so users couldn't pin
+        a specific width on a fill child.
         """
-        grow_siblings = [
-            c for c in parent_node.children
-            if str(c.properties.get("stretch", "fixed")) == "grow"
-        ]
-        count = max(1, len(grow_siblings))
+        all_siblings = list(parent_node.children)
+        if not all_siblings:
+            return
         try:
             spacing = int(
                 parent_node.properties.get("layout_spacing", 0) or 0,
@@ -475,8 +490,32 @@ class LayoutOverlayManager:
             )
         except (TypeError, ValueError):
             container_size = 0
-        slot = max(1, (container_size - spacing * (count - 1)) // count)
-        # Resize every grow sibling, not just anchor_widget.
+        if container_size <= 0:
+            return
+
+        fixed_total = 0
+        grow_siblings: list = []
+        for sib in all_siblings:
+            stretch = str(sib.properties.get("stretch", "fixed"))
+            # Both ``fixed`` and ``fill`` keep user-set main-axis size;
+            # only ``grow`` participates in helper-driven distribution.
+            # ``fill``'s cross-axis stretch is owned by pack's
+            # ``fill="x"`` / ``"y"`` kwarg, not the main-axis math here.
+            if stretch in ("fixed", "fill"):
+                try:
+                    w = int(sib.properties.get(axis_key, 0) or 0)
+                except (TypeError, ValueError):
+                    w = 0
+                fixed_total += max(0, w)
+            else:
+                grow_siblings.append(sib)
+        total_spacing = spacing * max(0, len(all_siblings) - 1)
+        avail = container_size - fixed_total - total_spacing
+        if grow_siblings:
+            grow_slot = max(1, avail // len(grow_siblings))
+        else:
+            grow_slot = 0
+
         widget_views = getattr(self.workspace, "widget_views", {}) or {}
         anchor_views = getattr(self.workspace, "_anchor_views", {}) or {}
         for sibling in grow_siblings:
@@ -484,12 +523,24 @@ class LayoutOverlayManager:
             if entry is None:
                 continue
             widget, _ = entry
-            # Composite widgets (Image etc.) want the outer anchor
-            # frame resized, not the inner widget.
             sib_anchor = anchor_views.get(sibling.id, widget)
+            floor = content_min_axis(sibling, axis_key)
+            slot = max(floor, grow_slot)
+            # CTk widgets render configure(width=N) at N × DPI scaling
+            # raw pixels, so feeding ``slot * zoom`` (which is what we
+            # want as the *raw* pixel size) directly would over-allocate
+            # by the scaling factor on hi-DPI displays. Divide by the
+            # widget's own scaling so the rendered raw size matches
+            # ``slot * zoom`` and pack's parcel math stays in sync.
+            try:
+                scale = float(sib_anchor._get_widget_scaling())
+            except (AttributeError, Exception):
+                scale = 1.0
+            if scale <= 0:
+                scale = 1.0
             try:
                 sib_anchor.configure(
-                    **{axis_key: max(1, int(slot * zoom))},
+                    **{axis_key: max(1, int(slot * zoom / scale))},
                 )
             except tk.TclError:
                 pass
