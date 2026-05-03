@@ -445,6 +445,101 @@ def _ctk_inherited_names() -> frozenset[str]:
     return _CTK_INHERITED_NAMES_CACHE
 
 
+# v1.10.0 — per-CTk-class cache of constructor default values, used by
+# ``_emit_widget`` to skip kwargs whose value would already match the
+# CTk default. Without this gate, every exported widget carries every
+# default Maker holds in its descriptor — 130 widgets × ~25 kwargs each
+# bloats the generated file 17× over a hand-written equivalent and
+# triggers redundant Canvas redraws + per-widget CTkFont listeners.
+# Built lazily via ``inspect.signature`` so the catalog tracks whatever
+# CTk version the user has installed.
+_CTK_CONSTRUCTOR_DEFAULTS_CACHE: dict[str, dict] = {}
+_CTK_DEFAULT_MISSING = object()  # sentinel — class has no such kwarg
+
+
+def _ctk_constructor_defaults(class_name: str) -> dict:
+    """CTk widget class's ``__init__`` default values, by kwarg name.
+
+    Resolves ``customtkinter.<class_name>`` and reads ``inspect.signature``
+    once per class. Cached for the lifetime of the process. Returns an
+    empty dict when the class can't be resolved (custom widgets that
+    aren't CTk subclasses, or CTk import failures) — callers fall back
+    to emitting every kwarg, preserving pre-v1.10.0 behavior.
+    """
+    if class_name in _CTK_CONSTRUCTOR_DEFAULTS_CACHE:
+        return _CTK_CONSTRUCTOR_DEFAULTS_CACHE[class_name]
+    defaults: dict = {}
+    try:
+        import inspect
+        import customtkinter as _ctk
+        cls = getattr(_ctk, class_name, None)
+        if cls is not None:
+            sig = inspect.signature(cls.__init__)
+            defaults = {
+                p.name: p.default
+                for p in sig.parameters.values()
+                if p.default is not inspect.Parameter.empty
+            }
+    except Exception:
+        defaults = {}
+    _CTK_CONSTRUCTOR_DEFAULTS_CACHE[class_name] = defaults
+    return defaults
+
+
+def _kwarg_matches_defaults(
+    key: str,
+    value,
+    maker_defaults: dict,
+    ctk_defaults: dict,
+) -> bool:
+    """True iff emitting ``key=value`` would be redundant.
+
+    Skip is safe only when **all three** agree:
+      1. ``key`` exists in the descriptor's default_properties.
+      2. ``value`` equals the descriptor (Maker) default.
+      3. ``key`` exists in CTk's __init__ AND ``value`` equals the
+         CTk default.
+
+    Maker default ≠ CTk default mismatch (e.g. ``CTkButton.height``:
+    Maker=32, CTk=28) blocks the skip — otherwise the exported app
+    would render at 28px while Maker preview shows 32px.
+    """
+    if key not in maker_defaults:
+        return False
+    if value != maker_defaults[key]:
+        return False
+    ctk_val = ctk_defaults.get(key, _CTK_DEFAULT_MISSING)
+    if ctk_val is _CTK_DEFAULT_MISSING:
+        return False
+    return value == ctk_val
+
+
+def _font_props_at_default(props: dict) -> bool:
+    """True iff every font_* property is at its Maker default.
+
+    When all six font knobs (family / size / bold / italic / underline /
+    overstrike) match the descriptor default, the emitted CTkFont
+    instance carries no information CTk's theme-resolved default font
+    doesn't already supply — we can omit the ``font=`` kwarg entirely.
+    Saves the per-widget ``ctk.CTkFont(...)`` instantiation + its
+    ``<<RefreshFonts>>`` listener registration; on a 130-widget Showcase
+    that's 130 listener calls per scaling/appearance change.
+    """
+    if props.get("font_family"):
+        return False
+    if int(props.get("font_size", 13) or 13) != 13:
+        return False
+    if props.get("font_bold"):
+        return False
+    if props.get("font_italic"):
+        return False
+    if props.get("font_underline"):
+        return False
+    if props.get("font_overstrike"):
+        return False
+    return True
+
+
 def _is_non_textvariable_var_binding(
     widget_type: str, prop_key: str, value,
 ) -> bool:
@@ -2061,6 +2156,30 @@ def _emit_widget(
     )
     overrides: dict = descriptor.export_kwarg_overrides(props)
 
+    # v1.10.0 default-skip catalog: drop kwargs whose value already
+    # matches BOTH the descriptor's default AND the CTk constructor's
+    # default. Resolution order:
+    #   1. descriptor.ctk_class_name — direct CTk wrappers (CTkLabel,
+    #      CTkSwitch, …) hit the catalog on the first try.
+    #   2. descriptor.type_name — custom subclasses like ``CircleButton``
+    #      (a CTkButton subclass set as ctk_class_name="CircleButton")
+    #      miss the customtkinter module on lookup #1; falling back to
+    #      type_name="CTkButton" pulls the parent's signature, which is
+    #      the right reference for the skip gate.
+    #   3. None of the above resolves → ctk_defaults stays empty and
+    #      _kwarg_matches_defaults short-circuits to False everywhere,
+    #      preserving pre-v1.10.0 emit-everything behavior for fully
+    #      custom widgets like ``CircularProgress``.
+    maker_defaults: dict = getattr(descriptor, "default_properties", {})
+    ctk_defaults: dict = {}
+    _ctk_class_primary = getattr(descriptor, "ctk_class_name", "")
+    if _ctk_class_primary:
+        ctk_defaults = _ctk_constructor_defaults(_ctk_class_primary)
+    if not ctk_defaults:
+        _ctk_class_fallback = getattr(descriptor, "type_name", "")
+        if _ctk_class_fallback and _ctk_class_fallback != _ctk_class_primary:
+            ctk_defaults = _ctk_constructor_defaults(_ctk_class_fallback)
+
     from app.core.variables import BINDING_WIRINGS, parse_var_token
 
     kwargs: list[tuple[str, str]] = []
@@ -2117,6 +2236,17 @@ def _emit_widget(
             ] or [""]
             kwargs.append((key, _py_literal(lines_list)))
             continue
+        # v1.10.0 default-skip: omit kwargs whose value already matches
+        # both Maker's descriptor default AND CTk's constructor default.
+        # Override-bound keys still emit — overrides intentionally
+        # rewrite the value (e.g. CTkOptionMenu's dynamic_resizing=False).
+        if (
+            key not in overrides
+            and _kwarg_matches_defaults(
+                key, val, maker_defaults, ctk_defaults,
+            )
+        ):
+            continue
         kwargs.append((key, _py_literal(val)))
     # Override-only keys: descriptors can inject runtime-only kwargs
     # (e.g. CTkSegmentedButton / CTkOptionMenu's
@@ -2150,12 +2280,15 @@ def _emit_widget(
     if "button_enabled" in props:
         # CTkEntry adds a `readonly` boolean that wins over disabled.
         if props.get("readonly"):
-            state_src = '"readonly"'
+            state_src: str | None = '"readonly"'
         elif not props.get("button_enabled", True):
             state_src = '"disabled"'
         else:
-            state_src = '"normal"'
-        kwargs.append(("state", state_src))
+            # v1.10.0: ``state="normal"`` is CTk's constructor default,
+            # so omit the kwarg — same runtime behavior, smaller emit.
+            state_src = None
+        if state_src is not None:
+            kwargs.append(("state", state_src))
 
     # Group-coupled radio: thread the shared StringVar + the unique
     # value through the constructor. CTkRadioButton accepts both only
@@ -2169,10 +2302,10 @@ def _emit_widget(
         kwargs.append(("variable", var_attr))
         kwargs.append(("value", f'"{value}"'))
     elif "state_disabled" in props:
-        state_src = (
-            '"disabled"' if props.get("state_disabled") else '"normal"'
-        )
-        kwargs.append(("state", state_src))
+        # v1.10.0: only emit when actually disabled — "normal" is CTk's
+        # constructor default and skipping leaves the runtime identical.
+        if props.get("state_disabled"):
+            kwargs.append(("state", '"disabled"'))
 
     # CTkEntry password masking → `show="•"` kwarg.
     if props.get("password"):
@@ -2205,6 +2338,16 @@ def _emit_widget(
             and not effective_family
         ):
             pass  # leave label_font unset → CTk theme picks default
+        elif (
+            not effective_family
+            and _font_props_at_default(props)
+        ):
+            # v1.10.0: every font knob at Maker/CTk default — omit the
+            # kwarg so CTk's theme-resolved default font kicks in. Saves
+            # one CTkFont instance + one ``<<RefreshFonts>>`` listener
+            # per widget; on a Showcase-class project (130 widgets)
+            # that's the dominant scaling-toggle latency cost.
+            pass
         else:
             kwargs.append(
                 (font_kwarg_name, _font_source(props, effective_family)),
