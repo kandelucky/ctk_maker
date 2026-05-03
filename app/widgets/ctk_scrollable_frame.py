@@ -11,10 +11,12 @@ Groups shown in the Properties panel, in order:
     Label        — header text, alignment, colors
     Scrollbar    — orientation (init-only) + track / thumb colors
     Main Colors  — frame background
+    Layout       — child spacing (layout_type is hidden, orientation-driven)
 """
 import customtkinter as ctk
 
 from app.widgets.base import WidgetDescriptor
+from app.widgets.layout_schema import LAYOUT_SPACING_ROW
 
 
 # builder label_text_align → CTkScrollableFrame label_anchor
@@ -120,6 +122,13 @@ class CTkScrollableFrameDescriptor(WidgetDescriptor):
         # --- Main Colors -------------------------------------------------
         {"name": "fg_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Frame Background"},
+
+        # --- Layout ------------------------------------------------------
+        # ``layout_type`` itself is not exposed — orientation drives it
+        # (vertical → vbox, horizontal → hbox via on_prop_recreate).
+        # Spacing is the only user-tunable knob, so surface just that
+        # one row.
+        LAYOUT_SPACING_ROW,
     ]
 
     _NODE_ONLY_KEYS = {

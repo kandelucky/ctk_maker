@@ -1500,9 +1500,10 @@ class Workspace(ctk.CTkFrame):
             and container_node.widget_type == "CTkTabview"
         ):
             node.parent_slot = active_tab_slot
-        if getattr(entry, "default_name", None):
-            node.name = entry.default_name
-        self.project.add_widget(node, parent_id=parent_id)
+        self.project.add_widget(
+            node, parent_id=parent_id,
+            name_base=getattr(entry, "default_name", None),
+        )
         self.project.select_widget(node.id)
         owning_doc = self.project.find_document_for_widget(node.id)
         document_id = owning_doc.id if owning_doc is not None else None

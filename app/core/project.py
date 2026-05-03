@@ -498,29 +498,37 @@ class Project:
     # Naming
     # ------------------------------------------------------------------
     def _generate_unique_name(
-        self, widget_type: str, document=None,
+        self, widget_type: str, document=None, base: str | None = None,
     ) -> str:
-        """Monotonic name: 'Button' → 'Button (1)' → 'Button (2)' → ...
+        """Identifier-safe monotonic name: 'CTkButton' → 'button_1'
+        → 'button_2' → ...
+
+        Uses the slug that ``_resolve_var_names`` applies — strip the
+        ``CTk`` prefix, lowercase — so the Properties-panel ``Name``
+        is already a valid Python identifier and the export-time
+        fallback dialog never fires for newly dropped widgets.
+        ``base`` lets palette layouts override the slug
+        ("vertical_layout", "horizontal_layout", "grid_layout") so
+        the Object Tree still distinguishes them despite all three
+        being CTkFrame.
+
+        Counter bucket is the resolved ``base`` (not ``widget_type``)
+        so a layout-distinct base increments independently from the
+        generic ``frame`` bucket.
 
         Counter is **per document** (stored on ``Document.name_counters``)
         so each dialog restarts from zero and a freshly opened project
         doesn't inherit counts from the previous editing session.
-        Never reuses numbers within a document even after deletions, so
-        renamed / removed widgets can't collide with freshly generated
-        names in the same form.
         """
-        from app.widgets.registry import get_descriptor
-        descriptor = get_descriptor(widget_type)
-        base = descriptor.display_name if descriptor else widget_type
+        if not base:
+            base = widget_type.replace("CTk", "").lower() or "widget"
 
         target_doc = document or self.active_document
         counters = target_doc.name_counters
-        count = counters.get(widget_type, 0)
-        counters[widget_type] = count + 1
+        count = counters.get(base, 0) + 1
+        counters[base] = count
 
-        if count == 0:
-            return base
-        return f"{base} ({count})"
+        return f"{base}_{count}"
 
     def rename_widget(self, widget_id: str, new_name: str) -> None:
         # The virtual Window node renames the *active document* —
@@ -584,14 +592,14 @@ class Project:
 
     def add_widget(
         self, node: WidgetNode, parent_id: str | None = None,
-        document_id: str | None = None,
+        document_id: str | None = None, name_base: str | None = None,
     ) -> None:
         if parent_id is None:
             target_doc = self._resolve_target_document(document_id)
             node.parent = None
             if not node.name:
                 node.name = self._generate_unique_name(
-                    node.widget_type, document=target_doc,
+                    node.widget_type, document=target_doc, base=name_base,
                 )
             target_doc.root_widgets.append(node)
             owning_doc = target_doc
@@ -612,7 +620,7 @@ class Project:
                 )
             if not node.name:
                 node.name = self._generate_unique_name(
-                    node.widget_type, document=owning_doc,
+                    node.widget_type, document=owning_doc, base=name_base,
                 )
         self._index_subtree(node, owning_doc)
         self.event_bus.publish("widget_added", node)
