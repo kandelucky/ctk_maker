@@ -272,13 +272,13 @@ def test_generate_code_emits_user_set_var_name():
     }
     doc.root_widgets.append(btn)
     source = generate_code(project)
-    # CTkButton renders through ``CircleButton`` (the v1.9.10 layout
-    # patch for full-radius + text). Constructor name is bare, no
-    # ``ctk.`` prefix — the class is inlined into the generated file.
-    assert "self.submit_btn = CircleButton(" in source
+    # v1.10.1: non-pill geometry (corner_radius=0, w=100, h=32) emits
+    # bare ``ctk.CTkButton(...)`` — ``CircleButton`` only inlines for
+    # buttons whose 2*corner_radius >= min(w, h).
+    assert "self.submit_btn = ctk.CTkButton(" in source
     # Legacy-shape attribute name must NOT appear when the user set
     # an explicit name — the whole point of the fix.
-    assert "self.button_1 = CircleButton(" not in source
+    assert "self.button_1 = ctk.CTkButton(" not in source
 
 
 def test_generate_code_falls_back_when_name_invalid():
@@ -290,7 +290,8 @@ def test_generate_code_falls_back_when_name_invalid():
     }
     doc.root_widgets.append(btn)
     source = generate_code(project)
-    assert "self.button_1 = CircleButton(" in source
+    # v1.10.1: non-pill button → ``ctk.CTkButton(...)``.
+    assert "self.button_1 = ctk.CTkButton(" in source
     fallbacks = get_var_name_fallbacks()
     assert any(
         intent == "class" and reason == "Python keyword"

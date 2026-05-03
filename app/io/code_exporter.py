@@ -540,6 +540,27 @@ def _font_props_at_default(props: dict) -> bool:
     return True
 
 
+def _needs_circle_pill(props: dict) -> bool:
+    """True when a CTkButton's geometry crosses the threshold where
+    CTk's default ``_create_grid`` would reserve the full width for
+    rounded-corner clearance and starve the text label.
+
+    The trigger is ``2 * corner_radius >= min(width, height)`` —
+    anything below that is a regular button whose layout is fine
+    under stock CTkButton, and the exporter can drop the
+    ``CircleButton`` subclass + emit ``ctk.CTkButton(...)`` directly.
+    """
+    try:
+        cr = int(props.get("corner_radius", 0) or 0)
+        w = int(props.get("width", 0) or 0)
+        h = int(props.get("height", 0) or 0)
+    except (TypeError, ValueError):
+        return False
+    if w <= 0 or h <= 0:
+        return False
+    return cr * 2 >= min(w, h)
+
+
 def _is_non_textvariable_var_binding(
     widget_type: str, prop_key: str, value,
 ) -> bool:
@@ -1160,8 +1181,14 @@ def _generate_code_inner(
     needs_circular_progress = any(
         w.widget_type == "CircularProgress" for w in scoped_widgets
     )
+    # v1.10.1: only inline the ``CircleButton`` class definition when at
+    # least one button's geometry actually triggers the pill / circle
+    # case. Regular buttons (default ``corner_radius=6``, w=140, h=32)
+    # export as ``ctk.CTkButton(...)`` and the inline subclass is dead
+    # weight in the generated file.
     needs_circle_button = any(
-        w.widget_type == "CTkButton" for w in scoped_widgets
+        w.widget_type == "CTkButton" and _needs_circle_pill(w.properties)
+        for w in scoped_widgets
     )
     needs_tk_import = (
         bool(project.variables)
@@ -2408,6 +2435,20 @@ def _emit_widget(
     ctk_class = (
         getattr(descriptor, "ctk_class_name", "") or node.widget_type
     )
+    is_ctk_class_for_node = bool(getattr(descriptor, "is_ctk_class", True))
+    # v1.10.1: descriptor pins every CTkButton to ``CircleButton`` so
+    # the live canvas always survives full-radius geometry without the
+    # outer Frame growing. The exported file doesn't need that safety
+    # net for buttons whose geometry never enters the pill regime —
+    # downgrade back to ``ctk.CTkButton(...)`` so a non-pill project
+    # exports without the inlined subclass overhead.
+    if (
+        node.widget_type == "CTkButton"
+        and ctk_class == "CircleButton"
+        and not _needs_circle_pill(props)
+    ):
+        ctk_class = "CTkButton"
+        is_ctk_class_for_node = True
     full_name = f"{instance_prefix}{var_name}"
     # Phase 0 AI bridge: prepend the widget's plain-language description
     # as comments above its constructor call. Empty descriptions skip.
@@ -2432,9 +2473,7 @@ def _emit_widget(
     if command_kwarg is not None:
         kwargs.append(command_kwarg)
 
-    class_prefix = (
-        "ctk." if getattr(descriptor, "is_ctk_class", True) else ""
-    )
+    class_prefix = "ctk." if is_ctk_class_for_node else ""
     lines.append(f"{full_name} = {class_prefix}{ctk_class}(")
     lines.append(f"    {master_var},")
     for key, src in kwargs:
