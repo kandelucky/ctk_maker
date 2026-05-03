@@ -10,7 +10,8 @@ Compact CTkToplevel that drives one of two flows:
   email at ``BUG_REPORT_EMAIL``. No GitHub account needed.
 
 Visual language matches the startup dialog (``#1e1e1e`` bg, ``#252526``
-panels, secondary ``#3c3c3c``/``#4a4a4a`` buttons, Segoe UI 10-11pt).
+panels, secondary ``#3c3c3c``/``#4a4a4a`` buttons, CTk theme font at
+10-11pt — family resolves to Segoe UI on Win, SF Display on Mac, Roboto on Linux).
 """
 from __future__ import annotations
 
@@ -33,6 +34,8 @@ try:
 except Exception:
     def load_icon(*_args, **_kwargs):
         return None
+
+from app.ui.dialog_utils import safe_grab_set
 
 REPO = "kandelucky/ctk_maker"
 NEW_ISSUE_URL = f"https://github.com/{REPO}/issues/new"
@@ -278,14 +281,14 @@ def _make_button(parent, *, text, command, primary=False, **kwargs):
         return ctk.CTkButton(
             parent, text=text, command=command,
             corner_radius=4, height=30,
-            font=ctk.CTkFont("Segoe UI", 11, "bold"),
+            font=ctk.CTkFont(size=11, weight="bold"),
             **kwargs,
         )
     return ctk.CTkButton(
         parent, text=text, command=command,
         corner_radius=4, height=30,
         fg_color=BTN_BG, hover_color=BTN_HOVER, text_color=TEXT_FG,
-        font=ctk.CTkFont("Segoe UI", 11),
+        font=ctk.CTkFont(size=11),
         **kwargs,
     )
 
@@ -348,10 +351,7 @@ class BugReporterWindow(ctk.CTkToplevel):
         self.geometry("660x590")
         self.minsize(560, 540)
         self.transient(master)
-        try:
-            self.grab_set()
-        except Exception:
-            pass
+        safe_grab_set(self)
 
         self._mode = ctk.StringVar(value="Bug Report")
         self._title_var = ctk.StringVar()
@@ -405,13 +405,13 @@ class BugReporterWindow(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             f, text="What would you like to report?",
-            font=ctk.CTkFont("Segoe UI", 18, "bold"),
+            font=ctk.CTkFont(size=18, weight="bold"),
             text_color=TITLE_FG,
         ).pack(pady=(0, 6))
         ctk.CTkLabel(
             f,
             text="Pick a track to start filling out the report.",
-            font=ctk.CTkFont("Segoe UI", 11),
+            font=ctk.CTkFont(size=11),
             text_color=DIM_FG,
         ).pack(pady=(0, 24))
 
@@ -469,7 +469,7 @@ class BugReporterWindow(ctk.CTkToplevel):
             )
         ctk.CTkLabel(
             head_row, text="Why this matters",
-            font=ctk.CTkFont("Segoe UI", 13, "bold"),
+            font=ctk.CTkFont(size=13, weight="bold"),
             text_color=TITLE_FG, anchor="w",
         ).pack(side="left", fill="x", expand=True)
 
@@ -481,7 +481,7 @@ class BugReporterWindow(ctk.CTkToplevel):
                 "what gets fixed and built next. Thanks for taking "
                 "the time to write one."
             ),
-            font=ctk.CTkFont("Segoe UI", 11),
+            font=ctk.CTkFont(size=11),
             text_color=TEXT_FG, anchor="w", justify="left",
             wraplength=560,
         ).pack(fill="x", pady=(8, 4))
@@ -491,7 +491,7 @@ class BugReporterWindow(ctk.CTkToplevel):
             text=(
                 "Please check existing issues first to avoid duplicates."
             ),
-            font=ctk.CTkFont("Segoe UI", 11),
+            font=ctk.CTkFont(size=11),
             text_color=DIM_FG, anchor="w", justify="left",
             wraplength=560,
         ).pack(fill="x", pady=(0, 6))
@@ -505,7 +505,7 @@ class BugReporterWindow(ctk.CTkToplevel):
             command=lambda: webbrowser.open(WIKI_REPORTING_URL),
             fg_color=BTN_BG, hover_color=BTN_HOVER,
             text_color=LINK_FG,
-            font=ctk.CTkFont("Segoe UI", 11, "bold"),
+            font=ctk.CTkFont(size=11, weight="bold"),
             height=28, corner_radius=4,
         )
         guide_btn.pack(side="left")
@@ -516,7 +516,7 @@ class BugReporterWindow(ctk.CTkToplevel):
             command=lambda: webbrowser.open(KNOWN_ISSUES_URL),
             fg_color=BTN_BG, hover_color=BTN_HOVER,
             text_color=LINK_FG,
-            font=ctk.CTkFont("Segoe UI", 11, "bold"),
+            font=ctk.CTkFont(size=11, weight="bold"),
             height=28, corner_radius=4,
         )
         issues_btn.pack(side="right")
@@ -544,12 +544,12 @@ class BugReporterWindow(ctk.CTkToplevel):
         ctk.CTkLabel(card, image=icon_img, text="").pack(pady=(20, 6))
         ctk.CTkLabel(
             card, text=title,
-            font=ctk.CTkFont("Segoe UI", 14, "bold"),
+            font=ctk.CTkFont(size=14, weight="bold"),
             text_color=title_color,
         ).pack(pady=(0, 4))
         ctk.CTkLabel(
             card, text=subtitle,
-            font=ctk.CTkFont("Segoe UI", 10),
+            font=ctk.CTkFont(size=10),
             text_color=DIM_FG, justify="center",
         ).pack(pady=(0, 12))
 
@@ -592,14 +592,14 @@ class BugReporterWindow(ctk.CTkToplevel):
             command=self._show_picker,
             fg_color="transparent", hover_color=BTN_HOVER,
             text_color=LINK_FG,
-            font=ctk.CTkFont("Segoe UI", 10, underline=True),
+            font=ctk.CTkFont(size=10, underline=True),
             width=120, height=22, anchor="w",
             corner_radius=4,
         ).pack(side="left")
 
         self._form_heading = ctk.CTkLabel(
             parent, text="",
-            font=ctk.CTkFont("Segoe UI", 18, "bold"),
+            font=ctk.CTkFont(size=18, weight="bold"),
             text_color=TITLE_FG, anchor="w",
         )
         self._form_heading.pack(fill="x", padx=16, pady=(0, 8))
@@ -608,7 +608,7 @@ class BugReporterWindow(ctk.CTkToplevel):
         title_frame.pack(fill="x", padx=16, pady=(0, 8))
         ctk.CTkLabel(
             title_frame, text="Title *",
-            font=ctk.CTkFont("Segoe UI", 11),
+            font=ctk.CTkFont(size=11),
             text_color=TEXT_FG, anchor="w",
         ).pack(fill="x")
         title_entry = ctk.CTkEntry(
@@ -616,7 +616,7 @@ class BugReporterWindow(ctk.CTkToplevel):
             textvariable=self._title_var,
             placeholder_text="Short summary",
             corner_radius=4, height=28,
-            font=ctk.CTkFont("Segoe UI", 11),
+            font=ctk.CTkFont(size=11),
             fg_color=PANEL_BG, border_color=BTN_BG,
         )
         title_entry.pack(fill="x")
@@ -639,13 +639,13 @@ class BugReporterWindow(ctk.CTkToplevel):
 
         self._stats_label = ctk.CTkLabel(
             parent, text="",
-            font=ctk.CTkFont("Segoe UI", 10),
+            font=ctk.CTkFont(size=10),
             anchor="w", text_color=DIM_FG,
         )
         self._stats_label.pack(fill="x", padx=16, pady=(0, 1))
         self._status_label = ctk.CTkLabel(
             parent, text="",
-            font=ctk.CTkFont("Segoe UI", 10),
+            font=ctk.CTkFont(size=10),
             anchor="w", text_color=DIM_FG,
         )
         self._status_label.pack(fill="x", padx=16, pady=(0, 10))
@@ -674,7 +674,7 @@ class BugReporterWindow(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             f, text="Environment",
-            font=ctk.CTkFont("Segoe UI", 11, "bold"),
+            font=ctk.CTkFont(size=11, weight="bold"),
             text_color=TITLE_FG, anchor="w",
         ).pack(fill="x", pady=(8, 4))
 
@@ -688,7 +688,7 @@ class BugReporterWindow(ctk.CTkToplevel):
         version_entry = ctk.CTkEntry(
             col_v, textvariable=self._version_var, state="readonly",
             corner_radius=4, height=26,
-            font=ctk.CTkFont("Segoe UI", 11),
+            font=ctk.CTkFont(size=11),
             fg_color=PANEL_BG, border_color=BTN_BG,
         )
         version_entry.pack(fill="x")
@@ -709,7 +709,7 @@ class BugReporterWindow(ctk.CTkToplevel):
 
         self._env_preview = ctk.CTkLabel(
             f, text="",
-            font=ctk.CTkFont("Segoe UI", 10),
+            font=ctk.CTkFont(size=10),
             anchor="w", text_color=DIM_FG, justify="left",
             wraplength=600,
         )
@@ -756,7 +756,7 @@ class BugReporterWindow(ctk.CTkToplevel):
     def _mini_label(self, parent, text: str) -> None:
         ctk.CTkLabel(
             parent, text=text,
-            font=ctk.CTkFont("Segoe UI", 10),
+            font=ctk.CTkFont(size=10),
             text_color=DIM_FG, anchor="w",
         ).pack(fill="x")
 
@@ -764,7 +764,7 @@ class BugReporterWindow(ctk.CTkToplevel):
         om = ctk.CTkOptionMenu(
             parent, variable=var, values=values,
             corner_radius=4, height=26,
-            font=ctk.CTkFont("Segoe UI", 11),
+            font=ctk.CTkFont(size=11),
             fg_color=BTN_BG, button_color=BTN_BG,
             button_hover_color=BTN_HOVER, text_color=TEXT_FG,
         )
@@ -776,13 +776,13 @@ class BugReporterWindow(ctk.CTkToplevel):
     ) -> ctk.CTkTextbox:
         ctk.CTkLabel(
             parent, text=label,
-            font=ctk.CTkFont("Segoe UI", 11),
+            font=ctk.CTkFont(size=11),
             text_color=TEXT_FG, anchor="w",
         ).pack(fill="x", pady=(6, 2))
         box = ctk.CTkTextbox(
             parent, height=height, wrap="word",
             corner_radius=4,
-            font=ctk.CTkFont("Segoe UI", 11),
+            font=ctk.CTkFont(size=11),
             fg_color=PANEL_BG, border_color=BTN_BG,
         )
         box.pack(fill="x")
@@ -798,19 +798,19 @@ class BugReporterWindow(ctk.CTkToplevel):
         row.pack(fill="x", pady=(6, 2))
         ctk.CTkLabel(
             row, text=f"{label} *",
-            font=ctk.CTkFont("Segoe UI", 11),
+            font=ctk.CTkFont(size=11),
             text_color=TEXT_FG, anchor="w",
         ).pack(side="left", fill="x", expand=True)
         counter = ctk.CTkLabel(
             row, text=f"0 / {min_words} words",
-            font=ctk.CTkFont("Segoe UI", 10),
+            font=ctk.CTkFont(size=10),
             text_color=DIM_FG, anchor="e",
         )
         counter.pack(side="right")
         box = ctk.CTkTextbox(
             parent, height=height, wrap="word",
             corner_radius=4,
-            font=ctk.CTkFont("Segoe UI", 11),
+            font=ctk.CTkFont(size=11),
             fg_color=PANEL_BG, border_color=BTN_BG,
         )
         box.pack(fill="x")
@@ -1064,15 +1064,12 @@ class ReportDialog(ctk.CTkToplevel):
         self.geometry("520x460")
         self.minsize(480, 420)
         self.transient(master)
-        try:
-            self.grab_set()
-        except Exception:
-            pass
+        safe_grab_set(self)
 
         ctk.CTkLabel(
             self,
             text="How would you like to send this report?",
-            font=ctk.CTkFont("Segoe UI", 13, "bold"),
+            font=ctk.CTkFont(size=13, weight="bold"),
             text_color=TITLE_FG,
         ).pack(pady=(16, 6))
 
@@ -1128,12 +1125,12 @@ class ReportDialog(ctk.CTkToplevel):
         inner.pack(fill="x", padx=12, pady=10)
         ctk.CTkLabel(
             inner, text=title,
-            font=ctk.CTkFont("Segoe UI", 12, "bold"),
+            font=ctk.CTkFont(size=12, weight="bold"),
             text_color=TITLE_FG, anchor="w",
         ).pack(fill="x")
         ctk.CTkLabel(
             inner, text=description,
-            font=ctk.CTkFont("Segoe UI", 10),
+            font=ctk.CTkFont(size=10),
             text_color=DIM_FG, anchor="w",
             wraplength=440, justify="left",
         ).pack(fill="x", pady=(2, 6))
@@ -1143,12 +1140,12 @@ class ReportDialog(ctk.CTkToplevel):
             email_row.pack(fill="x", pady=(0, 8))
             ctk.CTkLabel(
                 email_row, text="Send to:",
-                font=ctk.CTkFont("Segoe UI", 10),
+                font=ctk.CTkFont(size=10),
                 text_color=DIM_FG,
             ).pack(side="left", padx=(0, 6))
             ctk.CTkLabel(
                 email_row, text=email,
-                font=ctk.CTkFont("Segoe UI", 10, "bold"),
+                font=ctk.CTkFont(size=10, weight="bold"),
                 text_color=LINK_FG,
             ).pack(side="left")
 
@@ -1168,7 +1165,7 @@ class ReportDialog(ctk.CTkToplevel):
                 width=56, height=22, corner_radius=4,
                 fg_color=BTN_BG, hover_color=BTN_HOVER,
                 text_color=TEXT_FG,
-                font=ctk.CTkFont("Segoe UI", 10),
+                font=ctk.CTkFont(size=10),
             )
             copy_btn.pack(side="left", padx=(8, 0))
 
@@ -1180,7 +1177,7 @@ class ReportDialog(ctk.CTkToplevel):
                 bottom, text=link_text, command=link_command,
                 fg_color="transparent", hover_color=BTN_HOVER,
                 text_color=LINK_FG,
-                font=ctk.CTkFont("Segoe UI", 10, underline=True),
+                font=ctk.CTkFont(size=10, underline=True),
                 width=170, height=26, anchor="w",
             )
             link_btn.pack(side="left")

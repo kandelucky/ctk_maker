@@ -54,6 +54,16 @@ _CURRENT_PROJECT_PATH: str | None = None
 _PREVIEW_SCREENSHOT_TEMPLATE = '''\
 # CTkMaker preview tools — title marker, orange ring, draggable F12 button.
 import tkinter as _ctkmaker_tk
+from tkinter.font import nametofont as _ctkmaker_nametofont
+
+def _ctkmaker_ui_font(**kw):
+    # Derive from Tk's named UI font so the floater + toast pick the
+    # platform's native UI face (Segoe UI on Win, .AppleSystemUIFont
+    # on Mac, DejaVu Sans on Linux) instead of a Win-only hardcode.
+    f = _ctkmaker_nametofont("TkDefaultFont").copy()
+    if kw:
+        f.configure(**kw)
+    return f
 
 # --- Title + ring — make it obvious this is a preview, not the
 # production window. 4 thin orange Frames at the edges (Tk's
@@ -126,7 +136,7 @@ _ctkmaker_inner.pack()
 def _ctkmaker_make_btn(text):
     return _ctkmaker_tk.Button(
         _ctkmaker_inner, text=text,
-        font=("Segoe UI", 9, "bold"), bg="#2d2d30", fg="#cccccc",
+        font=_ctkmaker_ui_font(size=9, weight="bold"), bg="#2d2d30", fg="#cccccc",
         activebackground="#3e3e42", activeforeground="#ffffff",
         bd=0, padx=10, pady=4,
         relief="flat",
@@ -150,7 +160,7 @@ def _ctkmaker_toast(message):
                         highlightbackground="#3a3a3a")
         lbl = _ctkmaker_tk.Label(
             toast, text=message,
-            font=("Segoe UI", 9, "bold"),
+            font=_ctkmaker_ui_font(size=9, weight="bold"),
             bg="#2d2d30", fg="#cccccc",
             padx=14, pady=6,
         )
@@ -435,6 +445,122 @@ def _ctk_inherited_names() -> frozenset[str]:
     return _CTK_INHERITED_NAMES_CACHE
 
 
+# v1.10.0 — per-CTk-class cache of constructor default values, used by
+# ``_emit_widget`` to skip kwargs whose value would already match the
+# CTk default. Without this gate, every exported widget carries every
+# default Maker holds in its descriptor — 130 widgets × ~25 kwargs each
+# bloats the generated file 17× over a hand-written equivalent and
+# triggers redundant Canvas redraws + per-widget CTkFont listeners.
+# Built lazily via ``inspect.signature`` so the catalog tracks whatever
+# CTk version the user has installed.
+_CTK_CONSTRUCTOR_DEFAULTS_CACHE: dict[str, dict] = {}
+_CTK_DEFAULT_MISSING = object()  # sentinel — class has no such kwarg
+
+
+def _ctk_constructor_defaults(class_name: str) -> dict:
+    """CTk widget class's ``__init__`` default values, by kwarg name.
+
+    Resolves ``customtkinter.<class_name>`` and reads ``inspect.signature``
+    once per class. Cached for the lifetime of the process. Returns an
+    empty dict when the class can't be resolved (custom widgets that
+    aren't CTk subclasses, or CTk import failures) — callers fall back
+    to emitting every kwarg, preserving pre-v1.10.0 behavior.
+    """
+    if class_name in _CTK_CONSTRUCTOR_DEFAULTS_CACHE:
+        return _CTK_CONSTRUCTOR_DEFAULTS_CACHE[class_name]
+    defaults: dict = {}
+    try:
+        import inspect
+        import customtkinter as _ctk
+        cls = getattr(_ctk, class_name, None)
+        if cls is not None:
+            sig = inspect.signature(cls.__init__)
+            defaults = {
+                p.name: p.default
+                for p in sig.parameters.values()
+                if p.default is not inspect.Parameter.empty
+            }
+    except Exception:
+        defaults = {}
+    _CTK_CONSTRUCTOR_DEFAULTS_CACHE[class_name] = defaults
+    return defaults
+
+
+def _kwarg_matches_defaults(
+    key: str,
+    value,
+    maker_defaults: dict,
+    ctk_defaults: dict,
+) -> bool:
+    """True iff emitting ``key=value`` would be redundant.
+
+    Skip is safe only when **all three** agree:
+      1. ``key`` exists in the descriptor's default_properties.
+      2. ``value`` equals the descriptor (Maker) default.
+      3. ``key`` exists in CTk's __init__ AND ``value`` equals the
+         CTk default.
+
+    Maker default ≠ CTk default mismatch (e.g. ``CTkButton.height``:
+    Maker=32, CTk=28) blocks the skip — otherwise the exported app
+    would render at 28px while Maker preview shows 32px.
+    """
+    if key not in maker_defaults:
+        return False
+    if value != maker_defaults[key]:
+        return False
+    ctk_val = ctk_defaults.get(key, _CTK_DEFAULT_MISSING)
+    if ctk_val is _CTK_DEFAULT_MISSING:
+        return False
+    return value == ctk_val
+
+
+def _font_props_at_default(props: dict) -> bool:
+    """True iff every font_* property is at its Maker default.
+
+    When all six font knobs (family / size / bold / italic / underline /
+    overstrike) match the descriptor default, the emitted CTkFont
+    instance carries no information CTk's theme-resolved default font
+    doesn't already supply — we can omit the ``font=`` kwarg entirely.
+    Saves the per-widget ``ctk.CTkFont(...)`` instantiation + its
+    ``<<RefreshFonts>>`` listener registration; on a 130-widget Showcase
+    that's 130 listener calls per scaling/appearance change.
+    """
+    if props.get("font_family"):
+        return False
+    if int(props.get("font_size", 13) or 13) != 13:
+        return False
+    if props.get("font_bold"):
+        return False
+    if props.get("font_italic"):
+        return False
+    if props.get("font_underline"):
+        return False
+    if props.get("font_overstrike"):
+        return False
+    return True
+
+
+def _needs_circle_pill(props: dict) -> bool:
+    """True when a CTkButton's geometry crosses the threshold where
+    CTk's default ``_create_grid`` would reserve the full width for
+    rounded-corner clearance and starve the text label.
+
+    The trigger is ``2 * corner_radius >= min(width, height)`` —
+    anything below that is a regular button whose layout is fine
+    under stock CTkButton, and the exporter can drop the
+    ``CircleButton`` subclass + emit ``ctk.CTkButton(...)`` directly.
+    """
+    try:
+        cr = int(props.get("corner_radius", 0) or 0)
+        w = int(props.get("width", 0) or 0)
+        h = int(props.get("height", 0) or 0)
+    except (TypeError, ValueError):
+        return False
+    if w <= 0 or h <= 0:
+        return False
+    return cr * 2 >= min(w, h)
+
+
 def _is_non_textvariable_var_binding(
     widget_type: str, prop_key: str, value,
 ) -> bool:
@@ -461,6 +587,28 @@ def _project_needs_auto_trace_helper(scoped_widgets) -> bool:
         for key, val in (w.properties or {}).items():
             if _is_non_textvariable_var_binding(w.widget_type, key, val):
                 return True
+    return False
+
+
+def _project_needs_pack_balance(docs_to_emit, scoped_widgets) -> bool:
+    """True when any vbox/hbox container with ≥1 child exists in
+    the export scope. Both window-level layouts (Document) and
+    nested containers count — both bind ``<Configure>`` to the
+    flex-shrink helper. Pure ``place``/``grid`` projects skip
+    the helper emission so generated files stay lean.
+    """
+    for doc in docs_to_emit:
+        doc_layout = normalise_layout_type(
+            (doc.window_properties or {}).get("layout_type"),
+        )
+        if doc_layout in ("vbox", "hbox") and doc.root_widgets:
+            return True
+    for w in scoped_widgets:
+        layout = normalise_layout_type(
+            (w.properties or {}).get("layout_type"),
+        )
+        if layout in ("vbox", "hbox") and w.children:
+            return True
     return False
 
 
@@ -506,6 +654,87 @@ _AUTO_TRACE_TEXTBOX_HELPER = '''def _bind_var_to_textbox(var, tb):
         tb.insert("1.0", var.get())
     var.trace_add("write", _update)
     _update()
+'''
+
+_PACK_BALANCE_HELPER = '''def _ctkmaker_balance_pack(container, axis):
+    """Flex-shrink pack children along ``axis`` ("width" or
+    "height") when the container drops below the sum of their
+    nominal sizes. Honors ``_ctkmaker_fixed=True`` (skip — keeps
+    the user-locked size) and ``_ctkmaker_min`` (per-child content
+    floor so text + icon never clip). Mirrors the canvas preview's
+    hbox/vbox auto-shrink semantics so the exported app matches
+    what the user sees in CTk Maker.
+
+    All math runs in CTk's widget-scaling units, not raw pixels —
+    ``configure(width=N)`` on a CTk widget multiplies N by the
+    container's DPI scaling factor before resizing the underlying
+    tk widget, so feeding raw winfo_width() in would over-allocate
+    on hi-DPI displays (e.g. 1.5× scaling renders an 80-CTk-unit
+    button at 120 raw px; mixing the two units leaves later
+    siblings starved at 1 px).
+    """
+    children = container.pack_slaves()
+    if not children:
+        return
+    if axis == "width":
+        raw_size = container.winfo_width()
+        pad_key = "padx"
+    else:
+        raw_size = container.winfo_height()
+        pad_key = "pady"
+    if raw_size <= 1:
+        return
+    # CTk's window root (CTk / CTkToplevel) doesn't carry
+    # ``_get_widget_scaling`` — only nested CTkBaseClass widgets do —
+    # so ask the first scaling-aware child instead. Falls back to
+    # 1.0 for pure-tk parents (no DPI awareness).
+    scale = 1.0
+    try:
+        scale = float(container._get_widget_scaling())
+    except (AttributeError, Exception):
+        for c in children:
+            try:
+                scale = float(c._get_widget_scaling())
+                break
+            except (AttributeError, Exception):
+                continue
+    if scale <= 0:
+        scale = 1.0
+    container_size = int(raw_size / scale)
+    spacing_total = 0
+    fixed_total = 0
+    grow_kids = []
+    for c in children:
+        try:
+            info = c.pack_info()
+        except Exception:
+            continue
+        pad = info.get(pad_key, 0)
+        if isinstance(pad, tuple):
+            spacing_raw = int(pad[0]) + int(pad[1])
+        else:
+            spacing_raw = int(pad) * 2
+        spacing_total += int(spacing_raw / scale)
+        if getattr(c, "_ctkmaker_fixed", False):
+            try:
+                fixed_total += int(c.cget(axis))
+            except Exception:
+                fixed_total += int(
+                    (c.winfo_reqwidth() if axis == "width"
+                     else c.winfo_reqheight()) / scale,
+                )
+        else:
+            grow_kids.append(c)
+    if not grow_kids:
+        return
+    avail = max(1, container_size - fixed_total - spacing_total)
+    slot = max(1, avail // len(grow_kids))
+    for c in grow_kids:
+        floor = getattr(c, "_ctkmaker_min", 1)
+        try:
+            c.configure(**{axis: max(floor, slot)})
+        except Exception:
+            pass
 '''
 
 
@@ -1055,8 +1284,14 @@ def _generate_code_inner(
     needs_circular_progress = any(
         w.widget_type == "CircularProgress" for w in scoped_widgets
     )
+    # v1.10.1: only inline the ``CircleButton`` class definition when at
+    # least one button's geometry actually triggers the pill / circle
+    # case. Regular buttons (default ``corner_radius=6``, w=140, h=32)
+    # export as ``ctk.CTkButton(...)`` and the inline subclass is dead
+    # weight in the generated file.
     needs_circle_button = any(
-        w.widget_type == "CTkButton" for w in scoped_widgets
+        w.widget_type == "CTkButton" and _needs_circle_pill(w.properties)
+        for w in scoped_widgets
     )
     needs_tk_import = (
         bool(project.variables)
@@ -1081,6 +1316,12 @@ def _generate_code_inner(
     needs_auto_trace_helper = _project_needs_auto_trace_helper(scoped_widgets)
     needs_auto_trace_textbox = _project_needs_auto_trace_textbox_helper(
         scoped_widgets,
+    )
+    # v1.10.2: emit the flex-shrink runtime helper when any container
+    # uses vbox/hbox with at least one child. Window-level layout
+    # counts too — the document body may be the parent of the row.
+    needs_pack_balance = _project_needs_pack_balance(
+        docs_to_emit, scoped_widgets,
     )
 
     lines: list[str] = [
@@ -1114,6 +1355,9 @@ def _generate_code_inner(
         lines.append("")
     if needs_auto_trace_textbox:
         lines.extend(_AUTO_TRACE_TEXTBOX_HELPER.splitlines())
+        lines.append("")
+    if needs_pack_balance:
+        lines.extend(_PACK_BALANCE_HELPER.splitlines())
         lines.append("")
 
     if needs_icon_state:
@@ -1874,6 +2118,16 @@ def _emit_class_body(
                 parent_rows=doc_rows,
                 radio_var_map=radio_var_map,
             )
+        # v1.10.2 flex-shrink: window-level vbox/hbox needs the same
+        # <Configure> bind that nested containers get in _emit_subtree.
+        if doc_layout in ("vbox", "hbox") and doc.root_widgets:
+            _balance_axis = "height" if doc_layout == "vbox" else "width"
+            body_lines.append(
+                f"self.bind("
+                f"\"<Configure>\", "
+                f"lambda _e: "
+                f"_ctkmaker_balance_pack(self, {_balance_axis!r}))",
+            )
     for line in body_lines:
         lines.append(f"{INDENT}{INDENT}{line}" if line else "")
     return lines
@@ -2026,6 +2280,23 @@ def _emit_subtree(
             radio_var_map=radio_var_map,
         )
 
+    # v1.10.2 flex-shrink: bind the container's <Configure> so the
+    # runtime helper redistributes pack children's main-axis size
+    # whenever the container resizes (initial map fires <Configure>
+    # too — covers first paint without an extra after_idle call).
+    if (
+        child_layout in ("vbox", "hbox") and node.children
+        and not is_tabview
+    ):
+        _balance_axis = "height" if child_layout == "vbox" else "width"
+        lines.append(
+            f"{child_master}.bind("
+            f"\"<Configure>\", "
+            f"lambda _e, _c={child_master}: "
+            f"_ctkmaker_balance_pack(_c, {_balance_axis!r}))",
+        )
+        lines.append("")
+
 
 def _emit_widget(
     node: WidgetNode,
@@ -2050,6 +2321,30 @@ def _emit_widget(
         descriptor, "multiline_list_keys", set(),
     )
     overrides: dict = descriptor.export_kwarg_overrides(props)
+
+    # v1.10.0 default-skip catalog: drop kwargs whose value already
+    # matches BOTH the descriptor's default AND the CTk constructor's
+    # default. Resolution order:
+    #   1. descriptor.ctk_class_name — direct CTk wrappers (CTkLabel,
+    #      CTkSwitch, …) hit the catalog on the first try.
+    #   2. descriptor.type_name — custom subclasses like ``CircleButton``
+    #      (a CTkButton subclass set as ctk_class_name="CircleButton")
+    #      miss the customtkinter module on lookup #1; falling back to
+    #      type_name="CTkButton" pulls the parent's signature, which is
+    #      the right reference for the skip gate.
+    #   3. None of the above resolves → ctk_defaults stays empty and
+    #      _kwarg_matches_defaults short-circuits to False everywhere,
+    #      preserving pre-v1.10.0 emit-everything behavior for fully
+    #      custom widgets like ``CircularProgress``.
+    maker_defaults: dict = getattr(descriptor, "default_properties", {})
+    ctk_defaults: dict = {}
+    _ctk_class_primary = getattr(descriptor, "ctk_class_name", "")
+    if _ctk_class_primary:
+        ctk_defaults = _ctk_constructor_defaults(_ctk_class_primary)
+    if not ctk_defaults:
+        _ctk_class_fallback = getattr(descriptor, "type_name", "")
+        if _ctk_class_fallback and _ctk_class_fallback != _ctk_class_primary:
+            ctk_defaults = _ctk_constructor_defaults(_ctk_class_fallback)
 
     from app.core.variables import BINDING_WIRINGS, parse_var_token
 
@@ -2107,6 +2402,17 @@ def _emit_widget(
             ] or [""]
             kwargs.append((key, _py_literal(lines_list)))
             continue
+        # v1.10.0 default-skip: omit kwargs whose value already matches
+        # both Maker's descriptor default AND CTk's constructor default.
+        # Override-bound keys still emit — overrides intentionally
+        # rewrite the value (e.g. CTkOptionMenu's dynamic_resizing=False).
+        if (
+            key not in overrides
+            and _kwarg_matches_defaults(
+                key, val, maker_defaults, ctk_defaults,
+            )
+        ):
+            continue
         kwargs.append((key, _py_literal(val)))
     # Override-only keys: descriptors can inject runtime-only kwargs
     # (e.g. CTkSegmentedButton / CTkOptionMenu's
@@ -2140,12 +2446,15 @@ def _emit_widget(
     if "button_enabled" in props:
         # CTkEntry adds a `readonly` boolean that wins over disabled.
         if props.get("readonly"):
-            state_src = '"readonly"'
+            state_src: str | None = '"readonly"'
         elif not props.get("button_enabled", True):
             state_src = '"disabled"'
         else:
-            state_src = '"normal"'
-        kwargs.append(("state", state_src))
+            # v1.10.0: ``state="normal"`` is CTk's constructor default,
+            # so omit the kwarg — same runtime behavior, smaller emit.
+            state_src = None
+        if state_src is not None:
+            kwargs.append(("state", state_src))
 
     # Group-coupled radio: thread the shared StringVar + the unique
     # value through the constructor. CTkRadioButton accepts both only
@@ -2159,10 +2468,10 @@ def _emit_widget(
         kwargs.append(("variable", var_attr))
         kwargs.append(("value", f'"{value}"'))
     elif "state_disabled" in props:
-        state_src = (
-            '"disabled"' if props.get("state_disabled") else '"normal"'
-        )
-        kwargs.append(("state", state_src))
+        # v1.10.0: only emit when actually disabled — "normal" is CTk's
+        # constructor default and skipping leaves the runtime identical.
+        if props.get("state_disabled"):
+            kwargs.append(("state", '"disabled"'))
 
     # CTkEntry password masking → `show="•"` kwarg.
     if props.get("password"):
@@ -2195,6 +2504,16 @@ def _emit_widget(
             and not effective_family
         ):
             pass  # leave label_font unset → CTk theme picks default
+        elif (
+            not effective_family
+            and _font_props_at_default(props)
+        ):
+            # v1.10.0: every font knob at Maker/CTk default — omit the
+            # kwarg so CTk's theme-resolved default font kicks in. Saves
+            # one CTkFont instance + one ``<<RefreshFonts>>`` listener
+            # per widget; on a Showcase-class project (130 widgets)
+            # that's the dominant scaling-toggle latency cost.
+            pass
         else:
             kwargs.append(
                 (font_kwarg_name, _font_source(props, effective_family)),
@@ -2255,6 +2574,20 @@ def _emit_widget(
     ctk_class = (
         getattr(descriptor, "ctk_class_name", "") or node.widget_type
     )
+    is_ctk_class_for_node = bool(getattr(descriptor, "is_ctk_class", True))
+    # v1.10.1: descriptor pins every CTkButton to ``CircleButton`` so
+    # the live canvas always survives full-radius geometry without the
+    # outer Frame growing. The exported file doesn't need that safety
+    # net for buttons whose geometry never enters the pill regime —
+    # downgrade back to ``ctk.CTkButton(...)`` so a non-pill project
+    # exports without the inlined subclass overhead.
+    if (
+        node.widget_type == "CTkButton"
+        and ctk_class == "CircleButton"
+        and not _needs_circle_pill(props)
+    ):
+        ctk_class = "CTkButton"
+        is_ctk_class_for_node = True
     full_name = f"{instance_prefix}{var_name}"
     # Phase 0 AI bridge: prepend the widget's plain-language description
     # as comments above its constructor call. Empty descriptions skip.
@@ -2279,9 +2612,7 @@ def _emit_widget(
     if command_kwarg is not None:
         kwargs.append(command_kwarg)
 
-    class_prefix = (
-        "ctk." if getattr(descriptor, "is_ctk_class", True) else ""
-    )
+    class_prefix = "ctk." if is_ctk_class_for_node else ""
     lines.append(f"{full_name} = {class_prefix}{ctk_class}(")
     lines.append(f"    {master_var},")
     for key, src in kwargs:
@@ -2299,6 +2630,21 @@ def _emit_widget(
             child_index, parent_cols, parent_rows,
         ),
     )
+
+    # v1.10.2 flex-shrink: tag pack children with content-min floor +
+    # user-fixed flag so the runtime ``_ctkmaker_balance_pack`` helper
+    # knows how to redistribute when the container resizes. Skipped
+    # for grid/place — only pack participates in the auto-shrink loop.
+    # Both ``fixed`` and ``fill`` mark the child as user-controlled on
+    # the main axis (helper skips them); only ``grow`` is auto-sized.
+    _normalised_parent = normalise_layout_type(parent_layout)
+    if _normalised_parent in ("vbox", "hbox"):
+        from app.widgets.content_min import content_min_axis
+        _axis = "height" if _normalised_parent == "vbox" else "width"
+        _min = content_min_axis(node, _axis)
+        lines.append(f"{full_name}._ctkmaker_min = {_min}")
+        if str(props.get("stretch", "fixed")) in ("fixed", "fill"):
+            lines.append(f"{full_name}._ctkmaker_fixed = True")
 
     # Phase 2 — bind-style events (CTkEntry / CTkTextbox <Return> etc.)
     # land here, AFTER geometry so the widget is fully constructed and
@@ -2684,7 +3030,11 @@ def _text_clipboard_helper_lines() -> list[str]:
     return [
         "def _setup_text_clipboard(root):",
         '    """Add right-click menu and keyboard shortcuts to all text fields."""',
+        "    import sys",
         "    import tkinter as tk",
+        '    # Resolve at runtime so the exported app adapts to the END',
+        "    # USER's platform — not the platform that ran the exporter.",
+        '    _mod_key = "Command" if sys.platform == "darwin" else "Control"',
         "    def _popup(event):",
         "        widget = event.widget",
         "        # tk.Entry uses .selection_present(); tk.Text uses",
@@ -2715,7 +3065,7 @@ def _text_clipboard_helper_lines() -> list[str]:
         '            return "break"',
         '    for cls in ("Entry", "Text"):',
         '        root.bind_class(cls, "<Button-3>", _popup, add="+")',
-        '        root.bind_class(cls, "<Control-KeyPress>", _ctrl, add="+")',
+        '        root.bind_class(cls, f"<{_mod_key}-KeyPress>", _ctrl, add="+")',
         "    # Clicks on non-text widgets (Frame, root, Button, etc.)",
         "    # force focus to the root so any previously-focused",
         "    # Entry / Text fires FocusOut — that's what CTk relies on",

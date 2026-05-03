@@ -257,6 +257,20 @@ class WidgetLifecycle:
             and parent_node.widget_type == "CTkScrollableFrame"
         ):
             self._pin_scrollable_inner_for_place(parent_node)
+        # v1.10.2 flex-shrink: a fresh pack child appended to an
+        # hbox/vbox container shifts the budget for every existing
+        # sibling AND the new one. Run *after* widget_views is
+        # populated so the new node is visible to rebalance — calling
+        # earlier (inside _place_nested) skipped it because its
+        # widget_views entry didn't exist yet.
+        if parent_node is not None:
+            parent_layout = normalise_layout_type(
+                parent_node.properties.get("layout_type", "place"),
+            )
+            if parent_layout in ("vbox", "hbox"):
+                self.layout_overlay.rebalance_pack_siblings(
+                    parent_node, parent_layout,
+                )
 
     def _wire_tabview_selection_refresh(self, tabview) -> None:
         """Route CTk's tab-switch callback to the selection controller
@@ -502,6 +516,10 @@ class WidgetLifecycle:
                     anchor_widget, lw, lh, self.zoom.value,
                 )
             anchor_widget.pack(**mgr_kwargs)
+            # v1.10.2 flex-shrink rebalance is deferred to
+            # ``on_widget_added`` *after* widget_views is populated —
+            # rebalancing here would skip the freshly packed widget
+            # because its widget_views entry doesn't exist yet.
         elif manager == "grid":
             # Placement deferred — see the apply_child_manager block
             # in ``on_widget_added`` that runs after apply_to_widget.
@@ -566,11 +584,19 @@ class WidgetLifecycle:
         # may have shrunk and scrollregion needs to follow.
         if parent_id:
             parent_node = self.project.get_widget(parent_id)
-            if (
-                parent_node is not None
-                and parent_node.widget_type == "CTkScrollableFrame"
-            ):
-                self._pin_scrollable_inner_for_place(parent_node)
+            if parent_node is not None:
+                if parent_node.widget_type == "CTkScrollableFrame":
+                    self._pin_scrollable_inner_for_place(parent_node)
+                # v1.10.2 flex-shrink: removing a child from an
+                # hbox/vbox container frees budget for the remaining
+                # grow siblings — re-distribute so they grow back.
+                parent_layout = normalise_layout_type(
+                    parent_node.properties.get("layout_type", "place"),
+                )
+                if parent_layout in ("vbox", "hbox"):
+                    self.layout_overlay.rebalance_pack_siblings(
+                        parent_node, parent_layout,
+                    )
 
     # ------------------------------------------------------------------
     # Reparent + z-order

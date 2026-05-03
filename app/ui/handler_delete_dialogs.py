@@ -23,6 +23,8 @@ from pathlib import Path
 
 import customtkinter as ctk
 
+from app.ui.dialog_utils import safe_grab_set
+
 _BG = "#1a1a1a"
 _HEADING_FG = "#e6e6e6"
 _BODY_FG = "#bdbdbd"
@@ -85,7 +87,7 @@ class WindowDeleteDialog(ctk.CTkToplevel):
         self.title("Delete window")
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
         self.configure(fg_color=_BG)
 
         self.confirmed: bool = False
@@ -282,7 +284,7 @@ class ActionDeleteDialog(ctk.CTkToplevel):
         self.title("Delete action")
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
         self.configure(fg_color=_BG)
 
         self.action: str = "cancel"

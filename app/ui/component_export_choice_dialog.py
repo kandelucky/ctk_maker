@@ -11,6 +11,9 @@ from pathlib import Path
 
 import customtkinter as ctk
 
+from app.ui.dialog_utils import safe_grab_set
+from app.ui.system_fonts import derive_mono_font
+
 
 COMPONENT_LIBRARY_URL = (
     "https://kandelucky.github.io/ctkMaker-component-library/"
@@ -23,7 +26,7 @@ class ComponentExportChoiceDialog(ctk.CTkToplevel):
         self.title("Export component")
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
 
         self._source_path = source_path
         self._parent = parent
@@ -35,7 +38,7 @@ class ComponentExportChoiceDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             body,
             text="Share your component",
-            font=("Segoe UI", 15, "bold"),
+            font=ctk.CTkFont(size=15, weight="bold"),
             text_color="#e6e6e6", anchor="w",
         ).pack(anchor="w", pady=(0, 8))
 
@@ -47,7 +50,7 @@ class ComponentExportChoiceDialog(ctk.CTkToplevel):
                 "Others can discover and reuse your work, and you "
                 "benefit from theirs."
             ),
-            font=("Segoe UI", 10),
+            font=ctk.CTkFont(size=10),
             text_color="#bdbdbd",
             justify="left", anchor="w", wraplength=440,
         ).pack(anchor="w", pady=(0, 14))
@@ -55,7 +58,7 @@ class ComponentExportChoiceDialog(ctk.CTkToplevel):
         ctk.CTkButton(
             body, text="🌐  Visit Component Library",
             width=240, height=34, corner_radius=6,
-            font=("Segoe UI", 11, "bold"),
+            font=ctk.CTkFont(size=11, weight="bold"),
             command=self._on_visit_library,
         ).pack(pady=(0, 16))
 
@@ -74,13 +77,13 @@ class ComponentExportChoiceDialog(ctk.CTkToplevel):
             height=44, corner_radius=6,
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             text_color="#e6e6e6",
-            font=("Segoe UI", 11, "bold"),
+            font=ctk.CTkFont(size=11, weight="bold"),
             command=self._on_personal,
         ).pack(fill="x")
         ctk.CTkLabel(
             personal_col,
             text="Saves the .ctkcomp file\nlocally for your own use.",
-            font=("Segoe UI", 9),
+            font=ctk.CTkFont(size=9),
             text_color="#888888",
             justify="center",
         ).pack(pady=(6, 0))
@@ -90,13 +93,13 @@ class ComponentExportChoiceDialog(ctk.CTkToplevel):
         ctk.CTkButton(
             publish_col, text="Publish to Community",
             height=44, corner_radius=6,
-            font=("Segoe UI", 11, "bold"),
+            font=ctk.CTkFont(size=11, weight="bold"),
             command=self._on_publish,
         ).pack(fill="x")
         ctk.CTkLabel(
             publish_col,
             text="Prepares the file with license\n& attribution metadata.",
-            font=("Segoe UI", 9),
+            font=ctk.CTkFont(size=9),
             text_color="#888888",
             justify="center",
         ).pack(pady=(6, 0))
@@ -180,11 +183,11 @@ class _MITTextWindow(ctk.CTkToplevel):
         self.title("MIT License — full text")
         self.geometry("560x440")
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
         self.configure(fg_color="#1a1a1a")
 
         textbox = ctk.CTkTextbox(
-            self, font=("Consolas", 10),
+            self, font=derive_mono_font(size=10),
             fg_color="#111111", text_color="#cfcfcf",
             wrap="word",
         )
@@ -212,7 +215,7 @@ class ComponentPublishLicenseDialog(ctk.CTkToplevel):
         self.title("License agreement")
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
         self.configure(fg_color="#1a1a1a")
 
         self._source_path = source_path
@@ -224,13 +227,13 @@ class ComponentPublishLicenseDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             body,
             text="License agreement",
-            font=("Segoe UI", 15, "bold"),
+            font=ctk.CTkFont(size=15, weight="bold"),
             text_color="#e6e6e6", anchor="w",
         ).pack(anchor="w", pady=(0, 4))
         ctk.CTkLabel(
             body,
             text="By publishing, you confirm:",
-            font=("Segoe UI", 10),
+            font=ctk.CTkFont(size=10),
             text_color="#bdbdbd", anchor="w",
         ).pack(anchor="w", pady=(0, 14))
 
@@ -239,7 +242,7 @@ class ComponentPublishLicenseDialog(ctk.CTkToplevel):
         self._var_responsibility = tk.BooleanVar(value=False)
 
         check_kwargs = dict(
-            font=("Segoe UI", 10),
+            font=ctk.CTkFont(size=10),
             text_color="#dcdcdc",
             checkbox_width=18, checkbox_height=18,
             corner_radius=3,
@@ -293,7 +296,7 @@ class ComponentPublishLicenseDialog(ctk.CTkToplevel):
             width=170, height=28, corner_radius=4,
             fg_color="#2b2b2b", hover_color="#3a3a3a",
             text_color="#9ec3ff",
-            font=("Segoe UI", 10, "underline"),
+            font=ctk.CTkFont(size=10, underline=True),
             command=self._show_mit_text,
         ).pack(anchor="w", pady=(0, 4))
 
@@ -302,7 +305,7 @@ class ComponentPublishLicenseDialog(ctk.CTkToplevel):
         self._accept_btn = ctk.CTkButton(
             footer, text="Accept & continue",
             width=170, height=32, corner_radius=4,
-            font=("Segoe UI", 11, "bold"),
+            font=ctk.CTkFont(size=11, weight="bold"),
             command=self._on_accept,
             state="disabled",
         )

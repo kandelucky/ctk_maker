@@ -29,6 +29,7 @@ import customtkinter as ctk
 from app.core.logger import log_error
 from app.core.settings import load_settings, save_setting
 from app.io.code_exporter import export_project
+from app.ui.dialog_utils import safe_grab_set
 from app.ui.icons import load_icon
 
 SETTING_INCLUDE_DESCRIPTIONS = "export_include_descriptions"
@@ -83,7 +84,7 @@ class ExportDialog(ctk.CTkToplevel):
         self.title("Export")
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
         self.geometry(f"{DIALOG_W}x{DIALOG_H}")
 
         self._scope_options: list[tuple[str, str]] = self._build_scope_list()

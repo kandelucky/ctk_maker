@@ -82,8 +82,8 @@ class CardDescriptor(WidgetDescriptor):
         "image_width": 48,
         "image_height": 48,
         "image_preserve_aspect": True,
-        "image_pad_x": 8,
-        "image_pad_y": 8,
+        "image_pad_x": 0,
+        "image_pad_y": 0,
         "image_color": None,
     }
 
@@ -165,11 +165,13 @@ class CardDescriptor(WidgetDescriptor):
          "disabled_when": lambda p: not p.get("image")},
         {"name": "image_pad_x", "type": "number", "label": "X",
          "group": "Image", "pair": "image_pad", "row_label": "Padding",
-         "min": 0, "max": 200,
+         "min": lambda p: -int(p.get("width", 0) or 0),
+         "max": lambda p: int(p.get("width", 0) or 0),
          "disabled_when": lambda p: not p.get("image")},
         {"name": "image_pad_y", "type": "number", "label": "Y",
          "group": "Image", "pair": "image_pad",
-         "min": 0, "max": 200,
+         "min": lambda p: -int(p.get("height", 0) or 0),
+         "max": lambda p: int(p.get("height", 0) or 0),
          "disabled_when": lambda p: not p.get("image")},
     ]
 

@@ -59,10 +59,12 @@ class WidgetEntry:
     # palette entries backed by the same CTkFrame
     # descriptor but with different default layout_type / border.
     preset_overrides: tuple[tuple[str, object], ...] = ()
-    # Auto-assigned ``node.name`` on creation. None falls back to
-    # the project's widget-type counter naming. Used so a dropped
-    # ``Vertical Layout`` shows up in the Object Tree as
-    # "Vertical Layout 1" instead of "Frame 4".
+    # Slug base for the auto-generated ``node.name`` on creation
+    # (``add_widget`` appends ``_1`` / ``_2`` / ...). None falls back
+    # to the widget-type slug. Used so a dropped Vertical Layout
+    # shows up in the Object Tree as ``vertical_layout_1`` instead
+    # of ``frame_4`` — all three layouts share CTkFrame so the
+    # widget-type slug alone would erase the layout-type distinction.
     default_name: str | None = None
 
 
@@ -82,7 +84,7 @@ CATALOG: tuple[WidgetGroup, ...] = (
                 ("width", 240),
                 ("height", 180),
             ),
-            default_name="Vertical Layout",
+            default_name="vertical_layout",
         ),
         WidgetEntry(
             "CTkFrame", "Horizontal Layout", "columns-3",
@@ -92,7 +94,7 @@ CATALOG: tuple[WidgetGroup, ...] = (
                 ("width", 320),
                 ("height", 60),
             ),
-            default_name="Horizontal Layout",
+            default_name="horizontal_layout",
         ),
         WidgetEntry(
             "CTkFrame", "Grid Layout", "grid-3x3",
@@ -102,7 +104,7 @@ CATALOG: tuple[WidgetGroup, ...] = (
                 ("width", 320),
                 ("height", 240),
             ),
-            default_name="Grid Layout",
+            default_name="grid_layout",
         ),
     )),
     WidgetGroup("Buttons", (
@@ -564,9 +566,7 @@ class Palette(ctk.CTkFrame):
             widget_type=descriptor.type_name,
             properties=properties,
         )
-        if entry.default_name:
-            node.name = entry.default_name
-        self.project.add_widget(node)
+        self.project.add_widget(node, name_base=entry.default_name)
         self.project.select_widget(node.id)
         doc_id = doc.id if doc is not None else None
         self.project.history.push(

@@ -26,6 +26,7 @@ from typing import Any
 import customtkinter as ctk
 
 from app.core.settings import load_settings, save_setting
+from app.ui.dialog_utils import safe_grab_set
 
 DIALOG_W = 700
 DIALOG_H = 520
@@ -122,7 +123,7 @@ class SettingsDialog(tk.Toplevel):
         self.configure(bg=BG)
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
         self.geometry(f"{DIALOG_W}x{DIALOG_H}")
         self._center_on_parent(parent)
 

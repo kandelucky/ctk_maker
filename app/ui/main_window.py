@@ -32,9 +32,11 @@ from app.ui.object_tree_window import ObjectTreePanel, ObjectTreeWindow
 from app.ui.palette import Palette
 from app.ui.project_window import ProjectPanel, ProjectWindow
 from app.ui.properties_panel_v2 import PropertiesPanelV2 as PropertiesPanel
+from app.ui.crash_dialog import show_crash_dialog
 from app.ui.startup_dialog import StartupDialog
 from app.ui.toolbar import Toolbar
 from app.ui.workspace import Workspace
+from app.core.platform_compat import IS_WINDOWS, MOD_KEY
 
 PROJECT_FILE_TYPES = [("CTkMaker project", "*.ctkproj"), ("All files", "*.*")]
 
@@ -379,7 +381,12 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         # tk's default <Control-v> etc. never fire and clipboard
         # shortcuts break. Fall back to the hardware keycode (Windows
         # VK) and emit the corresponding virtual event.
-        self.bind_all("<Control-KeyPress>", self._on_control_keypress)
+        # Win-only — the keycode table in `_on_control_keypress` uses
+        # Windows VK values, so the fallback is gated to Windows. macOS
+        # non-Latin layout handling is GitHub issue #5 deferred work
+        # (Tk-aqua's Cmd state bit + Mac keycode tables differ).
+        if IS_WINDOWS:
+            self.bind_all("<Control-KeyPress>", self._on_control_keypress)
 
         self.project = Project()
         self._current_path: str | None = None
@@ -845,8 +852,11 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             messagebox.showerror("Open failed", str(exc), parent=self)
             return
         except Exception:
-            log_error("load_project")
-            messagebox.showerror("Open failed", "Unexpected error — see console.", parent=self)
+            tb = log_error("load_project")
+            show_crash_dialog(
+                self, "Open failed",
+                "Unexpected error opening project.", tb,
+            )
             return
         self._set_current_path(path)
         # Detect legacy single-file projects (no project.json marker
@@ -1002,11 +1012,10 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             messagebox.showerror("Recover failed", str(exc), parent=self)
             return
         except Exception:
-            log_error("recover_from_backup")
-            messagebox.showerror(
-                "Recover failed",
-                "Unexpected error — see console.",
-                parent=self,
+            tb = log_error("recover_from_backup")
+            show_crash_dialog(
+                self, "Recover failed",
+                "Unexpected error recovering from backup.", tb,
             )
             return
         # Untitled — force Save As so the user can't blindly Ctrl+S

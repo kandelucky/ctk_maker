@@ -935,8 +935,20 @@ class SchemaMixin:
         return result
 
     def _apply_managed_layout_disabled(self, node) -> None:
-        """Disable geometry fields for managed-layout children — the
-        layout manager owns placement so x/y/width/height are read-only.
+        """Disable geometry fields for managed-layout children based on
+        the parent's layout manager + the child's ``stretch`` setting:
+
+        - ``place`` parent — no override; user owns x/y/width/height.
+        - ``grid`` parent — placement is grid-cell driven; disable
+          x/y/width/height across the board (per-cell sizing replaces
+          per-widget sizing).
+        - ``vbox`` / ``hbox`` parent — disable x/y always; width/height
+          per-stretch (v1.10.2):
+            - ``fixed``: nothing extra disabled — user controls W and H.
+            - ``fill``: cross axis disabled (auto-fills the parent).
+              hbox → height disabled; vbox → width disabled.
+            - ``grow``: main axis owned by ``rebalance_pack_siblings``,
+              cross axis filled by pack — both disabled.
         """
         from app.widgets.layout_schema import normalise_layout_type
         if node is None or node.parent is None:
@@ -946,8 +958,23 @@ class SchemaMixin:
         )
         if parent_layout == "place":
             return
-        for field in ("x", "y", "width", "height"):
+        # grid: legacy behavior — disable everything geometry-related.
+        if parent_layout == "grid":
+            for field in ("x", "y", "width", "height"):
+                self._disabled_states[field] = True
+            return
+        # vbox / hbox: x/y always managed by pack, never user-editable.
+        for field in ("x", "y"):
             self._disabled_states[field] = True
+        stretch = str(node.properties.get("stretch", "fixed"))
+        main_axis = "width" if parent_layout == "hbox" else "height"
+        cross_axis = "height" if parent_layout == "hbox" else "width"
+        if stretch == "grow":
+            self._disabled_states[main_axis] = True
+            self._disabled_states[cross_axis] = True
+        elif stretch == "fill":
+            self._disabled_states[cross_axis] = True
+        # stretch == "fixed" — leave both W/H editable; user owns both.
 
     def _is_hidden(self, prop: dict, properties: dict) -> bool:
         """Schema rows can declare a ``hidden_when(properties)``

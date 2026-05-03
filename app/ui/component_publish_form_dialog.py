@@ -20,6 +20,7 @@ from app.core.component_paths import (
 from app.core.logger import log_error
 from app.core.settings import load_settings, save_setting
 from app.io.component_io import load_metadata, rewrite_payload_for_publish
+from app.ui.dialog_utils import safe_grab_set
 
 CATEGORY_GUIDE_URL = (
     "https://github.com/kandelucky/ctk_maker/wiki/Component-Categories"
@@ -82,7 +83,7 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
         self.title("Publish component")
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
         self.configure(fg_color="#1a1a1a")
 
         self.result: bool = False

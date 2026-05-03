@@ -35,6 +35,7 @@ from app.core.variables import (
     coerce_default_for_type,
     sanitize_var_name,
 )
+from app.ui.dialog_utils import safe_grab_set
 
 if TYPE_CHECKING:
     from app.core.project import Project
@@ -542,7 +543,7 @@ class ReparentVariablesDialog(ctk.CTkToplevel):
             self.transient(parent)
         except tk.TclError:
             pass
-        self.grab_set()
+        safe_grab_set(self)
 
         self.result: tuple[str, str] | None = None
         self._source_name = source_doc_name
@@ -776,7 +777,7 @@ class VariableEditDialog(ctk.CTkToplevel):
         self.minsize(360, 280)
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
 
         self.result: tuple[str, str, str] | None = None
         self._existing_names = existing_names

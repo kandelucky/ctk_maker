@@ -13,6 +13,8 @@ import tkinter as tk
 
 import customtkinter as ctk
 
+from app.ui.dialog_utils import safe_grab_set
+
 
 class ComponentWindowInsertDialog(ctk.CTkToplevel):
     def __init__(
@@ -25,7 +27,7 @@ class ComponentWindowInsertDialog(ctk.CTkToplevel):
         self.title("Insert Window component")
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
         self.configure(fg_color="#1a1a1a")
 
         self.result: bool = False

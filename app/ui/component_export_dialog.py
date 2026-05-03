@@ -18,6 +18,7 @@ import customtkinter as ctk
 
 from app.core.component_paths import COMPONENT_EXT, component_display_stem
 from app.core.logger import log_error
+from app.ui.dialog_utils import safe_grab_set
 from app.core.settings import load_settings, save_setting
 from app.io.component_io import load_metadata, rewrite_payload_author
 
@@ -53,7 +54,7 @@ class ComponentExportDialog(ctk.CTkToplevel):
         self.title("Export component")
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
 
         self.result: bool = False
         self._source_path = source_path

@@ -66,6 +66,7 @@ from app.widgets.layout_schema import (
     resolve_grid_drop_cell,
 )
 from app.widgets.registry import get_descriptor
+from app.core.platform_compat import MOD_KEY, MOD_LABEL_PLUS
 
 # ---- Drag + canvas ----------------------------------------------------------
 DRAG_THRESHOLD = 5
@@ -229,7 +230,7 @@ class Workspace(ctk.CTkFrame):
             "<ButtonRelease-2>", self.controls.on_middle_release,
         )
         self.canvas.bind("<Configure>", self._on_canvas_configure)
-        self.canvas.bind("<Control-MouseWheel>", self.zoom.handle_ctrl_wheel)
+        self.canvas.bind(f"<{MOD_KEY}-MouseWheel>", self.zoom.handle_ctrl_wheel)
         self.canvas.bind("<Button-3>", self._on_canvas_right_click)
 
     def _after_zoom_changed(self) -> None:
@@ -891,6 +892,37 @@ class Workspace(ctk.CTkFrame):
             widget_id, prop_name, value, node, descriptor,
             widget, window_id,
         )
+        # v1.10.2 flex-shrink: width/height edits propagate to the
+        # vbox/hbox rebalance loop in two directions.
+        # 1. Edit on a child whose parent uses pack layout → re-budget
+        #    siblings (a fixed sibling growing eats budget away from
+        #    the grow ones).
+        # 2. Edit on a container that *itself* uses pack layout →
+        #    re-budget its children (the container's main axis
+        #    changed, so each grow child's slot follows).
+        if prop_name in ("width", "height") and node is not None:
+            self._maybe_rebalance_after_size_edit(node)
+
+    def _maybe_rebalance_after_size_edit(self, node) -> None:
+        """Trigger ``rebalance_pack_siblings`` when a width/height
+        edit lands on (a) a child of a vbox/hbox parent or (b) a
+        vbox/hbox container itself. Either way the budget shifts and
+        grow siblings need fresh slot math.
+        """
+        parent_node = getattr(node, "parent", None)
+        if parent_node is not None:
+            parent_layout = normalise_layout_type(
+                parent_node.properties.get("layout_type", "place"),
+            )
+            if parent_layout in ("vbox", "hbox"):
+                self.layout_overlay.rebalance_pack_siblings(
+                    parent_node, parent_layout,
+                )
+        own_layout = normalise_layout_type(
+            node.properties.get("layout_type", "place"),
+        )
+        if own_layout in ("vbox", "hbox") and node.children:
+            self.layout_overlay.rebalance_pack_siblings(node, own_layout)
 
     def _handle_window_property(self, prop_name: str) -> None:
         """Window (virtual) node props don't touch a real CTk widget —
@@ -1499,9 +1531,10 @@ class Workspace(ctk.CTkFrame):
             and container_node.widget_type == "CTkTabview"
         ):
             node.parent_slot = active_tab_slot
-        if getattr(entry, "default_name", None):
-            node.name = entry.default_name
-        self.project.add_widget(node, parent_id=parent_id)
+        self.project.add_widget(
+            node, parent_id=parent_id,
+            name_base=getattr(entry, "default_name", None),
+        )
         self.project.select_widget(node.id)
         owning_doc = self.project.find_document_for_widget(node.id)
         document_id = owning_doc.id if owning_doc is not None else None
@@ -1609,7 +1642,7 @@ class Workspace(ctk.CTkFrame):
             # when the pointer happens to hover a widget instead of
             # empty canvas area.
             _safe_bind(
-                "<Control-MouseWheel>", self.zoom.handle_ctrl_wheel,
+                f"<{MOD_KEY}-MouseWheel>", self.zoom.handle_ctrl_wheel,
             )
             _safe_bind(
                 "<Button-3>",
@@ -1939,7 +1972,7 @@ class Workspace(ctk.CTkFrame):
         if can_group:
             menu.add_command(
                 label="Group",
-                accelerator="Ctrl+G",
+                accelerator=f"{MOD_LABEL_PLUS}G",
                 command=toplevel._on_group_shortcut,
             )
         if select_group_id:
@@ -1950,7 +1983,7 @@ class Workspace(ctk.CTkFrame):
         if can_ungroup:
             menu.add_command(
                 label="Ungroup",
-                accelerator="Ctrl+Shift+G",
+                accelerator=f"{MOD_LABEL_PLUS}Shift+G",
                 command=toplevel._on_ungroup_shortcut,
             )
 

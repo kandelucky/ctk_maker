@@ -305,7 +305,15 @@ class ScrollableDropdown:
             pass
 
     def _on_root_click(self, event) -> None:
-        if str(self.top.state()) == "withdrawn":
+        # Mirror _on_root_configure's tk.TclError guard — root window can
+        # fire <Button-1> after the dropdown Toplevel was destroyed
+        # (preview teardown race). The v1.9.12 fix patched _on_root_configure
+        # but left this first state() call uncovered — the line 311 try/except
+        # below only guards the geometry probes that come after.
+        try:
+            if str(self.top.state()) == "withdrawn":
+                return
+        except tk.TclError:
             return
         # Click inside our popup → ignore (button command handles it).
         try:

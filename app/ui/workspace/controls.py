@@ -22,6 +22,7 @@ import customtkinter as ctk
 
 from app.ui.icons import load_icon
 from app.ui.toolbar import _attach_tooltip
+from app.core.platform_compat import MOD_KEY
 
 # Tool identifiers — also used by ``chrome.py`` (via the workspace
 # delegator) and ``drag.py`` (via the literal ``"hand"`` string).
@@ -400,10 +401,10 @@ class WorkspaceControls:
             )
         top.bind("<Delete>", self.workspace._on_delete)
         top.bind("<Escape>", self.workspace._on_escape)
-        top.bind("<Control-equal>", lambda e: self._zoom_keyboard(1))
-        top.bind("<Control-plus>", lambda e: self._zoom_keyboard(1))
-        top.bind("<Control-minus>", lambda e: self._zoom_keyboard(-1))
-        top.bind("<Control-Key-0>", lambda e: self._zoom_reset())
+        top.bind(f"<{MOD_KEY}-equal>", lambda e: self._zoom_keyboard(1))
+        top.bind(f"<{MOD_KEY}-plus>", lambda e: self._zoom_keyboard(1))
+        top.bind(f"<{MOD_KEY}-minus>", lambda e: self._zoom_keyboard(-1))
+        top.bind(f"<{MOD_KEY}-Key-0>", lambda e: self._zoom_reset())
         top.bind(
             "<KeyPress-v>",
             lambda e: self._tool_shortcut(TOOL_EDIT),

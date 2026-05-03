@@ -1,0 +1,138 @@
+{
+  "app/core/platform_compat.py": {
+    "consolas": 1,
+    "ctrl_label": 2,
+    "segoe_ui": 1
+  },
+  "app/ui/component_export_dialog.py": {
+    "segoe_ui": 5
+  },
+  "app/ui/component_import_dialog.py": {
+    "segoe_ui": 4
+  },
+  "app/ui/component_publish_form_dialog.py": {
+    "segoe_ui": 12
+  },
+  "app/ui/component_save_dialog.py": {
+    "segoe_ui": 3
+  },
+  "app/ui/component_var_conflict_dialog.py": {
+    "segoe_ui": 5
+  },
+  "app/ui/component_window_insert_dialog.py": {
+    "segoe_ui": 3
+  },
+  "app/ui/dialog_utils.py": {
+    "raw_grab_set": 1
+  },
+  "app/ui/dialogs.py": {
+    "segoe_ui": 23
+  },
+  "app/ui/export_dialog.py": {
+    "segoe_ui": 15
+  },
+  "app/ui/font_picker_dialog.py": {
+    "segoe_ui": 18
+  },
+  "app/ui/handler_delete_dialogs.py": {
+    "segoe_ui": 8
+  },
+  "app/ui/history_window.py": {
+    "segoe_ui": 1
+  },
+  "app/ui/image_picker_dialog.py": {
+    "segoe_ui": 6
+  },
+  "app/ui/lucide_icon_picker_dialog.py": {
+    "segoe_ui": 8
+  },
+  "app/ui/main_menu.py": {
+    "segoe_ui": 1
+  },
+  "app/ui/main_window.py": {
+    "control_bind": 1,
+    "segoe_ui": 3
+  },
+  "app/ui/new_project_form.py": {
+    "segoe_ui": 11
+  },
+  "app/ui/object_tree_window.py": {
+    "segoe_ui": 11
+  },
+  "app/ui/palette.py": {
+    "segoe_ui": 5
+  },
+  "app/ui/project_window.py": {
+    "ctrl_label": 1,
+    "segoe_ui": 10
+  },
+  "app/ui/properties_panel_v2/constants.py": {
+    "segoe_ui": 1
+  },
+  "app/ui/properties_panel_v2/editors/color.py": {
+    "segoe_ui": 1
+  },
+  "app/ui/properties_panel_v2/editors/enum.py": {
+    "segoe_ui": 1
+  },
+  "app/ui/properties_panel_v2/editors/font.py": {
+    "segoe_ui": 3
+  },
+  "app/ui/properties_panel_v2/editors/image.py": {
+    "segoe_ui": 3
+  },
+  "app/ui/properties_panel_v2/editors/multiline.py": {
+    "segoe_ui": 1
+  },
+  "app/ui/properties_panel_v2/editors/number.py": {
+    "segoe_ui": 1
+  },
+  "app/ui/properties_panel_v2/editors/segment_values.py": {
+    "segoe_ui": 1
+  },
+  "app/ui/properties_panel_v2/panel.py": {
+    "segoe_ui": 13
+  },
+  "app/ui/properties_panel_v2/panel_commit.py": {
+    "segoe_ui": 5
+  },
+  "app/ui/properties_panel_v2/panel_schema.py": {
+    "segoe_ui": 5
+  },
+  "app/ui/quick_export_dialog.py": {
+    "segoe_ui": 10
+  },
+  "app/ui/recent_list.py": {
+    "segoe_ui": 6
+  },
+  "app/ui/save_as_dialog.py": {
+    "segoe_ui": 8
+  },
+  "app/ui/settings_dialog.py": {
+    "segoe_ui": 20
+  },
+  "app/ui/startup_dialog.py": {
+    "segoe_ui": 4
+  },
+  "app/ui/toolbar.py": {
+    "segoe_ui": 2
+  },
+  "app/ui/variables_window.py": {
+    "segoe_ui": 21
+  },
+  "app/ui/widget_inspector_window.py": {
+    "segoe_ui": 5
+  },
+  "app/ui/workspace/chrome.py": {
+    "segoe_ui": 3
+  },
+  "app/ui/workspace/controls.py": {
+    "segoe_ui": 4
+  },
+  "app/ui/workspace/drag.py": {
+    "segoe_ui": 1
+  },
+  "app/ui/zoom_controller.py": {
+    "segoe_ui": 4
+  }
+}

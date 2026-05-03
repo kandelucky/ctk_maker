@@ -24,6 +24,7 @@ from typing import Callable
 
 import customtkinter as ctk
 
+from app.ui.system_fonts import derive_ui_font
 from app.core.component_paths import (
     COMPONENT_EXT, PUBLISH_COMPONENT_EXT,
     component_display_stem, components_root, ensure_components_root,
@@ -143,7 +144,7 @@ class ComponentsPanel(ctk.CTkFrame):
             image=plus_icon,
             compound="left",
             height=24, corner_radius=3,
-            font=("Segoe UI", 11, "bold"),
+            font=ctk.CTkFont(size=11, weight="bold"),
             fg_color=HEADER_BG, hover_color="#3a3a3a",
             text_color="#cccccc",
             anchor="w",
@@ -186,7 +187,7 @@ class ComponentsPanel(ctk.CTkFrame):
             style_name,
             background=TREE_BG, fieldbackground=TREE_BG,
             foreground=TREE_FG, rowheight=TREE_ROW_HEIGHT,
-            borderwidth=0, font=("Segoe UI", 11),
+            borderwidth=0, font=derive_ui_font(size=11),
         )
         # The default ttk Treeview layout wraps the tree area in a
         # "Treeview.field" element that paints a 1px border on focus
@@ -270,7 +271,7 @@ class ComponentsPanel(ctk.CTkFrame):
                 "They live next to assets in the project folder."
             ),
             text_color=DIM_FG,
-            font=("Segoe UI", 10),
+            font=ctk.CTkFont(size=10),
             wraplength=200,
             justify="center",
         )
@@ -618,7 +619,7 @@ class ComponentsPanel(ctk.CTkFrame):
             self, tearoff=0,
             bg="#2d2d30", fg=HEADER_FG,
             activebackground="#094771", activeforeground="#ffffff",
-            relief="flat", bd=0, font=("Segoe UI", 10),
+            relief="flat", bd=0, font=derive_ui_font(size=10),
         )
 
     # ------------------------------------------------------------------
@@ -1002,7 +1003,7 @@ class ComponentsPanel(ctk.CTkFrame):
         tk.Label(
             frame, text=f"+ {name}",
             bg="#3b8ed0", fg="white",
-            font=("Segoe UI", 10, "bold"),
+            font=derive_ui_font(size=10, weight="bold"),
             padx=10, pady=4,
         ).pack()
         ghost.update_idletasks()

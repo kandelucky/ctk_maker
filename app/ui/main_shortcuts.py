@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import tkinter as tk
 
+from app.core.platform_compat import MOD_KEY
+
 
 class ShortcutsMixin:
     """Global keyboard shortcut handlers. See module docstring."""
@@ -131,19 +133,19 @@ class ShortcutsMixin:
     # Bind setup — called once from MainWindow.__init__
     # ------------------------------------------------------------------
     def _bind_shortcuts(self) -> None:
-        self.bind("<Control-n>", lambda e: self._on_new())
-        self.bind("<Control-o>", lambda e: self._on_open())
-        self.bind("<Control-s>", lambda e: self._on_save())
-        self.bind("<Control-Shift-S>", lambda e: self._on_save_as())
-        self.bind("<Control-r>", lambda e: self._on_preview())
-        self.bind("<Control-w>", lambda e: self._on_close_project())
+        self.bind(f"<{MOD_KEY}-n>", lambda e: self._on_new())
+        self.bind(f"<{MOD_KEY}-o>", lambda e: self._on_open())
+        self.bind(f"<{MOD_KEY}-s>", lambda e: self._on_save())
+        self.bind(f"<{MOD_KEY}-Shift-S>", lambda e: self._on_save_as())
+        self.bind(f"<{MOD_KEY}-r>", lambda e: self._on_preview())
+        self.bind(f"<{MOD_KEY}-w>", lambda e: self._on_close_project())
         self.bind("<F7>", lambda e: self._on_f7_edit_behavior_file())
         self.bind("<F8>", lambda e: self._on_f8_object_tree())
         self.bind("<F9>", lambda e: self._on_f9_history_window())
         self.bind("<F10>", lambda e: self._on_f10_project_window())
         self.bind("<F11>", lambda e: self._on_f11_variables_window())
-        self.bind("<Control-q>", lambda e: self._on_quit())
-        self.bind("<Control-comma>", lambda e: self._on_open_preferences())
+        self.bind(f"<{MOD_KEY}-q>", lambda e: self._on_quit())
+        self.bind(f"<{MOD_KEY}-comma>", lambda e: self._on_open_preferences())
         # bind_all so undo/redo works when the Object Tree toplevel
         # has focus too — regular `self.bind` only fires for the
         # main window's widget tree.
@@ -172,26 +174,26 @@ class ShortcutsMixin:
         # the tree is focused; these are the fallback for everything
         # else (canvas, palette, empty focus). Entry / Text widgets
         # short-circuit so native text copy/paste keeps working there.
-        self.bind("<Control-c>", self._on_copy_shortcut)
-        self.bind("<Control-C>", self._on_copy_shortcut)
-        self.bind("<Control-v>", self._on_paste_shortcut)
-        self.bind("<Control-V>", self._on_paste_shortcut)
-        self.bind("<Control-x>", self._on_cut_shortcut)
-        self.bind("<Control-X>", self._on_cut_shortcut)
-        self.bind("<Control-d>", lambda e: self._on_menu_duplicate())
-        self.bind("<Control-D>", lambda e: self._on_menu_duplicate())
-        self.bind("<Control-i>", lambda e: self._on_menu_rename())
-        self.bind("<Control-I>", lambda e: self._on_menu_rename())
-        self.bind("<Control-Shift-I>", lambda e: self._on_docs_shortcut())
-        self.bind("<Control-p>", lambda e: self._on_preview_active())
-        self.bind("<Control-P>", lambda e: self._on_preview_active())
-        self.bind("<Control-m>", lambda e: self._on_add_dialog())
-        self.bind("<Control-M>", lambda e: self._on_add_dialog())
-        self.bind("<Control-g>", lambda e: self._on_group_shortcut())
-        self.bind("<Control-G>", lambda e: self._on_group_shortcut())
-        self.bind("<Control-Shift-G>", lambda e: self._on_ungroup_shortcut())
-        self.bind_all("<Control-a>", self._on_select_all_shortcut)
-        self.bind_all("<Control-A>", self._on_select_all_shortcut)
+        self.bind(f"<{MOD_KEY}-c>", self._on_copy_shortcut)
+        self.bind(f"<{MOD_KEY}-C>", self._on_copy_shortcut)
+        self.bind(f"<{MOD_KEY}-v>", self._on_paste_shortcut)
+        self.bind(f"<{MOD_KEY}-V>", self._on_paste_shortcut)
+        self.bind(f"<{MOD_KEY}-x>", self._on_cut_shortcut)
+        self.bind(f"<{MOD_KEY}-X>", self._on_cut_shortcut)
+        self.bind(f"<{MOD_KEY}-d>", lambda e: self._on_menu_duplicate())
+        self.bind(f"<{MOD_KEY}-D>", lambda e: self._on_menu_duplicate())
+        self.bind(f"<{MOD_KEY}-i>", lambda e: self._on_menu_rename())
+        self.bind(f"<{MOD_KEY}-I>", lambda e: self._on_menu_rename())
+        self.bind(f"<{MOD_KEY}-Shift-I>", lambda e: self._on_docs_shortcut())
+        self.bind(f"<{MOD_KEY}-p>", lambda e: self._on_preview_active())
+        self.bind(f"<{MOD_KEY}-P>", lambda e: self._on_preview_active())
+        self.bind(f"<{MOD_KEY}-m>", lambda e: self._on_add_dialog())
+        self.bind(f"<{MOD_KEY}-M>", lambda e: self._on_add_dialog())
+        self.bind(f"<{MOD_KEY}-g>", lambda e: self._on_group_shortcut())
+        self.bind(f"<{MOD_KEY}-G>", lambda e: self._on_group_shortcut())
+        self.bind(f"<{MOD_KEY}-Shift-G>", lambda e: self._on_ungroup_shortcut())
+        self.bind_all(f"<{MOD_KEY}-a>", self._on_select_all_shortcut)
+        self.bind_all(f"<{MOD_KEY}-A>", self._on_select_all_shortcut)
         self.bind("<<Copy>>", self._on_copy_shortcut)
         self.bind("<<Paste>>", self._on_paste_shortcut)
         self.bind("<<Cut>>", self._on_cut_shortcut)

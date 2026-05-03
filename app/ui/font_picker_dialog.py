@@ -34,6 +34,7 @@ from app.core.fonts import (
     register_font_file, resolve_system_font_path,
 )
 from app.core.logger import log_error
+from app.ui.dialog_utils import safe_grab_set
 from app.ui.icons import load_tk_icon
 
 HELP_TEXT = (
@@ -98,7 +99,7 @@ class FontPickerDialog(tk.Toplevel):
         self.configure(bg=BG)
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
 
         self.geometry(f"{DIALOG_W}x{DIALOG_H}")
         self._center_on_parent(parent)
@@ -665,7 +666,7 @@ class SystemFontPickerDialog(tk.Toplevel):
         self.configure(bg=BG)
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
         self.geometry(f"{SYS_DIALOG_W}x{SYS_DIALOG_H}")
         self._center_on_parent(parent)
 

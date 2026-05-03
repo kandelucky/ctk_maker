@@ -24,6 +24,8 @@ from pathlib import Path
 
 import customtkinter as ctk
 
+from app.ui.dialog_utils import safe_grab_set
+
 DIALOG_W = 500
 
 PANEL_BG = "#252526"
@@ -62,7 +64,7 @@ class QuickExportDialog(ctk.CTkToplevel):
         self.title("Quick Export")
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
+        safe_grab_set(self)
         self.configure(fg_color="#1e1e1e")
 
         self._build(document_name, output_path_preview)

@@ -28,6 +28,7 @@ from tkinter import messagebox, ttk
 import customtkinter as ctk
 
 from app.core.logger import crash_log_path
+from app.ui.dialog_utils import safe_grab_set
 from app.ui.system_fonts import derive_mono_font
 
 
@@ -81,10 +82,7 @@ class _CrashDialog(ctk.CTkToplevel):
         self.geometry("720x460")
         self.minsize(520, 320)
         self.transient(parent)
-        try:
-            self.grab_set()
-        except tk.TclError:
-            pass
+        safe_grab_set(self)
         self.bind("<Escape>", lambda _e: self.destroy())
 
         log_path = crash_log_path()

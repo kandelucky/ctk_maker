@@ -33,6 +33,7 @@ from app.ui.dialogs import RenameDialog
 from app.ui.icons import load_icon, load_tk_icon
 from app.widgets.layout_schema import normalise_layout_type
 from app.widgets.registry import all_descriptors, get_descriptor
+from app.core.platform_compat import MOD_KEY, MOD_LABEL_PLUS
 
 if TYPE_CHECKING:
     from app.core.project import Project
@@ -214,12 +215,12 @@ class ObjectTreePanel(ctk.CTkFrame):
         # shortcut only fires when the tree has keyboard focus (typing
         # into the search entry still does plain text copy/paste).
         # Latin keysym bindings (standard English keyboard layout):
-        self.tree.bind("<Control-c>", self._on_copy_shortcut)
-        self.tree.bind("<Control-C>", self._on_copy_shortcut)
-        self.tree.bind("<Control-v>", self._on_paste_shortcut)
-        self.tree.bind("<Control-V>", self._on_paste_shortcut)
+        self.tree.bind(f"<{MOD_KEY}-c>", self._on_copy_shortcut)
+        self.tree.bind(f"<{MOD_KEY}-C>", self._on_copy_shortcut)
+        self.tree.bind(f"<{MOD_KEY}-v>", self._on_paste_shortcut)
+        self.tree.bind(f"<{MOD_KEY}-V>", self._on_paste_shortcut)
         # Non-Latin layout fallback: MainWindow's
-        # bind_all("<Control-KeyPress>") routes by hardware keycode and
+        # bind_all(f"<{MOD_KEY}-KeyPress>") routes by hardware keycode and
         # emits <<Copy>>/<<Paste>> virtual events on the focused widget
         # — when the tree has focus, that's the tree.
         self.tree.bind("<<Copy>>", self._on_copy_shortcut)
@@ -1744,7 +1745,7 @@ class ObjectTreePanel(ctk.CTkFrame):
             primary = next(iter(ids))
             menu.add_command(
                 label="Ungroup",
-                accelerator="Ctrl+Shift+G",
+                accelerator=f"{MOD_LABEL_PLUS}Shift+G",
                 command=lambda ids=ids, p=primary, t=toplevel: (
                     self.project.set_multi_selection(ids, p),
                     t._on_ungroup_shortcut(),
@@ -1880,7 +1881,7 @@ class ObjectTreePanel(ctk.CTkFrame):
         if can_group:
             menu.add_command(
                 label="Group",
-                accelerator="Ctrl+G",
+                accelerator=f"{MOD_LABEL_PLUS}G",
                 command=toplevel._on_group_shortcut,
             )
         if select_group_id:
@@ -1891,7 +1892,7 @@ class ObjectTreePanel(ctk.CTkFrame):
         if can_ungroup:
             menu.add_command(
                 label="Ungroup",
-                accelerator="Ctrl+Shift+G",
+                accelerator=f"{MOD_LABEL_PLUS}Shift+G",
                 command=toplevel._on_ungroup_shortcut,
             )
 

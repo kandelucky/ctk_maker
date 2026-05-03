@@ -39,10 +39,83 @@ DIM_FG = "#888888"
 ACCENT_GOOD = "#6fcf6a"
 ACCENT_WARN = "#e0a44a"
 ACCENT_HELPER = "#6aa3e0"
+ACCENT_RENAMED = "#c792ea"
 
 STATUS_EXPOSED = "✓"
 STATUS_CTK_ONLY = "⚠"
 STATUS_BUILDER_ONLY = "★"
+STATUS_RENAMED = "≈"
+
+# CTk kwarg → builder property names that mean the same thing.
+# Per-widget because the same CTk kwarg can rename to different
+# builder props (CTkEntry's `state` covers BOTH `button_enabled`
+# (state="disabled") AND `readonly` (state="readonly")).
+# Without this map, the inspector flags both sides as
+# CTk-only / builder-only, and a reader can't tell that they're
+# actually two names for the same thing — the gap that ate ~6
+# iterations on the Inputs showcase build (state, show, value,
+# variable_name guesses against CTk-style names that don't exist
+# in the builder). Listed targets are shown as "≈ renamed" rows
+# instead of "⚠ CTk-only".
+RENAMED_KWARGS: dict[tuple[str, str], tuple[str, ...]] = {
+    # Disabled state — every interactive widget remaps `state` to
+    # `button_enabled` (False = disabled). Entry adds a second
+    # target for state="readonly".
+    ("CTkButton", "state"): ("button_enabled",),
+    ("CTkCheckBox", "state"): ("button_enabled",),
+    ("CTkRadioButton", "state"): ("button_enabled",),
+    ("CTkSwitch", "state"): ("button_enabled",),
+    ("CTkComboBox", "state"): ("button_enabled",),
+    ("CTkOptionMenu", "state"): ("button_enabled",),
+    ("CTkSegmentedButton", "state"): ("button_enabled",),
+    ("CTkSlider", "state"): ("button_enabled",),
+    ("CTkTextbox", "state"): ("button_enabled",),
+    ("CTkEntry", "state"): ("button_enabled", "readonly"),
+    # Entry password masking
+    ("CTkEntry", "show"): ("password",),
+    # Radio grouping — CTk needs (variable, value) per-radio in
+    # the same group; CTkMaker rolls that into a single string.
+    ("CTkRadioButton", "variable"): ("group",),
+    ("CTkRadioButton", "value"): ("group",),
+    # Initially-checked toggles — CTk uses `variable` on the widget
+    # paired with var.set(1); CTkMaker exposes `initially_checked`.
+    ("CTkSwitch", "variable"): ("initially_checked",),
+    ("CTkCheckBox", "variable"): ("initially_checked",),
+    # Initial value pairs (CTk has no init kwarg — done via
+    # variable + .set() in user code; CTkMaker collapses to one)
+    ("CTkSlider", "variable"): ("initial_value",),
+    ("CTkComboBox", "variable"): ("initial_value",),
+    ("CTkOptionMenu", "variable"): ("initial_value",),
+    ("CTkSegmentedButton", "variable"): ("initial_value",),
+    ("CTkEntry", "textvariable"): ("initial_value",),
+    # Per-event callbacks — CTk takes `command=callable`,
+    # CTkMaker stores handler method names in node.handlers and
+    # the exporter wires them. No property dict equivalent.
+    ("CTkButton", "command"): ("(handlers)",),
+    ("CTkCheckBox", "command"): ("(handlers)",),
+    ("CTkRadioButton", "command"): ("(handlers)",),
+    ("CTkSwitch", "command"): ("(handlers)",),
+    ("CTkComboBox", "command"): ("(handlers)",),
+    ("CTkOptionMenu", "command"): ("(handlers)",),
+    ("CTkSegmentedButton", "command"): ("(handlers)",),
+    ("CTkSlider", "command"): ("(handlers)",),
+}
+
+# Schema "type" → human-readable kind label shown in the Kind
+# column. Anything not listed shows the raw schema type as-is.
+_SCHEMA_TYPE_LABELS: dict[str, str] = {
+    "number": "number",
+    "boolean": "bool",
+    "color": "color",
+    "multiline": "string",
+    "font": "font",
+    "image": "image (path)",
+    "segment_values": "newline-string",
+    "segment_initial": "string",
+    "text_position": "enum",
+    "code": "code",
+    "string": "string",
+}
 
 
 def _ctk_class_for(descriptor) -> type | None:
@@ -78,6 +151,64 @@ def _ctk_kwargs(cls: type) -> dict[str, object]:
             p.default if p.default is not inspect._empty else "<required>"
         )
     return out
+
+
+def _property_kind(descriptor, prop_name: str, default_value) -> str:
+    """Return a short "Kind" badge for a property — e.g. ``number``,
+    ``color``, ``newline-string · node-only``. Pulls the schema type
+    when the property is exposed in the Properties panel; falls back
+    to the default value's Python type for CTk-only kwargs.
+
+    Special flags from descriptor metadata (``multiline_list_keys``,
+    ``_NODE_ONLY_KEYS``, ``recreate_triggers``) are appended as ``·``-
+    separated badges so the Kind column reads like a tag list.
+    """
+    schema_type = ""
+    for entry in getattr(descriptor, "property_schema", ()) or ():
+        if entry.get("name") == prop_name:
+            raw = entry.get("type") or ""
+            schema_type = _SCHEMA_TYPE_LABELS.get(raw, raw)
+            break
+    if not schema_type:
+        # CTk-only kwarg: infer from default value's runtime type.
+        if isinstance(default_value, bool):
+            schema_type = "bool"
+        elif isinstance(default_value, int):
+            schema_type = "number"
+        elif isinstance(default_value, float):
+            schema_type = "number"
+        elif isinstance(default_value, str):
+            schema_type = "string"
+        elif callable(default_value):
+            schema_type = "callable"
+        elif default_value is None:
+            schema_type = ""
+        else:
+            schema_type = type(default_value).__name__
+
+    badges: list[str] = []
+    if prop_name in (getattr(descriptor, "multiline_list_keys", set()) or ()):
+        # Override the inferred type — a key flagged here ALWAYS takes
+        # a newline-separated string, regardless of the schema label.
+        schema_type = "newline-string"
+    if prop_name in (getattr(descriptor, "_NODE_ONLY_KEYS", set()) or ()):
+        badges.append("node-only")
+    if prop_name in (getattr(descriptor, "recreate_triggers", set()) or ()):
+        badges.append("recreate-on-change")
+
+    if schema_type and badges:
+        return f"{schema_type} · " + " · ".join(badges)
+    return schema_type or " · ".join(badges)
+
+
+def _renamed_to(descriptor, ctk_kwarg: str) -> tuple[str, ...]:
+    """Builder property names that CTk's ``ctk_kwarg`` maps to for
+    this descriptor, or ``()`` if there's no rename. Drives the
+    "≈ renamed" row in place of plain "⚠ CTk-only" when the same
+    concept exists under a different name on the builder side.
+    """
+    type_name = getattr(descriptor, "type_name", "")
+    return RENAMED_KWARGS.get((type_name, ctk_kwarg), ())
 
 
 class WidgetInspectorWindow(ctk.CTkToplevel):
@@ -161,6 +292,7 @@ class WidgetInspectorWindow(ctk.CTkToplevel):
             bar,
             text=(
                 f"  {STATUS_EXPOSED} exposed     "
+                f"{STATUS_RENAMED} renamed     "
                 f"{STATUS_CTK_ONLY} CTk-only     "
                 f"{STATUS_BUILDER_ONLY} builder helper"
             ),
@@ -201,25 +333,30 @@ class WidgetInspectorWindow(ctk.CTkToplevel):
             foreground=[("selected", "#ffffff")],
         )
 
-        cols = ("status", "name", "ctk_default", "builder_default")
+        cols = ("status", "name", "kind", "ctk_default", "builder_default")
         self._tree = ttk.Treeview(
             wrap, columns=cols, show="headings",
             style="Inspector.Treeview", selectmode="browse",
         )
         self._tree.heading("status", text="")
         self._tree.heading("name", text="Property")
+        self._tree.heading("kind", text="Kind")
         self._tree.heading("ctk_default", text="CTk default")
         self._tree.heading("builder_default", text="Builder default")
-        self._tree.column("status", width=40, anchor="center", stretch=False)
-        self._tree.column("name", width=200, stretch=False)
-        self._tree.column("ctk_default", width=200, stretch=True)
-        self._tree.column("builder_default", width=200, stretch=True)
+        self._tree.column("status", width=36, anchor="center", stretch=False)
+        self._tree.column("name", width=210, stretch=False)
+        self._tree.column("kind", width=160, stretch=False)
+        self._tree.column("ctk_default", width=170, stretch=True)
+        self._tree.column("builder_default", width=170, stretch=True)
 
         # Coloured tags so the status column reads at a glance.
         bold = (tkfont.nametofont("TkDefaultFont").cget("family"), 10, "bold")
         self._tree.tag_configure("good", foreground=ACCENT_GOOD, font=bold)
         self._tree.tag_configure("warn", foreground=ACCENT_WARN, font=bold)
         self._tree.tag_configure("helper", foreground=ACCENT_HELPER, font=bold)
+        self._tree.tag_configure(
+            "renamed", foreground=ACCENT_RENAMED, font=bold,
+        )
 
         sb = ttk.Scrollbar(wrap, orient="vertical", command=self._tree.yview)
         self._tree.configure(yscrollcommand=sb.set)
@@ -285,29 +422,86 @@ class WidgetInspectorWindow(ctk.CTkToplevel):
             k for k in builder_defaults if k not in ctk_keyset
         )
 
-        good = warn = helper = 0
+        good = warn = helper = renamed = 0
+        # Track which builder-only keys are already accounted for by a
+        # rename row so they don't show up a second time as ★.
+        consumed_builder_keys: set[str] = set()
 
         for name in ctk_keys:
             ctk_val = _format_value(ctk_defaults[name])
             if name in builder_defaults:
                 status, tag = STATUS_EXPOSED, "good"
+                kind = _property_kind(
+                    descriptor, name, builder_defaults[name],
+                )
                 builder_val = _format_value(builder_defaults[name])
                 good += 1
-            else:
-                status, tag = STATUS_CTK_ONLY, "warn"
-                builder_val = "—"
-                warn += 1
-            self._tree.insert(
-                "", "end",
-                values=(status, name, ctk_val, builder_val),
-                tags=(tag,),
-            )
+                self._tree.insert(
+                    "", "end",
+                    values=(status, name, kind, ctk_val, builder_val),
+                    tags=(tag,),
+                )
+                continue
 
-        for name in builder_only_keys:
+            targets = _renamed_to(descriptor, name)
+            valid_targets = [
+                t for t in targets if t.startswith("(") or t in builder_defaults
+            ]
+            if valid_targets:
+                # Show as one renamed row that names both sides + the
+                # combined builder default(s). Dunder-bracketed targets
+                # like ``(handlers)`` are sentinel labels for concepts
+                # that don't live in the property dict at all (event
+                # callbacks → behavior file).
+                arrow_name = f"{name} → " + " / ".join(valid_targets)
+                kind_parts = []
+                builder_parts = []
+                for t in valid_targets:
+                    if t.startswith("("):
+                        kind_parts.append("behavior")
+                        builder_parts.append(t)
+                    else:
+                        kind_parts.append(
+                            _property_kind(
+                                descriptor, t, builder_defaults.get(t),
+                            ),
+                        )
+                        builder_parts.append(
+                            f"{t}={_format_value(builder_defaults[t])}",
+                        )
+                        consumed_builder_keys.add(t)
+                kind = " / ".join(p for p in kind_parts if p)
+                builder_val = "  ".join(builder_parts)
+                self._tree.insert(
+                    "", "end",
+                    values=(
+                        STATUS_RENAMED, arrow_name, kind,
+                        ctk_val, builder_val,
+                    ),
+                    tags=("renamed",),
+                )
+                renamed += 1
+                continue
+
+            # No builder equivalent at all — plain CTk-only row.
+            kind = _property_kind(descriptor, name, ctk_defaults[name])
             self._tree.insert(
                 "", "end",
                 values=(
-                    STATUS_BUILDER_ONLY, name,
+                    STATUS_CTK_ONLY, name, kind, ctk_val, "—",
+                ),
+                tags=("warn",),
+            )
+            warn += 1
+
+        for name in builder_only_keys:
+            if name in consumed_builder_keys:
+                continue
+            kind = _property_kind(descriptor, name, builder_defaults[name])
+            self._tree.insert(
+                "", "end",
+                values=(
+                    STATUS_BUILDER_ONLY, name, kind,
                     "—", _format_value(builder_defaults[name]),
                 ),
                 tags=("helper",),
@@ -319,6 +513,7 @@ class WidgetInspectorWindow(ctk.CTkToplevel):
             text=(
                 f"CTk class: {ctk_label}    "
                 f"{STATUS_EXPOSED} {good} exposed    "
+                f"{STATUS_RENAMED} {renamed} renamed    "
                 f"{STATUS_CTK_ONLY} {warn} CTk-only    "
                 f"{STATUS_BUILDER_ONLY} {helper} builder helper"
             ),
