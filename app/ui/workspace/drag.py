@@ -1164,13 +1164,17 @@ class WidgetDragController:
             try:
                 ex = int(g_node.properties.get("x", 0))
                 ey = int(g_node.properties.get("y", 0))
+                gw = int(g_node.properties.get("width", 0) or 0)
+                gh = int(g_node.properties.get("height", 0) or 0)
             except (TypeError, ValueError):
                 continue
             abs_x = doc.canvas_x + ex
             abs_y = doc.canvas_y + ey
             inside_any = any(
-                d.canvas_x <= abs_x < d.canvas_x + d.width
-                and d.canvas_y <= abs_y < d.canvas_y + d.height
+                d.canvas_x <= abs_x
+                and abs_x + gw <= d.canvas_x + d.width
+                and d.canvas_y <= abs_y
+                and abs_y + gh <= d.canvas_y + d.height
                 for d in all_docs
             )
             if not inside_any:
