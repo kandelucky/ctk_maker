@@ -36,6 +36,7 @@ from app.core.variables import (
     sanitize_var_name,
 )
 from app.ui.dialog_utils import safe_grab_set
+from app.ui.system_fonts import derive_ui_font
 
 if TYPE_CHECKING:
     from app.core.project import Project
@@ -997,7 +998,7 @@ class AddGlobalReferenceDialog(ctk.CTkToplevel):
         type_row.pack(fill="x", pady=(2, 6))
         ctk.CTkLabel(
             type_row, text="Type:", text_color="#bdbdbd",
-            font=("Segoe UI", 11), width=70, anchor="w",
+            font=ctk.CTkFont(size=11), width=70, anchor="w",
         ).pack(side="left")
         self._type_var = tk.StringVar(value="Window")
         self._type_var.trace_add(
@@ -1008,7 +1009,7 @@ class AddGlobalReferenceDialog(ctk.CTkToplevel):
                 type_row, text=label, value=label,
                 variable=self._type_var,
                 radiobutton_height=14, radiobutton_width=14,
-                font=("Segoe UI", 11),
+                font=ctk.CTkFont(size=11),
             )
             rb.pack(side="left", padx=(4, 12))
 
@@ -1019,7 +1020,7 @@ class AddGlobalReferenceDialog(ctk.CTkToplevel):
         target_row.pack(fill="x", pady=(6, 6))
         ctk.CTkLabel(
             target_row, text="Target:", text_color="#bdbdbd",
-            font=("Segoe UI", 11), width=70, anchor="w",
+            font=ctk.CTkFont(size=11), width=70, anchor="w",
         ).pack(side="left")
         self._target_var = tk.StringVar(value="")
         self._target_options: list[tuple[str, str]] = []
@@ -1037,7 +1038,7 @@ class AddGlobalReferenceDialog(ctk.CTkToplevel):
         name_row.pack(fill="x", pady=(6, 6))
         ctk.CTkLabel(
             name_row, text="Name:", text_color="#bdbdbd",
-            font=("Segoe UI", 11), width=70, anchor="w",
+            font=ctk.CTkFont(size=11), width=70, anchor="w",
         ).pack(side="left")
         self._name_var = tk.StringVar(value="")
         self._name_var.trace_add(
@@ -1052,7 +1053,7 @@ class AddGlobalReferenceDialog(ctk.CTkToplevel):
 
         self._error_label = ctk.CTkLabel(
             body, text="", text_color="#ef4444",
-            font=("Segoe UI", 10), anchor="w",
+            font=ctk.CTkFont(size=10), anchor="w",
         )
         self._error_label.pack(fill="x", pady=(6, 0))
 
@@ -1243,7 +1244,7 @@ class ObjectReferencesPanel(ctk.CTkFrame):
         # them here since the toggle flow is the discoverable path.
         self._add_global_btn = ctk.CTkButton(
             bar, text="+ Add Global", width=110, height=30,
-            corner_radius=3, font=("Segoe UI", 11),
+            corner_radius=3, font=ctk.CTkFont(size=11),
             fg_color="#0e8a7d", hover_color="#149a8c",
             command=self._on_add_global,
         )
@@ -1255,7 +1256,7 @@ class ObjectReferencesPanel(ctk.CTkFrame):
                 "stay local — toggle from a widget panel."
             ),
             text_color="#9aa4b2",
-            font=("Segoe UI", 10),
+            font=ctk.CTkFont(size=10),
             anchor="w",
             wraplength=320,
             justify="left",
@@ -1310,7 +1311,7 @@ class ObjectReferencesPanel(ctk.CTkFrame):
             foreground=TREE_FG,
             rowheight=TREE_ROW_HEIGHT,
             borderwidth=0,
-            font=("Segoe UI", TREE_FONT_SIZE),
+            font=derive_ui_font(size=TREE_FONT_SIZE),
         )
         style.map(
             "ObjectRefs.Treeview",
@@ -1333,7 +1334,7 @@ class ObjectReferencesPanel(ctk.CTkFrame):
         self.tree.tag_configure("empty", foreground=EMPTY_FG)
         self.tree.tag_configure(
             "section", foreground="#9aa4b2",
-            font=("Segoe UI", TREE_FONT_SIZE, "bold"),
+            font=derive_ui_font(size=TREE_FONT_SIZE, weight="bold"),
         )
         self.tree.bind("<Button-3>", self._on_right_click)
         self.tree.bind("<Double-Button-1>", self._on_double_click)

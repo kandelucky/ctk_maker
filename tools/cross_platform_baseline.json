@@ -97,7 +97,7 @@
     "segoe_ui": 5
   },
   "app/ui/properties_panel_v2/panel_schema.py": {
-    "segoe_ui": 8
+    "segoe_ui": 5
   },
   "app/ui/quick_export_dialog.py": {
     "segoe_ui": 10
@@ -118,7 +118,7 @@
     "segoe_ui": 2
   },
   "app/ui/variables_window.py": {
-    "segoe_ui": 30
+    "segoe_ui": 21
   },
   "app/ui/widget_inspector_window.py": {
     "segoe_ui": 5

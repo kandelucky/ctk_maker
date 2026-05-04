@@ -32,6 +32,8 @@ from app.widgets.layout_schema import (
     child_layout_schema,
 )
 
+from app.ui.system_fonts import derive_ui_font
+
 from .constants import STYLE_BOOL_NAMES, TREE_BG
 from .editors import get_editor
 from .format_utils import (
@@ -321,7 +323,7 @@ class SchemaMixin:
             self.tree,
             text="+",
             bg="#0e639c", fg="#ffffff",
-            font=("Segoe UI", 12, "bold"),
+            font=derive_ui_font(size=12, weight="bold"),
             cursor="hand2", borderwidth=0, padx=0, pady=0,
             anchor="center",
         )
@@ -412,7 +414,7 @@ class SchemaMixin:
             self.tree,
             text="+",
             bg="#0e639c", fg="#ffffff",
-            font=("Segoe UI", 12, "bold"),
+            font=derive_ui_font(size=12, weight="bold"),
             cursor="hand2", borderwidth=0, padx=0, pady=0,
             anchor="center",
         )
@@ -445,7 +447,7 @@ class SchemaMixin:
             self.tree,
             text="×",
             bg="#a33d3d", fg="#ffffff",
-            font=("Segoe UI", 12, "bold"),
+            font=derive_ui_font(size=12, weight="bold"),
             cursor="hand2", borderwidth=0, padx=0, pady=0,
             anchor="center",
         )
