@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import uuid
 
+from app.core.object_references import ObjectReferenceEntry
 from app.core.variables import VariableEntry
 from app.core.widget_node import WidgetNode
 
@@ -95,14 +96,19 @@ class Document:
         # project. Not persisted — load_project rebuilds it from
         # existing widget names.
         self.name_counters: dict[str, int] = {}
-        # Phase 3 visual scripting — Behavior Field bindings. Maps the
-        # field name declared as ``<name>: ref[<WidgetType>]`` on the
-        # window's behavior class to the widget id its Inspector slot
-        # currently targets. Field declarations live in the .py
-        # source (read via AST), only the widget choice persists here.
-        # Empty dict for documents that have no behavior fields or no
-        # bindings yet.
+        # Legacy v1.10.7- Phase 3 Behavior Field bindings — kept for
+        # one-shot migration on load (project_loader rewrites these
+        # into ``local_object_references`` and clears the dict so it
+        # never re-saves). New projects never populate this.
         self.behavior_field_values: dict[str, str] = {}
+        # v1.10.8 Object References — local scope holds ``ref[Widget]``
+        # slots whose target lives inside this document. Globals
+        # (``ref[Window]`` / ``ref[Dialog]``) live on
+        # ``Project.object_references`` instead. The Variables window
+        # and Properties panel both work against this list; the code
+        # exporter consumes it to emit ``self._behavior.<name>``
+        # assignments after ``_build_ui()``.
+        self.local_object_references: list[ObjectReferenceEntry] = []
 
     # ------------------------------------------------------------------
     # Serialisation
@@ -131,6 +137,10 @@ class Document:
             result["behavior_field_values"] = dict(
                 self.behavior_field_values,
             )
+        if self.local_object_references:
+            result["local_object_references"] = [
+                r.to_dict() for r in self.local_object_references
+            ]
         return result
 
     @classmethod
@@ -185,4 +195,12 @@ class Document:
                 str(k): str(v) for k, v in raw_fields.items()
                 if isinstance(v, str) and v
             }
+        raw_refs = data.get("local_object_references")
+        if isinstance(raw_refs, list):
+            for raw in raw_refs:
+                if not isinstance(raw, dict):
+                    continue
+                entry = ObjectReferenceEntry.from_dict(raw)
+                entry.scope = "local"
+                doc.local_object_references.append(entry)
         return doc

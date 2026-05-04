@@ -170,6 +170,16 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         bus.subscribe(
             "behavior_field_changed", self._on_behavior_field_changed,
         )
+        # v1.10.8 — Object Reference mutations (add / remove / rename
+        # / target change) repaint the Window panel + the toggle row
+        # on the active widget panel so all views stay in sync.
+        for ev in (
+            "object_reference_added",
+            "object_reference_removed",
+            "object_reference_renamed",
+            "object_reference_target_changed",
+        ):
+            bus.subscribe(ev, self._on_object_reference_changed)
 
         self._show_empty()
 
@@ -1540,6 +1550,224 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         active = self.project.active_document
         if active is None or active.id != document_id:
             return
+        if self.current_id is not None:
+            self._rebuild()
+
+    # ------------------------------------------------------------------
+    # v1.10.8 — Object Reference toggle handlers
+    # ------------------------------------------------------------------
+    def _make_object_reference(self, node) -> None:
+        """Promote the selected widget to a local Object Reference.
+        Mutates ``doc.local_object_references`` directly + publishes
+        ``object_reference_added``, then records an
+        ``AddObjectReferenceCommand`` so the action round-trips
+        through undo/redo. Mirror of ``add_variable`` →
+        ``AddVariableCommand`` pattern in variables_window.py.
+        """
+        if self.project is None or node is None:
+            return
+        from app.core.commands import AddObjectReferenceCommand
+        from app.core.object_references import (
+            ObjectReferenceEntry,
+            suggest_ref_name,
+        )
+        doc = self.project.active_document
+        if doc is None:
+            return
+        existing_names = {
+            e.name for e in (doc.local_object_references or [])
+        }
+        existing_names.update(
+            e.name for e in (self.project.object_references or [])
+        )
+        suggested = suggest_ref_name(
+            node.name or "", node.widget_type, existing_names,
+        )
+        entry = ObjectReferenceEntry(
+            name=suggested,
+            target_type=node.widget_type,
+            scope="local",
+            target_id=node.id,
+        )
+        # 1. Mutate state + publish so the panel + F11 + Window-list
+        #    refresh live.
+        index = len(doc.local_object_references)
+        doc.local_object_references.append(entry)
+        self.project.event_bus.publish("object_reference_added", entry)
+        # 2. Write the .py annotation (best-effort, unsaved projects
+        #    skip — the next save creates the behavior file).
+        self._maybe_write_ref_annotation(
+            doc, suggested, node.widget_type,
+        )
+        # 3. Record the command for undo / redo.
+        cmd = AddObjectReferenceCommand(
+            entry.to_dict(), index=index,
+            scope="local", document_id=doc.id,
+        )
+        self.project.history.push(cmd)
+
+    def _remove_object_reference(self, ref_id: str) -> None:
+        """Drop an Object Reference (local OR global). Searches the
+        active doc's locals first, then project-level globals.
+        Mutates state, publishes the removal event, strips the
+        ``ref[Type]`` annotation when applicable, then records
+        ``DeleteObjectReferenceCommand`` so undo restores both the
+        entry and the annotation.
+        """
+        if self.project is None:
+            return
+        from app.core.commands import DeleteObjectReferenceCommand
+        doc = self.project.active_document
+        # Search locals first; fall through to globals.
+        scope = None
+        target_list = None
+        target_doc_id = None
+        idx = None
+        entry = None
+        if doc is not None:
+            for i, e in enumerate(doc.local_object_references or []):
+                if e.id == ref_id:
+                    entry = e
+                    idx = i
+                    target_list = doc.local_object_references
+                    target_doc_id = doc.id
+                    scope = "local"
+                    break
+        if entry is None:
+            for i, e in enumerate(self.project.object_references or []):
+                if e.id == ref_id:
+                    entry = e
+                    idx = i
+                    target_list = self.project.object_references
+                    scope = "global"
+                    break
+        if entry is None or target_list is None:
+            return
+        # 1. Mutate state + publish.
+        target_list.pop(idx)
+        self.project.event_bus.publish("object_reference_removed", entry)
+        # 2. Strip the annotation (locals only — globals don't auto-
+        #    write annotations).
+        if scope == "local" and doc is not None:
+            self._maybe_delete_ref_annotation(doc, entry.name)
+        # 3. Record the command for undo / redo.
+        cmd = DeleteObjectReferenceCommand(
+            entry.to_dict(), index=idx,
+            scope=scope, document_id=target_doc_id,
+        )
+        self.project.history.push(cmd)
+
+    def _make_window_global_reference(self, doc) -> None:
+        """Promote the active document (Window or Dialog) to a global
+        Object Reference. Creates a project-level entry whose target
+        is the document itself; behavior code reaches the class via
+        ``self.<name>``. Symmetric to the per-widget local toggle.
+        """
+        if self.project is None or doc is None:
+            return
+        from app.core.commands import AddObjectReferenceCommand
+        from app.core.object_references import (
+            ObjectReferenceEntry, suggest_ref_name,
+        )
+        existing_names = {
+            e.name for e in (self.project.object_references or [])
+        }
+        # Locals share the user-facing namespace too — collide-check
+        # against every doc's locals.
+        for d in self.project.documents or []:
+            existing_names.update(
+                e.name for e in (d.local_object_references or [])
+            )
+        target_type = "Dialog" if doc.is_toplevel else "Window"
+        suggested = suggest_ref_name(
+            doc.name or "", target_type, existing_names,
+        )
+        entry = ObjectReferenceEntry(
+            name=suggested,
+            target_type=target_type,
+            scope="global",
+            target_id=doc.id,
+        )
+        index = len(self.project.object_references)
+        self.project.object_references.append(entry)
+        self.project.event_bus.publish("object_reference_added", entry)
+        cmd = AddObjectReferenceCommand(
+            entry.to_dict(), index=index,
+            scope="global", document_id=None,
+        )
+        self.project.history.push(cmd)
+
+    def _maybe_write_ref_annotation(
+        self, doc, name: str, type_name: str,
+    ) -> None:
+        """Best-effort behavior-file annotation write. Adds
+        ``<name>: ref[<type_name>]`` + the ``from .._runtime import
+        ref`` and ``from customtkinter import <Type>`` imports.
+        Silent on missing project path / file write errors — those
+        cases are non-fatal for the model update.
+        """
+        path = getattr(self.project, "path", None)
+        if not path:
+            return
+        try:
+            from app.core.script_paths import (
+                behavior_class_name,
+            )
+            from app.io.scripts import (
+                add_behavior_field_annotation,
+                ensure_imports_in_behavior_file,
+                load_or_create_behavior_file,
+            )
+            file_path = load_or_create_behavior_file(path, doc)
+            if file_path is None:
+                return
+            class_name = behavior_class_name(doc)
+            add_behavior_field_annotation(
+                file_path, class_name, name, type_name,
+            )
+            ensure_imports_in_behavior_file(
+                file_path,
+                [
+                    ("customtkinter", type_name),
+                ],
+            )
+            # ``ref`` lives in the auto-generated ``_runtime.py`` —
+            # use the existing relative-import helper that knows the
+            # 2-level package path.
+            from app.io.scripts import (
+                ensure_relative_import_in_behavior_file,
+            )
+            ensure_relative_import_in_behavior_file(
+                file_path, level=2, module="_runtime", name="ref",
+            )
+        except Exception:
+            pass
+
+    def _maybe_delete_ref_annotation(self, doc, name: str) -> None:
+        path = getattr(self.project, "path", None)
+        if not path:
+            return
+        try:
+            from app.core.script_paths import (
+                behavior_class_name, behavior_file_path,
+            )
+            from app.io.scripts import (
+                delete_behavior_field_annotation,
+            )
+            file_path = behavior_file_path(path, doc)
+            if file_path is None or not file_path.exists():
+                return
+            delete_behavior_field_annotation(
+                file_path, behavior_class_name(doc), name,
+            )
+        except Exception:
+            pass
+
+    def _on_object_reference_changed(self, *_args, **_kwargs) -> None:
+        """Live repaint after any ObjectReference mutation. Same gate
+        as ``_on_behavior_field_changed`` — only the active panel
+        rebuilds, inactive selections wait for their own activation.
+        """
         if self.current_id is not None:
             self._rebuild()
 

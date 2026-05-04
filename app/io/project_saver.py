@@ -59,6 +59,9 @@ def project_to_dict(project: Project) -> dict:
         "font_defaults": dict(project.font_defaults or {}),
         "system_fonts": sorted(set(project.system_fonts or [])),
         "variables": [v.to_dict() for v in (project.variables or [])],
+        "object_references": [
+            r.to_dict() for r in (project.object_references or [])
+        ],
     }
     # Convert any in-assets absolute image paths to portable tokens
     # so the saved JSON survives a project-folder move.
@@ -92,6 +95,9 @@ def project_meta_to_dict(project: Project) -> dict:
         "font_defaults": dict(project.font_defaults or {}),
         "system_fonts": sorted(set(project.system_fonts or [])),
         "variables": [v.to_dict() for v in (project.variables or [])],
+        "object_references": [
+            r.to_dict() for r in (project.object_references or [])
+        ],
     }
 
 

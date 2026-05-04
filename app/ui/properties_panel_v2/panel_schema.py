@@ -47,6 +47,7 @@ from .overlays import (
     SLOT_BIND_CLEAR,
     SLOT_EVENT_ADD,
     SLOT_EVENT_UNBIND,
+    SLOT_OBJECT_REFERENCE_TOGGLE,
     place_behavior_field_add,
     place_behavior_field_clear,
     place_behavior_field_pick,
@@ -54,6 +55,7 @@ from .overlays import (
     place_bind_clear,
     place_event_add,
     place_event_unbind,
+    place_object_reference_toggle,
 )
 
 
@@ -182,6 +184,14 @@ class SchemaMixin:
         # current document without opening the F11 Variables window.
         if descriptor.type_name == WINDOW_ID:
             self._populate_local_variables_group()
+            # v1.10.8 — symmetric per-Window global toggle. Mirrors
+            # the per-widget local toggle: ``+`` creates a global
+            # reference whose target is this Window/Dialog itself;
+            # ``×`` removes it. Behavior code from any doc reaches
+            # the window class through ``self.<name>``.
+            self._populate_window_global_reference_toggle()
+            # Local refs of this doc — read-only list.
+            self._populate_object_references_group()
 
         # Phase 2 visual scripting — Events group for event-capable
         # widgets (button, slider, entry, …). Renders below every
@@ -190,17 +200,13 @@ class SchemaMixin:
         if node is not None:
             self._populate_events_group(node)
 
-        # Phase 3 — Behavior Fields render on every selection so the
-        # user can pick widgets for the window's Inspector slots from
-        # any panel they happen to be viewing. The slots are class-
-        # level on the window's behavior file (one class per window),
-        # but exposing them on every widget panel matters for
-        # discoverability — users tend to live on widget panels and
-        # rarely click the window background. Position itself right
-        # after the Events group when present so the visual rhythm
-        # mirrors Unity's "events first, references next" Inspector
-        # layout.
-        self._populate_behavior_fields_group()
+        # v1.10.8 — per-widget Object Reference toggle. Replaces the
+        # ``Behavior Fields`` group from v1.10.7 with a one-row
+        # status + button: "this widget is/is not exposed as a
+        # reference; click to toggle". Window panel skips this since
+        # it shows the consolidated list above.
+        if node is not None and node.id != WINDOW_ID:
+            self._populate_object_reference_toggle(node)
 
     def _populate_local_variables_group(self) -> None:
         doc = self.project.active_document if self.project else None
@@ -228,99 +234,238 @@ class SchemaMixin:
                 values=(f"({entry.type}) {default_str}",),
             )
 
-    def _populate_behavior_fields_group(self) -> None:
-        """Phase 3 visual scripting — render the active document's
-        Behavior Field slots in a dedicated group. Visible on every
-        selection (widget OR window) since the slots themselves are
-        class-level on the window's behavior file but the picker
-        affordance benefits from being reachable from any panel.
-
-        Each ``<name>: ref[<WidgetType>]`` annotation becomes one row
-        whose value cell shows the bound widget's name and a
-        ``[Pick…]`` button that opens the modal widget picker.
-
-        Empty state (no annotations declared yet) shows a one-line
-        hint pointing at the syntax users add to their behavior file.
-
-        Position: hoists the group right after the Events group when
-        present so it sits visually close to the other Phase 2/3
-        scripting affordances. Falls back to end-of-tree when the
-        Events group is absent (Window panel, or widgets without
-        events like Label / Frame / Image).
+    def _populate_object_references_group(self) -> None:
+        """v1.10.8 — read-only Object References list on Window panel.
+        Shows every LOCAL reference of the active document. Globals
+        live on the F11 Object References tab and the per-window
+        toggle row above (a window-as-global is a separate concept
+        that doesn't belong in this list).
         """
         doc = self.project.active_document if self.project else None
         if doc is None:
             return
-        group_iid = "g:Behavior Fields"
+        group_iid = "g:Object References"
         self.tree.insert(
             "", "end", iid=group_iid,
-            text="Behavior Fields", values=("",), open=True,
+            text="Object References", values=("",), open=True,
             tags=("class",),
         )
-        # Inline ``[+]`` lets the user create a field via the Add
-        # Behavior Field dialog instead of editing the .py source
-        # by hand. Routed through the panel layer so the dialog +
-        # the SetBehaviorFieldCommand push live next to the rest of
-        # the Phase 3 surface.
-        self._attach_behavior_field_add_button(group_iid)
-        fields = self._lookup_behavior_fields(doc)
-        if not fields:
+        local_refs = list(doc.local_object_references or [])
+        if not local_refs:
             self.tree.insert(
-                group_iid, "end", iid="behaviorfield:empty",
+                group_iid, "end", iid="objref:empty",
                 text="",
-                values=("declare `name: ref[Type]` in behavior file",),
+                values=("no references — toggle from a widget panel",),
                 tags=("disabled",),
             )
-        else:
-            values = doc.behavior_field_values
-            for spec in fields:
-                current_id = values.get(spec.name, "")
-                current_widget = (
-                    self.project.get_widget(current_id)
-                    if current_id else None
-                )
-                if current_widget is not None:
-                    widget_label = (
-                        current_widget.name or current_widget.widget_type
-                    )
-                    # Compatibility check — if the user changed the
-                    # field's type in the .py source after binding,
-                    # surface the mismatch in the cell text rather
-                    # than silently carrying on with the stale id.
-                    if current_widget.widget_type != spec.type_name:
-                        value_text = (
-                            f"{widget_label}  — wrong type "
-                            f"({current_widget.widget_type})"
-                        )
-                    else:
-                        value_text = widget_label
-                elif current_id:
-                    value_text = "(missing widget)"
-                else:
-                    value_text = f"empty   ref[{spec.type_name}]"
-                row_iid = f"behaviorfield:{spec.name}"
-                self.tree.insert(
-                    group_iid, "end", iid=row_iid,
-                    text=spec.name, values=(value_text,),
-                )
-                self._attach_behavior_field_pick_button(
-                    row_iid, spec.name, spec.type_name,
-                )
-                if current_id:
-                    self._attach_behavior_field_clear_button(
-                        row_iid, spec.name,
-                    )
+            return
+        from app.core.object_references import short_type_label
+        for entry in local_refs:
+            target_label = self._object_ref_target_label(entry)
+            self.tree.insert(
+                group_iid, "end",
+                iid=f"objref:l:{entry.id}",
+                text=entry.name,
+                values=(
+                    f"({short_type_label(entry.target_type)})  "
+                    f"→  {target_label}",
+                ),
+            )
 
-        # Hoist right after the Events group when present — keeps the
-        # scripting-related groups adjacent so the panel reads as a
-        # single "behavior" cluster. Events group iid is "events:group"
-        # (set in ``_populate_events_group``); when no Events exist,
-        # leave Behavior Fields at its natural end-of-list position so
-        # it still appears below the regular property groups.
+    def _populate_window_global_reference_toggle(self) -> None:
+        """v1.10.8 — per-Window toggle row. Creates / removes a
+        global Object Reference whose target is the active document
+        itself. ``+`` makes the window callable from any doc's
+        behavior code via ``self.<name>``; ``×`` removes the ref.
+        """
+        if self.project is None:
+            return
+        doc = self.project.active_document
+        if doc is None:
+            return
+        group_iid = "g:Object Reference"
+        self.tree.insert(
+            "", "end", iid=group_iid,
+            text="Object Reference", values=("",), open=True,
+            tags=("class",),
+        )
+        existing_entry = None
+        for entry in self.project.object_references or []:
+            if entry.target_id == doc.id:
+                existing_entry = entry
+                break
+        row_iid = f"objref_toggle:doc:{doc.id}"
+        if existing_entry is None:
+            self.tree.insert(
+                group_iid, "end", iid=row_iid,
+                text="Reference",
+                values=("",),
+            )
+            self._attach_window_global_make_button(row_iid, doc)
+        else:
+            self.tree.insert(
+                group_iid, "end", iid=row_iid,
+                text="Reference",
+                values=(existing_entry.name,),
+            )
+            self._attach_object_reference_remove_button(
+                row_iid, existing_entry.id,
+            )
+
+    def _attach_window_global_make_button(self, row_iid: str, doc) -> None:
+        """``+`` button on the Window toggle row. Click promotes the
+        active document to a global Object Reference. Style mirrors
+        the per-widget Make button.
+        """
+        btn = tk.Label(
+            self.tree,
+            text="+",
+            bg="#0e639c", fg="#ffffff",
+            font=("Segoe UI", 12, "bold"),
+            cursor="hand2", borderwidth=0, padx=0, pady=0,
+            anchor="center",
+        )
+        btn.bind(
+            "<Enter>",
+            lambda _e, b=btn: b.configure(bg="#1177bb"),
+        )
+        btn.bind(
+            "<Leave>",
+            lambda _e, b=btn: b.configure(bg="#0e639c"),
+        )
+        btn.bind(
+            "<Button-1>",
+            lambda _e, d=doc: self._make_window_global_reference(d),
+        )
+        if self.overlays is not None:
+            self.overlays.add(
+                row_iid, SLOT_OBJECT_REFERENCE_TOGGLE, btn,
+                place_object_reference_toggle,
+            )
+
+    def _populate_object_reference_toggle(self, node) -> None:
+        """v1.10.8 — per-widget toggle row. Shows whether the selected
+        widget is currently exposed as a local Object Reference and
+        offers a one-click Make / Remove button.
+        """
+        doc = self.project.active_document if self.project else None
+        if doc is None:
+            return
+        group_iid = "g:Object Reference"
+        self.tree.insert(
+            "", "end", iid=group_iid,
+            text="Object Reference", values=("",), open=True,
+            tags=("class",),
+        )
+        # Find any local ref whose target_id matches this widget.
+        existing_entry = None
+        for entry in doc.local_object_references or []:
+            if entry.target_id == node.id:
+                existing_entry = entry
+                break
+        row_iid = f"objref_toggle:{node.id}"
+        if existing_entry is None:
+            self.tree.insert(
+                group_iid, "end", iid=row_iid,
+                text="Reference",
+                values=("",),
+            )
+            self._attach_object_reference_make_button(row_iid, node)
+        else:
+            self.tree.insert(
+                group_iid, "end", iid=row_iid,
+                text="Reference",
+                values=(existing_entry.name,),
+            )
+            self._attach_object_reference_remove_button(
+                row_iid, existing_entry.id,
+            )
+        # Hoist right after the Events group when present.
         if not self.tree.exists("events:group"):
             return
         anchor_index = self.tree.index("events:group")
         self.tree.move(group_iid, "", anchor_index + 1)
+
+    def _object_ref_target_label(self, entry) -> str:
+        """Resolve the display name of a reference's target. Local
+        refs point at widgets; globals point at documents. Empty
+        target_id renders as ``(unbound)``; a stale id renders as
+        ``(missing)`` so the user spots the dangling slot.
+        """
+        if not entry.target_id:
+            return "(unbound)"
+        if entry.scope == "global":
+            doc = self.project.get_document(entry.target_id)
+            return doc.name if doc is not None else "(missing)"
+        widget = self.project.get_widget(entry.target_id)
+        if widget is None:
+            return "(missing)"
+        return widget.name or widget.widget_type
+
+    def _attach_object_reference_make_button(
+        self, row_iid: str, node,
+    ) -> None:
+        """Inline ``[ + Make Reference ]`` button on the toggle row.
+        Click promotes the widget to a local Object Reference.
+        """
+        btn = tk.Label(
+            self.tree,
+            text="+",
+            bg="#0e639c", fg="#ffffff",
+            font=("Segoe UI", 12, "bold"),
+            cursor="hand2", borderwidth=0, padx=0, pady=0,
+            anchor="center",
+        )
+        btn.bind(
+            "<Enter>",
+            lambda _e, b=btn: b.configure(bg="#1177bb"),
+        )
+        btn.bind(
+            "<Leave>",
+            lambda _e, b=btn: b.configure(bg="#0e639c"),
+        )
+        btn.bind(
+            "<Button-1>",
+            lambda _e, n=node: self._make_object_reference(n),
+        )
+        if self.overlays is not None:
+            self.overlays.add(
+                row_iid, SLOT_OBJECT_REFERENCE_TOGGLE, btn,
+                place_object_reference_toggle,
+            )
+
+    def _attach_object_reference_remove_button(
+        self, row_iid: str, ref_id: str,
+    ) -> None:
+        """Inline ``[×]`` (red) button on the toggle row when the
+        widget IS already a reference. Click drops the reference +
+        its ``ref[Type]`` annotation in the behavior file.
+        """
+        btn = tk.Label(
+            self.tree,
+            text="×",
+            bg="#a33d3d", fg="#ffffff",
+            font=("Segoe UI", 12, "bold"),
+            cursor="hand2", borderwidth=0, padx=0, pady=0,
+            anchor="center",
+        )
+        btn.bind(
+            "<Enter>",
+            lambda _e, b=btn: b.configure(bg="#c94545"),
+        )
+        btn.bind(
+            "<Leave>",
+            lambda _e, b=btn: b.configure(bg="#a33d3d"),
+        )
+        btn.bind(
+            "<Button-1>",
+            lambda _e, rid=ref_id: self._remove_object_reference(rid),
+        )
+        if self.overlays is not None:
+            self.overlays.add(
+                row_iid, SLOT_OBJECT_REFERENCE_TOGGLE, btn,
+                place_object_reference_toggle,
+            )
 
     def _lookup_behavior_fields(self, doc) -> list:
         """Build the FieldSpec list for the active document's behavior

@@ -941,6 +941,684 @@ class VariableEditDialog(ctk.CTkToplevel):
             pass
 
 
+class AddGlobalReferenceDialog(ctk.CTkToplevel):
+    """v1.10.8 — Modal for declaring a global ``ref[Window]`` /
+    ``ref[Dialog]``. User picks a target document + type, types a
+    name. Result attributes (read after ``wait_window``):
+
+    - ``self.target_id`` — Document.id, ``None`` on cancel.
+    - ``self.target_type`` — ``"Window"`` or ``"Dialog"``.
+    - ``self.name_value`` — Python identifier the slot will use.
+    """
+
+    def __init__(self, parent, project, existing_names: set[str]):
+        super().__init__(parent)
+        self.title("Add global reference")
+        self.transient(parent)
+        safe_grab_set(self)
+        self.configure(fg_color=BG)
+        self.minsize(420, 280)
+        self._project = project
+        self._existing_names = set(existing_names)
+        self.target_id: str | None = None
+        self.target_type: str = "Window"
+        self.name_value: str = ""
+        self._name_dirty = False
+        self._build_ui()
+        self.bind("<Escape>", lambda _e: self._cancel())
+        self.protocol("WM_DELETE_WINDOW", self._cancel)
+        self.after(50, self._center_on_parent)
+
+    def _build_ui(self) -> None:
+        header = ctk.CTkFrame(self, fg_color="#252526", corner_radius=0)
+        header.pack(fill="x")
+        ctk.CTkLabel(
+            header, text="Add global reference",
+            text_color="#e6e6e6",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            anchor="w",
+        ).pack(fill="x", padx=14, pady=(10, 0))
+        ctk.CTkLabel(
+            header,
+            text=(
+                "Pick a window or dialog from this project. "
+                "Behavior code reaches it via ``self.<name>``."
+            ),
+            text_color="#9aa4b2",
+            font=ctk.CTkFont(size=11),
+            anchor="w", wraplength=380, justify="left",
+        ).pack(fill="x", padx=14, pady=(2, 12))
+
+        body = ctk.CTkFrame(self, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=14, pady=8)
+
+        # Type radio: Window / Dialog. Drives the target dropdown.
+        type_row = ctk.CTkFrame(body, fg_color="transparent")
+        type_row.pack(fill="x", pady=(2, 6))
+        ctk.CTkLabel(
+            type_row, text="Type:", text_color="#bdbdbd",
+            font=("Segoe UI", 11), width=70, anchor="w",
+        ).pack(side="left")
+        self._type_var = tk.StringVar(value="Window")
+        self._type_var.trace_add(
+            "write", lambda *_a: self._on_type_changed(),
+        )
+        for label in ("Window", "Dialog"):
+            rb = ctk.CTkRadioButton(
+                type_row, text=label, value=label,
+                variable=self._type_var,
+                radiobutton_height=14, radiobutton_width=14,
+                font=("Segoe UI", 11),
+            )
+            rb.pack(side="left", padx=(4, 12))
+
+        # Target dropdown — filtered by ``is_toplevel`` to match
+        # the picked type. ``Window`` → main forms; ``Dialog`` →
+        # CTkToplevel-style docs.
+        target_row = ctk.CTkFrame(body, fg_color="transparent")
+        target_row.pack(fill="x", pady=(6, 6))
+        ctk.CTkLabel(
+            target_row, text="Target:", text_color="#bdbdbd",
+            font=("Segoe UI", 11), width=70, anchor="w",
+        ).pack(side="left")
+        self._target_var = tk.StringVar(value="")
+        self._target_options: list[tuple[str, str]] = []
+        self._target_menu = ctk.CTkOptionMenu(
+            target_row, variable=self._target_var,
+            values=["—"], width=240,
+            fg_color="#3c3c3c", button_color="#3c3c3c",
+            button_hover_color="#4a4a4a",
+            command=lambda _v: self._on_target_changed(),
+        )
+        self._target_menu.pack(side="left")
+
+        # Name input.
+        name_row = ctk.CTkFrame(body, fg_color="transparent")
+        name_row.pack(fill="x", pady=(6, 6))
+        ctk.CTkLabel(
+            name_row, text="Name:", text_color="#bdbdbd",
+            font=("Segoe UI", 11), width=70, anchor="w",
+        ).pack(side="left")
+        self._name_var = tk.StringVar(value="")
+        self._name_var.trace_add(
+            "write", lambda *_a: self._on_name_changed(),
+        )
+        self._name_entry = ctk.CTkEntry(
+            name_row, textvariable=self._name_var, width=240,
+            fg_color="#1a1a1a", border_color="#3c3c3c",
+            text_color="#e6e6e6",
+        )
+        self._name_entry.pack(side="left")
+
+        self._error_label = ctk.CTkLabel(
+            body, text="", text_color="#ef4444",
+            font=("Segoe UI", 10), anchor="w",
+        )
+        self._error_label.pack(fill="x", pady=(6, 0))
+
+        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer.pack(fill="x", padx=14, pady=12)
+        ctk.CTkButton(
+            footer, text="Cancel", width=80,
+            fg_color="#3c3c3c", hover_color="#4a4a4a",
+            text_color="#e6e6e6",
+            command=self._cancel,
+        ).pack(side="right", padx=(8, 0))
+        self._add_btn = ctk.CTkButton(
+            footer, text="Add", width=80,
+            fg_color="#0e8a7d", hover_color="#149a8c",
+            text_color="#ffffff",
+            state="disabled",
+            command=self._commit,
+        )
+        self._add_btn.pack(side="right")
+
+        self._refresh_target_options()
+
+    def _refresh_target_options(self) -> None:
+        want_toplevel = self._type_var.get() == "Dialog"
+        opts: list[tuple[str, str]] = []
+        for doc in self._project.documents or []:
+            if bool(doc.is_toplevel) == want_toplevel:
+                opts.append((doc.id, doc.name or "Untitled"))
+        self._target_options = opts
+        labels = [name for _id, name in opts] or ["(no matching docs)"]
+        self._target_menu.configure(values=labels)
+        if opts:
+            self._target_var.set(opts[0][1])
+            self._on_target_changed()
+        else:
+            self._target_var.set(labels[0])
+            self.target_id = None
+            self._validate()
+
+    def _on_type_changed(self) -> None:
+        self.target_type = self._type_var.get()
+        self._refresh_target_options()
+
+    def _on_target_changed(self) -> None:
+        label = self._target_var.get()
+        for doc_id, name in self._target_options:
+            if name == label:
+                self.target_id = doc_id
+                if not self._name_dirty:
+                    self._name_var_set_silently(
+                        self._suggest_name(name),
+                    )
+                self._validate()
+                return
+        self.target_id = None
+        self._validate()
+
+    def _on_name_changed(self) -> None:
+        self._name_dirty = True
+        self._validate()
+
+    def _name_var_set_silently(self, value: str) -> None:
+        self._name_dirty = False
+        self._name_var.set(value)
+        self._name_dirty = False
+
+    def _suggest_name(self, target_name: str) -> str:
+        from app.core.object_references import (
+            is_valid_python_identifier, suggest_ref_name,
+        )
+        if is_valid_python_identifier(target_name):
+            base = target_name
+        else:
+            base = self._type_var.get().lower()
+        return suggest_ref_name(
+            base, self._type_var.get(), self._existing_names,
+        )
+
+    def _validate(self) -> None:
+        from app.core.object_references import is_valid_python_identifier
+        if self.target_id is None:
+            self._error_label.configure(
+                text="Pick a target document.",
+            )
+            self._add_btn.configure(state="disabled")
+            return
+        name = self._name_var.get().strip()
+        if not name:
+            self._error_label.configure(
+                text="Name the reference.",
+            )
+            self._add_btn.configure(state="disabled")
+            return
+        if not is_valid_python_identifier(name):
+            self._error_label.configure(
+                text="Use a Python identifier.",
+            )
+            self._add_btn.configure(state="disabled")
+            return
+        if name in self._existing_names:
+            self._error_label.configure(
+                text=f"`{name}` is already in use.",
+            )
+            self._add_btn.configure(state="disabled")
+            return
+        self._error_label.configure(text="")
+        self._add_btn.configure(state="normal")
+
+    def _commit(self) -> None:
+        self.name_value = self._name_var.get().strip()
+        self.target_type = self._type_var.get()
+        self.destroy()
+
+    def _cancel(self) -> None:
+        self.target_id = None
+        self.name_value = ""
+        self.destroy()
+
+    def _center_on_parent(self) -> None:
+        try:
+            parent = self.master
+            parent.update_idletasks()
+            self.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+            w = self.winfo_width()
+            h = self.winfo_height()
+            x = px + (pw - w) // 2
+            y = py + (ph - h) // 2
+            x, y = _clamp_to_screen(self, x, y, w, h)
+            self.geometry(f"+{max(0, x)}+{max(0, y)}")
+        except tk.TclError:
+            pass
+
+
+def run_add_global_reference_dialog(
+    parent, project, existing_names: set[str],
+) -> tuple[str, str, str] | None:
+    """Open the Add Global Reference dialog modally. Returns
+    ``(name, target_type, target_id)`` on Add or ``None`` on
+    cancel / no eligible docs.
+    """
+    dlg = AddGlobalReferenceDialog(parent, project, existing_names)
+    parent.wait_window(dlg)
+    if dlg.target_id is None or not dlg.name_value:
+        return None
+    return (dlg.name_value, dlg.target_type, dlg.target_id)
+
+
+class ObjectReferencesPanel(ctk.CTkFrame):
+    """v1.10.8 — Object References tab. Shows every typed widget /
+    document pointer the project owns, sectioned by scope (Global
+    Window/Dialog refs at top, Local refs of the active document
+    below). Right-click on a row exposes Rename / Delete; new local
+    refs are created via the Properties Panel toggle, not from this
+    panel.
+    """
+
+    def __init__(self, parent, project: "Project"):
+        super().__init__(
+            parent, fg_color=PANEL_BG, corner_radius=0, border_width=0,
+        )
+        self.project = project
+        self._bus_subs: list[tuple[str, Callable]] = []
+        self._build_toolbar()
+        self._build_tree()
+        bus = project.event_bus
+        for ev in (
+            "object_reference_added", "object_reference_removed",
+            "object_reference_renamed",
+            "object_reference_target_changed",
+            "active_document_changed",
+            "widget_renamed", "widget_removed",
+        ):
+            bus.subscribe(ev, self._on_changed)
+            self._bus_subs.append((ev, self._on_changed))
+        self.after(0, self._refresh)
+
+    def _build_toolbar(self) -> None:
+        bar = tk.Frame(self, bg=TOOLBAR_BG, height=54, highlightthickness=0)
+        bar.pack(fill="x")
+        bar.pack_propagate(False)
+        # ``+ Add Global`` lets the user declare a Window / Dialog
+        # reference that sits at project scope. Locals stay opt-in
+        # via the Properties Panel toggle — no Add button needed for
+        # them here since the toggle flow is the discoverable path.
+        self._add_global_btn = ctk.CTkButton(
+            bar, text="+ Add Global", width=110, height=30,
+            corner_radius=3, font=("Segoe UI", 11),
+            fg_color="#0e8a7d", hover_color="#149a8c",
+            command=self._on_add_global,
+        )
+        self._add_global_btn.pack(side="left", padx=(8, 6), pady=10)
+        ctk.CTkLabel(
+            bar,
+            text=(
+                "Window / Dialog refs are global. Inner widgets "
+                "stay local — toggle from a widget panel."
+            ),
+            text_color="#9aa4b2",
+            font=("Segoe UI", 10),
+            anchor="w",
+            wraplength=320,
+            justify="left",
+        ).pack(side="left", padx=(2, 10), pady=8, fill="x", expand=True)
+
+    def _on_add_global(self) -> None:
+        """Open the Add Global Reference dialog. Result is a
+        ``(name, target_type, target_id)`` tuple; we mutate state
+        directly + push the command for undo / redo.
+        """
+        existing_names = {
+            e.name for e in self.project.object_references or []
+        }
+        active_doc = self.project.active_document
+        if active_doc is not None:
+            existing_names.update(
+                e.name for e in active_doc.local_object_references or []
+            )
+        result = run_add_global_reference_dialog(
+            self.winfo_toplevel(), self.project, existing_names,
+        )
+        if result is None:
+            return
+        name, target_type, target_id = result
+        from app.core.commands import AddObjectReferenceCommand
+        from app.core.object_references import ObjectReferenceEntry
+        entry = ObjectReferenceEntry(
+            name=name,
+            target_type=target_type,
+            scope="global",
+            target_id=target_id,
+        )
+        # 1. Mutate state + publish.
+        index = len(self.project.object_references)
+        self.project.object_references.append(entry)
+        self.project.event_bus.publish("object_reference_added", entry)
+        # 2. Record the command for undo / redo.
+        cmd = AddObjectReferenceCommand(
+            entry.to_dict(), index=index,
+            scope="global", document_id=None,
+        )
+        self.project.history.push(cmd)
+
+    def _build_tree(self) -> None:
+        wrap = tk.Frame(self, bg=BG, highlightthickness=0)
+        wrap.pack(fill="both", expand=True)
+        style = ttk.Style(self)
+        style.configure(
+            "ObjectRefs.Treeview",
+            background=TREE_BG,
+            fieldbackground=TREE_BG,
+            foreground=TREE_FG,
+            rowheight=TREE_ROW_HEIGHT,
+            borderwidth=0,
+            font=("Segoe UI", TREE_FONT_SIZE),
+        )
+        style.map(
+            "ObjectRefs.Treeview",
+            background=[("selected", TREE_SELECTED_BG)],
+            foreground=[("selected", "#ffffff")],
+        )
+        self.tree = ttk.Treeview(
+            wrap,
+            columns=("type", "target"),
+            show="tree headings",
+            style="ObjectRefs.Treeview",
+            selectmode="browse",
+        )
+        self.tree.heading("#0", text="Name")
+        self.tree.heading("type", text="Type")
+        self.tree.heading("target", text="Target")
+        self.tree.column("#0", width=160, anchor="w")
+        self.tree.column("type", width=110, anchor="w")
+        self.tree.column("target", width=160, anchor="w")
+        self.tree.tag_configure("empty", foreground=EMPTY_FG)
+        self.tree.tag_configure(
+            "section", foreground="#9aa4b2",
+            font=("Segoe UI", TREE_FONT_SIZE, "bold"),
+        )
+        self.tree.bind("<Button-3>", self._on_right_click)
+        self.tree.bind("<Double-Button-1>", self._on_double_click)
+        vsb = ctk.CTkScrollbar(
+            wrap, orientation="vertical",
+            command=self.tree.yview,
+            width=10, corner_radius=4,
+            fg_color="transparent",
+            button_color="#3a3a3a",
+            button_hover_color="#4a4a4a",
+        )
+        self.tree.configure(yscrollcommand=vsb.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        vsb.pack(side="right", fill="y")
+
+    def _on_changed(self, *_args, **_kwargs) -> None:
+        self._refresh()
+
+    def _refresh(self) -> None:
+        for iid in self.tree.get_children(""):
+            self.tree.delete(iid)
+        globals_list = list(self.project.object_references or [])
+        active_doc = self.project.active_document
+        local_list = (
+            list(active_doc.local_object_references)
+            if active_doc is not None else []
+        )
+        if not globals_list and not local_list:
+            self.tree.insert(
+                "", "end", iid="empty",
+                text="No references yet",
+                values=(
+                    "",
+                    "Toggle from a widget panel to create one",
+                ),
+                tags=("empty",),
+            )
+            return
+        from app.core.object_references import short_type_label
+        if globals_list:
+            self.tree.insert(
+                "", "end", iid="section:global",
+                text="Global  (Window / Dialog)",
+                values=("", ""), tags=("section",), open=True,
+            )
+            for entry in globals_list:
+                target = self._resolve_target_label(entry)
+                self.tree.insert(
+                    "section:global", "end",
+                    iid=f"ref:{entry.id}",
+                    text=entry.name,
+                    values=(short_type_label(entry.target_type), target),
+                )
+        if local_list:
+            label = active_doc.name if active_doc is not None else "Local"
+            self.tree.insert(
+                "", "end", iid="section:local",
+                text=f"Local: {label}",
+                values=("", ""), tags=("section",), open=True,
+            )
+            for entry in local_list:
+                target = self._resolve_target_label(entry)
+                self.tree.insert(
+                    "section:local", "end",
+                    iid=f"ref:{entry.id}",
+                    text=entry.name,
+                    values=(short_type_label(entry.target_type), target),
+                )
+
+    def _resolve_target_label(self, entry) -> str:
+        if not entry.target_id:
+            return "(unbound)"
+        if entry.scope == "global":
+            doc = self.project.get_document(entry.target_id)
+            return doc.name if doc is not None else "(missing)"
+        widget = self.project.get_widget(entry.target_id)
+        if widget is None:
+            return "(missing)"
+        return widget.name or widget.widget_type
+
+    def _selected_ref_id(self) -> str | None:
+        sel = self.tree.selection()
+        if not sel or not sel[0].startswith("ref:"):
+            return None
+        return sel[0][4:]
+
+    def _find_entry(self, ref_id: str):
+        for entry in self.project.object_references or []:
+            if entry.id == ref_id:
+                return entry, "global", None
+        for doc in self.project.documents:
+            for entry in doc.local_object_references or []:
+                if entry.id == ref_id:
+                    return entry, "local", doc.id
+        return None, None, None
+
+    def _on_right_click(self, event) -> None:
+        iid = self.tree.identify_row(event.y)
+        if iid and iid.startswith("ref:"):
+            self.tree.selection_set(iid)
+        ref_id = self._selected_ref_id()
+        if ref_id is None:
+            return
+        menu = tk.Menu(self.tree, tearoff=0)
+        menu.add_command(
+            label="Rename…",
+            command=lambda: self._rename_ref(ref_id),
+        )
+        menu.add_command(
+            label="Delete",
+            command=lambda: self._delete_ref(ref_id),
+        )
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _on_double_click(self, _event=None) -> None:
+        ref_id = self._selected_ref_id()
+        if ref_id is None:
+            return
+        self._rename_ref(ref_id)
+
+    def _rename_ref(self, ref_id: str) -> None:
+        entry, scope, doc_id = self._find_entry(ref_id)
+        if entry is None:
+            return
+        from app.core.commands import RenameObjectReferenceCommand
+        from app.core.object_references import (
+            is_valid_python_identifier,
+        )
+        existing_names = {
+            e.name for e in self.project.object_references or []
+            if e.id != ref_id
+        }
+        if scope == "local" and doc_id is not None:
+            doc = self.project.get_document(doc_id)
+            if doc is not None:
+                existing_names.update(
+                    e.name for e in doc.local_object_references or []
+                    if e.id != ref_id
+                )
+        from tkinter import simpledialog
+        new_name = simpledialog.askstring(
+            "Rename reference",
+            f"New name for `{entry.name}`:",
+            initialvalue=entry.name,
+            parent=self.winfo_toplevel(),
+        )
+        if not new_name or new_name == entry.name:
+            return
+        if not is_valid_python_identifier(new_name):
+            messagebox.showerror(
+                "Invalid name",
+                "Use a Python identifier "
+                "(letters / digits / _; not a keyword).",
+                parent=self.winfo_toplevel(),
+            )
+            return
+        if new_name in existing_names:
+            messagebox.showerror(
+                "Name in use",
+                f"`{new_name}` is already used by another reference.",
+                parent=self.winfo_toplevel(),
+            )
+            return
+        # Annotation rename: delete old line, add new one (best
+        # effort — model mutation runs even when the file write
+        # fails so the in-memory truth keeps moving).
+        old_name = entry.name
+        self._maybe_rename_annotation(
+            entry, scope, doc_id, old_name, new_name,
+        )
+        # 1. Mutate state + publish — history.push only RECORDS, it
+        #    doesn't apply, so the rename has to happen here.
+        entry.name = new_name
+        self.project.event_bus.publish(
+            "object_reference_renamed", entry,
+        )
+        # 2. Record the command for undo / redo.
+        cmd = RenameObjectReferenceCommand(
+            ref_id, old_name, new_name,
+        )
+        self.project.history.push(cmd)
+
+    def _delete_ref(self, ref_id: str) -> None:
+        entry, scope, doc_id = self._find_entry(ref_id)
+        if entry is None:
+            return
+        from app.core.commands import DeleteObjectReferenceCommand
+        if scope == "local" and doc_id is not None:
+            doc = self.project.get_document(doc_id)
+            if doc is None:
+                return
+            target_list = doc.local_object_references
+        else:
+            target_list = self.project.object_references
+        idx = next(
+            (i for i, e in enumerate(target_list) if e.id == ref_id),
+            None,
+        )
+        if idx is None:
+            return
+        # 1. Strip annotation (best effort, file may not exist).
+        self._maybe_delete_annotation(entry, scope, doc_id)
+        # 2. Mutate state + publish.
+        target_list.pop(idx)
+        self.project.event_bus.publish("object_reference_removed", entry)
+        # 3. Record the command for undo / redo.
+        cmd = DeleteObjectReferenceCommand(
+            entry.to_dict(), index=idx,
+            scope=scope, document_id=doc_id,
+        )
+        self.project.history.push(cmd)
+
+    def _maybe_rename_annotation(
+        self, entry, scope, doc_id, old_name, new_name,
+    ) -> None:
+        if scope != "local" or doc_id is None:
+            return
+        doc = self.project.get_document(doc_id)
+        if doc is None:
+            return
+        path = getattr(self.project, "path", None)
+        if not path:
+            return
+        try:
+            from app.core.script_paths import (
+                behavior_class_name, behavior_file_path,
+            )
+            from app.io.scripts import (
+                add_behavior_field_annotation,
+                delete_behavior_field_annotation,
+            )
+            file_path = behavior_file_path(path, doc)
+            if file_path is None or not file_path.exists():
+                return
+            class_name = behavior_class_name(doc)
+            delete_behavior_field_annotation(
+                file_path, class_name, old_name,
+            )
+            add_behavior_field_annotation(
+                file_path, class_name, new_name, entry.target_type,
+            )
+        except Exception:
+            pass
+
+    def _maybe_delete_annotation(self, entry, scope, doc_id) -> None:
+        if scope != "local" or doc_id is None:
+            return
+        doc = self.project.get_document(doc_id)
+        if doc is None:
+            return
+        path = getattr(self.project, "path", None)
+        if not path:
+            return
+        try:
+            from app.core.script_paths import (
+                behavior_class_name, behavior_file_path,
+            )
+            from app.io.scripts import (
+                delete_behavior_field_annotation,
+            )
+            file_path = behavior_file_path(path, doc)
+            if file_path is None or not file_path.exists():
+                return
+            delete_behavior_field_annotation(
+                file_path, behavior_class_name(doc), entry.name,
+            )
+        except Exception:
+            pass
+
+    def _unsubscribe_bus(self) -> None:
+        try:
+            bus = self.project.event_bus
+            for ev, handler in self._bus_subs:
+                bus.unsubscribe(ev, handler)
+        except Exception:
+            pass
+
+    def destroy(self) -> None:
+        self._unsubscribe_bus()
+        super().destroy()
+
+
 class VariablesWindow(ctk.CTkToplevel):
     """Floating window wrapper around two ``VariablesPanel`` instances.
 
@@ -988,6 +1666,10 @@ class VariablesWindow(ctk.CTkToplevel):
         # backing list track the workspace's current selection.
         self._local_panel: VariablesPanel | None = None
         self._build_local_panel()
+        # v1.10.8 — Object References panel (third tab). Combined view
+        # over globals + active-doc locals; refreshes on its own bus
+        # subscriptions, no rebuild on doc change.
+        self._objrefs_panel = ObjectReferencesPanel(self._content, project)
 
         # Subscribe so a doc switch / rename behind the scenes reflows
         # the Local tab. Stored on the instance so destroy() can clean
@@ -1059,10 +1741,11 @@ class VariablesWindow(ctk.CTkToplevel):
     def _build_tab_strip(self) -> None:
         strip = tk.Frame(self, bg=BG, highlightthickness=0)
         strip.pack(fill="x", padx=6, pady=(6, 0))
-        # Two equal columns so the Global / Local tabs share the
-        # window's full width — no dead space on the right.
-        strip.grid_columnconfigure(0, weight=1, uniform="tab")
-        strip.grid_columnconfigure(1, weight=1, uniform="tab")
+        # Three equal columns so Global / Local / Object References
+        # tabs share the window's full width — v1.10.8 added the
+        # third tab.
+        for col in (0, 1, 2):
+            strip.grid_columnconfigure(col, weight=1, uniform="tab")
         self._global_tab = self._make_tab_button(
             strip, "Global", self._global_color,
             command=lambda: self._show_scope("global"),
@@ -1072,18 +1755,28 @@ class VariablesWindow(ctk.CTkToplevel):
             strip, self._local_tab_label(), self._local_color,
             command=lambda: self._show_scope("local"),
         )
-        self._local_tab.grid(row=0, column=1, sticky="ew", padx=(2, 0))
+        self._local_tab.grid(row=0, column=1, sticky="ew", padx=(2, 2))
+        # Object References tab — neutral teal so it reads as its
+        # own concept rather than a third variable scope.
+        self._objrefs_color = "#0e8a7d"
+        self._objrefs_tab = self._make_tab_button(
+            strip, "Object References", self._objrefs_color,
+            command=lambda: self._show_scope("objrefs"),
+        )
+        self._objrefs_tab.grid(row=0, column=2, sticky="ew", padx=(2, 0))
 
     def _make_tab_button(
         self, parent, text: str, accent: str, command,
     ) -> ctk.CTkButton:
-        # ``width`` is the minimum — the grid cell stretches the
-        # button to fill the cell so both tabs cover half the window
-        # each.
+        # Solid background instead of ``fg_color="transparent"`` —
+        # CTk 5.2 occasionally resolves transparent fg_color to an
+        # empty bg string in `_on_enter`, raising
+        # ``TclError: unknown color name ""``. Matching the strip's
+        # bg gives the same visual result without the hover risk.
         return ctk.CTkButton(
             parent, text=text, width=10, height=28,
             corner_radius=4, font=("Segoe UI", 11, "bold"),
-            fg_color="transparent", hover_color="#2a2a2a",
+            fg_color=BG, hover_color="#2a2a2a",
             text_color="#888888",
             border_width=0,
             command=command,
@@ -1097,30 +1790,44 @@ class VariablesWindow(ctk.CTkToplevel):
         return f"Local: {name}"
 
     def _show_scope(self, scope: str) -> None:
-        scope = "local" if scope == "local" else "global"
+        if scope not in ("global", "local", "objrefs"):
+            scope = "global"
         self._active_scope = scope
-        if scope == "global":
-            if self._local_panel is not None:
-                try:
-                    self._local_panel.pack_forget()
-                except tk.TclError:
-                    pass
-            self._global_panel.pack(fill="both", expand=True)
-            self.title("Variables — Global")
-            self._set_tab_state(self._global_tab, self._global_color, True)
-            self._set_tab_state(self._local_tab, self._local_color, False)
-        else:
+        # Hide every panel first; the active branch packs its own.
+        try:
+            self._global_panel.pack_forget()
+        except tk.TclError:
+            pass
+        if self._local_panel is not None:
             try:
-                self._global_panel.pack_forget()
+                self._local_panel.pack_forget()
             except tk.TclError:
                 pass
+        try:
+            self._objrefs_panel.pack_forget()
+        except tk.TclError:
+            pass
+        if scope == "global":
+            self._global_panel.pack(fill="both", expand=True)
+            self.title("Variables — Global")
+        elif scope == "local":
             if self._local_panel is not None:
                 self._local_panel.pack(fill="both", expand=True)
             self.title(
                 f"Variables — {self._local_tab_label()}",
             )
-            self._set_tab_state(self._global_tab, self._global_color, False)
-            self._set_tab_state(self._local_tab, self._local_color, True)
+        else:  # objrefs
+            self._objrefs_panel.pack(fill="both", expand=True)
+            self.title("Variables — Object References")
+        self._set_tab_state(
+            self._global_tab, self._global_color, scope == "global",
+        )
+        self._set_tab_state(
+            self._local_tab, self._local_color, scope == "local",
+        )
+        self._set_tab_state(
+            self._objrefs_tab, self._objrefs_color, scope == "objrefs",
+        )
 
     def _set_tab_state(
         self, btn: ctk.CTkButton, accent: str, active: bool,
@@ -1134,7 +1841,7 @@ class VariablesWindow(ctk.CTkToplevel):
         else:
             btn.configure(
                 text_color="#888888",
-                fg_color="transparent",
+                fg_color=BG,
                 hover_color="#2a2a2a",
             )
 
@@ -1202,6 +1909,7 @@ class VariablesWindow(ctk.CTkToplevel):
         for panel in (
             getattr(self, "_global_panel", None),
             getattr(self, "_local_panel", None),
+            getattr(self, "_objrefs_panel", None),
         ):
             if panel is not None:
                 try:

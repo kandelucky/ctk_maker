@@ -249,6 +249,21 @@ def place_behavior_field_pick(
     _place_value_cell_right(tree, widget, iid, width=58, pad_y=3)
 
 
+# v1.10.8 — Object Reference toggle button slot. Wider than the
+# ``[+]`` / ``[Pick…]`` buttons because the label reads
+# ``+ Make Reference`` / ``✕ Remove`` — both need ~130 px.
+SLOT_OBJECT_REFERENCE_TOGGLE = "object_reference_toggle"
+
+
+def place_object_reference_toggle(
+    tree: tk.Widget, widget: tk.Widget, iid: str,
+) -> None:
+    """Right-edge ``+`` / ``×`` toggle button. Sized like the other
+    icon-only action buttons in the panel (e.g. bind ✕).
+    """
+    _place_value_cell_right(tree, widget, iid, width=20, pad_y=3)
+
+
 def place_behavior_field_clear(
     tree: tk.Widget, widget: tk.Widget, iid: str,
 ) -> None:

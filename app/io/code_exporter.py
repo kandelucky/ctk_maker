@@ -384,6 +384,12 @@ _BEHAVIOR_METHODS_BY_DOC_ID: dict[str, set[str]] = {}
 _MISSING_BEHAVIOR_METHODS: list[tuple[str, str]] = []
 _GLOBAL_VAR_ATTR: dict = {}
 _VAR_ID_TO_ATTR: dict = {}
+# v1.10.8 — doc.id → class name emitted in this generate_code run.
+# Populated at the top of ``generate_code`` once class names are
+# assigned, consumed by ``_emit_behavior_field_lines`` so global
+# Window/Dialog refs resolve to the right class symbol. Reset
+# alongside the variable maps.
+_DOC_ID_TO_CLASS: dict = {}
 # Var-name fallbacks the exporter applied during this run because the
 # user-set Properties-panel "Name" was empty / invalid / a duplicate.
 # Tuples are ``(doc_name, intended, fallback, reason)``; reset at the
@@ -1170,17 +1176,21 @@ def generate_code(
     production code.
     """
     global _INCLUDE_DESCRIPTIONS_DEFAULT, _EXPORT_PROJECT
-    global _GLOBAL_VAR_ATTR, _VAR_ID_TO_ATTR
+    global _GLOBAL_VAR_ATTR, _VAR_ID_TO_ATTR, _DOC_ID_TO_CLASS
     global _VAR_NAME_FALLBACKS, _NAME_MAP_CACHE
     _prev = (
         _INCLUDE_DESCRIPTIONS_DEFAULT, _EXPORT_PROJECT,
-        _GLOBAL_VAR_ATTR, _VAR_ID_TO_ATTR,
+        _GLOBAL_VAR_ATTR, _VAR_ID_TO_ATTR, _DOC_ID_TO_CLASS,
     )
     _INCLUDE_DESCRIPTIONS_DEFAULT = include_descriptions
     _EXPORT_PROJECT = project
     _GLOBAL_VAR_ATTR = _build_global_var_attrs(project)
     # Per-class map is rebuilt inside ``_emit_class``; start empty.
     _VAR_ID_TO_ATTR = {}
+    # doc.id → class name; populated inside ``_generate_code_inner``
+    # once class names are picked. Empty here so single-doc / no-doc
+    # paths skip global-ref resolution cleanly.
+    _DOC_ID_TO_CLASS = {}
     # Reset the var-name fallback log + DFS-walk memoisation so this
     # export run starts from a clean slate. The log survives past
     # ``generate_code`` so launchers can read it via
@@ -1207,6 +1217,7 @@ def generate_code(
             _EXPORT_PROJECT,
             _GLOBAL_VAR_ATTR,
             _VAR_ID_TO_ATTR,
+            _DOC_ID_TO_CLASS,
         ) = _prev
 
 
@@ -1388,6 +1399,12 @@ def _generate_code_inner(
         cls_name = _class_name_for(doc, index, used_class_names)
         used_class_names.add(cls_name)
         class_names.append((doc, cls_name))
+    # v1.10.8 — populate the global doc.id → class-name map so
+    # _emit_behavior_field_lines can resolve global Window/Dialog
+    # refs to the right symbol. The map is reset at the top of
+    # generate_code so we never carry state across runs.
+    global _DOC_ID_TO_CLASS
+    _DOC_ID_TO_CLASS = {doc.id: cls for doc, cls in class_names}
 
     # Phase 2 — emit ``from assets.scripts.<page>.<window> import
     # <WindowName>Page`` for every Document that actually binds at
@@ -1644,14 +1661,23 @@ def _node_has_handlers(node: WidgetNode) -> bool:
 
 
 def _doc_needs_behavior(doc: Document) -> bool:
-    """Phase 3 — broader behavior-class gate. Returns True when the
-    doc has either bound handlers OR Behavior Field values to wire.
-    Field-only docs (declared annotations, picked widgets, no event
-    handlers) still require the ``self._behavior = X()`` instance so
-    setup() can run + the field assignments have a target.
+    """v1.10.8 — broader behavior-class gate. Returns True when the
+    doc has bound handlers OR object-reference targets to wire (any
+    target_id non-empty). Reference-only docs (declared refs, picked
+    widgets, no event handlers) still require the
+    ``self._behavior = X()`` instance so setup() can run + the
+    reference assignments have a target.
     """
     if _doc_has_handlers(doc):
         return True
+    if any(
+        e.target_id for e in (doc.local_object_references or [])
+    ):
+        return True
+    # Legacy v1.10.7- field values — kept for the rare case where
+    # migration hasn't run (e.g. exporter invoked on a fresh-loaded
+    # legacy project before any save). Will become dead code once
+    # migration always runs on load.
     if doc.behavior_field_values:
         return True
     return False
@@ -1845,27 +1871,43 @@ def _emit_behavior_field_lines(
     id_to_var: dict[str, str],
     instance_prefix: str,
 ) -> list[str]:
-    """Phase 3 — produce the ``self._behavior.<field> = <expr>`` lines
-    that wire Inspector slots after ``_build_ui()`` returns. Skips
-    bindings whose target widget no longer exists (silent drop —
-    panel already shows ``(missing widget)`` so the user has been
-    warned in the editor).
+    """v1.10.8 — produce the ``self._behavior.<name> = <expr>`` lines
+    that wire object-reference slots after ``_build_ui()`` returns.
+    Reads from ``doc.local_object_references`` (local refs) and the
+    project-level ``object_references`` (globals — Window/Dialog
+    pointers). Skips entries whose target is missing in this export.
 
     Indentation is two levels (``__init__`` body inside ``class``);
     the caller appends them right after the ``self._build_ui()``
     call.
     """
-    if not doc.behavior_field_values:
-        return []
     lines: list[str] = []
-    for field_name, widget_id in doc.behavior_field_values.items():
-        var_name = id_to_var.get(widget_id)
+    for entry in doc.local_object_references or []:
+        if not entry.target_id:
+            continue
+        var_name = id_to_var.get(entry.target_id)
         if not var_name:
             continue
         lines.append(
-            f"{INDENT}{INDENT}self._behavior.{field_name} = "
+            f"{INDENT}{INDENT}self._behavior.{entry.name} = "
             f"{instance_prefix}{var_name}",
         )
+    # Globals — Window/Dialog refs resolve to the class symbol the
+    # current export emitted. Same-file class references mean no
+    # imports are needed; missing target_id (unbound slot) or a
+    # target that wasn't in this export (single-doc mode) are
+    # silently skipped so the generated code stays runnable.
+    project = _EXPORT_PROJECT
+    if project is not None:
+        for entry in project.object_references or []:
+            if not entry.target_id:
+                continue
+            cls = _DOC_ID_TO_CLASS.get(entry.target_id)
+            if not cls:
+                continue
+            lines.append(
+                f"{INDENT}{INDENT}self._behavior.{entry.name} = {cls}",
+            )
     return lines
 
 
@@ -2021,7 +2063,7 @@ def _emit_class_body(
     # var map mirrors the naming the subtree walk emits, so the
     # right-hand sides line up with the actual ``self.<widget_var>``
     # attributes set during the build.
-    if _doc_needs_behavior(doc) and doc.behavior_field_values:
+    if _doc_needs_behavior(doc) and (doc.local_object_references):
         id_to_var = _build_id_to_var_name(doc)
         field_lines = _emit_behavior_field_lines(doc, id_to_var, "self.")
         lines.extend(field_lines)

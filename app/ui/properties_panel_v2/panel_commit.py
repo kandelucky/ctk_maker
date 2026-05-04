@@ -193,6 +193,17 @@ class CommitMixin:
                 "request_open_variables_window", "local", doc_id,
             )
             return "break"
+        # v1.10.8 — double-click an Object Reference row on the
+        # Window panel jumps to the Variables window's Object
+        # References tab. Mirrors the localvar branch above.
+        if iid and iid.startswith("objref:") and iid != "objref:empty":
+            doc_id = (
+                self.project.active_document_id if self.project else None
+            )
+            self.project.event_bus.publish(
+                "request_open_variables_window", "objrefs", doc_id,
+            )
+            return "break"
         # Phase 2 visual scripting — double-click a bound-method row
         # in the Events group to jump to the method in the user's
         # editor. Single-click stays as plain Treeview row select so
