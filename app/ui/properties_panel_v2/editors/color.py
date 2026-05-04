@@ -1,15 +1,13 @@
 """Color editor: persistent swatch overlay + color picker dialog.
 
 Schema can mark a colour property ``clearable: True`` (or a callable
-``clearable(props) -> bool`` for context-dependent cases like CTkFrame's
-fg_color which is only clearable on Layout Frames, not plain ones)
-with an optional ``clear_value`` (defaults to ``None``). When set,
-the editor draws a small ✕ button at the right edge of the value
-cell — click resets the prop to its ``clear_value`` (typical uses:
-``image_color`` = ``None``, ``fg_color`` / ``bg_color`` =
-``"transparent"``). Covers the UX gap where once a colour was picked
-the user had to type the sentinel back in by hand to return to the
-"inactive" default.
+``clearable(props) -> bool`` for context-dependent cases) with an
+optional ``clear_value`` (defaults to ``None``). When set, the editor
+draws a small ✕ button at the right edge of the value cell — click
+resets the prop to its ``clear_value`` (typical uses: ``image_color``
+= ``None``, ``fg_color`` / ``bg_color`` = ``"transparent"``). Covers
+the UX gap where once a colour was picked the user had to type the
+sentinel back in by hand to return to the "inactive" default.
 """
 
 from __future__ import annotations

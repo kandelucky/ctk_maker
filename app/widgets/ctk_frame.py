@@ -19,7 +19,6 @@ from app.widgets.layout_schema import (
     LAYOUT_GRID_ROWS_ROW,
     LAYOUT_SPACING_ROW,
     LAYOUT_TYPE_ROW,
-    normalise_layout_type,
 )
 
 
@@ -88,14 +87,9 @@ class CTkFrameDescriptor(WidgetDescriptor):
          "disabled_when": lambda p: not p.get("border_enabled")},
 
         # --- Main Colors -------------------------------------------------
-        # Clearable only on Layout Frames (vbox / hbox / grid) — plain
-        # place-based Frames are meant to be panels with a real fill.
         {"name": "fg_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Background",
-         "clearable": lambda p: normalise_layout_type(
-             p.get("layout_type", "place"),
-         ) != "place",
-         "clear_value": "transparent"},
+         "clearable": True, "clear_value": "transparent"},
 
         # --- Layout (children manager) -----------------------------------
         LAYOUT_TYPE_ROW,
