@@ -327,12 +327,28 @@ class MenuMixin:
             accelerator="F10",
         )
         view_menu.add_checkbutton(
-            label="Variables",
+            label="Data",
             variable=self._variables_var,
             command=self._on_toggle_variables_window,
             accelerator="F11",
         )
         menubar.add_cascade(label="View", menu=view_menu)
+
+        # ---- Data ----
+        data_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
+        self._add_cmd(
+            data_menu, "Global Variables",
+            lambda: self._on_request_open_variables_window("global"),
+        )
+        self._add_cmd(
+            data_menu, "Local Variables",
+            lambda: self._on_request_open_variables_window("local"),
+        )
+        self._add_cmd(
+            data_menu, "Object References",
+            lambda: self._on_request_open_variables_window("objrefs"),
+        )
+        menubar.add_cascade(label="Data", menu=data_menu)
 
         # ---- Tools ----
         tools_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)

@@ -237,9 +237,11 @@ class SelectionController:
         zoom = self._zoom_provider() or 1.0
         dx = int((event.x_root - r["press_mx"]) / zoom)
         dy = int((event.y_root - r["press_my"]) / zoom)
+        proportional = bool(event.state & 0x0001)
         new_x, new_y, new_w, new_h = self._compute_resize(
             r["handle"], r["start_x"], r["start_y"],
             r["start_w"], r["start_h"], dx, dy,
+            proportional=proportional,
         )
         nid = r["nid"]
         node = self.project.get_widget(nid)
@@ -677,6 +679,7 @@ class SelectionController:
         self, handle: str,
         sx: int, sy: int, sw: int, sh: int,
         dx: int, dy: int,
+        proportional: bool = False,
     ) -> tuple[int, int, int, int]:
         x, y, w, h = sx, sy, sw, sh
         if handle in ("nw", "w", "sw"):
@@ -689,6 +692,20 @@ class SelectionController:
             h = sh - dy
         elif handle in ("sw", "s", "se"):
             h = sh + dy
+
+        if proportional and sw > 0 and sh > 0:
+            ratio = sw / sh
+            rel_w = (w - sw) / sw
+            rel_h = (h - sh) / sh
+            if abs(rel_w) >= abs(rel_h):
+                h = max(MIN_WIDGET_SIZE, int(w / ratio))
+            else:
+                w = max(MIN_WIDGET_SIZE, int(h * ratio))
+            if handle in ("nw", "w", "sw"):
+                x = sx + sw - w
+            if handle in ("nw", "n", "ne"):
+                y = sy + sh - h
+
         if w < MIN_WIDGET_SIZE:
             if handle in ("nw", "w", "sw"):
                 x = sx + sw - MIN_WIDGET_SIZE

@@ -1635,7 +1635,7 @@ class VariablesWindow(ctk.CTkToplevel):
         initial_scope: str = "global",
     ):
         super().__init__(parent)
-        self.title("Variables")
+        self.title("Data")
         self.configure(fg_color=BG)
         self.geometry("460x440")
         self.minsize(360, 260)
@@ -1810,16 +1810,16 @@ class VariablesWindow(ctk.CTkToplevel):
             pass
         if scope == "global":
             self._global_panel.pack(fill="both", expand=True)
-            self.title("Variables — Global")
+            self.title("Data — Global Variables")
         elif scope == "local":
             if self._local_panel is not None:
                 self._local_panel.pack(fill="both", expand=True)
             self.title(
-                f"Variables — {self._local_tab_label()}",
+                f"Data — {self._local_tab_label()}",
             )
         else:  # objrefs
             self._objrefs_panel.pack(fill="both", expand=True)
-            self.title("Variables — Object References")
+            self.title("Data — Object References")
         self._set_tab_state(
             self._global_tab, self._global_color, scope == "global",
         )

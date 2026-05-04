@@ -245,16 +245,16 @@ class WorkspaceControls:
             bar, width=1, fg_color="#3c3c3c", corner_radius=0,
         ).pack(side="right", fill="y", pady=6)
 
-        # "Variables" button — opens the Variables window on the
-        # Global tab. Packed AFTER add_btn so it lands visually to
+        # "Data" button — opens the Data window on the Global tab.
+        # Packed AFTER add_btn so it lands visually to
         # add_btn's left (side="right" stacks newer items inward).
         from app.ui.icons import VARIABLES_GLOBAL_COLOR
         vars_icon = load_icon(
-            "braces", size=14, color=VARIABLES_GLOBAL_COLOR,
+            "database", size=14, color=VARIABLES_GLOBAL_COLOR,
         )
         vars_btn = ctk.CTkButton(
             bar,
-            text="Variables",
+            text="Data",
             image=vars_icon,
             compound="left",
             width=100,
