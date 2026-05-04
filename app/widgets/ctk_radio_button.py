@@ -8,8 +8,7 @@ resolved during code export.
 Groups shown in the Properties panel, in order:
 
     Geometry          — x/y, widget size
-    Rectangle         — corner radius + border widths (unchecked/checked)
-    Radio Button      — the inner dot's own width/height
+    Dot               — the dot's size, corner radius, border widths
     Button Interaction — interactable, hover, initial state
     Main Colors       — fill (when checked), hover
     Text              — label, font + style, text colors
@@ -74,9 +73,16 @@ class CTkRadioButtonDescriptor(WidgetDescriptor):
         {"name": "height", "type": "number", "label": "H",
          "group": "Geometry", "pair": "size", "min": 10, "max": 2000},
 
-        # --- Rectangle ---------------------------------------------------
+        # --- Dot ---------------------------------------------------------
+        {"name": "radiobutton_width", "type": "number", "label": "W",
+         "group": "Dot", "pair": "box_size",
+         "row_label": "Dot Size", "min": 10, "max": 200},
+        {"name": "radiobutton_height", "type": "number", "label": "H",
+         "group": "Dot", "pair": "box_size",
+         "min": 10, "max": 200},
+
         {"name": "corner_radius", "type": "number", "label": "",
-         "group": "Rectangle",
+         "group": "Dot",
          "row_label": "Corner Radius", "min": 0,
          "max": lambda p: max(
              0,
@@ -84,7 +90,7 @@ class CTkRadioButtonDescriptor(WidgetDescriptor):
                  int(p.get("radiobutton_height", 0))) // 2,
          )},
         {"name": "border_width_unchecked", "type": "number", "label": "",
-         "group": "Rectangle",
+         "group": "Dot",
          "row_label": "Unchecked Width", "min": 0,
          "max": lambda p: max(
              1,
@@ -92,21 +98,13 @@ class CTkRadioButtonDescriptor(WidgetDescriptor):
                  int(p.get("radiobutton_height", 0))) // 2,
          )},
         {"name": "border_width_checked", "type": "number", "label": "",
-         "group": "Rectangle",
+         "group": "Dot",
          "row_label": "Checked Width", "min": 0,
          "max": lambda p: max(
              1,
              min(int(p.get("radiobutton_width", 0)),
                  int(p.get("radiobutton_height", 0))) // 2,
          )},
-
-        # --- Radio button box size --------------------------------------
-        {"name": "radiobutton_width", "type": "number", "label": "W",
-         "group": "Radio Button", "pair": "box_size",
-         "row_label": "Box Size", "min": 10, "max": 200},
-        {"name": "radiobutton_height", "type": "number", "label": "H",
-         "group": "Radio Button", "pair": "box_size",
-         "min": 10, "max": 200},
 
         # --- Button Interaction ------------------------------------------
         {"name": "button_enabled", "type": "boolean", "label": "",

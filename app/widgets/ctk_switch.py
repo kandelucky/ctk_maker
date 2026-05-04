@@ -6,8 +6,7 @@ iOS-style slider.
 Groups shown in the Properties panel, in order:
 
     Geometry           — x/y, widget size
-    Rectangle          — corner radius, button length
-    Switch             — the inner toggle's own width/height
+    Toggle             — the toggle pill's size, corner radius, button length
     Button Interaction — interactable, hover, initially on
     Main Colors        — track (off / on), knob, knob hover
     Text               — label, font + style, text colors
@@ -76,9 +75,16 @@ class CTkSwitchDescriptor(WidgetDescriptor):
         {"name": "height", "type": "number", "label": "H",
          "group": "Geometry", "pair": "size", "min": 10, "max": 2000},
 
-        # --- Rectangle ---------------------------------------------------
+        # --- Toggle ------------------------------------------------------
+        {"name": "switch_width", "type": "number", "label": "W",
+         "group": "Toggle", "pair": "switch_size",
+         "row_label": "Toggle Size", "min": 10, "max": 200},
+        {"name": "switch_height", "type": "number", "label": "H",
+         "group": "Toggle", "pair": "switch_size",
+         "min": 8, "max": 200},
+
         {"name": "corner_radius", "type": "number", "label": "",
-         "group": "Rectangle",
+         "group": "Toggle",
          "row_label": "Corner Radius", "min": 0,
          "max": lambda p: max(
              0,
@@ -86,17 +92,9 @@ class CTkSwitchDescriptor(WidgetDescriptor):
                  int(p.get("switch_height", 0))) // 2,
          )},
         {"name": "button_length", "type": "number", "label": "",
-         "group": "Rectangle",
+         "group": "Toggle",
          "row_label": "Button Length", "min": 0,
          "max": lambda p: max(0, int(p.get("switch_width", 36)))},
-
-        # --- Switch box size ---------------------------------------------
-        {"name": "switch_width", "type": "number", "label": "W",
-         "group": "Switch", "pair": "switch_size",
-         "row_label": "Switch Size", "min": 10, "max": 200},
-        {"name": "switch_height", "type": "number", "label": "H",
-         "group": "Switch", "pair": "switch_size",
-         "min": 8, "max": 200},
 
         # --- Button Interaction ------------------------------------------
         {"name": "button_enabled", "type": "boolean", "label": "",
