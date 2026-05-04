@@ -250,6 +250,14 @@ class ComponentImportDialog(ctk.CTkToplevel):
         modal.protocol("WM_DELETE_WINDOW", lambda: _pick("cancel"))
         modal.bind("<Escape>", lambda _e: _pick("cancel"))
         modal.update_idletasks()
+        # Defensive: update_idletasks + safe_grab_set's wait_visibility
+        # together pump the event loop twice. A stale Escape from the
+        # parent dialog can dispatch to the modal's binding mid-build
+        # and call destroy() before we get here. Skip centering +
+        # wait_window when that happens — just return the default
+        # ``cancel`` choice.
+        if not modal.winfo_exists():
+            return choice["value"]
         # Center over self
         try:
             sx = self.winfo_rootx()
@@ -263,7 +271,8 @@ class ComponentImportDialog(ctk.CTkToplevel):
             )
         except tk.TclError:
             pass
-        self.wait_window(modal)
+        if modal.winfo_exists():
+            self.wait_window(modal)
         return choice["value"]
 
     def _on_cancel(self) -> None:

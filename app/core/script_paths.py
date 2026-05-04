@@ -27,7 +27,9 @@ method that doesn't exist in the target project.
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
 from pathlib import Path
 
 ASSETS_DIR_NAME = "assets"
@@ -214,3 +216,85 @@ def archive_dir(
     except OSError:
         return None
     return target
+
+
+class ScriptsMigrationConflict(Exception):
+    """Raised when ``migrate_page_scripts_folders`` cannot move a
+    per-page subfolder because the destination already exists with
+    non-stub content. Caller decides whether to surface as a fatal
+    error or skip.
+    """
+
+
+def _is_disposable_target(target_dir: Path) -> bool:
+    """True when ``target_dir`` either doesn't exist, is empty, or
+    contains only a single ``__init__.py`` (stub-folder shape created
+    eagerly by ``ensure_scripts_root``). Used by
+    ``migrate_page_scripts_folders`` to decide whether the stub can
+    be safely overwritten by the source dir's real contents.
+    """
+    if not target_dir.exists():
+        return True
+    try:
+        entries = list(target_dir.iterdir())
+    except OSError:
+        return False
+    if not entries:
+        return True
+    if len(entries) == 1 and entries[0].name == "__init__.py":
+        # Empty __init__.py is the regen baseline — anything else
+        # (real source files or other stubs) means user-authored
+        # content that we mustn't silently overwrite.
+        try:
+            return entries[0].stat().st_size == 0
+        except OSError:
+            return False
+    return False
+
+
+def _migrate_one_subfolder(
+    parent: Path, old_stem: str, new_stem: str,
+) -> bool:
+    """Move ``parent/<old_stem>/`` → ``parent/<new_stem>/``. Returns
+    True when a real migration happened, False when the source didn't
+    exist (no-op). Raises ``ScriptsMigrationConflict`` when the
+    destination already holds non-stub content.
+    """
+    src = parent / old_stem
+    dst = parent / new_stem
+    if not src.exists():
+        return False
+    if not _is_disposable_target(dst):
+        raise ScriptsMigrationConflict(
+            f"Cannot migrate '{src}' → '{dst}': destination is not "
+            f"empty (and contains more than just an empty __init__.py)."
+        )
+    if dst.exists():
+        # Stub-shaped target: drop it so os.replace can land cleanly.
+        # rmtree handles the single __init__.py case + any future
+        # stub-only layouts without enumerating them.
+        shutil.rmtree(dst)
+    os.replace(src, dst)
+    return True
+
+
+def migrate_page_scripts_folders(
+    project_folder: str | Path, old_stem: str, new_stem: str,
+) -> None:
+    """Rename per-page ``assets/scripts/<stem>/`` and
+    ``assets/scripts_archive/<stem>/`` subfolders when a page's
+    ``.ctkproj`` filename is renamed.
+
+    No-op when both source folders are absent (page never had
+    behavior code). Idempotent when ``old_stem == new_stem``. Raises
+    ``ScriptsMigrationConflict`` when either destination already
+    holds non-stub content — caller surfaces this as a user-facing
+    error before the rest of the rename completes.
+    """
+    if old_stem == new_stem:
+        return
+    folder = Path(project_folder)
+    scripts_parent = folder / ASSETS_DIR_NAME / SCRIPTS_DIR_NAME
+    archive_parent = folder / ASSETS_DIR_NAME / ARCHIVE_DIR_NAME
+    _migrate_one_subfolder(scripts_parent, old_stem, new_stem)
+    _migrate_one_subfolder(archive_parent, old_stem, new_stem)

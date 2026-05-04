@@ -511,6 +511,21 @@ def rename_page(
         new_filename = _unique_filename(pdir, new_slug)
         old_path = pdir / old_filename
         new_path = pdir / new_filename
+        old_stem = Path(old_filename).stem
+        new_stem = Path(new_filename).stem
+        # Behavior scripts live filename-keyed under
+        # ``assets/scripts/<stem>/`` (Phase 2) and
+        # ``assets/scripts_archive/<stem>/``. Migrate first so a
+        # blocked migration (target dir holding real handler code)
+        # surfaces before the visible .ctkproj rename — keeps the
+        # operation atomic from the user's perspective.
+        from app.core.script_paths import (
+            ScriptsMigrationConflict, migrate_page_scripts_folders,
+        )
+        try:
+            migrate_page_scripts_folders(folder, old_stem, new_stem)
+        except ScriptsMigrationConflict as exc:
+            raise ProjectMetaError(str(exc)) from exc
         if old_path.is_file():
             os.replace(old_path, new_path)
         # Page sidecars (.bak / .autosave) are id-keyed in the

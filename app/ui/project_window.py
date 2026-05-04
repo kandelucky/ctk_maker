@@ -1203,11 +1203,9 @@ class ProjectPanel(ctk.CTkFrame):
             ),
             "",
         )
-        from tkinter import simpledialog
-        new_name = simpledialog.askstring(
-            "Rename page", "New name:",
-            initialvalue=current_name,
-            parent=self.winfo_toplevel(),
+        from app.ui.dialogs import prompt_rename_page
+        new_name = prompt_rename_page(
+            self.winfo_toplevel(), current_name,
         )
         if not new_name:
             return
