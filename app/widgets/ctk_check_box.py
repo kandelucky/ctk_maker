@@ -6,8 +6,7 @@ side by side; CTk composes them automatically.
 Groups shown in the Properties panel, in order:
 
     Geometry          — x/y, widget size
-    Rectangle         — corner radius, optional border
-    Checkbox          — the inner square's own width/height
+    Box               — the inner square's size, corner radius, optional border
     Button Interaction — interactable toggle, hover effect, initial state
     Main Colors       — fill (when checked), hover, check mark
     Text              — label, font + style, text colors
@@ -73,20 +72,28 @@ class CTkCheckBoxDescriptor(WidgetDescriptor):
         {"name": "height", "type": "number", "label": "H",
          "group": "Geometry", "pair": "size", "min": 10, "max": 2000},
 
-        # --- Rectangle ---------------------------------------------------
+        # --- Box ---------------------------------------------------------
+        {"name": "checkbox_width", "type": "number", "label": "W",
+         "group": "Box", "pair": "box_size", "row_label": "Box Size",
+         "min": 10, "max": 200},
+        {"name": "checkbox_height", "type": "number", "label": "H",
+         "group": "Box", "pair": "box_size",
+         "min": 10, "max": 200},
+
         {"name": "corner_radius", "type": "number", "label": "",
-         "group": "Rectangle",
+         "group": "Box",
          "row_label": "Corner Radius", "min": 0,
          "max": lambda p: max(
              0,
              min(int(p.get("checkbox_width", 0)),
                  int(p.get("checkbox_height", 0))) // 2,
          )},
+
         {"name": "border_enabled", "type": "boolean", "label": "",
-         "group": "Rectangle", "subgroup": "Border",
+         "group": "Box", "subgroup": "Border",
          "row_label": "Enabled"},
         {"name": "border_width", "type": "number", "label": "",
-         "group": "Rectangle", "subgroup": "Border",
+         "group": "Box", "subgroup": "Border",
          "row_label": "Thickness", "min": 1,
          "max": lambda p: max(
              1,
@@ -95,17 +102,9 @@ class CTkCheckBoxDescriptor(WidgetDescriptor):
          ),
          "disabled_when": lambda p: not p.get("border_enabled")},
         {"name": "border_color", "type": "color", "label": "",
-         "group": "Rectangle", "subgroup": "Border",
+         "group": "Box", "subgroup": "Border",
          "row_label": "Color",
          "disabled_when": lambda p: not p.get("border_enabled")},
-
-        # --- Checkbox size ----------------------------------------------
-        {"name": "checkbox_width", "type": "number", "label": "W",
-         "group": "Checkbox", "pair": "box_size", "row_label": "Box Size",
-         "min": 10, "max": 200},
-        {"name": "checkbox_height", "type": "number", "label": "H",
-         "group": "Checkbox", "pair": "box_size",
-         "min": 10, "max": 200},
 
         # --- Button Interaction ------------------------------------------
         {"name": "button_enabled", "type": "boolean", "label": "",
