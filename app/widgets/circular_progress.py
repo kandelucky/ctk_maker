@@ -23,8 +23,8 @@ _RUNTIME_KWARGS = {
     "width", "height",
     "fg_color", "progress_color",
     "thickness", "initial_percent",
-    "show_text", "text_format",
-    "text_color", "font_size", "font_bold",
+    "show_text", "suffix",
+    "text_color", "font_family", "font_size", "font_bold",
 }
 
 
@@ -59,8 +59,9 @@ class CircularProgressDescriptor(WidgetDescriptor):
         "progress_color": "#6366f1",
         # Text
         "show_text": True,
-        "text_format": "{percent}%",
+        "suffix": "%",
         "text_color": "#ffffff",
+        "font_family": "TkDefaultFont",
         "font_size": 18,
         "font_bold": True,
     }
@@ -96,11 +97,14 @@ class CircularProgressDescriptor(WidgetDescriptor):
         # --- Text --------------------------------------------------------
         {"name": "show_text", "type": "boolean", "label": "",
          "group": "Text", "row_label": "Show"},
-        {"name": "text_format", "type": "multiline", "label": "",
-         "group": "Text", "row_label": "Format",
+        {"name": "suffix", "type": "unit", "label": "",
+         "group": "Text", "row_label": "Unit",
          "disabled_when": lambda p: not p.get("show_text")},
         {"name": "text_color", "type": "color", "label": "",
          "group": "Text", "row_label": "Color",
+         "disabled_when": lambda p: not p.get("show_text")},
+        {"name": "font_family", "type": "font", "label": "",
+         "group": "Text", "row_label": "Font",
          "disabled_when": lambda p: not p.get("show_text")},
         {"name": "font_size", "type": "number", "label": "",
          "group": "Text", "row_label": "Size",

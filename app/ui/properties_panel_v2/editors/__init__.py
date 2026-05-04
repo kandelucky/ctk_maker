@@ -16,6 +16,7 @@ from .image import ImageEditor
 from .multiline import MultilineEditor
 from .number import NumberEditor
 from .segment_values import SegmentValuesEditor
+from .unit import UnitEditor
 
 _FALLBACK = Editor()
 _ENUM = EnumEditor()
@@ -41,6 +42,7 @@ _EDITORS: dict[str, Editor] = {
     "tab_bar_position": _ENUM,
     "segment_initial": _ENUM,
     "segment_values": SegmentValuesEditor(),
+    "unit": UnitEditor(),
 }
 
 

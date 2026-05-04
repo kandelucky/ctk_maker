@@ -24,6 +24,7 @@ from .constants import (
     TAB_BAR_ALIGN_OPTIONS,
     TAB_BAR_POSITION_OPTIONS,
     TEXT_POSITION_OPTIONS,
+    UNIT_SUFFIX_OPTIONS,
     WRAP_OPTIONS,
 )
 
@@ -59,6 +60,8 @@ def format_value(ptype: str, value, prop: dict) -> str:
         return LAYOUT_DISPLAY_NAMES.get(str(value), str(value or "—"))
     if ptype in LAYOUT_ENUM_TYPES:
         return str(value) if value not in (None, "") else "—"
+    if ptype == "unit":
+        return str(value) if value is not None else ""
     if ptype in ("multiline", "image", "segment_values"):
         # Shown via overlay label / button, not the tree cell.
         return ""
@@ -119,6 +122,8 @@ def enum_options_for(ptype: str):
         return TAB_BAR_POSITION_OPTIONS
     if ptype == "orientation":
         return ORIENTATION_OPTIONS
+    if ptype == "unit":
+        return UNIT_SUFFIX_OPTIONS
     if ptype == "wrap":
         return WRAP_OPTIONS
     if ptype == "text_position":

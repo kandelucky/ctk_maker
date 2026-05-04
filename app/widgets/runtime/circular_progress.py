@@ -32,8 +32,9 @@ class CircularProgress(tk.Canvas, CTkScalingBaseClass):
         thickness: int = 12,
         initial_percent: float = 50,
         show_text: bool = True,
-        text_format: str = "{percent}%",
+        suffix: str = "%",
         text_color: str = "#ffffff",
+        font_family: str = "TkDefaultFont",
         font_size: int = 18,
         font_bold: bool = True,
         bg_color=None,
@@ -66,10 +67,10 @@ class CircularProgress(tk.Canvas, CTkScalingBaseClass):
         self._progress_color = progress_color
         self._thickness = max(1, int(thickness))
         self._show_text = bool(show_text)
-        self._text_format = text_format
+        self._suffix = suffix
         self._text_color = text_color
         weight = "bold" if font_bold else "normal"
-        self._font = ("TkDefaultFont", int(font_size), weight)
+        self._font = (font_family, int(font_size), weight)
         self.bind("<Configure>", self._redraw)
         self._redraw()
 
@@ -157,11 +158,14 @@ class CircularProgress(tk.Canvas, CTkScalingBaseClass):
             elif key == "show_text":
                 self._show_text = bool(kwargs.pop(key))
                 dirty = True
-            elif key == "text_format":
-                self._text_format = kwargs.pop(key)
+            elif key == "suffix":
+                self._suffix = kwargs.pop(key)
                 dirty = True
             elif key == "text_color":
                 self._text_color = kwargs.pop(key)
+                dirty = True
+            elif key == "font_family":
+                self._font = (kwargs.pop(key), self._font[1], self._font[2])
                 dirty = True
             elif key == "font_size":
                 size = int(kwargs.pop(key))
@@ -216,13 +220,8 @@ class CircularProgress(tk.Canvas, CTkScalingBaseClass):
                 width=self._thickness,
             )
         if self._show_text:
-            try:
-                txt = self._text_format.format(
-                    percent=int(self._percent),
-                    value=self._percent,
-                )
-            except (KeyError, IndexError, ValueError):
-                txt = f"{int(self._percent)}%"
+            sfx = "" if self._suffix == "none" else self._suffix
+            txt = f"{int(self._percent)}{sfx}"
             self.create_text(
                 w / 2, h / 2,
                 text=txt,

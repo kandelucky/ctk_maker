@@ -52,6 +52,7 @@ TAB_BAR_POSITION_OPTIONS = ["top", "bottom"]
 ORIENTATION_OPTIONS = ["horizontal", "vertical"]
 TEXT_POSITION_OPTIONS = ["left", "right", "top", "bottom"]
 WRAP_OPTIONS = ["none", "char", "word"]
+UNIT_SUFFIX_OPTIONS = ["none", "%", "°", "°C", "°F", "kg", "g", "km", "m", "s", "ms"]
 
 
 # =====================================================================
