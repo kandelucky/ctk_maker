@@ -140,7 +140,10 @@ class ObjectTreePanel(ctk.CTkFrame):
 
         # Expand/collapse state for containers. None = expand by
         # default; a node id in this set means "user collapsed me".
-        self._collapsed_ids: set[str] = set()
+        from app.core.settings import load_settings
+        self._collapsed_ids: set[str] = set(
+            load_settings().get("ui_object_tree_collapsed", [])
+        )
         # Per-virtual-group-row depth — populated on every refresh
         # so ``_click_on_arrow`` can hit-test the arrow region for
         # synthetic ``group:<gid>`` rows (which have no widget node
@@ -474,6 +477,10 @@ class ObjectTreePanel(ctk.CTkFrame):
         self.tree.bind("<ButtonRelease-1>", self._on_drag_release, add="+")
         self.tree.bind("<Button-3>", self._on_right_click, add="+")
         self.tree.bind("<Double-Button-1>", self._on_double_click, add="+")
+
+    def _save_collapsed_ids(self) -> None:
+        from app.core.settings import save_setting
+        save_setting("ui_object_tree_collapsed", list(self._collapsed_ids))
 
     # ------------------------------------------------------------------
     # Refresh / population
@@ -1232,6 +1239,7 @@ class ObjectTreePanel(ctk.CTkFrame):
                     self._collapsed_ids.discard(iid)
                 else:
                     self._collapsed_ids.add(iid)
+                self._save_collapsed_ids()
                 self.refresh()
                 self._drag_source_id = None
                 return "break"
@@ -1241,6 +1249,7 @@ class ObjectTreePanel(ctk.CTkFrame):
                     self._collapsed_ids.discard(iid)
                 else:
                     self._collapsed_ids.add(iid)
+                self._save_collapsed_ids()
                 self.refresh()
             self._drag_source_id = None
             return "break"

@@ -248,6 +248,8 @@ class ComponentsPanel(ctk.CTkFrame):
         self._tree.bind("<Button-3>", self._on_tree_right_click)
         self._tree.bind("<Double-Button-1>", self._on_tree_double_click)
         self._tree.bind("<Button-1>", self._on_tree_left_click, add="+")
+        self._tree.bind("<<TreeviewOpen>>", self._on_folder_toggle, add="+")
+        self._tree.bind("<<TreeviewClose>>", self._on_folder_toggle, add="+")
         # Drag from a component row — release inside the tree on a
         # folder moves the file there; release outside the tree
         # publishes a canvas drop request.
@@ -279,12 +281,32 @@ class ComponentsPanel(ctk.CTkFrame):
     # ------------------------------------------------------------------
     # Refresh / populate
     # ------------------------------------------------------------------
+    def _snapshot_open_paths(self) -> set[str]:
+        opened: set[str] = set()
+        for iid, (path, kind) in self._iid_meta.items():
+            if kind != "folder":
+                continue
+            try:
+                if self._tree.item(iid, "open"):
+                    opened.add(str(path.resolve()))
+            except tk.TclError:
+                continue
+        return opened
+
+    def _on_folder_toggle(self, _event=None) -> None:
+        from app.core.settings import save_setting
+        save_setting("ui_components_expanded_folders", list(self._snapshot_open_paths()))
+
     def refresh(self) -> None:
         try:
             if not self.winfo_exists():
                 return
         except tk.TclError:
             return
+        prev_open = self._snapshot_open_paths()
+        if not prev_open:
+            from app.core.settings import load_settings
+            prev_open = set(load_settings().get("ui_components_expanded_folders", []))
         try:
             self._tree.delete(*self._tree.get_children())
         except tk.TclError:
@@ -296,7 +318,7 @@ class ComponentsPanel(ctk.CTkFrame):
             self._show_empty_state()
             return
         self._show_tree_state()
-        self._populate_dir(root, parent_iid="")
+        self._populate_dir(root, parent_iid="", prev_open=prev_open)
 
     def _show_empty_state(self) -> None:
         self._tree_wrap.pack_forget()
@@ -320,7 +342,10 @@ class ComponentsPanel(ctk.CTkFrame):
                 fill="both", expand=True, padx=4, pady=(0, 4),
             )
 
-    def _populate_dir(self, dir_path: Path, parent_iid: str) -> bool:
+    def _populate_dir(
+        self, dir_path: Path, parent_iid: str,
+        prev_open: set[str] | None = None,
+    ) -> bool:
         try:
             entries = sorted(
                 dir_path.iterdir(),
@@ -335,13 +360,14 @@ class ComponentsPanel(ctk.CTkFrame):
         any_inserted = False
         for entry in entries:
             if entry.is_dir():
+                was_open = prev_open is not None and str(entry.resolve()) in prev_open
                 iid = self._tree.insert(
                     parent_iid, "end",
                     text=f" {entry.name}",
                     image=folder_icon if folder_icon else "",
-                    open=False,
+                    open=was_open,
                 )
-                child_visible = self._populate_dir(entry, iid)
+                child_visible = self._populate_dir(entry, iid, prev_open=prev_open)
                 self_matches = (not needle) or (needle in entry.name.lower())
                 if not (child_visible or self_matches):
                     self._tree.delete(iid)

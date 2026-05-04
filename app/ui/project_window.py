@@ -422,6 +422,8 @@ class ProjectPanel(ctk.CTkFrame):
         self._tree.bind("<<TreeviewSelect>>", self._on_tree_select)
         self._tree.bind("<Button-3>", self._on_tree_right_click)
         self._tree.bind("<Double-Button-1>", self._on_tree_double_click)
+        self._tree.bind("<<TreeviewOpen>>", self._on_folder_toggle, add="+")
+        self._tree.bind("<<TreeviewClose>>", self._on_folder_toggle, add="+")
         # Drag-and-drop within the tree to move files / folders
         # between subfolders. ``ButtonPress`` records the start
         # state; motion past the threshold flips into drag mode;
@@ -1893,7 +1895,14 @@ class ProjectPanel(ctk.CTkFrame):
     def _populate_tree(self, project_file: Path) -> None:
         # Snapshot expanded folders + selection so a refresh
         # (folder added / file moved) preserves the user's view.
+        # Seed from live state; fall back to persisted state on first load.
         prev_open = self._snapshot_open_paths()
+        _has_saved_state = bool(prev_open)
+        if not prev_open:
+            from app.core.settings import load_settings
+            saved = load_settings().get("ui_assets_expanded_folders", [])
+            prev_open = set(saved)
+            _has_saved_state = bool(prev_open)
         prev_sel = self._selected_meta()
         prev_sel_path = prev_sel[0] if prev_sel else None
 
@@ -1965,7 +1974,7 @@ class ProjectPanel(ctk.CTkFrame):
                 label = f"  {folder.name}  ({count})"
                 is_open = (
                     str(folder.resolve()) in prev_open
-                    or parent_iid == ""  # default top-level open
+                    or (not _has_saved_state and parent_iid == "")
                 )
                 # Pages folder defaults to expanded so the user sees
                 # their page list without an extra click — pages are
@@ -2086,6 +2095,10 @@ class ProjectPanel(ctk.CTkFrame):
                 img = None
             if img is not None:
                 self._kind_icons[kind] = img
+
+    def _on_folder_toggle(self, _event=None) -> None:
+        from app.core.settings import save_setting
+        save_setting("ui_assets_expanded_folders", list(self._snapshot_open_paths()))
 
     def _snapshot_open_paths(self) -> set[str]:
         """Capture every currently-expanded folder iid → resolved

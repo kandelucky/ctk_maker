@@ -121,6 +121,12 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         # parent layout_type — pack_* / grid_* fields the descriptor
         # itself doesn't carry. Empty when parent uses ``place``.
         self._layout_extras: list[dict] = []
+        # Top-level group iids the user has manually closed — persisted
+        # across rebuilds and app restarts via settings.json.
+        from app.core.settings import load_settings
+        self._collapsed_groups: set[str] = set(
+            load_settings().get("ui_properties_collapsed_groups", [])
+        )
         # Active in-place editor (Entry) — one at a time
         self._active_editor: tk.Widget | None = None
         self._active_prop: str | None = None
@@ -444,6 +450,8 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
                        add="+")
         self.tree.bind("<<TreeviewClose>>", self._on_layout_change,
                        add="+")
+        self.tree.bind("<<TreeviewOpen>>", self._on_group_open, add="+")
+        self.tree.bind("<<TreeviewClose>>", self._on_group_close, add="+")
         self.tree.bind("<Configure>", self._on_layout_change, add="+")
         self.tree.bind("<FocusOut>", self._on_tree_focus_out, add="+")
 
@@ -489,6 +497,22 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
 
     def _on_layout_change(self, _event=None) -> None:
         self._schedule_reposition()
+
+    def _on_group_open(self, _event=None) -> None:
+        iid = self.tree.focus()
+        if iid and iid.startswith("g:"):
+            self._collapsed_groups.discard(iid)
+            self._save_collapsed_groups()
+
+    def _on_group_close(self, _event=None) -> None:
+        iid = self.tree.focus()
+        if iid and iid.startswith("g:"):
+            self._collapsed_groups.add(iid)
+            self._save_collapsed_groups()
+
+    def _save_collapsed_groups(self) -> None:
+        from app.core.settings import save_setting
+        save_setting("ui_properties_collapsed_groups", list(self._collapsed_groups))
 
     def _schedule_reposition(self) -> None:
         self.after_idle(self._reposition_overlays)
@@ -751,6 +775,11 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         )
         self._apply_managed_layout_disabled(node)
         self._populate_schema(descriptor, node.properties, node)
+        for giid in self._collapsed_groups:
+            try:
+                self.tree.item(giid, open=False)
+            except tk.TclError:
+                pass
         self._build_style_preview(node.properties)
         # Sync overlay appearance with initial disabled state
         for prop in self._effective_schema(descriptor):
