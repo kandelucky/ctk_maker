@@ -962,7 +962,14 @@ class ObjectTreePanel(ctk.CTkFrame):
         try:
             self._apply_selection(widget_id)
         finally:
-            self._syncing = False
+            # Reset _syncing after the event loop drains — tree.selection_remove
+            # inside _apply_selection queues a <<TreeviewSelect>> that fires
+            # AFTER this finally block; without the defer, _on_tree_select
+            # would see _syncing=False and call select_widget(None).
+            self.after(0, self._clear_syncing)
+
+    def _clear_syncing(self) -> None:
+        self._syncing = False
 
     def _on_widget_renamed(self, widget_id: str, _new_name: str) -> None:
         """In-place update of the Name cell only. The full refresh path
