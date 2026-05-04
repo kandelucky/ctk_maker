@@ -250,7 +250,7 @@ class WorkspaceControls:
         # add_btn's left (side="right" stacks newer items inward).
         from app.ui.icons import VARIABLES_GLOBAL_COLOR
         vars_icon = load_icon(
-            "database", size=14, color=VARIABLES_GLOBAL_COLOR,
+            "variable", size=14, color=VARIABLES_GLOBAL_COLOR,
         )
         vars_btn = ctk.CTkButton(
             bar,
