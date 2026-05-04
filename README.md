@@ -5,8 +5,7 @@ Drag-and-drop visual designer for **[CustomTkinter](https://github.com/TomSchima
 **Community Hub:** [kandelucky.github.io/ctkmaker-hub](https://kandelucky.github.io/ctkmaker-hub/) — browse and share reusable components built in CTkMaker.
 
 > **v1.10.7** — **Properties panel cleanup on toggle widgets.** CTkCheckBox / CTkSwitch / CTkRadioButton's `corner_radius` + border fields used to live under a top-level `Rectangle` group that read like the whole widget had a corner radius and a border — but those values only style the inner check square / pill / dot. v1.10.7 dissolves `Rectangle` and merges the fields into the inner-shape group on each widget: CheckBox → **Box**, Switch → **Toggle**, RadioButton → **Dot**. Side fix: CTkFrame's `fg_color` ✕ clear button is now always available, not just on layout frames.
->
-> Earlier in v1.10: **Exported CTkButton auto-syncs icon tint** with state changes — `btn.configure(state="disabled")` now swaps the tinted icon variant 
+> 
 > ⚠️ **Tested on Windows only.** macOS and Linux are not verified — see [issue #5](https://github.com/kandelucky/ctk_maker/issues/5) for the running list of known incompatibilities + how to help.
 
 [![CTkMaker canvas](docs/screenshots/canvas.png)](docs/screenshots/canvas.png)
