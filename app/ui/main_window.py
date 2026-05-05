@@ -2434,10 +2434,16 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         if not applied:
             self._set_centered_geometry(1280, 800)
         if settings.get("window_maximized"):
-            try:
-                self.state("zoomed")
-            except tk.TclError:
-                pass
+            # Defer zoom until __init__ finishes building children.
+            # Calling state("zoomed") inline gets undone by Tk's
+            # geometry recompute as widgets are packed/gridded after.
+            self.after_idle(self._safe_zoom)
+
+    def _safe_zoom(self) -> None:
+        try:
+            self.state("zoomed")
+        except tk.TclError:
+            pass
 
     def _save_window_state(self) -> None:
         try:
