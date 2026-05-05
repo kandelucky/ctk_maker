@@ -22,7 +22,7 @@ import customtkinter as ctk
 
 from app.ui.icons import load_icon
 from app.ui.toolbar import _attach_tooltip
-from app.core.platform_compat import MOD_KEY
+from app.core.platform_compat import MOD_KEY, ALT_STATE_BIT
 
 # Tool identifiers — also used by ``chrome.py`` (via the workspace
 # delegator) and ``drag.py`` (via the literal ``"hand"`` string).
@@ -114,9 +114,9 @@ class WorkspaceControls:
         bar.pack_propagate(False)
 
         tools = [
-            (TOOL_EDIT,   "vector-square",        "Edit (V)"),
-            (TOOL_SELECT, "square-mouse-pointer", "Select"),
-            (TOOL_HAND,   "hand",                 "Hand (H)"),
+            (TOOL_EDIT,   "vector-square",        "Edit (Q)"),
+            (TOOL_SELECT, "square-mouse-pointer", "Select (W)"),
+            (TOOL_HAND,   "hand",                 "Hand (E)"),
         ]
         for tool_id, icon_name, _tooltip in tools:
             icon = load_icon(icon_name, size=16)
@@ -406,28 +406,37 @@ class WorkspaceControls:
         top.bind(f"<{MOD_KEY}-plus>", lambda e: self._zoom_keyboard(1))
         top.bind(f"<{MOD_KEY}-minus>", lambda e: self._zoom_keyboard(-1))
         top.bind(f"<{MOD_KEY}-Key-0>", lambda e: self._zoom_reset())
-        top.bind(
-            "<KeyPress-v>",
-            lambda e: self._tool_shortcut(TOOL_EDIT),
-        )
-        top.bind(
-            "<KeyPress-V>",
-            lambda e: self._tool_shortcut(TOOL_EDIT),
-        )
-        top.bind(
-            "<KeyPress-h>",
-            lambda e: self._tool_shortcut(TOOL_HAND),
-        )
-        top.bind(
-            "<KeyPress-H>",
-            lambda e: self._tool_shortcut(TOOL_HAND),
-        )
+        # Dispatch tool shortcuts by hardware keycode so the same
+        # physical Q/W/E keys fire on Latin and non-Latin layouts
+        # alike (Tk can't match Latin keysyms when a Georgian /
+        # Cyrillic layout is active — bpo-46052).
+        top.bind("<KeyPress>", self._on_tool_keypress, add="+")
 
-    def _tool_shortcut(self, tool: str) -> str | None:
+    # Hardware keycodes for the three tool shortcuts. Identical
+    # across keyboard layouts (Q, W, E physical keys).
+    _KC_Q = 81
+    _KC_W = 87
+    _KC_E = 69
+    _CTRL_MASK = 0x04
+
+    def _on_tool_keypress(self, event) -> str | None:
         if self.workspace._input_focused():
             return None
-        self.set_tool(tool)
-        return "break"
+        # Reserve Ctrl-/Alt-modified keys for accelerators
+        # (Ctrl+Q quits, Ctrl+W closes the project, ...).
+        if event.state & (self._CTRL_MASK | ALT_STATE_BIT):
+            return None
+        kc = event.keycode
+        if kc == self._KC_Q:
+            self.set_tool(TOOL_EDIT)
+            return "break"
+        if kc == self._KC_W:
+            self.set_tool(TOOL_SELECT)
+            return "break"
+        if kc == self._KC_E:
+            self.set_tool(TOOL_HAND)
+            return "break"
+        return None
 
     def _zoom_keyboard(self, delta: int) -> str | None:
         if self.workspace._input_focused():
