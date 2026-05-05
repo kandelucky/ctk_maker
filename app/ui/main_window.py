@@ -789,7 +789,17 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
 
     def _show_startup_dialog(self) -> None:
         dialog = StartupDialog(self)
+        if getattr(self, "_wants_maximized", False):
+            # The dialog's centering pumps Tk events that can un-zoom
+            # the parent. Schedule a re-zoom shortly after the dialog
+            # opens so the parent stays maximized while the user picks.
+            self.after(50, self._safe_zoom)
         self.wait_window(dialog)
+        if getattr(self, "_wants_maximized", False):
+            # Final re-apply once the dialog is fully gone — covers
+            # the case where the dialog's destroy queued additional
+            # geometry events on the parent.
+            self._safe_zoom()
         result = dialog.result
         if result is None:
             # No "untitled" fallback any more — every project lives
@@ -2433,10 +2443,13 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 applied = False
         if not applied:
             self._set_centered_geometry(1280, 800)
-        if settings.get("window_maximized"):
+        # Track intent so the startup-dialog flow can re-apply zoom
+        # after the dialog's event-pump (wait_visibility / centering's
+        # update_idletasks) processes any queued events that would
+        # otherwise un-zoom the parent.
+        self._wants_maximized = bool(settings.get("window_maximized"))
+        if self._wants_maximized:
             # Defer zoom until __init__ finishes building children.
-            # Calling state("zoomed") inline gets undone by Tk's
-            # geometry recompute as widgets are packed/gridded after.
             self.after_idle(self._safe_zoom)
 
     def _safe_zoom(self) -> None:
