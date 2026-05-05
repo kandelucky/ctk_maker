@@ -355,7 +355,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 )
         except Exception:
             pass
-        self.title("CTkMaker")
+        from app import __version__
+        self.title(f"CTkMaker v{__version__}")
         self.minsize(900, 600)
         self._set_centered_geometry(1280, 800)
         self.configure(fg_color="#252526")
@@ -473,9 +474,12 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         # a header row with two toggle buttons.
         _top_wrap = tk.Frame(self.right_pane, bg="#1e1e1e")
 
-        _hdr = tk.Frame(_top_wrap, bg="#2d2d2d", height=28)
+        _hdr = tk.Frame(_top_wrap, bg="#1e1e1e", height=49)
         _hdr.pack(side="top", fill="x")
         _hdr.pack_propagate(False)
+
+        _pill_top = ctk.CTkFrame(_hdr, fg_color="#2a2a2a", corner_radius=4)
+        _pill_top.pack(fill="x", padx=4, pady=4)
 
         _content = tk.Frame(_top_wrap, bg="#1e1e1e")
         _content.pack(fill="both", expand=True)
@@ -484,48 +488,50 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         self._docked_history = HistoryPanel(_content, self.project)
         self.object_tree.pack(fill="both", expand=True)
 
-        _ACT_BG   = "#3a3a3a"
-        _ACT_FG   = "#ffffff"
-        _INACT_FG = "#888888"
+        _PILL_ACT  = "#1f6aa5"
+        _ACT_FG    = "#ffffff"
+        _INACT_FG  = "#888888"
 
         def _show_tree():
             self._docked_history.pack_forget()
             self.object_tree.pack(fill="both", expand=True)
             self._btn_tree.configure(
-                fg_color=_ACT_BG, text_color=_ACT_FG, hover_color=_ACT_BG,
+                fg_color=_PILL_ACT, text_color=_ACT_FG, hover_color=_PILL_ACT,
             )
             self._btn_hist.configure(
                 fg_color="transparent", text_color=_INACT_FG,
-                hover_color="#2d2d2d",
+                hover_color="#333333",
             )
 
         def _show_history():
             self.object_tree.pack_forget()
             self._docked_history.pack(fill="both", expand=True)
             self._btn_hist.configure(
-                fg_color=_ACT_BG, text_color=_ACT_FG, hover_color=_ACT_BG,
+                fg_color=_PILL_ACT, text_color=_ACT_FG, hover_color=_PILL_ACT,
             )
             self._btn_tree.configure(
                 fg_color="transparent", text_color=_INACT_FG,
-                hover_color="#2d2d2d",
+                hover_color="#333333",
             )
 
         _btn_kw = dict(
-            height=28, corner_radius=0,
-            font=("Segoe UI", 10), border_width=0,
+            height=20, corner_radius=5,
+            font=("Segoe UI", 11), border_width=0,
         )
         self._btn_tree = ctk.CTkButton(
-            _hdr, text="Object Tree", command=_show_tree,
-            fg_color=_ACT_BG, text_color=_ACT_FG,
-            hover_color=_ACT_BG, **_btn_kw,
+            _pill_top, text="Object Tree", command=_show_tree,
+            fg_color=_PILL_ACT, text_color=_ACT_FG,
+            hover_color=_PILL_ACT, **_btn_kw,
         )
         self._btn_hist = ctk.CTkButton(
-            _hdr, text="History", command=_show_history,
+            _pill_top, text="History", command=_show_history,
             fg_color="transparent", text_color=_INACT_FG,
-            hover_color="#2d2d2d", **_btn_kw,
+            hover_color="#333333", **_btn_kw,
         )
-        self._btn_tree.pack(side="left", expand=True, fill="both")
-        self._btn_hist.pack(side="left", expand=True, fill="both")
+        _pill_top.columnconfigure(0, weight=1)
+        _pill_top.columnconfigure(1, weight=1)
+        self._btn_tree.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
+        self._btn_hist.grid(row=0, column=1, sticky="nsew", padx=2, pady=2)
 
         # Bottom pane: Properties + Project share one slot, mirroring
         # the Tree / History tab pattern in the top pane. The floating
@@ -533,9 +539,12 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         # asset list off to the side.
         _props_wrap = tk.Frame(self.right_pane, bg="#1e1e1e")
 
-        _phdr = tk.Frame(_props_wrap, bg="#2d2d2d", height=28)
+        _phdr = tk.Frame(_props_wrap, bg="#1e1e1e", height=49)
         _phdr.pack(side="top", fill="x")
         _phdr.pack_propagate(False)
+
+        _pill_bot = ctk.CTkFrame(_phdr, fg_color="#2a2a2a", corner_radius=4)
+        _pill_bot.pack(fill="x", padx=4, pady=4)
 
         _pcontent = tk.Frame(_props_wrap, bg="#1e1e1e")
         _pcontent.pack(fill="both", expand=True)
@@ -561,36 +570,38 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             self.docked_project.pack_forget()
             self.properties.pack(fill="both", expand=True)
             self._btn_props.configure(
-                fg_color=_ACT_BG, text_color=_ACT_FG, hover_color=_ACT_BG,
+                fg_color=_PILL_ACT, text_color=_ACT_FG, hover_color=_PILL_ACT,
             )
             self._btn_proj.configure(
                 fg_color="transparent", text_color=_INACT_FG,
-                hover_color="#2d2d2d",
+                hover_color="#333333",
             )
 
         def _show_project():
             self.properties.pack_forget()
             self.docked_project.pack(fill="both", expand=True)
             self._btn_proj.configure(
-                fg_color=_ACT_BG, text_color=_ACT_FG, hover_color=_ACT_BG,
+                fg_color=_PILL_ACT, text_color=_ACT_FG, hover_color=_PILL_ACT,
             )
             self._btn_props.configure(
                 fg_color="transparent", text_color=_INACT_FG,
-                hover_color="#2d2d2d",
+                hover_color="#333333",
             )
 
         self._btn_props = ctk.CTkButton(
-            _phdr, text="Properties", command=_show_properties,
-            fg_color=_ACT_BG, text_color=_ACT_FG,
-            hover_color=_ACT_BG, **_btn_kw,
+            _pill_bot, text="Properties", command=_show_properties,
+            fg_color=_PILL_ACT, text_color=_ACT_FG,
+            hover_color=_PILL_ACT, **_btn_kw,
         )
         self._btn_proj = ctk.CTkButton(
-            _phdr, text="Assets", command=_show_project,
+            _pill_bot, text="Assets", command=_show_project,
             fg_color="transparent", text_color=_INACT_FG,
-            hover_color="#2d2d2d", **_btn_kw,
+            hover_color="#333333", **_btn_kw,
         )
-        self._btn_props.pack(side="left", expand=True, fill="both")
-        self._btn_proj.pack(side="left", expand=True, fill="both")
+        _pill_bot.columnconfigure(0, weight=1)
+        _pill_bot.columnconfigure(1, weight=1)
+        self._btn_props.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
+        self._btn_proj.grid(row=0, column=1, sticky="nsew", padx=2, pady=2)
 
         self.right_pane.add(
             _top_wrap, minsize=160, height=280, stretch="never",
@@ -735,7 +746,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             self.project.event_bus.publish("dirty_changed", False)
 
     def _refresh_title(self) -> None:
-        base = "CTkMaker"
+        from app import __version__
+        base = f"CTkMaker v{__version__}"
         if self._current_path:
             base += f" — {Path(self._current_path).stem}"
         elif self.project.name and self.project.name != "Untitled":

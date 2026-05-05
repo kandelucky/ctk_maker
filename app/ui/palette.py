@@ -170,9 +170,7 @@ class Palette(ctk.CTkFrame):
         # Components (per-project saved widget bundles, see
         # components_panel.py).
         self._active_tab: str = "widgets"
-        self._title_var = tk.StringVar(value="Widgets")
 
-        self._build_header()
         self._build_tabs()
         self._build_widgets_tab()
         self._build_components_tab()
@@ -196,50 +194,47 @@ class Palette(ctk.CTkFrame):
         self._title_lbl.pack(side="left", expand=True)
 
     def _build_tabs(self) -> None:
-        """Two stacked text-only tab buttons below the header. Both
-        full-width so the active selection reads cleanly even at the
-        narrow Palette pane width.
-        """
-        self._tab_bar = tk.Frame(self, bg=PANEL_BG)
-        self._tab_bar.pack(fill="x", padx=4, pady=(0, 4))
+        self._tab_bar = ctk.CTkFrame(self, fg_color="#2a2a2a", corner_radius=5)
+        self._tab_bar.pack(fill="x", padx=4, pady=(4, 4))
+        self._tab_bar.columnconfigure(0, weight=1)
 
         btn_kw = dict(
-            height=24, corner_radius=3, border_width=0,
-            font=("Segoe UI", 10),
+            height=24, corner_radius=5, border_width=0,
+            font=("Segoe UI", 11),
         )
         self._btn_widgets = ctk.CTkButton(
             self._tab_bar, text="Widgets",
             command=lambda: self._show_tab("widgets"),
-            fg_color="#3a3a3a", text_color="#ffffff",
-            hover_color="#3a3a3a", **btn_kw,
+            fg_color="#1f6aa5", text_color="#ffffff",
+            hover_color="#1f6aa5", **btn_kw,
         )
         self._btn_components = ctk.CTkButton(
             self._tab_bar, text="Components",
             command=lambda: self._show_tab("components"),
             fg_color="transparent", text_color="#888888",
-            hover_color="#2d2d2d", **btn_kw,
+            hover_color="#333333", **btn_kw,
         )
-        self._btn_widgets.pack(fill="x", pady=(0, 2))
-        self._btn_components.pack(fill="x")
+        self._btn_widgets.grid(row=0, column=0, sticky="ew", padx=2, pady=(2, 1))
+        self._btn_components.grid(row=1, column=0, sticky="ew", padx=2, pady=(1, 2))
 
     def _update_tab_buttons(self, active: str) -> None:
         if active == "widgets":
             self._btn_widgets.configure(
-                fg_color="#3a3a3a", text_color="#ffffff",
-                hover_color="#3a3a3a",
+                fg_color="#1f6aa5", text_color="#ffffff",
+                hover_color="#1f6aa5",
             )
             self._btn_components.configure(
                 fg_color="transparent", text_color="#888888",
-                hover_color="#2d2d2d",
+                hover_color="#333333",
             )
         else:
             self._btn_components.configure(
-                fg_color="#3a3a3a", text_color="#ffffff",
-                hover_color="#3a3a3a",
+                fg_color="#1f6aa5", text_color="#ffffff",
+                hover_color="#1f6aa5",
             )
             self._btn_widgets.configure(
                 fg_color="transparent", text_color="#888888",
-                hover_color="#2d2d2d",
+                hover_color="#333333",
             )
 
     def _build_widgets_tab(self) -> None:
@@ -283,11 +278,7 @@ class Palette(ctk.CTkFrame):
         )
 
     def _show_tab(self, name: str) -> None:
-        """Swap the active tab content + update the header title."""
         self._active_tab = name
-        self._title_var.set(
-            "Widgets" if name == "widgets" else "Components",
-        )
         self._apply_chrome_layout()
         if name == "components":
             self._components_panel.refresh()
