@@ -63,6 +63,21 @@ class StartupDialog(ctk.CTkToplevel):
     # ------------------------------------------------------------------
     def _center_on_parent(self) -> None:
         self.update_idletasks()
+        # When the parent (MainWindow) is withdrawn during startup,
+        # winfo_rootx/y returns junk (-32000-ish on Windows). Fall
+        # back to centering on the screen so the dialog appears in a
+        # sensible spot until the main window is shown.
+        try:
+            parent_visible = bool(self.master.winfo_viewable())
+        except tk.TclError:
+            parent_visible = False
+        if not parent_visible:
+            sw = self.winfo_screenwidth()
+            sh = self.winfo_screenheight()
+            x = (sw - DIALOG_W) // 2
+            y = (sh - DIALOG_H) // 2 - 20
+            self.geometry(f"{DIALOG_W}x{DIALOG_H}+{max(0, x)}+{max(0, y)}")
+            return
         try:
             px = self.master.winfo_rootx()
             py = self.master.winfo_rooty()

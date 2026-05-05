@@ -339,6 +339,12 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
     """
     def __init__(self):
         super().__init__()
+        # Hide the main window during construction so the user only
+        # sees the startup dialog at first. The window is deiconified
+        # (with saved geometry / maximized state applied) after the
+        # user picks a project — this avoids the "main window appears
+        # then resizes when dialog opens" flicker.
+        self.withdraw()
         # Set the default window icon BEFORE any Toplevels (dialogs,
         # floating panels, palette popups) are constructed below — Tk
         # only inherits ``default=`` onto Toplevels created AFTER this
@@ -359,7 +365,6 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         from app import __version__
         self.title(f"CTkMaker v{__version__}")
         self.minsize(900, 600)
-        self._apply_saved_window_state()
         self.configure(fg_color="#252526")
 
         # Reconfigure every named Tk font to Segoe UI so non-Latin
@@ -789,18 +794,17 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
 
     def _show_startup_dialog(self) -> None:
         dialog = StartupDialog(self)
-        if getattr(self, "_wants_maximized", False):
-            # The dialog's centering pumps Tk events that can un-zoom
-            # the parent. Schedule a re-zoom shortly after the dialog
-            # opens so the parent stays maximized while the user picks.
-            self.after(50, self._safe_zoom)
         self.wait_window(dialog)
-        if getattr(self, "_wants_maximized", False):
-            # Final re-apply once the dialog is fully gone — covers
-            # the case where the dialog's destroy queued additional
-            # geometry events on the parent.
-            self._safe_zoom()
         result = dialog.result
+        # Apply geometry / maximize state and reveal the main window
+        # only after the user has picked a project. The window stays
+        # withdrawn until now (set in __init__), so the user only ever
+        # sees the dialog at first — no flicker, no resize race.
+        if result is not None:
+            self._apply_saved_window_state()
+            self.deiconify()
+            if getattr(self, "_wants_maximized", False):
+                self._safe_zoom()
         if result is None:
             # No "untitled" fallback any more — every project lives
             # inside a folder structure, which means it must be either
@@ -2443,14 +2447,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 applied = False
         if not applied:
             self._set_centered_geometry(1280, 800)
-        # Track intent so the startup-dialog flow can re-apply zoom
-        # after the dialog's event-pump (wait_visibility / centering's
-        # update_idletasks) processes any queued events that would
-        # otherwise un-zoom the parent.
         self._wants_maximized = bool(settings.get("window_maximized"))
-        if self._wants_maximized:
-            # Defer zoom until __init__ finishes building children.
-            self.after_idle(self._safe_zoom)
 
     def _safe_zoom(self) -> None:
         try:
