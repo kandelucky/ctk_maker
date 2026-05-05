@@ -6,6 +6,7 @@ import customtkinter as ctk
 
 from app.core.logger import log_error
 from app.ui.crash_dialog import show_crash_dialog
+from app.ui.dark_titlebar import install_dark_titlebar_persistence
 from app.ui.main_window import MainWindow
 
 ICON_ICO = Path(__file__).resolve().parent / "app" / "assets" / "icon.ico"
@@ -81,6 +82,7 @@ def main() -> None:
     if sys.platform == "win32":
         ctk.ThemeManager.theme["CTkFont"]["family"] = "Segoe UI"
     _patch_ctk_toplevel_icon()
+    install_dark_titlebar_persistence()
     app = MainWindow()
     _install_crash_handlers(app)
     app.mainloop()

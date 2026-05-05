@@ -13,10 +13,13 @@ Result is exposed via `.result` as one of:
 from __future__ import annotations
 
 import tkinter as tk
+from pathlib import Path
 from tkinter import messagebox
 
 import customtkinter as ctk
+from PIL import Image
 
+from app import __version__
 from app.ui.dialog_utils import safe_grab_set
 from app.ui.new_project_form import NewProjectForm
 from app.ui.recent_list import RecentList
@@ -27,6 +30,10 @@ DIALOG_H = 510
 BG = "#1e1e1e"
 TITLE_FG = "#e0e0e0"
 SUBTITLE_FG = "#888888"
+VERSION_FG = "#666666"
+
+LOGO_PATH = Path(__file__).resolve().parents[2] / "app" / "assets" / "icon.png"
+LOGO_SIZE = 28
 
 
 class StartupDialog(ctk.CTkToplevel):
@@ -71,11 +78,33 @@ class StartupDialog(ctk.CTkToplevel):
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x", padx=24, pady=(18, 8))
 
+        title_row = ctk.CTkFrame(header, fg_color="transparent")
+        title_row.pack(fill="x")
+
+        if LOGO_PATH.exists():
+            try:
+                self._logo_image = ctk.CTkImage(
+                    light_image=Image.open(LOGO_PATH),
+                    dark_image=Image.open(LOGO_PATH),
+                    size=(LOGO_SIZE, LOGO_SIZE),
+                )
+                ctk.CTkLabel(
+                    title_row, image=self._logo_image, text="",
+                ).pack(side="left", padx=(0, 8))
+            except Exception:
+                pass
+
         ctk.CTkLabel(
-            header, text="CTkMaker",
+            title_row, text="CTkMaker",
             font=("Segoe UI", 18, "bold"),
             text_color=TITLE_FG, anchor="w",
-        ).pack(fill="x")
+        ).pack(side="left")
+        ctk.CTkLabel(
+            title_row, text=f"v{__version__}",
+            font=("Segoe UI", 10),
+            text_color=VERSION_FG, anchor="sw",
+        ).pack(side="left", padx=(6, 0), pady=(0, 2))
+
         ctk.CTkLabel(
             header, text="Open a recent project or create a new one",
             font=("Segoe UI", 11),

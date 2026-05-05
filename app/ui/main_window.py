@@ -359,7 +359,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         from app import __version__
         self.title(f"CTkMaker v{__version__}")
         self.minsize(900, 600)
-        self._set_centered_geometry(1280, 800)
+        self._apply_saved_window_state()
         self.configure(fg_color="#252526")
 
         # Reconfigure every named Tk font to Segoe UI so non-Latin
@@ -784,6 +784,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
     def _on_window_close(self) -> None:
         if not self._confirm_discard_if_dirty():
             return
+        self._save_window_state()
         self.destroy()
 
     def _show_startup_dialog(self) -> None:
@@ -2419,3 +2420,33 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         x = max(0, (sw - w) // 2)
         y = max(0, (sh - h) // 2 - 20)
         self.geometry(f"{w}x{h}+{x}+{y}")
+
+    def _apply_saved_window_state(self) -> None:
+        settings = load_settings()
+        saved_geom = settings.get("window_geometry")
+        applied = False
+        if isinstance(saved_geom, str) and saved_geom:
+            try:
+                self.geometry(saved_geom)
+                applied = True
+            except tk.TclError:
+                applied = False
+        if not applied:
+            self._set_centered_geometry(1280, 800)
+        if settings.get("window_maximized"):
+            try:
+                self.state("zoomed")
+            except tk.TclError:
+                pass
+
+    def _save_window_state(self) -> None:
+        try:
+            is_max = self.state() == "zoomed"
+        except tk.TclError:
+            is_max = False
+        save_setting("window_maximized", is_max)
+        if not is_max:
+            try:
+                save_setting("window_geometry", self.geometry())
+            except tk.TclError:
+                pass
