@@ -24,6 +24,7 @@ from app.core.commands import (
     AddWidgetCommand,
     BindHandlerCommand,
     BulkAddCommand,
+    BulkMoveCommand,
     ChangePropertyCommand,
     DeleteMultipleCommand,
     DeleteWidgetCommand,
@@ -609,35 +610,59 @@ class Workspace(ctk.CTkFrame):
         return self.controls.default_cursor()
 
     def _on_arrow(self, dx: int, dy: int, fast: bool) -> str | None:
-        sid = self.project.selected_id
-        if sid is None or self._input_focused():
+        if self._input_focused():
             return None
-        if self._effective_locked(sid):
-            return "break"
-        node = self.project.get_widget(sid)
-        if node is None:
+        ids = set(getattr(self.project, "selected_ids", set()) or set())
+        if not ids and self.project.selected_id is not None:
+            ids = {self.project.selected_id}
+        if not ids:
             return None
-        step = 10 if fast else 1
-        try:
-            x = int(node.properties.get("x", 0))
-            y = int(node.properties.get("y", 0))
-        except (ValueError, TypeError):
-            x, y = 0, 0
-        if dx:
-            new_x = x + dx * step
-            self.project.update_property(sid, "x", new_x)
-            self.project.history.push(
-                ChangePropertyCommand(
-                    sid, "x", x, new_x, coalesce_key="nudge",
-                ),
+        # Match drag's eligibility rules so the gesture is consistent:
+        # locked widgets (or any locked ancestor) skip; pack/grid kids
+        # skip too, since their on-screen position is parent-owned and
+        # any x/y we'd write is dead state.
+        eligible: list[tuple[str, int, int]] = []
+        for wid in ids:
+            if self._effective_locked(wid):
+                continue
+            node = self.project.get_widget(wid)
+            if node is None:
+                continue
+            parent_layout = (
+                normalise_layout_type(
+                    node.parent.properties.get("layout_type", "place"),
+                ) if node.parent is not None else "place"
             )
-        if dy:
-            new_y = y + dy * step
-            self.project.update_property(sid, "y", new_y)
+            if parent_layout != "place":
+                continue
+            try:
+                x = int(node.properties.get("x", 0))
+                y = int(node.properties.get("y", 0))
+            except (ValueError, TypeError):
+                x, y = 0, 0
+            eligible.append((wid, x, y))
+        if not eligible:
+            return "break"
+        step = 10 if fast else 1
+        moves: list = []
+        for wid, x, y in eligible:
+            before: dict = {}
+            after: dict = {}
+            if dx:
+                new_x = x + dx * step
+                self.project.update_property(wid, "x", new_x)
+                before["x"] = x
+                after["x"] = new_x
+            if dy:
+                new_y = y + dy * step
+                self.project.update_property(wid, "y", new_y)
+                before["y"] = y
+                after["y"] = new_y
+            if before:
+                moves.append((wid, before, after))
+        if moves:
             self.project.history.push(
-                ChangePropertyCommand(
-                    sid, "y", y, new_y, coalesce_key="nudge",
-                ),
+                BulkMoveCommand(moves, coalesce_key="nudge"),
             )
         return "break"
 

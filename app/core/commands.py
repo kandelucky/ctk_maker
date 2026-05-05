@@ -831,10 +831,16 @@ class BulkMoveCommand(Command):
     """Multi-widget drag — apply the same delta to every selected
     widget so undo / redo rewinds the whole group as a single step.
     ``moves`` is a list of ``(widget_id, before, after)`` tuples.
+
+    ``coalesce_key`` lets repeated arrow-nudge volleys covering the
+    same selection collapse into one undo entry — without it, every
+    keystroke would push its own bulk command onto the stack.
     """
 
-    def __init__(self, moves: list):
+    def __init__(self, moves: list, coalesce_key: str | None = None):
         self.moves = list(moves)
+        self.coalesce_key = coalesce_key
+        self.timestamp = time.monotonic()
         label = (
             f"Move {len(self.moves)} widgets" if len(self.moves) != 1
             else "Move widget"
@@ -852,6 +858,31 @@ class BulkMoveCommand(Command):
 
     def redo(self, project: "Project") -> None:
         self._apply(project, take_before=False)
+
+    def merge_into(self, other: "Command") -> bool:
+        if self.coalesce_key is None:
+            return False
+        if not isinstance(other, BulkMoveCommand):
+            return False
+        if other.coalesce_key != self.coalesce_key:
+            return False
+        if self.timestamp - other.timestamp > COALESCE_WINDOW_SEC:
+            return False
+        # Tail's selection set must match ours exactly — if the user
+        # changed the selection between volleys, we want a fresh undo
+        # entry, not a silently-extended one.
+        other_ids = {wid for wid, _b, _a in other.moves}
+        self_ids = {wid for wid, _b, _a in self.moves}
+        if other_ids != self_ids:
+            return False
+        # Extend tail: keep its 'before', adopt our 'after'.
+        before_by_id = {wid: before for wid, before, _a in other.moves}
+        merged: list = []
+        for wid, _before, after in self.moves:
+            merged.append((wid, before_by_id[wid], after))
+        other.moves = merged
+        other.timestamp = self.timestamp
+        return True
 
 
 class ResizeCommand(MoveCommand):
