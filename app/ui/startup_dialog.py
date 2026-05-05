@@ -20,6 +20,7 @@ import customtkinter as ctk
 from PIL import Image
 
 from app import __version__
+from app.core.screen import center_geometry
 from app.ui.dialog_utils import safe_grab_set
 from app.ui.new_project_form import NewProjectForm
 from app.ui.recent_list import RecentList
@@ -48,7 +49,7 @@ class StartupDialog(ctk.CTkToplevel):
         self.result: tuple | None = None
 
         self.geometry(f"{DIALOG_W}x{DIALOG_H}")
-        self._center_on_parent()
+        self._center_on_screen()
 
         self._build_header()
         self._build_body()
@@ -61,33 +62,18 @@ class StartupDialog(ctk.CTkToplevel):
     # ------------------------------------------------------------------
     # Layout
     # ------------------------------------------------------------------
-    def _center_on_parent(self) -> None:
-        self.update_idletasks()
-        # When the parent (MainWindow) is withdrawn during startup,
-        # winfo_rootx/y returns junk (-32000-ish on Windows). Fall
-        # back to centering on the screen so the dialog appears in a
-        # sensible spot until the main window is shown.
-        try:
-            parent_visible = bool(self.master.winfo_viewable())
-        except tk.TclError:
-            parent_visible = False
-        if not parent_visible:
+    def _center_on_screen(self) -> None:
+        # Use the cached work-area helper — no Tk geometry queries,
+        # no update_idletasks pump. Falls back to Tk's screen size
+        # only when the Win32 work-area lookup fails.
+        geom = center_geometry(DIALOG_W, DIALOG_H)
+        if geom is None:
             sw = self.winfo_screenwidth()
             sh = self.winfo_screenheight()
-            x = (sw - DIALOG_W) // 2
-            y = (sh - DIALOG_H) // 2 - 20
-            self.geometry(f"{DIALOG_W}x{DIALOG_H}+{max(0, x)}+{max(0, y)}")
-            return
-        try:
-            px = self.master.winfo_rootx()
-            py = self.master.winfo_rooty()
-            pw = self.master.winfo_width()
-            ph = self.master.winfo_height()
-        except tk.TclError:
-            return
-        x = px + (pw - DIALOG_W) // 2
-        y = py + (ph - DIALOG_H) // 2
-        self.geometry(f"{DIALOG_W}x{DIALOG_H}+{max(0, x)}+{max(0, y)}")
+            x = max(0, (sw - DIALOG_W) // 2)
+            y = max(0, (sh - DIALOG_H) // 2)
+            geom = f"{DIALOG_W}x{DIALOG_H}+{x}+{y}"
+        self.geometry(geom)
 
     def _build_header(self) -> None:
         header = ctk.CTkFrame(self, fg_color="transparent")
