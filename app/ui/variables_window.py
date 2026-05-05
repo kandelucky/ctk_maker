@@ -461,8 +461,8 @@ class VariablesPanel(ctk.CTkFrame):
             return
         # Snapshot bindings BEFORE the cascade-unbind so undo can
         # rewrite the same var: tokens back into the right slots.
-        bindings = [
-            (n.id, pn, n.properties.get(pn))
+        bindings: list[tuple[str, str, str]] = [
+            (n.id, pn, n.properties[pn])
             for n, pn in self.project.iter_bindings_for(var_id)
         ]
         target_list = self._scope_variables()
@@ -1522,7 +1522,7 @@ class ObjectReferencesPanel(ctk.CTkFrame):
 
     def _delete_ref(self, ref_id: str) -> None:
         entry, scope, doc_id = self._find_entry(ref_id)
-        if entry is None:
+        if entry is None or scope is None:
             return
         from app.core.commands import DeleteObjectReferenceCommand
         if scope == "local" and doc_id is not None:

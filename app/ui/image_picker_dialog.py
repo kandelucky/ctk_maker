@@ -17,7 +17,10 @@ from __future__ import annotations
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
+
+if TYPE_CHECKING:
+    from PIL import ImageTk
 
 import customtkinter as ctk
 
@@ -72,7 +75,7 @@ class ImagePickerDialog(tk.Toplevel):
 
         self._selected_path: Path | None = None
         self._row_widgets: dict[str, dict] = {}
-        self._thumb_cache: dict[str, tk.PhotoImage] = {}
+        self._thumb_cache: dict[str, ImageTk.PhotoImage] = {}
 
         self._build_header()
         self._build_list()
@@ -108,11 +111,11 @@ class ImagePickerDialog(tk.Toplevel):
         # doesn't render on a tk widget.
         help_img = load_tk_icon("circle-help", size=20, color="#aaaaaa")
         self._help_lbl = tk.Label(
-            bar, bg=HEADER_BG, image=help_img if help_img else None,
+            bar, bg=HEADER_BG, image=help_img if help_img else "",
             text="" if help_img else "?", fg="#cccccc",
             font=("Segoe UI", 12, "bold"), cursor="hand2",
         )
-        self._help_lbl.image = help_img  # keep ref
+        self._help_lbl.image = help_img  # type: ignore[attr-defined]  # keep ref
         self._help_lbl.pack(side="right", padx=14, pady=8)
         self._help_lbl.bind("<Enter>", self._show_help)
         self._help_lbl.bind("<Leave>", self._hide_help)
@@ -219,7 +222,7 @@ class ImagePickerDialog(tk.Toplevel):
         thumb = self._thumb_for(path)
         thumb_lbl = tk.Label(
             row, bg=PANEL_BG,
-            image=thumb if thumb else None,
+            image=thumb if thumb else "",
             text="" if thumb else "?",
             fg="#cccccc", width=THUMB, height=THUMB,
         )
@@ -304,7 +307,7 @@ class ImagePickerDialog(tk.Toplevel):
         self._notify_assets_changed()
         self._refresh()
 
-    def _thumb_for(self, path: Path) -> tk.PhotoImage | None:
+    def _thumb_for(self, path: Path) -> ImageTk.PhotoImage | None:
         # Cache thumbnails per session — ttk treeview-style preview.
         key = str(path)
         if key in self._thumb_cache:

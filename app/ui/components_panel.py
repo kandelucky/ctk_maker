@@ -20,7 +20,7 @@ import sys
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, simpledialog, ttk
-from typing import Callable
+from typing import Callable, cast
 
 import customtkinter as ctk
 
@@ -201,9 +201,12 @@ class ComponentsPanel(ctk.CTkFrame):
         except tk.TclError:
             pass
 
-        def _fixed_map(option: str):
+        def _fixed_map(option: str) -> list[tuple]:
+            entries = cast(
+                list[tuple], style.map(style_name, query_opt=option),
+            )
             return [
-                elm for elm in style.map(style_name, query_opt=option)
+                elm for elm in entries
                 if elm[:2] != ("!disabled", "!selected")
             ]
         style.map(
@@ -225,7 +228,7 @@ class ComponentsPanel(ctk.CTkFrame):
         # cyan rectangle around the panel when the tree gets focus.
         # Strip it directly on the widget.
         try:
-            self._tree.configure(highlightthickness=0, borderwidth=0)
+            self._tree.configure(highlightthickness=0, borderwidth=0)  # type: ignore[call-overload]
         except tk.TclError:
             pass
         self._tree.pack(fill="both", expand=True)
@@ -524,6 +527,8 @@ class ComponentsPanel(ctk.CTkFrame):
         at the canvas's current screen center so the confirmation
         modal opens predictably.
         """
+        if self._project is None:
+            return
         try:
             toplevel = self.winfo_toplevel()
             x = toplevel.winfo_rootx() + toplevel.winfo_width() // 2

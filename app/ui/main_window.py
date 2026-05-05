@@ -7,6 +7,7 @@ import tkinter.font as tkfont
 import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox
+from typing import Any
 
 import customtkinter as ctk
 
@@ -514,10 +515,10 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 hover_color="#333333",
             )
 
-        _btn_kw = dict(
-            height=20, corner_radius=5,
-            font=("Segoe UI", 11), border_width=0,
-        )
+        _btn_kw: dict[str, Any] = {
+            "height": 20, "corner_radius": 5,
+            "font": ("Segoe UI", 11), "border_width": 0,
+        }
         self._btn_tree = ctk.CTkButton(
             _pill_top, text="Object Tree", command=_show_tree,
             fg_color=_PILL_ACT, text_color=_ACT_FG,
@@ -1233,10 +1234,10 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         # next launch lands on the page the user picked. Failure
         # here is non-fatal — the load below still proceeds.
         if self.project.folder_path:
+            from app.core.project_folder import (
+                ProjectMetaError, set_active_page,
+            )
             try:
-                from app.core.project_folder import (
-                    ProjectMetaError, set_active_page,
-                )
                 page_id = next(
                     (
                         p["id"] for p in self.project.pages
@@ -1345,12 +1346,20 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             ProjectMetaError, add_page, page_file_path,
             seed_multi_page_meta_from_disk,
         )
+        folder_path = self.project.folder_path
+        if folder_path is None:
+            messagebox.showerror(
+                "Save failed",
+                "Project folder is not set.",
+                parent=self,
+            )
+            return
         try:
-            entry = add_page(self.project.folder_path, name)
+            entry = add_page(folder_path, name)
         except ProjectMetaError as exc:
             messagebox.showerror("Save failed", str(exc), parent=self)
             return
-        new_page_path = page_file_path(self.project.folder_path, entry["file"])
+        new_page_path = page_file_path(folder_path, entry["file"])
         # Save current in-memory state into the new page file so
         # the new page starts as a copy of the working state.
         # Refresh metadata so the saver sees the new page entry.
@@ -1384,6 +1393,13 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         """
         # Save current state first so the duplicate captures any
         # in-memory edits.
+        if self._current_path is None:
+            messagebox.showerror(
+                "Save failed",
+                "No project is currently open.",
+                parent=self,
+            )
+            return
         try:
             save_project(self.project, self._current_path)
         except OSError:
@@ -1395,9 +1411,17 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             )
             return
         from app.core.project_folder import clone_project_folder
+        folder_path = self.project.folder_path
+        if folder_path is None:
+            messagebox.showerror(
+                "Save failed",
+                "Project folder is not set.",
+                parent=self,
+            )
+            return
         try:
             new_folder = clone_project_folder(
-                self.project.folder_path, save_to, name,
+                folder_path, save_to, name,
             )
         except OSError as exc:
             messagebox.showerror(
@@ -1415,6 +1439,13 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         """Save the current page (with only its referenced assets)
         as a brand-new project at ``<save_to>/<name>``.
         """
+        if self._current_path is None:
+            messagebox.showerror(
+                "Save failed",
+                "No project is currently open.",
+                parent=self,
+            )
+            return
         try:
             save_project(self.project, self._current_path)
         except OSError:
@@ -1938,10 +1969,11 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 on_close=self._on_object_tree_closed,
             )
         elif not want_open and alive:
-            try:
-                self._object_tree_window.destroy()
-            except tk.TclError:
-                pass
+            if self._object_tree_window is not None:
+                try:
+                    self._object_tree_window.destroy()
+                except tk.TclError:
+                    pass
             self._object_tree_window = None
 
     def _on_object_tree_closed(self) -> None:
@@ -1964,10 +1996,11 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 on_close=self._on_history_window_closed,
             )
         elif not want_open and alive:
-            try:
-                self._history_window.destroy()
-            except tk.TclError:
-                pass
+            if self._history_window is not None:
+                try:
+                    self._history_window.destroy()
+                except tk.TclError:
+                    pass
             self._history_window = None
 
     def _on_history_window_closed(self) -> None:
@@ -1991,12 +2024,14 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 initial_scope=scope,
             )
         elif want_open and alive:
-            self._variables_window.show_scope(scope)
+            if self._variables_window is not None:
+                self._variables_window.show_scope(scope)
         elif not want_open and alive:
-            try:
-                self._variables_window.destroy()
-            except tk.TclError:
-                pass
+            if self._variables_window is not None:
+                try:
+                    self._variables_window.destroy()
+                except tk.TclError:
+                    pass
             self._variables_window = None
 
     def _on_request_open_variables_window(
@@ -2043,10 +2078,11 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 on_active_page_path_changed=self._on_active_page_renamed,
             )
         elif not want_open and alive:
-            try:
-                self._project_window.destroy()
-            except tk.TclError:
-                pass
+            if self._project_window is not None:
+                try:
+                    self._project_window.destroy()
+                except tk.TclError:
+                    pass
             self._project_window = None
 
     def _on_project_window_closed(self) -> None:
@@ -2160,10 +2196,11 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         slug = slugify_page_name(doc.name or "document")
         # Preview shows the full output path with a wildcard
         # extension since the user hasn't picked a format yet.
+        base_path = self.project.folder_path or self._current_path
         try:
             preview_path = str(
                 (out_dir / f"{slug}.*").relative_to(
-                    Path(self.project.folder_path or self._current_path).parent,
+                    Path(base_path).parent if base_path else out_dir,
                 ),
             )
         except (ValueError, TypeError):
@@ -2214,9 +2251,10 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         # knows their project folder; the noisy absolute prefix
         # would push the actual filename off-screen on a small
         # toast.
+        base_path = self.project.folder_path or self._current_path
         try:
             display = target.relative_to(
-                Path(self.project.folder_path or self._current_path).parent,
+                Path(base_path).parent if base_path else target.parent,
             )
         except (ValueError, TypeError):
             display = target.name

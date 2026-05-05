@@ -87,9 +87,8 @@ class WidgetNode:
 
     @classmethod
     def from_dict(cls, data: dict) -> "WidgetNode":
-        widget_type = _WIDGET_TYPE_RENAMES.get(
-            data["widget_type"], data["widget_type"],
-        )
+        raw_type: str = data["widget_type"]
+        widget_type = _WIDGET_TYPE_RENAMES.get(raw_type, raw_type)
         node = cls(
             widget_type=widget_type,
             properties=data.get("properties", {}),

@@ -24,8 +24,11 @@ from __future__ import annotations
 
 import tkinter as tk
 from tkinter import messagebox
+from typing import Any
 
 from app.core.platform_compat import MOD_LABEL_PLUS
+from app.core.widget_node import WidgetNode
+from app.ui._main_window_host import _MainWindowHost
 from app.ui.icons import load_tk_icon
 from app.ui.palette import CATALOG
 
@@ -38,23 +41,23 @@ MENU_DISABLED_FG = "#888888"
 MENU_FONT = ("Segoe UI", 11)
 MENU_ICON_SIZE = 18
 
-MENU_STYLE = dict(
-    bg=MENU_BG,
-    fg=MENU_FG,
-    activebackground=MENU_ACTIVE_BG,
-    activeforeground=MENU_ACTIVE_FG,
-    disabledforeground=MENU_DISABLED_FG,
-    bd=0,
-    borderwidth=0,
-    activeborderwidth=0,
-    relief="flat",
-    font=MENU_FONT,
-)
+MENU_STYLE: dict[str, Any] = {
+    "bg": MENU_BG,
+    "fg": MENU_FG,
+    "activebackground": MENU_ACTIVE_BG,
+    "activeforeground": MENU_ACTIVE_FG,
+    "disabledforeground": MENU_DISABLED_FG,
+    "bd": 0,
+    "borderwidth": 0,
+    "activeborderwidth": 0,
+    "relief": "flat",
+    "font": MENU_FONT,
+}
 
 APPEARANCE_MODES = ["Light", "Dark", "System"]
 
 
-class MenuMixin:
+class MenuMixin(_MainWindowHost):
     """Menubar + Edit-menu dispatch. See module docstring."""
 
     def _rebuild_windows_menu(self) -> None:
@@ -111,7 +114,7 @@ class MenuMixin:
         self, menu: tk.Menu, label: str, command,
         icon: str | None = None, accelerator: str | None = None,
     ) -> None:
-        kwargs = dict(label=label, command=command)
+        kwargs: dict[str, Any] = {"label": label, "command": command}
         if accelerator:
             kwargs["accelerator"] = accelerator
         img = self._menu_icon(icon) if icon else None
@@ -124,7 +127,7 @@ class MenuMixin:
         self, parent: tk.Menu, label: str, submenu: tk.Menu,
         icon: str | None = None,
     ) -> None:
-        kwargs = dict(label=label, menu=submenu)
+        kwargs: dict[str, Any] = {"label": label, "menu": submenu}
         img = self._menu_icon(icon) if icon else None
         if img is not None:
             kwargs["image"] = img
@@ -534,7 +537,7 @@ class MenuMixin:
         # Delete without confirmation
         for wid in list(ids):
             node = self.project.get_widget(wid)
-            if node is None:
+            if not isinstance(node, WidgetNode):
                 continue
             from app.core.commands import DeleteWidgetCommand
             snapshot = node.to_dict()
@@ -617,7 +620,7 @@ class MenuMixin:
         if sid is None:
             return
         node = self.project.get_widget(sid)
-        if node is None:
+        if not isinstance(node, WidgetNode):
             return
         from app.core.commands import DeleteWidgetCommand
         from app.widgets.registry import get_descriptor

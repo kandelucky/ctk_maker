@@ -25,6 +25,7 @@ from __future__ import annotations
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
+from typing import Any
 
 import customtkinter as ctk
 
@@ -157,11 +158,11 @@ class FontPickerDialog(tk.Toplevel):
 
         help_img = load_tk_icon("circle-help", size=20, color="#aaaaaa")
         self._help_lbl = tk.Label(
-            bar, bg=HEADER_BG, image=help_img if help_img else None,
+            bar, bg=HEADER_BG, image=help_img if help_img else "",
             text="" if help_img else "?", fg="#cccccc",
             font=("Segoe UI", 12, "bold"), cursor="hand2",
         )
-        self._help_lbl.image = help_img  # keep ref
+        self._help_lbl.image = help_img  # type: ignore[attr-defined]  # keep ref
         self._help_lbl.pack(side="right", padx=14, pady=8)
         self._help_lbl.bind("<Enter>", self._show_help)
         self._help_lbl.bind("<Leave>", self._hide_help)
@@ -292,9 +293,9 @@ class FontPickerDialog(tk.Toplevel):
         # Hierarchy: Reset (tertiary, smallest) → Cancel (secondary)
         # → Apply (primary, widest). Visual weight matches each
         # action's importance.
-        btn_kw = dict(
-            height=32, corner_radius=10, font=("Segoe UI", 10),
-        )
+        btn_kw: dict[str, Any] = {
+            "height": 32, "corner_radius": 10, "font": ("Segoe UI", 10),
+        }
         ctk.CTkButton(
             foot, text="Reset", width=70,
             fg_color="#3c3c3c", hover_color="#4a4a4a",

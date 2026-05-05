@@ -42,9 +42,10 @@ def log_error(context: str, exc_info=None) -> str:
     """
     if exc_info is None:
         exc_info = sys.exc_info()
-    if exc_info[0] is None:
+    exc_type, exc_value, exc_tb = exc_info
+    if exc_type is None:
         return ""
-    tb_text = "".join(traceback.format_exception(*exc_info))
+    tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
     header = f"[ERROR {context}]"
     print(header, file=sys.stderr)
     print(tb_text, file=sys.stderr, end="")

@@ -27,7 +27,10 @@ Events published on event_bus:
 
 from __future__ import annotations
 
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator
+
+if TYPE_CHECKING:
+    import tkinter as tk
 
 from app.core.document import (
     DEFAULT_DOCUMENT_HEIGHT,
@@ -160,7 +163,7 @@ class _WindowProxy:
         # must appear here (including grid_*), otherwise the panel's
         # property rows render with a None value and the overlays
         # look blank.
-        result = {
+        result: dict = {
             "width": project.document_width,
             "height": project.document_height,
         }
@@ -271,7 +274,7 @@ class Project:
         # ``get_tk_var`` and feeds the live ``tk.Variable`` to the widget
         # constructor (``textvariable=`` / ``variable=``).
         self.variables: list[VariableEntry] = []
-        self._tk_vars: dict[str, object] = {}
+        self._tk_vars: dict[str, tk.Variable] = {}
         # v1.10.8 Object References — global scope holds typed
         # ``ref[Window]`` / ``ref[Dialog]`` slots whose target lives in
         # ``Project.documents``. Inner-widget refs live on each
@@ -557,7 +560,7 @@ class Project:
             )
             return
         node = self.get_widget(widget_id)
-        if node is None:
+        if not isinstance(node, WidgetNode):
             return
         if node.name == new_name:
             return
@@ -612,9 +615,10 @@ class Project:
             owning_doc = target_doc
         else:
             parent = self.get_widget(parent_id)
-            if parent is None:
-                # unknown parent id: fall back to top-level to avoid
-                # silently dropping the node
+            if not isinstance(parent, WidgetNode):
+                # unknown parent id, or WINDOW_ID (proxy can't own
+                # children): fall back to top-level to avoid silently
+                # dropping the node.
                 node.parent = None
                 self.root_widgets.append(node)
                 owning_doc = self.active_document
@@ -634,7 +638,7 @@ class Project:
 
     def remove_widget(self, widget_id: str) -> None:
         node = self.get_widget(widget_id)
-        if node is None:
+        if not isinstance(node, WidgetNode):
             return
         # Remove descendants first (depth-first) so listeners see
         # children disappear before their parent.
@@ -672,10 +676,17 @@ class Project:
         sibling order changed.
         """
         node = self.get_widget(widget_id)
-        if node is None:
+        if not isinstance(node, WidgetNode):
             return
-        new_parent = (
+        # WINDOW_ID as new_parent collapses to top-level: the proxy
+        # can't own children, so dropping "into" it is identical to a
+        # top-level drop in the active doc.
+        resolved_parent = (
             self.get_widget(new_parent_id) if new_parent_id else None
+        )
+        new_parent = (
+            resolved_parent if isinstance(resolved_parent, WidgetNode)
+            else None
         )
         # Refuse to make a node a descendant of itself.
         if new_parent is not None and self._is_descendant(new_parent, node):
@@ -1421,7 +1432,7 @@ class Project:
         The model is unaffected beyond the boolean; save/load/export
         all continue to include the node."""
         node = self.get_widget(widget_id)
-        if node is None:
+        if not isinstance(node, WidgetNode):
             return
         visible = bool(visible)
         if node.visible == visible:
@@ -1436,7 +1447,7 @@ class Project:
         descendants at check-time (see workspace._effective_locked).
         """
         node = self.get_widget(widget_id)
-        if node is None:
+        if not isinstance(node, WidgetNode):
             return
         locked = bool(locked)
         if node.locked == locked:
@@ -1452,7 +1463,7 @@ class Project:
         group, drag moves them as one. Skipped from code export.
         """
         node = self.get_widget(widget_id)
-        if node is None:
+        if not isinstance(node, WidgetNode):
             return
         if node.group_id == group_id:
             return
@@ -1762,7 +1773,7 @@ class Project:
         animation or history labelling.
         """
         node = self.get_widget(widget_id)
-        if node is None:
+        if not isinstance(node, WidgetNode):
             return
         siblings = self._sibling_list(node)
         if not siblings:

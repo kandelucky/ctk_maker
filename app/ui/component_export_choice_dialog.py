@@ -8,6 +8,7 @@ from __future__ import annotations
 import tkinter as tk
 import webbrowser
 from pathlib import Path
+from typing import Any
 
 import customtkinter as ctk
 
@@ -187,7 +188,7 @@ class _MITTextWindow(ctk.CTkToplevel):
         self.configure(fg_color="#1a1a1a")
 
         textbox = ctk.CTkTextbox(
-            self, font=derive_mono_font(size=10),
+            self, font=derive_mono_font(size=10),  # type: ignore[arg-type]
             fg_color="#111111", text_color="#cfcfcf",
             wrap="word",
         )
@@ -241,7 +242,7 @@ class ComponentPublishLicenseDialog(ctk.CTkToplevel):
         self._var_mit = tk.BooleanVar(value=False)
         self._var_responsibility = tk.BooleanVar(value=False)
 
-        check_kwargs = dict(
+        check_kwargs: dict[str, Any] = dict(
             font=ctk.CTkFont(size=10),
             text_color="#dcdcdc",
             checkbox_width=18, checkbox_height=18,
@@ -284,12 +285,9 @@ class ComponentPublishLicenseDialog(ctk.CTkToplevel):
         # CTkCheckBox doesn't natively wrap; nudge the inner label.
         for child in body.winfo_children():
             if isinstance(child, ctk.CTkCheckBox):
-                try:
-                    child._text_label.configure(
-                        wraplength=420, justify="left",
-                    )
-                except Exception:
-                    pass
+                label = getattr(child, "_text_label", None)
+                if label is not None:
+                    label.configure(wraplength=420, justify="left")
 
         ctk.CTkButton(
             body, text="Read full MIT text",

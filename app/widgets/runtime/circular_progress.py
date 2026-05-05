@@ -4,6 +4,7 @@ exporter can inline this module's source verbatim into generated
 `.py` files.
 """
 import tkinter as tk
+from typing import Any
 
 import customtkinter as ctk
 from customtkinter.windows.widgets.scaling import CTkScalingBaseClass
@@ -114,7 +115,7 @@ class CircularProgress(tk.Canvas, CTkScalingBaseClass):
     def get(self) -> float:
         return self._percent
 
-    def configure(self, **kwargs) -> None:
+    def configure(self, **kwargs: Any) -> None:
         dirty = False
         for key in list(kwargs):
             if key == "width":
@@ -247,7 +248,7 @@ def _circular_progress_resolve_bg(master) -> str:
             w = getattr(w, "master", None)
             continue
         if isinstance(bg, (tuple, list)):
-            mode = ctk.get_appearance_mode().lower()
+            mode = (ctk.get_appearance_mode() or "light").lower()
             return bg[1] if mode == "dark" and len(bg) > 1 else bg[0]
         if isinstance(bg, str) and bg.startswith("#"):
             return bg

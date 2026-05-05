@@ -9,7 +9,6 @@ Two APIs:
     load_tk_icon(name, size, color) -> tk.PhotoImage (tk.Menu wants this)
 """
 
-import tkinter as tk
 from pathlib import Path
 
 import customtkinter as ctk
@@ -27,7 +26,7 @@ VARIABLES_GLOBAL_COLOR = "#2e7dc4"
 VARIABLES_LOCAL_COLOR = "#cc7e1f"
 
 _ctk_cache: dict[tuple[str, int, str], ctk.CTkImage] = {}
-_tk_cache: dict[tuple[str, int, str], tk.PhotoImage] = {}
+_tk_cache: dict[tuple[str, int, str], ImageTk.PhotoImage] = {}
 
 
 def load_icon(
@@ -52,7 +51,7 @@ def load_tk_icon(
     name: str,
     size: int = DEFAULT_SIZE,
     color: str = DEFAULT_COLOR,
-) -> tk.PhotoImage | None:
+) -> ImageTk.PhotoImage | None:
     """Load an icon as a tk.PhotoImage (for tk.Menu which doesn't accept CTkImage)."""
     key = (name, size, color)
     if key in _tk_cache:
@@ -79,7 +78,7 @@ def _load_tinted(name: str, size: int, color: str) -> Image.Image | None:
     alpha = src.split()[3]
     tinted = Image.composite(solid, empty, alpha)
     if tinted.size != (size, size):
-        tinted = tinted.resize((size, size), Image.LANCZOS)
+        tinted = tinted.resize((size, size), Image.Resampling.LANCZOS)
     return tinted
 
 

@@ -32,7 +32,7 @@ except Exception:
 try:
     from app.ui.icons import load_icon
 except Exception:
-    def load_icon(*_args, **_kwargs):
+    def load_icon(*_args, **_kwargs) -> "ctk.CTkImage | None":
         return None
 
 from app.ui.dialog_utils import safe_grab_set

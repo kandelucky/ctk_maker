@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pyright app/core/project.py)",
+      "Bash(npx pyright *)",
+      "PowerShell(pyright \"c:\\\\Users\\\\likak\\\\Desktop\\\\ctk_maker\\\\app\\\\ui\\\\main_menu.py\" 2>&1)",
+      "PowerShell(npx pyright \"c:\\\\Users\\\\likak\\\\Desktop\\\\ctk_maker\\\\app\\\\ui\\\\main_menu.py\" 2>&1)",
+      "Bash(git add *)"
+    ]
+  }
+}

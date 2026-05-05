@@ -13,6 +13,7 @@ from __future__ import annotations
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog
+from typing import Any
 
 import customtkinter as ctk
 
@@ -383,7 +384,7 @@ class AboutDialog(tk.Toplevel):
 
     def _build(self, version: str) -> None:
         import webbrowser
-        pad = dict(padx=24)
+        pad: dict[str, Any] = {"padx": 24}
 
         tk.Frame(self, bg=_ABT_BG, height=16).pack()
         tk.Label(
@@ -462,7 +463,7 @@ class AboutDialog(tk.Toplevel):
         bmc_btn = tk.Button(
             bmc_row,
             text="Buy me a coffee",
-            image=coffee_img if coffee_img else None,
+            image=coffee_img if coffee_img else "",
             compound="left",
             bg=_BMC_BG, fg=_BMC_FG,
             activebackground="#FFE54B", activeforeground=_BMC_FG,
@@ -474,7 +475,7 @@ class AboutDialog(tk.Toplevel):
         )
         # Retain the PhotoImage on the button so Tk doesn't GC the
         # icon when the local var goes out of scope.
-        bmc_btn.image = coffee_img
+        bmc_btn.image = coffee_img  # type: ignore[attr-defined]
         bmc_btn.pack()
 
         tk.Frame(self, bg=_ABT_BG, height=10).pack()
@@ -614,7 +615,7 @@ class RenamePageDialog(tk.Toplevel):
         f_body = derive_ui_font(size=10)
         f_body_b = derive_ui_font(size=10, weight="bold")
         f_mono = derive_mono_font(size=9)
-        pad = dict(padx=24)
+        pad: dict[str, Any] = {"padx": 24}
 
         tk.Frame(self, bg=_ABT_BG, height=16).pack()
         tk.Label(
@@ -941,6 +942,8 @@ def prompt_open_project_folder(
         return None
     result = inspect_picked_folder(folder)
     if result.kind == "multi_page":
+        if result.folder is None:
+            return None
         try:
             meta = read_project_meta(result.folder)
         except Exception as exc:
@@ -962,6 +965,8 @@ def prompt_open_project_folder(
     if result.kind == "legacy_single":
         return result.page_path
     if result.kind == "ambiguous":
+        if result.folder is None:
+            return None
         picker = _AmbiguousProjectPicker(
             parent, result.folder, result.candidates,
         )

@@ -21,6 +21,8 @@ from app.core.widget_node import WidgetNode
 
 if TYPE_CHECKING:
     from app.core.project import Project
+    from app.core.document import Document
+    from app.core.object_references import RefScope
 
 COALESCE_WINDOW_SEC = 0.6
 
@@ -67,7 +69,7 @@ def push_zorder_history(
     + a new branch here.
     """
     node = project.get_widget(widget_id)
-    if node is None:
+    if not isinstance(node, WidgetNode):
         return
     siblings = (
         node.parent.children if node.parent is not None
@@ -112,7 +114,7 @@ def build_bulk_add_entries(
     entries: list[tuple[dict, str | None, int, str | None, tuple | None]] = []
     for nid in widget_ids:
         node = project.get_widget(nid)
-        if node is None:
+        if not isinstance(node, WidgetNode):
             continue
         parent_id = node.parent.id if node.parent is not None else None
         siblings = (
@@ -244,6 +246,17 @@ class AddWidgetCommand(Command):
         project.select_widget(node.id)
 
 
+# ======================================================================
+# Behavior Field cascade (legacy — superseded by Object References in
+# v1.10.8). The Behavior Field UI in properties_panel_v2 still writes
+# to ``Document.behavior_field_values`` within a session; the loader
+# migrates those entries to ``local_object_references`` on next open
+# and clears the dict. These helpers keep delete-undo correct as long
+# as the legacy path is reachable — for migrated / new projects the
+# behavior_field_values dict is empty and the helpers are fast no-ops.
+# Remove together with SetBehaviorFieldCommand once the v2 panel stops
+# binding to behavior_field_values.
+# ======================================================================
 def _collect_ids_from_snapshot(snapshot: dict) -> set[str]:
     """Walk a ``WidgetNode.to_dict()`` snapshot recursively and
     return every ``id`` it carries — root + every descendant. Used
@@ -479,7 +492,7 @@ class ChangeDescriptionCommand(Command):
                 doc.description = value
         else:
             node = project.get_widget(self.widget_id)
-            if node is not None:
+            if isinstance(node, WidgetNode):
                 node.description = value
         project.event_bus.publish(
             "widget_description_changed", self.widget_id, value,
@@ -522,7 +535,7 @@ class BindHandlerCommand(Command):
 
     def _do(self, project: "Project") -> None:
         node = project.get_widget(self.widget_id)
-        if node is None:
+        if not isinstance(node, WidgetNode):
             return
         methods = node.handlers.setdefault(self.event_key, [])
         methods.append(self.method_name)
@@ -535,7 +548,7 @@ class BindHandlerCommand(Command):
 
     def _undo(self, project: "Project") -> None:
         node = project.get_widget(self.widget_id)
-        if node is None:
+        if not isinstance(node, WidgetNode):
             return
         methods = node.handlers.get(self.event_key)
         if not methods:
@@ -590,7 +603,7 @@ class ReorderHandlerCommand(Command):
         self, project: "Project", src: int, dst: int,
     ) -> None:
         node = project.get_widget(self.widget_id)
-        if node is None:
+        if not isinstance(node, WidgetNode):
             return
         methods = node.handlers.get(self.event_key)
         if not methods or src == dst:
@@ -633,7 +646,7 @@ class UnbindHandlerCommand(Command):
 
     def _do(self, project: "Project") -> None:
         node = project.get_widget(self.widget_id)
-        if node is None:
+        if not isinstance(node, WidgetNode):
             return
         methods = node.handlers.get(self.event_key)
         if not methods or self.index >= len(methods):
@@ -651,7 +664,7 @@ class UnbindHandlerCommand(Command):
 
     def _undo(self, project: "Project") -> None:
         node = project.get_widget(self.widget_id)
-        if node is None:
+        if not isinstance(node, WidgetNode):
             return
         methods = node.handlers.setdefault(self.event_key, [])
         idx = max(0, min(self.index, len(methods)))
@@ -906,7 +919,7 @@ class ReparentCommand(Command):
         parent_slot: str | None = None,
     ) -> None:
         node = project.get_widget(self.widget_id)
-        if node is None:
+        if not isinstance(node, WidgetNode):
             return
         # Write coords + parent_slot before reparent so the destroy+
         # recreate that reparent triggers picks up the restored state.
@@ -1570,11 +1583,11 @@ class AddObjectReferenceCommand(Command):
 
     def __init__(
         self, entry_dict: dict, index: int,
-        scope: str = "local", document_id: str | None = None,
+        scope: "RefScope" = "local", document_id: str | None = None,
     ):
         self.entry_dict = dict(entry_dict)
         self.index = index
-        self.scope = scope
+        self.scope: "RefScope" = scope
         self.document_id = document_id
         self.description = (
             f"Add reference: {entry_dict.get('name', '')}"
@@ -1612,11 +1625,11 @@ class DeleteObjectReferenceCommand(Command):
 
     def __init__(
         self, entry_dict: dict, index: int,
-        scope: str = "local", document_id: str | None = None,
+        scope: "RefScope" = "local", document_id: str | None = None,
     ):
         self.entry_dict = dict(entry_dict)
         self.index = index
-        self.scope = scope
+        self.scope: "RefScope" = scope
         self.document_id = document_id
         self.description = (
             f"Delete reference: {entry_dict.get('name', '')}"

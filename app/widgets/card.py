@@ -218,10 +218,11 @@ class CardDescriptor(WidgetDescriptor):
         # asked for Preserve Aspect. Reads the image's natural ratio
         # from disk (cached per path) and recomputes height from the
         # current image_width.
-        if properties.get("image") and properties.get(
+        image_path = properties.get("image")
+        if image_path and properties.get(
             "image_preserve_aspect",
         ):
-            ratio = cls._image_aspect_ratio(properties.get("image"))
+            ratio = cls._image_aspect_ratio(image_path)
             if ratio and ratio > 0:
                 try:
                     iw = int(properties.get("image_width", 48) or 48)
@@ -411,7 +412,7 @@ class CardDescriptor(WidgetDescriptor):
             label.configure(image=ctk_img)
             # Hold a ref on the label so PIL+Tk don't garbage-collect
             # the underlying PhotoImage and blank the icon out.
-            label.image = ctk_img
+            label.image = ctk_img  # type: ignore[attr-defined]
         except Exception:
             log_error("CardDescriptor._sync_image_label configure")
             return

@@ -277,7 +277,7 @@ class CTkComboBoxDescriptor(WidgetDescriptor):
         widget = ctk.CTkComboBox(master, **kwargs)
         # Share the parent's resolved CTkFont so popup items pick up
         # the same family the cascade landed on for the field itself.
-        widget._scrollable_dropdown = ScrollableDropdown(
+        widget._scrollable_dropdown = ScrollableDropdown(  # type: ignore[attr-defined]
             widget,
             font=getattr(widget, "_font", None),
             **cls._dropdown_kwargs(properties),

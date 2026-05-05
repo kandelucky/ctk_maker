@@ -133,6 +133,7 @@ class WorkspaceControls:
                 pady=3,
             )
             self._tool_buttons[tool_id] = btn
+            _attach_tooltip(btn, _tooltip)
 
         # Centre — Preview + Preview Active
         sq_play = load_icon("square-play", size=16)

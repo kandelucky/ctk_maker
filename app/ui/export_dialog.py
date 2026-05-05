@@ -24,6 +24,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
+from typing import Any
+
 import customtkinter as ctk
 
 from app.core.logger import log_error
@@ -51,15 +53,15 @@ LABEL_WIDTH = 80
 
 # Dark dropdown palette so the option menu sits coherently on the
 # panel surface.
-_DROPDOWN_STYLE = dict(
-    fg_color="#3c3c3c",
-    button_color="#3c3c3c",
-    button_hover_color="#4a4a4a",
-    text_color=FIELD_FG,
-    dropdown_fg_color="#2d2d30",
-    dropdown_hover_color="#094771",
-    dropdown_text_color=FIELD_FG,
-)
+_DROPDOWN_STYLE: dict[str, Any] = {
+    "fg_color": "#3c3c3c",
+    "button_color": "#3c3c3c",
+    "button_hover_color": "#4a4a4a",
+    "text_color": FIELD_FG,
+    "dropdown_fg_color": "#2d2d30",
+    "dropdown_hover_color": "#094771",
+    "dropdown_text_color": FIELD_FG,
+}
 
 
 class ExportDialog(ctk.CTkToplevel):
@@ -689,6 +691,8 @@ class ExportDialog(ctk.CTkToplevel):
             if not isinstance(entry, dict):
                 continue
             page_id = entry.get("id")
+            if not isinstance(page_id, str):
+                continue
             page_name = (entry.get("name") or "untitled").strip() or "untitled"
             slug = slugify_page_name(page_name)
             target = out_dir / f"{slug}{ext}"

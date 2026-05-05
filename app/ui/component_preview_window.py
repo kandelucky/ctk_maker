@@ -191,7 +191,7 @@ class ComponentPreviewWindow(ctk.CTkToplevel):
         cleaned: dict = {}
         for key, value in raw_props.items():
             if is_var_token(value):
-                var_id = parse_var_token(value)
+                var_id = parse_var_token(value) or ""
                 cleaned[key] = var_defaults.get(var_id, "")
                 continue
             cleaned[key] = value

@@ -556,6 +556,41 @@ class SettingsDialog(tk.Toplevel):
             "<Button-1>",
             lambda _e: self._open_vs_code_download(),
         )
+
+        fix_frame = tk.Frame(tab, bg=BG)
+        fix_frame.pack(anchor="w", pady=(14, 0), fill="x")
+        tk.Label(
+            fix_frame,
+            text="VS Code showing red import errors?",
+            bg=BG, fg=HEADER_FG,
+            font=("Segoe UI", 10, "bold"),
+            anchor="w",
+        ).pack(anchor="w")
+        tk.Label(
+            fix_frame,
+            text=(
+                "Writes .vscode/settings.json with the correct Python path "
+                "so Pylance finds your packages."
+            ),
+            bg=BG, fg=DIM_FG, font=("Segoe UI", 9),
+            anchor="w", justify="left",
+            wraplength=DIALOG_W - 80,
+        ).pack(anchor="w", pady=(2, 6))
+        self._vscode_fix_status = tk.StringVar(value="")
+        ctk.CTkButton(
+            fix_frame,
+            text="Configure VS Code Python Path",
+            width=230, height=26,
+            command=self._configure_vscode_python,
+        ).pack(anchor="w")
+        tk.Label(
+            fix_frame,
+            textvariable=self._vscode_fix_status,
+            bg=BG, fg="#4ade80",
+            font=("Segoe UI", 9),
+            anchor="w",
+        ).pack(anchor="w", pady=(4, 0))
+
         return tab
 
     def _open_vs_code_download(self) -> None:
@@ -564,6 +599,58 @@ class SettingsDialog(tk.Toplevel):
             webbrowser.open("https://code.visualstudio.com/download")
         except Exception:
             pass
+
+    def _configure_vscode_python(self) -> None:
+        import sys, json, os
+        from tkinter import filedialog
+
+        folder = filedialog.askdirectory(
+            parent=self,
+            title="Select the project folder to configure for VS Code",
+        )
+        if not folder:
+            return
+
+        vscode_dir = os.path.join(folder, ".vscode")
+        os.makedirs(vscode_dir, exist_ok=True)
+
+        settings_path = os.path.join(vscode_dir, "settings.json")
+        existing: dict = {}
+        if os.path.isfile(settings_path):
+            try:
+                with open(settings_path, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+            except Exception:
+                pass
+
+        python_exe = sys.executable.replace("pythonw.exe", "python.exe")
+        existing["python.defaultInterpreterPath"] = python_exe
+        try:
+            import sysconfig
+            site_pkgs = sysconfig.get_path("purelib")
+            if site_pkgs:
+                existing["python.analysis.extraPaths"] = [site_pkgs]
+        except Exception:
+            pass
+        try:
+            with open(settings_path, "w", encoding="utf-8") as f:
+                json.dump(existing, f, indent=4)
+
+            pyright_path = os.path.join(folder, "pyrightconfig.json")
+            pyright: dict[str, str] = {}
+            if os.path.isfile(pyright_path):
+                try:
+                    with open(pyright_path, "r", encoding="utf-8") as f:
+                        pyright = json.load(f)
+                except Exception:
+                    pass
+            pyright["pythonPath"] = python_exe
+            with open(pyright_path, "w", encoding="utf-8") as f:
+                json.dump(pyright, f, indent=4)
+
+            self._vscode_fix_status.set("✓ Done! Reopen the folder in VS Code.")
+        except Exception as e:
+            self._vscode_fix_status.set(f"✗ Error: {e}")
 
     def _editor_preset_label_for(self, cmd: str) -> str:
         cmd = (cmd or "").strip()

@@ -113,7 +113,7 @@ def load_project(
                 "rename one back into ``assets/pages/`` and reopen."
             )
 
-    if multi_page_meta is not None:
+    if multi_page_meta is not None and project_folder is not None:
         if path.is_dir():
             entry = find_active_page_entry(multi_page_meta)
             if entry is None or not entry.get("file"):

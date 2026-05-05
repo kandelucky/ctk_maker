@@ -24,9 +24,10 @@ from __future__ import annotations
 import tkinter as tk
 
 from app.core.platform_compat import MOD_KEY
+from app.ui._main_window_host import _MainWindowHost
 
 
-class ShortcutsMixin:
+class ShortcutsMixin(_MainWindowHost):
     """Global keyboard shortcut handlers. See module docstring."""
 
     # Event.state bit masks on Windows.

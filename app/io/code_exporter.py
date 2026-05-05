@@ -2602,7 +2602,8 @@ def _emit_widget(
                 props.get("image_color") or "#ffffff",
             )
             off_src = _image_source_with_color(
-                props, image_path, props.get("image_color_disabled"),
+                props, image_path,
+                props.get("image_color_disabled") or "#ffffff",
             )
             pre_lines.append(f"{on_attr} = {on_src}")
             pre_lines.append(f"{off_attr} = {off_src}")

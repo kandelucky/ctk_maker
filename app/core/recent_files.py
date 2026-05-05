@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 RECENT_PATH = Path.home() / ".ctk_visual_builder" / "recent.json"
-MAX_RECENT = 10
+MAX_RECENT = 50
 
 
 def load_recent() -> list[str]:
