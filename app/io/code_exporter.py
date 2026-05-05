@@ -1459,6 +1459,12 @@ def _generate_code_inner(
         lines.append(f"{INDENT}# Dialog-only preview — hidden root host.")
         lines.append(f"{INDENT}app = ctk.CTk()")
         lines.append(f"{INDENT}app.withdraw()")
+        # The bare ctk.CTk() host bypasses the main window class, so
+        # custom fonts must be registered against it directly — without
+        # this the dialog falls back to Tk defaults even though the
+        # builder canvas renders the same widget with the right family.
+        if needs_font_register:
+            lines.append(f"{INDENT}_register_project_fonts(app)")
         lines.append(f"{INDENT}{var} = {preview_cls}(app)")
         if needs_text_clipboard:
             lines.append(f"{INDENT}_setup_text_clipboard(app)")
