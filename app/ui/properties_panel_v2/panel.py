@@ -1426,8 +1426,9 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         """Best-effort behavior-file annotation write. Adds
         ``<name>: ref[<type_name>]`` + the ``from .._runtime import
         ref`` and ``from customtkinter import <Type>`` imports.
-        Silent on missing project path / file write errors — those
-        cases are non-fatal for the model update.
+        Skips silently when the project is unsaved (no path); any
+        other failure is logged so the user can diagnose stale-
+        annotation symptoms in the .py file.
         """
         path = getattr(self.project, "path", None)
         if not path:
@@ -1464,9 +1465,20 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
                 file_path, level=2, module="_runtime", name="ref",
             )
         except Exception:
-            pass
+            log_error(
+                f"write ref annotation: {name!r} ({type_name}) "
+                f"in doc {doc.id}",
+            )
 
     def _maybe_delete_ref_annotation(self, doc, name: str) -> None:
+        """Strip ``<name>: <annotation>`` from the doc's behavior file.
+        Skips silently for unsaved projects or when the file doesn't
+        exist yet (annotation never landed). Logs both exception and
+        logical-failure paths — the second catches stale annotations
+        that survived a previous deletion (e.g., the U3 inconsistency
+        where an Object Reference was removed from the model but the
+        annotation stayed in the .py file).
+        """
         path = getattr(self.project, "path", None)
         if not path:
             return
@@ -1480,11 +1492,18 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             file_path = behavior_file_path(path, doc)
             if file_path is None or not file_path.exists():
                 return
-            delete_object_reference_annotation(
+            removed = delete_object_reference_annotation(
                 file_path, behavior_class_name(doc), name,
             )
+            if not removed:
+                log_error(
+                    f"delete ref annotation: {name!r} not found in "
+                    f"{file_path.name} (orphan ref or stale annotation)",
+                )
         except Exception:
-            pass
+            log_error(
+                f"delete ref annotation: {name!r} in doc {doc.id}",
+            )
 
     def _on_object_reference_changed(self, *_args, **_kwargs) -> None:
         """Live repaint after any ObjectReference mutation. Only the

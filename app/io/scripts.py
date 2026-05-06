@@ -151,6 +151,17 @@ def parse_handler_methods(
 
 # ---------------------------------------------------------------------
 # Object Reference annotation parser (v1.10.8+)
+#
+# Reserved — currently no callers. The legacy Behavior Field add
+# dialog consumed ``parse_object_reference_fields`` and
+# ``existing_object_reference_names`` for live introspection of
+# annotated attributes; the modern Object Reference flow tracks
+# existing names via ``doc.local_object_references`` directly and
+# generates new names via ``app.core.object_references.suggest_ref_name``.
+# Keep these helpers around for a future orphan-detection /
+# annotation-reconcile feature that would AST-scan the .py file and
+# surface mismatches between annotations and the model
+# (e.g., the U3-style stale-annotation diagnostic).
 # ---------------------------------------------------------------------
 class FieldSpec:
     """One Inspector-bindable annotation found on a behavior class.
@@ -598,6 +609,11 @@ def suggest_object_reference_name(
     name is empty. Auto-suffixes ``_2`` / ``_3`` on collision so the
     dialog presents a name the user can accept or edit without
     triggering an error.
+
+    Reserved — no current callers. The modern Object Reference flow
+    uses ``app.core.object_references.suggest_ref_name`` which has
+    different semantics (CTk-prefix stripping, slightly different
+    fallback). Kept here for a future orphan-reconcile pass.
     """
     base_source = widget_name.strip() if widget_name else ""
     if not base_source:

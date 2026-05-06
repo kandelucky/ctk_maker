@@ -35,6 +35,7 @@ from app.core.variables import (
     coerce_default_for_type,
     sanitize_var_name,
 )
+from app.core.logger import log_error
 from app.ui.dialog_utils import safe_grab_set
 from app.ui.system_fonts import derive_ui_font
 
@@ -1573,14 +1574,23 @@ class ObjectReferencesPanel(ctk.CTkFrame):
             if file_path is None or not file_path.exists():
                 return
             class_name = behavior_class_name(doc)
-            delete_object_reference_annotation(
+            removed = delete_object_reference_annotation(
                 file_path, class_name, old_name,
             )
+            if not removed:
+                log_error(
+                    f"rename ref annotation: {old_name!r} not found in "
+                    f"{file_path.name} (continuing with add for "
+                    f"{new_name!r})",
+                )
             add_object_reference_annotation(
                 file_path, class_name, new_name, entry.target_type,
             )
         except Exception:
-            pass
+            log_error(
+                f"rename ref annotation: {old_name!r} → {new_name!r} "
+                f"in doc {doc_id}",
+            )
 
     def _maybe_delete_annotation(self, entry, scope, doc_id) -> None:
         if scope != "local" or doc_id is None:
@@ -1601,11 +1611,18 @@ class ObjectReferencesPanel(ctk.CTkFrame):
             file_path = behavior_file_path(path, doc)
             if file_path is None or not file_path.exists():
                 return
-            delete_object_reference_annotation(
+            removed = delete_object_reference_annotation(
                 file_path, behavior_class_name(doc), entry.name,
             )
+            if not removed:
+                log_error(
+                    f"delete ref annotation: {entry.name!r} not found "
+                    f"in {file_path.name} (orphan or stale annotation)",
+                )
         except Exception:
-            pass
+            log_error(
+                f"delete ref annotation: {entry.name!r} in doc {doc_id}",
+            )
 
     def _unsubscribe_bus(self) -> None:
         try:
