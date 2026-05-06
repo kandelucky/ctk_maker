@@ -30,9 +30,11 @@ from app.core.commands import (
     RenameVariableCommand,
 )
 from app.core.variables import (
+    COLOR_DEFAULT,
     VAR_TYPES,
     VariableEntry,
     coerce_default_for_type,
+    is_valid_hex,
     sanitize_var_name,
 )
 from app.core.logger import log_error
@@ -90,6 +92,7 @@ TYPE_LABELS = {
     "int": "Integer",
     "float": "Float",
     "bool": "Boolean",
+    "color": "Color",
 }
 LABEL_TO_TYPE = {label: t for t, label in TYPE_LABELS.items()}
 
@@ -103,13 +106,20 @@ TYPE_DEFAULT_NAMES = {
     "int": "IntValue",
     "float": "FloatValue",
     "bool": "BoolValue",
+    "color": "ColorValue",
 }
 TYPE_DEFAULT_VALUES = {
     "str": "",
     "int": "0",
     "float": "0.0",
     "bool": "False",
+    "color": "#6366f1",
 }
+
+# Pixel size of the colour swatch rendered in the tree's #0 column
+# for ``color``-typed rows. 12×12 fits comfortably inside the 22px
+# row height with breathing room top/bottom.
+SWATCH_PX = 12
 
 
 class VariablesPanel(ctk.CTkFrame):
@@ -134,6 +144,12 @@ class VariablesPanel(ctk.CTkFrame):
         self.scope = scope if scope in ("global", "local") else "global"
         self.document_id = document_id if self.scope == "local" else None
         self._bus_subs: list[tuple[str, Callable]] = []
+        # ttk.Treeview cells render text or one image per row (#0 column
+        # only), so colour swatches live as cached PhotoImages keyed by
+        # their hex string. Cache lifetime == panel lifetime; reset on
+        # destroy. Bounded in practice — users rarely declare more than
+        # a handful of colour vars per project.
+        self._swatch_cache: dict[str, tk.PhotoImage] = {}
         self._build_toolbar()
         self._build_tree()
         bus = project.event_bus
@@ -234,16 +250,22 @@ class VariablesPanel(ctk.CTkFrame):
             relief="flat",
         )
 
+        # ``show="tree headings"`` keeps the #0 column visible so we
+        # can hang a small colour swatch off rows whose variable type
+        # is ``color``. Width is fixed and narrow — non-colour rows
+        # leave the cell blank, which reads as a small left margin.
         self.tree = ttk.Treeview(
             wrap,
             columns=("type", "default", "uses"),
-            show="headings",
+            show="tree headings",
             style=style_name,
             selectmode="browse",
         )
+        self.tree.heading("#0", text="")
         self.tree.heading("type", text="Name / Type")
         self.tree.heading("default", text="Default")
         self.tree.heading("uses", text="Used by")
+        self.tree.column("#0", width=24, minwidth=24, stretch=False, anchor="center")
         self.tree.column("type", width=180, anchor="w")
         self.tree.column("default", width=110, anchor="w")
         self.tree.column("uses", width=80, anchor="center")
@@ -281,6 +303,26 @@ class VariablesPanel(ctk.CTkFrame):
             return list(doc.local_variables) if doc is not None else []
         return list(self.project.variables or [])
 
+    def _swatch_for(self, hex_value: str) -> tk.PhotoImage | None:
+        """Build (and cache) a flat-fill ``PhotoImage`` for ``hex_value``.
+        Returns ``None`` on invalid hex / Tk failure so the caller can
+        skip the image kwarg cleanly. The image is owned by the panel —
+        Tk would garbage-collect a freshly built PhotoImage between
+        the insert call and the next event loop tick otherwise.
+        """
+        cached = self._swatch_cache.get(hex_value)
+        if cached is not None:
+            return cached
+        try:
+            img = tk.PhotoImage(
+                master=self, width=SWATCH_PX, height=SWATCH_PX,
+            )
+            img.put(hex_value, to=(0, 0, SWATCH_PX, SWATCH_PX))
+        except tk.TclError:
+            return None
+        self._swatch_cache[hex_value] = img
+        return img
+
     def _refresh(self) -> None:
         for iid in self.tree.get_children(""):
             self.tree.delete(iid)
@@ -300,10 +342,14 @@ class VariablesPanel(ctk.CTkFrame):
         for v in variables:
             label = f"{v.name}  ({TYPE_LABELS.get(v.type, v.type)})"
             uses = sum(1 for _ in self.project.iter_bindings_for(v.id))
-            self.tree.insert(
-                "", "end", iid=v.id,
-                values=(label, v.default, str(uses)),
-            )
+            kwargs: dict = {
+                "values": (label, v.default, str(uses)),
+            }
+            if v.type == "color":
+                swatch = self._swatch_for(v.default or COLOR_DEFAULT)
+                if swatch is not None:
+                    kwargs["image"] = swatch
+            self.tree.insert("", "end", iid=v.id, **kwargs)
         self._set_buttons_enabled(True)
 
     def _set_buttons_enabled(self, has_any: bool) -> None:
@@ -319,6 +365,20 @@ class VariablesPanel(ctk.CTkFrame):
         if not sel or sel[0] == "empty":
             return None
         return sel[0]
+
+    def select_variable(self, var_id: str) -> bool:
+        """Select and scroll into view the row for ``var_id``. Returns
+        ``True`` on success, ``False`` if the row isn't in this panel
+        (different scope) or the tree hasn't populated yet."""
+        try:
+            if not self.tree.exists(var_id):
+                return False
+            self.tree.selection_set(var_id)
+            self.tree.focus(var_id)
+            self.tree.see(var_id)
+        except tk.TclError:
+            return False
+        return True
 
     # ------------------------------------------------------------------
     # Actions
@@ -771,6 +831,7 @@ class VariableEditDialog(ctk.CTkToplevel):
         self, parent, title: str,
         initial_name: str, initial_type: str, initial_default: str,
         existing_names: set[str],
+        allowed_types: tuple[str, ...] | None = None,
     ):
         super().__init__(parent)
         self.title(title)
@@ -783,6 +844,17 @@ class VariableEditDialog(ctk.CTkToplevel):
 
         self.result: tuple[str, str, str] | None = None
         self._existing_names = existing_names
+        # When the dialog is opened from a property row's "Create new
+        # variable" entry, the property's editor only accepts a
+        # restricted set of variable types (e.g. a boolean row accepts
+        # bool / int but not str / float). Filtering the Type dropdown
+        # here keeps the dialog from offering choices that would fail
+        # silently at bind time. ``None`` = no restriction (Variables
+        # window add / edit flows).
+        self._allowed_types: tuple[str, ...] | None = (
+            tuple(t for t in allowed_types if t in TYPE_LABELS)
+            if allowed_types else None
+        )
 
         self._name_var = tk.StringVar(value=initial_name)
         self._type_var = tk.StringVar(
@@ -861,8 +933,14 @@ class VariableEditDialog(ctk.CTkToplevel):
         self._name_entry.pack(side="left", fill="x", expand=True)
 
     def _build_type_row(self, row) -> None:
+        if self._allowed_types is not None:
+            type_values = [
+                TYPE_LABELS[t] for t in self._allowed_types
+            ]
+        else:
+            type_values = list(TYPE_LABELS.values())
         ctk.CTkOptionMenu(
-            row, values=list(TYPE_LABELS.values()),
+            row, values=type_values,
             variable=self._type_var,
             width=160, height=28, dynamic_resizing=False,
             corner_radius=3,
@@ -875,12 +953,96 @@ class VariableEditDialog(ctk.CTkToplevel):
         ).pack(side="left")
 
     def _build_default_row(self, row) -> None:
+        # The default editor surface depends on the current type. Both
+        # widget sets are built up-front and packed/unpacked by
+        # ``_apply_type_to_default_row``; building lazily would mean
+        # rebuilding the row on every type swap, which flickers.
+        self._default_row = row
         self._default_entry = ctk.CTkEntry(
             row, textvariable=self._default_var, height=28,
             corner_radius=3, font=("Segoe UI", 11),
             border_color=BORDER, border_width=1,
         )
-        self._default_entry.pack(side="left", fill="x", expand=True)
+        # Color editor: swatch label + Pick… button. The swatch is a
+        # plain ``tk.Label`` with a ``bg=hex`` so it tracks the hex
+        # value live (no PhotoImage churn per stroke).
+        self._color_frame = tk.Frame(row, bg=PANEL_BG, highlightthickness=0)
+        self._color_swatch = tk.Label(
+            self._color_frame, bg=COLOR_DEFAULT,
+            width=4, height=1,
+            relief="solid", bd=1, highlightthickness=0,
+        )
+        self._color_swatch.pack(side="left", padx=(0, 8), pady=2)
+        self._color_pick_btn = ctk.CTkButton(
+            self._color_frame, text="Pick…",
+            width=70, height=28, corner_radius=3,
+            fg_color="#3c3c3c", hover_color="#4a4a4a",
+            font=("Segoe UI", 11),
+            command=self._open_color_picker,
+        )
+        self._color_pick_btn.pack(side="left")
+        self._color_hex_label = tk.Label(
+            self._color_frame,
+            textvariable=self._default_var,
+            bg=PANEL_BG, fg="#cccccc",
+            font=("Segoe UI", 10),
+        )
+        self._color_hex_label.pack(side="left", padx=(10, 0))
+        # Keep the swatch fill in lock-step with the hex string —
+        # picker writes the StringVar, swatch reads from the trace.
+        self._default_var.trace_add("write", self._sync_color_swatch)
+        self._apply_type_to_default_row()
+
+    def _apply_type_to_default_row(self) -> None:
+        """Show the entry for str/int/float/bool, the swatch+button
+        for color. Called on build and on every type swap.
+        """
+        var_type = LABEL_TO_TYPE.get(self._type_var.get(), "str")
+        if var_type == "color":
+            try:
+                self._default_entry.pack_forget()
+            except tk.TclError:
+                pass
+            self._color_frame.pack(side="left", fill="x", expand=True)
+            self._sync_color_swatch()
+        else:
+            try:
+                self._color_frame.pack_forget()
+            except tk.TclError:
+                pass
+            self._default_entry.pack(side="left", fill="x", expand=True)
+
+    def _sync_color_swatch(self, *_args) -> None:
+        """Recolour the swatch label to match the current hex string;
+        invalid hex falls through to the safe default so the swatch
+        never raises a TclError mid-typing (not user-facing here, but
+        defensive — picker writes valid hex; future-proof against
+        callers that bypass it).
+        """
+        hex_value = self._default_var.get() or COLOR_DEFAULT
+        if not is_valid_hex(hex_value):
+            hex_value = COLOR_DEFAULT
+        try:
+            self._color_swatch.configure(bg=hex_value)
+        except tk.TclError:
+            pass
+
+    def _open_color_picker(self) -> None:
+        """Launch the shared ``ColorPickerDialog`` seeded with the
+        current hex; on confirm, write the chosen hex back into the
+        StringVar so the swatch + tree refresh themselves via the
+        trace and the existing OK-coercion path.
+        """
+        try:
+            from ctk_color_picker import ColorPickerDialog
+        except ImportError:
+            return
+        initial = self._default_var.get() or COLOR_DEFAULT
+        dialog = ColorPickerDialog(self, initial_color=initial)
+        dialog.wait_window()
+        chosen = getattr(dialog, "result", None)
+        if chosen:
+            self._default_var.set(chosen)
 
     def _on_type_changed(self, *_args) -> None:
         """Swap Name / Default to the new type's auto-fill values
@@ -898,6 +1060,7 @@ class VariableEditDialog(ctk.CTkToplevel):
             self._default_var.set(new_auto_default)
         self._last_auto_name = new_auto_name
         self._last_auto_default = new_auto_default
+        self._apply_type_to_default_row()
 
     def _on_ok(self) -> None:
         raw_name = self._name_var.get().strip()
@@ -1650,6 +1813,7 @@ class VariablesWindow(ctk.CTkToplevel):
         self, parent, project: "Project",
         on_close: Callable[[], None] | None = None,
         initial_scope: str = "global",
+        initial_variable_id: str | None = None,
     ):
         super().__init__(parent)
         self.title("Data")
@@ -1706,8 +1870,26 @@ class VariablesWindow(ctk.CTkToplevel):
         )
 
         self._show_scope(initial_scope)
+        if initial_variable_id is not None:
+            # Panels populate via after(0, _refresh) so the tree row
+            # we want to select doesn't exist yet — defer onto the
+            # same queue (FIFO → refresh first, then our select).
+            self.after(
+                0,
+                lambda v=initial_variable_id: self._select_variable(v),
+            )
         self._place_relative_to(parent)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _select_variable(self, var_id: str) -> None:
+        """Select ``var_id`` in whichever panel currently owns it.
+        Idempotent and tolerant of an unknown / orphaned id — leaves
+        the tree's existing selection alone if the row is missing."""
+        for panel in (self._global_panel, self._local_panel):
+            if panel is None:
+                continue
+            if panel.select_variable(var_id):
+                return
 
     def _subscribe(self, event_name: str, handler: Callable) -> None:
         self.project.event_bus.subscribe(event_name, handler)
@@ -1866,8 +2048,13 @@ class VariablesWindow(ctk.CTkToplevel):
     # ------------------------------------------------------------------
     # External hooks
     # ------------------------------------------------------------------
-    def show_scope(self, scope: str) -> None:
-        """Public switcher used by the chrome / toolbar entry points."""
+    def show_scope(
+        self, scope: str, variable_id: str | None = None,
+    ) -> None:
+        """Public switcher used by the chrome / toolbar entry points.
+        ``variable_id`` (optional) pre-selects the matching row in the
+        scope's tree — used by panel double-click to land the user on
+        the bound variable."""
         # Active doc may have changed since this window was last
         # opened — rebuild the local panel so we don't show another
         # doc's variables under the wrong tab title.
@@ -1877,6 +2064,8 @@ class VariablesWindow(ctk.CTkToplevel):
             self._on_active_doc_changed()
         self._refresh_local_tab_label()
         self._show_scope(scope)
+        if variable_id is not None:
+            self._select_variable(variable_id)
         try:
             self.lift()
             self.focus_force()

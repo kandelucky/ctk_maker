@@ -361,4 +361,4 @@ Multi-step dialog cascade:
 - **Event bus channels** — adding a new channel requires both publisher and subscriber code.
 - **Layout managers** — `place` / `vbox` / `hbox` / `grid` are hard-coded in [layout_schema.py](../../app/widgets/layout_schema.py); adding a new layout type requires exporter + workspace updates.
 - **Asset kinds** — `images` / `fonts` / `icons` paths are hard-coded; a new asset kind needs path helper + token grammar updates.
-- **Variable types** — `str` / `int` / `float` / `bool`. Adding more would need entries in `BINDING_WIRINGS` plus runtime + export coverage.
+- **Variable types** — `str` / `int` / `float` / `bool` / `color`. `color` is `StringVar`-backed (hex string at runtime) — the type only changes the Variables-window editor surface and bind-picker filtering, so it didn't need new `BINDING_WIRINGS` entries. Adding a genuinely new Tk-var-class type would still need `BINDING_WIRINGS` plus runtime + export coverage.

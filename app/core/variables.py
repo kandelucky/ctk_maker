@@ -1,12 +1,17 @@
 """Project-level variable system — Phase 1 of the visual scripting plan.
 
 Each project carries a flat list of named, typed shared values
-(``str`` / ``int`` / ``float`` / ``bool``). Widgets bind to a variable
-via a ``var:<uuid>`` token written into the property slot; the
-runtime resolves the token to a shared ``tk.Variable`` instance so
-multiple widgets bound to the same variable stay in sync without any
-custom wiring (Tkinter's built-in ``textvariable`` / ``variable``
-mechanism does the work for us).
+(``str`` / ``int`` / ``float`` / ``bool`` / ``color``). Widgets bind
+to a variable via a ``var:<uuid>`` token written into the property
+slot; the runtime resolves the token to a shared ``tk.Variable``
+instance so multiple widgets bound to the same variable stay in sync
+without any custom wiring (Tkinter's built-in ``textvariable`` /
+``variable`` mechanism does the work for us).
+
+``color`` values flow as hex strings (``#rrggbb``) through StringVars,
+identical to ``str`` at runtime — the type tag only changes the
+editor surface (swatch + picker) and the bind-picker filtering for
+color-typed properties.
 
 Identity is the UUID — renaming a variable updates the display name
 but never breaks existing bindings.
@@ -19,8 +24,11 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Literal
 
-VAR_TYPES = ("str", "int", "float", "bool")
-VarType = Literal["str", "int", "float", "bool"]
+VAR_TYPES = ("str", "int", "float", "bool", "color")
+VarType = Literal["str", "int", "float", "bool", "color"]
+
+COLOR_DEFAULT = "#000000"
+_HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
 
 VAR_SCOPES = ("global", "local")
 VarScope = Literal["global", "local"]
@@ -115,7 +123,20 @@ def make_tk_var(var_type: str, default: str) -> tk.Variable:
             "true", "1", "yes", "on",
         )
         return tk.BooleanVar(value=truthy)
+    if var_type == "color":
+        return tk.StringVar(value=default or COLOR_DEFAULT)
     return tk.StringVar(value=default or "")
+
+
+def is_valid_hex(text: str) -> bool:
+    """``#rgb`` / ``#rrggbb`` only — no named colors. Same loose
+    surface as ``int`` / ``float`` parsing: anything that doesn't fit
+    falls back to a safe default at the call site.
+    """
+    if not text or not text.startswith("#"):
+        return False
+    body = text[1:]
+    return len(body) in (3, 6) and all(c in _HEX_DIGITS for c in body)
 
 
 def coerce_default_for_type(default: str, var_type: str) -> str:
@@ -141,6 +162,8 @@ def coerce_default_for_type(default: str, var_type: str) -> str:
     if var_type == "bool":
         truthy = text.lower() in ("true", "1", "yes", "on")
         return "True" if truthy else "False"
+    if var_type == "color":
+        return text if is_valid_hex(text) else COLOR_DEFAULT
     return str(default or "")
 
 
@@ -175,15 +198,21 @@ BINDING_WIRINGS: dict[tuple[str, str], str] = {
 _PTYPE_VAR_COMPAT: dict[str, tuple[str, ...]] = {
     "boolean": ("bool", "int"),
     "number": ("int", "float"),
+    # Color rows show ``color``-typed vars first (the typed surface)
+    # but keep ``str`` as a fallback so existing string-hex bindings
+    # made before the ``color`` type existed still appear and stay
+    # editable.
+    "color": ("color", "str"),
 }
 
 
 def compatible_var_types(ptype: str) -> tuple[str, ...]:
     """Variable types that can sensibly bind to a schema property of
     the given ``ptype``. Defaults to ``("str",)`` — most editor types
-    (text, color, font, image, enum, anchor, etc.) want a StringVar.
-    Number rows accept int / float; boolean rows accept bool / int
-    (CTk's switch / checkbox use IntVar internally).
+    (text, font, image, enum, anchor, etc.) want a StringVar. Number
+    rows accept int / float; boolean rows accept bool / int (CTk's
+    switch / checkbox use IntVar internally); color rows accept color
+    + str (the typed surface plus the legacy string-hex flow).
     """
     return _PTYPE_VAR_COMPAT.get(ptype, ("str",))
 

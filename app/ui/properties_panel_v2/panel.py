@@ -1713,6 +1713,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         then rebuilds the panel so the cell re-renders as a chip and
         the editor overlay tears down cleanly.
         """
+        from tkinter import messagebox
         from app.core.commands import ChangePropertyCommand
         from app.core.variables import make_var_token
         if self.current_id is None:
@@ -1720,6 +1721,37 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         node = self.project.get_widget(self.current_id)
         if node is None:
             return
+        # Boolean property + int variable whose value isn't 0 / 1 is
+        # technically "compatible" (Tk's checkbox/switch use IntVar
+        # under the hood), but Tk only treats onvalue=1 / offvalue=0
+        # as meaningful. Anything else renders as off, and the first
+        # click overwrites the variable to 1 — silently losing the
+        # original value. Warn before binding so the user can pick
+        # between fixing the variable's default and binding anyway.
+        entry = self.project.get_variable(var_id)
+        if (
+            entry is not None
+            and prop.get("type") == "boolean"
+            and entry.type == "int"
+            and str(entry.default).strip().lower()
+            not in ("0", "1", "true", "false")
+        ):
+            ok = messagebox.askokcancel(
+                "Bind to non-boolean int?",
+                (
+                    f"Variable '{entry.name}' holds {entry.default!r}, "
+                    f"which isn't a boolean value (0 / 1).\n\n"
+                    "Tk's switch / checkbox only recognises 0 (off) and "
+                    "1 (on). The widget will render as off, and the "
+                    "first click will overwrite the variable to 1 — "
+                    f"the current value ({entry.default}) will be lost."
+                    "\n\nBind anyway?"
+                ),
+                icon="warning",
+                parent=self.winfo_toplevel(),
+            )
+            if not ok:
+                return
         before = node.properties.get(pname)
         token = make_var_token(var_id)
         if before == token:
@@ -1770,6 +1802,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         """
         from app.ui.variables_window import VariableEditDialog
         from app.core.commands import AddVariableCommand
+        from app.core.variables import compatible_var_types
         suggestion = self._suggest_var_name(pname)
         if scope == "local":
             doc = (
@@ -1783,12 +1816,19 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         else:
             existing = {v.name for v in self.project.variables}
             title = "Create global variable + bind"
-        # Default type guess based on the property's editor kind.
+        # Default type guess based on the property's editor kind, then
+        # constrain the Type dropdown to the property's compatibility
+        # set so the user can't, say, declare a String variable from a
+        # Boolean row's "+ Create new …" entry.
         ptype = prop.get("type", "")
+        compat_types = compatible_var_types(ptype)
         guess_type = {
             "boolean": "bool",
             "number": "int",
+            "color": "color",
         }.get(ptype, "str")
+        if guess_type not in compat_types:
+            guess_type = compat_types[0]
         dialog = VariableEditDialog(
             self.winfo_toplevel(),
             title=title,
@@ -1796,6 +1836,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             initial_type=guess_type,
             initial_default="",
             existing_names=existing,
+            allowed_types=compat_types,
         )
         dialog.wait_window()
         if dialog.result is None:

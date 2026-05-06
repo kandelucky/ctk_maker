@@ -215,8 +215,8 @@ Phase 1 / 1.5. Dataclass.
 |---|---|---|---|
 | `id` | `str` | UUID | Stable. Referenced by `var:<uuid>` tokens. |
 | `name` | `str` | `""` | Display name. Sanitized for export — see [variables.py:242](../../app/core/variables.py#L242). |
-| `type` | `"str" \| "int" \| "float" \| "bool"` | `"str"` | Maps to `tk.StringVar` / `IntVar` / `DoubleVar` / `BooleanVar`. |
-| `default` | `str` | `""` | String form of initial value. Coerced at runtime. |
+| `type` | `"str" \| "int" \| "float" \| "bool" \| "color"` | `"str"` | Maps to `tk.StringVar` / `IntVar` / `DoubleVar` / `BooleanVar`. `color` reuses `StringVar` — the type tag only changes the editor surface (swatch + picker) and bind-picker filtering for color-typed properties. |
+| `default` | `str` | `""` | String form of initial value. Coerced at runtime. For `color`, must be `#rgb` / `#rrggbb`; invalid input falls back to `#000000`. |
 | `scope` | `"global" \| "local"` | `"global"` | Lives on `Project.variables` (global) or `Document.local_variables` (local). |
 
 ### Tokens

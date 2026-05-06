@@ -102,9 +102,9 @@ Containers can also use **layout managers**: `place` (absolute), `vbox` (vertica
 
 ## Variables
 
-A **Variable** is a named, typed shared value (`str` / `int` / `float` / `bool`). Multiple widgets can bind to the same variable — when one updates the variable, every other bound widget sees the change at runtime.
+A **Variable** is a named, typed shared value (`str` / `int` / `float` / `bool` / `color`). Multiple widgets can bind to the same variable — when one updates the variable, every other bound widget sees the change at runtime.
 
-In Tk terms: variables are `tk.StringVar` / `IntVar` / `DoubleVar` / `BooleanVar` instances. Widgets bind via `textvariable=` or `variable=` constructor kwargs. CTkMaker handles the wiring automatically.
+In Tk terms: variables are `tk.StringVar` / `IntVar` / `DoubleVar` / `BooleanVar` instances. Widgets bind via `textvariable=` or `variable=` constructor kwargs. CTkMaker handles the wiring automatically. The `color` type is `StringVar`-backed (hex `#rrggbb` / `#rgb`) — the type tag only changes the editor surface (swatch + picker in the Variables window) and the bind-picker filter that decides which variables show up on color properties.
 
 ### Global vs Local scope
 

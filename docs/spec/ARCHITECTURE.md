@@ -35,7 +35,7 @@ The PyPI package at [ctkmaker/](../../ctkmaker/) is a name-reservation stub. Run
 | `project.py` | `Project` | Top-level container — documents, global variables, global object references, event bus, history. Public API contract. |
 | `document.py` | `Document` | One window in a project (Main or Toplevel). Widget tree + window properties + local variables + local references. |
 | `widget_node.py` | `WidgetNode` | Tree node — properties, children, handlers, group_id. |
-| `variables.py` | `VariableEntry`, `make_var_token`, `BINDING_WIRINGS` | Tk `*Var` schema + `var:<uuid>` token system + property→Tk-kwarg binding map. |
+| `variables.py` | `VariableEntry`, `make_var_token`, `BINDING_WIRINGS` | Tk `*Var` schema (`str` / `int` / `float` / `bool` / `color`) + `var:<uuid>` token system + property→Tk-kwarg binding map. Cosmetic bindings (no `BINDING_WIRINGS` entry — e.g. `fg_color`) are resolved as literals at build time and rebuilt by `workspace.core` on `variable_default_changed`; wired bindings update live via Tk's `textvariable` / `variable`. |
 | `object_references.py` | `ObjectReferenceEntry` | Typed widget references for behavior code. |
 | `event_bus.py` | `EventBus` | Pub/sub. Single instance per `Project`. |
 | `history.py` | `History` | Undo/redo with coalesce window. |

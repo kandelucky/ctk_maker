@@ -84,7 +84,7 @@ Two scopes:
 - **Global** — visible to every window in every page. On Project. Use for app-wide state.
 - **Local** — visible only to widgets in one window. On Document. Use for window-internal state.
 
-Four types: `str`, `int`, `float`, `bool` → backed by `tk.StringVar`, `IntVar`, `DoubleVar`, `BooleanVar`.
+Five types: `str`, `int`, `float`, `bool`, `color` → backed by `tk.StringVar`, `IntVar`, `DoubleVar`, `BooleanVar`, `StringVar`. `color` stores a hex string (`#rrggbb` / `#rgb`) and edits via swatch + picker; the bind-picker on color properties (`fg_color`, `text_color`, `border_color`, …) lists `color` and `str` variables.
 
 Bind from the Properties panel — click the ◇ chip next to a property.
 

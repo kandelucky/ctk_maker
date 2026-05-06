@@ -252,6 +252,10 @@ class Workspace(ctk.CTkFrame):
             "variable_type_changed", self._on_variable_type_changed,
         )
         bus.subscribe(
+            "variable_default_changed",
+            self._on_variable_default_changed,
+        )
+        bus.subscribe(
             "font_defaults_changed",
             lambda *_a, **_k: self._reapply_fonts_to_all_widgets(),
         )
@@ -1102,6 +1106,50 @@ class Workspace(ctk.CTkFrame):
         # remove the first child widget per click).
         _ = parent_id
         self._bound_props_cache.pop(widget_id, None)
+
+    def _on_variable_default_changed(
+        self, var_id: str, _new_default,
+    ) -> None:
+        """Refresh widgets bound to ``var_id`` whose binding is
+        cosmetic — i.e. resolves to a literal at build time because
+        the property has no ``BINDING_WIRINGS`` entry (``fg_color``,
+        ``text_color``, ``border_color``, …). Tk's
+        ``textvariable`` / ``variable`` already keeps wired bindings
+        live, so we don't touch widgets whose only bindings are wired.
+        """
+        from app.core.variables import BINDING_WIRINGS
+
+        affected_ids: list[str] = []
+        for wid, bound in self._bound_props_cache.items():
+            cosmetic_bindings = [
+                pname for pname, vid in bound.items()
+                if vid == var_id
+            ]
+            if not cosmetic_bindings:
+                continue
+            node = self.project.get_widget(wid)
+            if node is None:
+                continue
+            has_cosmetic = any(
+                (node.widget_type, pname) not in BINDING_WIRINGS
+                for pname in cosmetic_bindings
+            )
+            if has_cosmetic:
+                affected_ids.append(wid)
+        for wid in affected_ids:
+            node = self.project.get_widget(wid)
+            descriptor = get_descriptor(node.widget_type) if node else None
+            if node is None or descriptor is None:
+                continue
+
+            def _remove_subtree(n) -> None:
+                for c in list(n.children):
+                    _remove_subtree(c)
+                self.lifecycle.on_widget_removed(n.id)
+            _remove_subtree(node)
+            self.lifecycle.create_widget_subtree(node)
+            if wid == self.project.selected_id:
+                self._schedule_selection_redraw()
 
     def _on_variable_type_changed(self, var_id: str, _new_type) -> None:
         """The Project drops the cached ``tk.Variable`` when a type

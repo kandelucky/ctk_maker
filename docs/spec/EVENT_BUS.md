@@ -66,8 +66,8 @@ No event introspection, no priority, no async. If an event fires no one cares ab
 | `variable_added` | `(entry: VariableEntry)` | [project.py:1084](../../app/core/project.py#L1084), commands.py | Both globals and locals. |
 | `variable_removed` | `(var_id)` | [project.py:1113](../../app/core/project.py#L1113) | |
 | `variable_renamed` | `(var_id, new_name)` | [project.py:1133](../../app/core/project.py#L1133) | UUID stable; only display name changes. |
-| `variable_type_changed` | `(var_id, new_type)` | [project.py:1153](../../app/core/project.py#L1153) | `new_type` ∈ `"str" / "int" / "float" / "bool"`. |
-| `variable_default_changed` | `(var_id, new_default: str)` | [project.py:1175](../../app/core/project.py#L1175) | |
+| `variable_type_changed` | `(var_id, new_type)` | [project.py:1153](../../app/core/project.py#L1153) | `new_type` ∈ `"str" / "int" / "float" / "bool" / "color"`. |
+| `variable_default_changed` | `(var_id, new_default: str)` | [project.py:1175](../../app/core/project.py#L1175) | Wired bindings (`BINDING_WIRINGS` entries) update live via Tk's `textvariable` / `variable`. Cosmetic bindings (e.g. `fg_color`, `text_color`) are resolved as literals at build time, so `workspace.core` listens for this event and rebuilds the affected widget subtrees. |
 | `local_variables_migrated` | `(count)` | [project.py:1391](../../app/core/project.py#L1391) | Cross-doc paste. Triggers MainWindow status toast. |
 
 ### Object References
@@ -114,7 +114,7 @@ No event introspection, no priority, no async. If an event fires no one cares ab
 | `request_edit_description` | `()` | workspace/core.py:2036, chrome.py:647 | Description editor dialog |
 | `request_close_project` | `()` | chrome.py:683 | MainWindow close flow |
 | `request_export_document` | `(doc_id)` | chrome.py:621 | Export single document |
-| `request_open_variables_window` | `(scope, doc_id)` | chrome.py:654, controls.py:287, panel.py:1811, panel_commit.py:192/203 | F11 Variables window. `scope` ∈ `"global" / "local" / "objrefs"`. |
+| `request_open_variables_window` | `(scope, doc_id, variable_id=None)` | chrome.py:654, controls.py:287, panel.py:1811, panel_commit.py:192/203, panel_commit.py:_on_double_click (bound row) | F11 Variables window. `scope` ∈ `"global" / "local" / "objrefs"`. Optional `variable_id` pre-selects that row in the panel — used when the user double-clicks a variable-bound property. |
 | `palette_drop_request` | `(...)` | palette.py:450 | Workspace canvas — handles dropped widget type |
 | `component_drop_request` | `(...)` | components_panel.py | Workspace canvas — handles dropped `.ctkcomp` |
 
