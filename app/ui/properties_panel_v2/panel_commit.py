@@ -29,6 +29,7 @@ from app.core.commands import (
     ChangePropertyCommand,
     MultiChangePropertyCommand,
 )
+from app.core.variables import is_var_token, parse_var_token
 from app.ui.dialog_utils import safe_grab_set
 from app.ui.icons import load_tk_icon
 from app.widgets.layout_schema import (
@@ -230,6 +231,26 @@ class CommitMixin:
             return None
         pname = iid[2:]
         if self._disabled_states.get(pname):
+            return "break"
+        # Variable-bound row → jump to the Variables window with the
+        # bound entry pre-selected. Fires before per-editor dispatch
+        # so colour / number / string editors don't see a var token
+        # and try to seed a literal-value picker with it.
+        node = (
+            self.project.get_widget(self.current_id)
+            if self.current_id else None
+        )
+        value = node.properties.get(pname) if node is not None else None
+        if is_var_token(value):
+            var_id = parse_var_token(value)
+            scope = (
+                self.project.get_variable_scope(var_id)
+                if var_id else None
+            ) or "global"
+            doc_id = self.project.active_document_id
+            self.project.event_bus.publish(
+                "request_open_variables_window", scope, doc_id, var_id,
+            )
             return "break"
         prop = self._find_prop_by_name(pname)
         if prop is None:

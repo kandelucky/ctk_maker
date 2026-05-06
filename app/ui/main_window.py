@@ -2026,7 +2026,10 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         self._history_var.set(not self._history_var.get())
         self._on_toggle_history_window()
 
-    def _on_toggle_variables_window(self, scope: str = "global") -> None:
+    def _on_toggle_variables_window(
+        self, scope: str = "global",
+        variable_id: str | None = None,
+    ) -> None:
         want_open = bool(self._variables_var.get())
         alive = (
             self._variables_window is not None
@@ -2037,10 +2040,11 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 self, self.project,
                 on_close=self._on_variables_window_closed,
                 initial_scope=scope,
+                initial_variable_id=variable_id,
             )
         elif want_open and alive:
             if self._variables_window is not None:
-                self._variables_window.show_scope(scope)
+                self._variables_window.show_scope(scope, variable_id)
         elif not want_open and alive:
             if self._variables_window is not None:
                 try:
@@ -2051,11 +2055,14 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
 
     def _on_request_open_variables_window(
         self, scope: str = "global", _doc_id: str | None = None,
+        variable_id: str | None = None,
     ) -> None:
         """Bus-routed open. Sets the toggle var so menubar / F11 stay
-        in sync, then switches to the requested scope tab."""
+        in sync, then switches to the requested scope tab. Optional
+        ``variable_id`` pre-selects the matching row — used by the
+        properties panel's double-click on a bound row."""
         self._variables_var.set(True)
-        self._on_toggle_variables_window(scope)
+        self._on_toggle_variables_window(scope, variable_id)
 
     def _on_variables_window_closed(self) -> None:
         self._variables_window = None

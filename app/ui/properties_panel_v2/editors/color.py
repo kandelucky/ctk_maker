@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import tkinter as tk
 
+from app.core.variables import is_var_token
+
 from ..constants import BOOL_OFF_FG, TREE_FG, VALUE_BG
 from ..overlays import (
     SLOT_COLOR,
@@ -77,7 +79,7 @@ class ColorEditor(Editor):
             )
         overlay.bind(
             "<Button-1>",
-            lambda _e, p=pname: panel._pick_color(p),
+            lambda _e, p=pname: self._open_picker_if_unbound(panel, p),
         )
         panel.overlays.add(iid, SLOT_COLOR, overlay, place_color_swatch)
         if self._is_clearable(panel, prop):
@@ -185,5 +187,13 @@ class ColorEditor(Editor):
                 pass
 
     def on_double_click(self, panel, pname, prop, event) -> bool:
+        # Var-bound rows are intercepted in panel_commit._on_double_click
+        # before this dispatch (jumps to the Variables window), so the
+        # editor only sees literal values here.
         panel._pick_color(pname)
         return True
+
+    def _open_picker_if_unbound(self, panel, pname: str) -> None:
+        if is_var_token(self._read_value(panel, pname)):
+            return
+        panel._pick_color(pname)
