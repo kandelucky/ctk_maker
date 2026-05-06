@@ -115,7 +115,14 @@ class CTkLabelDescriptor(WidgetDescriptor):
     @classmethod
     def compute_derived(cls, properties: dict) -> dict:
         result: dict = {}
+        prev_stash = properties.get("_font_size_pre_autofit")
         if not properties.get("font_autofit"):
+            # Toggling Best Fit off — restore the size we stashed when
+            # it turned on, so the user gets back their pre-autofit
+            # value instead of the autofit-derived one.
+            if prev_stash is not None:
+                result["font_size"] = prev_stash
+                result["_font_size_pre_autofit"] = None
             return result
         text = properties.get("text") or ""
         if not text:
@@ -128,6 +135,14 @@ class CTkLabelDescriptor(WidgetDescriptor):
         bold = bool(properties.get("font_bold", False))
         new_size = cls._compute_autofit_size(text, width, height, bold)
         if new_size > 0:
+            # Stash the user's size on the OFF→ON transition only.
+            # While autofit stays on, font_size already holds a derived
+            # value, so re-stashing on subsequent triggers (resize,
+            # bold toggle) would clobber the original.
+            if prev_stash is None:
+                result["_font_size_pre_autofit"] = (
+                    properties.get("font_size", 13)
+                )
             result["font_size"] = new_size
         return result
 
