@@ -10,12 +10,13 @@ Covers:
 - ``short_type_label`` known-type mapping + identity fallback.
 - ``required_scope_for`` Window / Dialog → global enforcement.
 - ``Project`` and ``Document`` ``to_dict`` / ``from_dict`` round-trip.
-- ``_migrate_behavior_fields_to_object_references`` — legacy dict
-  merge, .py annotation merge, idempotence, dict-clear on success.
+- Legacy ``behavior_field_values`` JSON migration — handled inside
+  ``Document.from_dict``, default target_type ``CTkLabel``,
+  idempotent on already-present names.
 - ``AddObjectReferenceCommand``, ``DeleteObjectReferenceCommand``,
   ``RenameObjectReferenceCommand``, ``SetObjectReferenceTargetCommand``
   redo / undo + scope routing.
-- ``_emit_behavior_field_lines`` — local widget refs + global doc
+- ``_emit_object_reference_lines`` — local widget refs + global doc
   refs both emit ``self._behavior.<name> = ...`` lines, missing
   targets are silently dropped.
 """
@@ -45,10 +46,7 @@ from app.core.object_references import (
 from app.core.project import Project
 from app.core.widget_node import WidgetNode
 from app.io import code_exporter
-from app.io.code_exporter import _emit_behavior_field_lines
-from app.io.project_loader import (
-    _migrate_behavior_fields_to_object_references,
-)
+from app.io.code_exporter import _emit_object_reference_lines
 
 
 # ---------------------------------------------------------------------
@@ -237,113 +235,74 @@ def test_project_holds_global_refs_separately_from_doc_locals():
 
 
 # ---------------------------------------------------------------------
-# Migration — _migrate_behavior_fields_to_object_references
+# Legacy behavior_field_values JSON migration (Document.from_dict)
 # ---------------------------------------------------------------------
-class _MigrationProject:
-    """Minimal project shim — the migration only reads
-    ``project.documents`` and ``project.path``.
+def test_legacy_json_migration_converts_to_local_object_references():
+    """A pre-v1.10.8 ``.ctkproj`` carrying a ``behavior_field_values``
+    dict is migrated to ``local_object_references`` entries during
+    ``Document.from_dict``. Target type defaults to ``CTkLabel``
+    because the legacy JSON didn't carry type info.
     """
-
-    def __init__(self, documents, path=None):
-        self.documents = documents
-        self.path = path
-
-
-def test_migration_converts_legacy_field_values_to_entries():
-    doc = Document(name="Main")
-    doc.behavior_field_values = {"target_label": "widget-1"}
-    project = _MigrationProject([doc])
-    _migrate_behavior_fields_to_object_references(project)
+    payload = {
+        "id": "doc-1", "name": "Main",
+        "width": 800, "height": 600,
+        "behavior_field_values": {"target_label": "widget-1"},
+    }
+    doc = Document.from_dict(payload)
     assert len(doc.local_object_references) == 1
     entry = doc.local_object_references[0]
     assert entry.name == "target_label"
     assert entry.target_id == "widget-1"
-    assert entry.scope == "local"
-    # Legacy dict cleared so the next save drops the key.
-    assert doc.behavior_field_values == {}
-
-
-def test_migration_pulls_target_type_from_py_annotation(tmp_path):
-    doc = Document(name="Login")
-    doc.behavior_field_values = {"status_label": "widget-1"}
-    # Build the project folder so behavior_file_path resolves.
-    project_dir = tmp_path / "MyProject"
-    (project_dir / "assets" / "scripts" / "test").mkdir(parents=True)
-    behavior_file = (
-        project_dir / "assets" / "scripts" / "test" / "login.py"
-    )
-    behavior_file.write_text(textwrap.dedent("""
-        class LoginPage:
-            status_label: ref[CTkLabel]
-
-            def setup(self, window):
-                pass
-    """), encoding="utf-8")
-    project_file = project_dir / "test.ctkproj"
-    project_file.write_text("{}", encoding="utf-8")
-    project = _MigrationProject([doc], path=str(project_file))
-    _migrate_behavior_fields_to_object_references(project)
-    assert len(doc.local_object_references) == 1
-    entry = doc.local_object_references[0]
     assert entry.target_type == "CTkLabel"
+    assert entry.scope == "local"
 
 
-def test_migration_creates_unbound_entry_from_annotation_only(tmp_path):
-    doc = Document(name="Login")
-    project_dir = tmp_path / "MyProject"
-    (project_dir / "assets" / "scripts" / "test").mkdir(parents=True)
-    behavior_file = (
-        project_dir / "assets" / "scripts" / "test" / "login.py"
-    )
-    behavior_file.write_text(textwrap.dedent("""
-        class LoginPage:
-            target_label: ref[CTkLabel]
-
-            def setup(self, window):
-                pass
-    """), encoding="utf-8")
-    project_file = project_dir / "test.ctkproj"
-    project_file.write_text("{}", encoding="utf-8")
-    project = _MigrationProject([doc], path=str(project_file))
-    _migrate_behavior_fields_to_object_references(project)
+def test_legacy_json_migration_skips_existing_names():
+    """When ``local_object_references`` already contains an entry with
+    the same name (e.g. a partially-migrated project re-saved and
+    re-loaded), the legacy entry is dropped — the modern entry wins.
+    """
+    payload = {
+        "id": "doc-1", "name": "Main",
+        "width": 800, "height": 600,
+        "local_object_references": [{
+            "id": "ref-1", "name": "status_label",
+            "target_type": "CTkButton", "scope": "local",
+            "target_id": "widget-7",
+        }],
+        "behavior_field_values": {"status_label": "different-widget"},
+    }
+    doc = Document.from_dict(payload)
     assert len(doc.local_object_references) == 1
     entry = doc.local_object_references[0]
-    assert entry.name == "target_label"
-    assert entry.target_id == ""  # declared but not bound
+    assert entry.target_id == "widget-7"
+    assert entry.target_type == "CTkButton"
 
 
-def test_migration_is_no_op_without_legacy_state():
-    doc = Document(name="Main")
-    project = _MigrationProject([doc])
-    _migrate_behavior_fields_to_object_references(project)
+def test_legacy_json_migration_no_op_without_dict():
+    payload = {
+        "id": "doc-1", "name": "Main",
+        "width": 800, "height": 600,
+    }
+    doc = Document.from_dict(payload)
     assert doc.local_object_references == []
 
 
-def test_migration_skips_already_migrated_names():
-    doc = Document(name="Main")
-    doc.local_object_references.append(ObjectReferenceEntry(
-        id="ref-1", name="status_label",
-        target_type="CTkLabel", scope="local",
-        target_id="widget-7",
-    ))
-    doc.behavior_field_values = {"status_label": "different-widget"}
-    project = _MigrationProject([doc])
-    _migrate_behavior_fields_to_object_references(project)
-    # Existing entry untouched (target_id stays at the original).
-    assert len(doc.local_object_references) == 1
-    assert doc.local_object_references[0].target_id == "widget-7"
-
-
-def test_migration_falls_back_to_ctklabel_when_no_annotation():
-    """Legacy dict with no .py file → fall back to ``CTkLabel`` since
-    the dict alone doesn't carry a target_type. User can adjust in
-    F11 if it matters; bindings still resolve at export by widget id.
+def test_legacy_json_migration_drops_save_format():
+    """Round-trip: a legacy dict in JSON should NOT round-trip back
+    on save — ``to_dict`` must omit ``behavior_field_values`` so
+    the next save format is the modern one.
     """
-    doc = Document(name="Main")
-    doc.behavior_field_values = {"target": "widget-1"}
-    project = _MigrationProject([doc])
-    _migrate_behavior_fields_to_object_references(project)
-    assert doc.local_object_references[0].target_type == "CTkLabel"
+    payload = {
+        "id": "doc-1", "name": "Main",
+        "width": 800, "height": 600,
+        "behavior_field_values": {"target_label": "widget-1"},
+    }
+    doc = Document.from_dict(payload)
+    saved = doc.to_dict()
+    assert "behavior_field_values" not in saved
+    # The migrated entry persists in the modern slot.
+    assert len(saved.get("local_object_references", [])) == 1
 
 
 # ---------------------------------------------------------------------
@@ -471,7 +430,7 @@ def test_command_no_op_when_entry_id_missing():
 
 
 # ---------------------------------------------------------------------
-# Code exporter — _emit_behavior_field_lines for locals + globals
+# Code exporter — _emit_object_reference_lines for locals + globals
 # ---------------------------------------------------------------------
 @pytest.fixture(autouse=True)
 def _reset_exporter_globals():
@@ -492,7 +451,7 @@ def test_emit_field_lines_writes_local_refs_using_widget_var_map():
     project = Project()
     code_exporter._EXPORT_PROJECT = project
     code_exporter._DOC_ID_TO_CLASS = {}
-    lines = _emit_behavior_field_lines(
+    lines = _emit_object_reference_lines(
         doc, id_to_var={"widget-7": "label_1"}, instance_prefix="self.",
     )
     assert len(lines) == 1
@@ -509,7 +468,7 @@ def test_emit_field_lines_writes_global_refs_using_class_map():
     ))
     code_exporter._EXPORT_PROJECT = project
     code_exporter._DOC_ID_TO_CLASS = {"dialog-doc-id": "SettingsDialog"}
-    lines = _emit_behavior_field_lines(
+    lines = _emit_object_reference_lines(
         doc, id_to_var={}, instance_prefix="self.",
     )
     assert len(lines) == 1
@@ -531,7 +490,7 @@ def test_emit_field_lines_emits_locals_then_globals():
     ))
     code_exporter._EXPORT_PROJECT = project
     code_exporter._DOC_ID_TO_CLASS = {"dialog-doc-id": "SettingsDialog"}
-    lines = _emit_behavior_field_lines(
+    lines = _emit_object_reference_lines(
         doc, id_to_var={"widget-7": "label_1"}, instance_prefix="self.",
     )
     assert len(lines) == 2
@@ -549,7 +508,7 @@ def test_emit_field_lines_drops_unbound_local():
     project = Project()
     code_exporter._EXPORT_PROJECT = project
     code_exporter._DOC_ID_TO_CLASS = {}
-    lines = _emit_behavior_field_lines(
+    lines = _emit_object_reference_lines(
         doc, id_to_var={}, instance_prefix="self.",
     )
     assert lines == []
@@ -565,7 +524,7 @@ def test_emit_field_lines_drops_local_with_missing_widget():
     project = Project()
     code_exporter._EXPORT_PROJECT = project
     code_exporter._DOC_ID_TO_CLASS = {}
-    lines = _emit_behavior_field_lines(
+    lines = _emit_object_reference_lines(
         doc, id_to_var={},  # widget-stale not present
         instance_prefix="self.",
     )
@@ -587,7 +546,7 @@ def test_emit_field_lines_skips_global_target_outside_export():
     ))
     code_exporter._EXPORT_PROJECT = project
     code_exporter._DOC_ID_TO_CLASS = {}  # other doc absent
-    lines = _emit_behavior_field_lines(
+    lines = _emit_object_reference_lines(
         doc, id_to_var={}, instance_prefix="self.",
     )
     assert lines == []
@@ -603,7 +562,7 @@ def test_emit_field_lines_skips_unbound_global():
     ))
     code_exporter._EXPORT_PROJECT = project
     code_exporter._DOC_ID_TO_CLASS = {"some-other-doc": "Some"}
-    lines = _emit_behavior_field_lines(
+    lines = _emit_object_reference_lines(
         doc, id_to_var={}, instance_prefix="self.",
     )
     assert lines == []

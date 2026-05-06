@@ -1566,17 +1566,17 @@ class ObjectReferencesPanel(ctk.CTkFrame):
                 behavior_class_name, behavior_file_path,
             )
             from app.io.scripts import (
-                add_behavior_field_annotation,
-                delete_behavior_field_annotation,
+                add_object_reference_annotation,
+                delete_object_reference_annotation,
             )
             file_path = behavior_file_path(path, doc)
             if file_path is None or not file_path.exists():
                 return
             class_name = behavior_class_name(doc)
-            delete_behavior_field_annotation(
+            delete_object_reference_annotation(
                 file_path, class_name, old_name,
             )
-            add_behavior_field_annotation(
+            add_object_reference_annotation(
                 file_path, class_name, new_name, entry.target_type,
             )
         except Exception:
@@ -1596,12 +1596,12 @@ class ObjectReferencesPanel(ctk.CTkFrame):
                 behavior_class_name, behavior_file_path,
             )
             from app.io.scripts import (
-                delete_behavior_field_annotation,
+                delete_object_reference_annotation,
             )
             file_path = behavior_file_path(path, doc)
             if file_path is None or not file_path.exists():
                 return
-            delete_behavior_field_annotation(
+            delete_object_reference_annotation(
                 file_path, behavior_class_name(doc), entry.name,
             )
         except Exception:

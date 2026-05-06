@@ -386,7 +386,7 @@ _GLOBAL_VAR_ATTR: dict = {}
 _VAR_ID_TO_ATTR: dict = {}
 # v1.10.8 — doc.id → class name emitted in this generate_code run.
 # Populated at the top of ``generate_code`` once class names are
-# assigned, consumed by ``_emit_behavior_field_lines`` so global
+# assigned, consumed by ``_emit_object_reference_lines`` so global
 # Window/Dialog refs resolve to the right class symbol. Reset
 # alongside the variable maps.
 _DOC_ID_TO_CLASS: dict = {}
@@ -1400,7 +1400,7 @@ def _generate_code_inner(
         used_class_names.add(cls_name)
         class_names.append((doc, cls_name))
     # v1.10.8 — populate the global doc.id → class-name map so
-    # _emit_behavior_field_lines can resolve global Window/Dialog
+    # _emit_object_reference_lines can resolve global Window/Dialog
     # refs to the right symbol. The map is reset at the top of
     # generate_code so we never carry state across runs.
     global _DOC_ID_TO_CLASS
@@ -1680,12 +1680,6 @@ def _doc_needs_behavior(doc: Document) -> bool:
         e.target_id for e in (doc.local_object_references or [])
     ):
         return True
-    # Legacy v1.10.7- field values — kept for the rare case where
-    # migration hasn't run (e.g. exporter invoked on a fresh-loaded
-    # legacy project before any save). Will become dead code once
-    # migration always runs on load.
-    if doc.behavior_field_values:
-        return True
     return False
 
 
@@ -1872,7 +1866,7 @@ def _build_id_to_var_name(doc: Document) -> dict[str, str]:
     return _resolve_var_names(doc)
 
 
-def _emit_behavior_field_lines(
+def _emit_object_reference_lines(
     doc: Document,
     id_to_var: dict[str, str],
     instance_prefix: str,
@@ -2071,7 +2065,7 @@ def _emit_class_body(
     # attributes set during the build.
     if _doc_needs_behavior(doc) and (doc.local_object_references):
         id_to_var = _build_id_to_var_name(doc)
-        field_lines = _emit_behavior_field_lines(doc, id_to_var, "self.")
+        field_lines = _emit_object_reference_lines(doc, id_to_var, "self.")
         lines.extend(field_lines)
     # Phase 2 setup() — runs AFTER _build_ui + Phase 3 field
     # assignments so user code can reference both ``self.<widget>``

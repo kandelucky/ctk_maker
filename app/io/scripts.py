@@ -169,7 +169,7 @@ class FieldSpec:
         self.lineno = lineno
 
 
-def parse_behavior_class_fields(
+def parse_object_reference_fields(
     file_path: str | Path,
     class_name: str,
 ) -> list[FieldSpec]:
@@ -225,7 +225,7 @@ def _extract_ref_type(annotation: ast.expr) -> str | None:
     return None
 
 
-def existing_behavior_field_names(
+def existing_object_reference_names(
     file_path: str | Path,
     class_name: str,
 ) -> set[str]:
@@ -259,7 +259,7 @@ def existing_behavior_field_names(
     return out
 
 
-def add_behavior_field_annotation(
+def add_object_reference_annotation(
     file_path: str | Path,
     class_name: str,
     field_name: str,
@@ -276,7 +276,7 @@ def add_behavior_field_annotation(
 
     Idempotent — returns ``True`` unconditionally on success even
     when the field already existed (caller checks
-    ``existing_behavior_field_names`` first to surface the collision
+    ``existing_object_reference_names`` first to surface the collision
     to the user). Returns ``False`` for missing files / parse
     failures / write errors.
     """
@@ -355,7 +355,7 @@ def add_behavior_field_annotation(
     return True
 
 
-def delete_behavior_field_annotation(
+def delete_object_reference_annotation(
     file_path: str | Path,
     class_name: str,
     field_name: str,
@@ -588,7 +588,7 @@ def ensure_relative_import_in_behavior_file(
     return True
 
 
-def suggest_behavior_field_name(
+def suggest_object_reference_name(
     widget_name: str,
     widget_type: str,
     existing_names: set[str],

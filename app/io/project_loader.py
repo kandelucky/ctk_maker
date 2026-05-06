@@ -355,15 +355,12 @@ def load_project(
     # event per call so MainWindow shows one toast per repaired doc.
     _repair_cross_doc_local_bindings(project)
 
-    # v1.10.8 Behavior Field migration. Pre-1.10.8 each Document
-    # carried a ``behavior_field_values`` dict + per-window .py file
-    # with ``name: ref[Type]`` annotations. v1.10.8 unifies both into
-    # ``Document.local_object_references``. The migration reads any
-    # legacy state on this load and rewrites — the legacy dict is
-    # then cleared so the next save drops it. The .py annotations are
-    # left intact (they remain valid Python; the new model just
-    # stops depending on them as the source of truth).
-    _migrate_behavior_fields_to_object_references(project)
+    # Legacy ``behavior_field_values`` JSON entries (pre-v1.10.8) are
+    # converted to ``local_object_references`` inside
+    # ``Document.from_dict`` itself, so by the time we reach this
+    # point every doc already has the migrated entries. Target type
+    # defaults to ``CTkLabel`` because the legacy JSON didn't carry
+    # type info — the user can adjust via F11 if needed.
 
     # Name counters are now per-document (Document.name_counters) and
     # round-trip through Document.from_dict / to_dict. Legacy v1 files
@@ -371,71 +368,6 @@ def load_project(
     # added into a legacy project will restart from 0 for each doc.
     # Harmless: the first new widget inherits the base name; rename
     # as needed.
-
-
-def _migrate_behavior_fields_to_object_references(project) -> None:
-    """One-shot v1.10.7 → v1.10.8 migration. Walks every document and
-    converts the legacy ``Document.behavior_field_values`` dict +
-    behavior-file ``ref[Type]`` annotations into
-    ``Document.local_object_references`` entries. Idempotent — runs
-    on every load; existing object_references are left alone, only
-    the legacy dict feeds new entries (and only when the entry isn't
-    already present).
-    """
-    if not project.documents:
-        return
-    project_path = getattr(project, "path", None)
-    if not project_path:
-        # Unsaved projects can't have a behavior file on disk; just
-        # convert any in-memory legacy values directly.
-        for doc in project.documents:
-            _migrate_one_doc_behavior_fields(doc, project_path=None)
-        return
-    for doc in project.documents:
-        _migrate_one_doc_behavior_fields(doc, project_path=project_path)
-
-
-def _migrate_one_doc_behavior_fields(doc, project_path) -> None:
-    legacy = dict(doc.behavior_field_values or {})
-    annotations: dict[str, str] = {}
-    if project_path:
-        try:
-            from app.core.script_paths import (
-                behavior_class_name, behavior_file_path,
-            )
-            from app.io.scripts import parse_behavior_class_fields
-            file_path = behavior_file_path(project_path, doc)
-            if file_path is not None and file_path.exists():
-                class_name = behavior_class_name(doc)
-                for spec in parse_behavior_class_fields(
-                    file_path, class_name,
-                ):
-                    annotations[spec.name] = spec.type_name
-        except Exception:
-            pass
-    if not legacy and not annotations:
-        return
-    from app.core.object_references import ObjectReferenceEntry
-    existing_names = {e.name for e in doc.local_object_references}
-    union_names = set(legacy.keys()) | set(annotations.keys())
-    for name in sorted(union_names):
-        if name in existing_names:
-            continue
-        target_type = annotations.get(name)
-        if target_type is None:
-            target_type = "CTkLabel"
-        entry = ObjectReferenceEntry(
-            name=name,
-            target_type=target_type,
-            scope="local",
-            target_id=legacy.get(name, ""),
-        )
-        doc.local_object_references.append(entry)
-        existing_names.add(name)
-    # Clear the legacy dict — the new save format omits it. The .py
-    # annotations remain on disk; the runtime annotation auto-sync
-    # in v1.10.8+ keeps both views aligned going forward.
-    doc.behavior_field_values = {}
 
 
 def _repair_cross_doc_local_bindings(project) -> None:

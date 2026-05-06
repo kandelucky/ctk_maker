@@ -90,6 +90,9 @@
   "app/ui/properties_panel_v2/editors/segment_values.py": {
     "segoe_ui": 1
   },
+  "app/ui/properties_panel_v2/editors/unit.py": {
+    "segoe_ui": 1
+  },
   "app/ui/properties_panel_v2/panel.py": {
     "segoe_ui": 13
   },
@@ -97,7 +100,7 @@
     "segoe_ui": 5
   },
   "app/ui/properties_panel_v2/panel_schema.py": {
-    "segoe_ui": 5
+    "segoe_ui": 2
   },
   "app/ui/quick_export_dialog.py": {
     "segoe_ui": 10
@@ -109,10 +112,10 @@
     "segoe_ui": 8
   },
   "app/ui/settings_dialog.py": {
-    "segoe_ui": 20
+    "segoe_ui": 23
   },
   "app/ui/startup_dialog.py": {
-    "segoe_ui": 4
+    "segoe_ui": 5
   },
   "app/ui/toolbar.py": {
     "segoe_ui": 2

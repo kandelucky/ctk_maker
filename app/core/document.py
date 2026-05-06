@@ -96,11 +96,6 @@ class Document:
         # project. Not persisted — load_project rebuilds it from
         # existing widget names.
         self.name_counters: dict[str, int] = {}
-        # Legacy v1.10.7- Phase 3 Behavior Field bindings — kept for
-        # one-shot migration on load (project_loader rewrites these
-        # into ``local_object_references`` and clears the dict so it
-        # never re-saves). New projects never populate this.
-        self.behavior_field_values: dict[str, str] = {}
         # v1.10.8 Object References — local scope holds ``ref[Widget]``
         # slots whose target lives inside this document. Globals
         # (``ref[Window]`` / ``ref[Dialog]``) live on
@@ -133,10 +128,6 @@ class Document:
             result["local_variables"] = [
                 v.to_dict() for v in self.local_variables
             ]
-        if self.behavior_field_values:
-            result["behavior_field_values"] = dict(
-                self.behavior_field_values,
-            )
         if self.local_object_references:
             result["local_object_references"] = [
                 r.to_dict() for r in self.local_object_references
@@ -189,12 +180,6 @@ class Document:
                 str(k): int(v) for k, v in raw_counters.items()
                 if isinstance(v, (int, float))
             }
-        raw_fields = data.get("behavior_field_values")
-        if isinstance(raw_fields, dict):
-            doc.behavior_field_values = {
-                str(k): str(v) for k, v in raw_fields.items()
-                if isinstance(v, str) and v
-            }
         raw_refs = data.get("local_object_references")
         if isinstance(raw_refs, list):
             for raw in raw_refs:
@@ -203,4 +188,33 @@ class Document:
                 entry = ObjectReferenceEntry.from_dict(raw)
                 entry.scope = "local"
                 doc.local_object_references.append(entry)
+        # v1.10.7- legacy migration: a ``behavior_field_values`` dict in
+        # the JSON payload predates Object References. Convert each
+        # entry to a local ObjectReferenceEntry with target_type
+        # defaulting to ``CTkLabel`` (the JSON didn't carry type info).
+        # Skipped when an entry with the same name already exists in
+        # ``local_object_references`` so a partial-migration replay is
+        # idempotent. The next save drops the legacy key naturally
+        # because ``to_dict`` no longer emits it.
+        raw_legacy = data.get("behavior_field_values")
+        if isinstance(raw_legacy, dict):
+            existing_names = {
+                r.name for r in doc.local_object_references
+            }
+            for raw_name, raw_widget_id in raw_legacy.items():
+                if not isinstance(raw_name, str) or not raw_name:
+                    continue
+                if not isinstance(raw_widget_id, str):
+                    continue
+                if raw_name in existing_names:
+                    continue
+                doc.local_object_references.append(
+                    ObjectReferenceEntry(
+                        name=raw_name,
+                        target_type="CTkLabel",
+                        scope="local",
+                        target_id=raw_widget_id,
+                    ),
+                )
+                existing_names.add(raw_name)
         return doc

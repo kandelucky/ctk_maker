@@ -170,12 +170,6 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         bus.subscribe(
             "widget_handler_changed", self._on_widget_handler_changed,
         )
-        # Phase 3 — Behavior Field assignments mutate the active doc's
-        # field map; repaint the Window panel so Behavior Fields rows
-        # reflect the new bound widget label.
-        bus.subscribe(
-            "behavior_field_changed", self._on_behavior_field_changed,
-        )
         # v1.10.8 — Object Reference mutations (add / remove / rename
         # / target change) repaint the Window panel + the toggle row
         # on the active widget panel so all views stay in sync.
@@ -982,15 +976,6 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             self._show_event_menu(event, iid)
             return
         # Phase 3 — Behavior Field rows route to their own menu.
-        # iid shape is ``behaviorfield:<field_name>`` (the empty-state
-        # row uses ``behaviorfield:empty`` so we exclude it
-        # explicitly to keep that hint passive).
-        if (
-            iid and iid.startswith("behaviorfield:")
-            and iid != "behaviorfield:empty"
-        ):
-            self._show_behavior_field_menu(event, iid)
-            return
         if self.current_id is None:
             return
         if not iid or not iid.startswith("p:"):
@@ -1292,296 +1277,6 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             path, behavior_class_name(document), method_name,
         )
 
-    def _show_behavior_field_menu(self, event, iid: str) -> None:
-        """Right-click menu for a Behavior Field row. Three entries:
-        Open in editor (jump cursor to the annotation line),
-        Clear binding (only when bound), and Delete field… (rewrites
-        the .py to drop the annotation, clears the binding from
-        ``Document.behavior_field_values``).
-        """
-        field_name = iid.split(":", 1)[1]
-        if self.project is None or self.project.active_document is None:
-            return
-        document = self.project.active_document
-        is_bound = field_name in document.behavior_field_values
-        menu = tk.Menu(self.tree, tearoff=0)
-        menu.add_command(
-            label="Open in editor",
-            command=lambda: self._open_behavior_field_in_editor(field_name),
-        )
-        menu.add_separator()
-        menu.add_command(
-            label="Clear binding",
-            command=lambda: self._clear_behavior_field(field_name),
-            state=("normal" if is_bound else "disabled"),
-        )
-        menu.add_command(
-            label="Delete field…",
-            command=lambda: self._delete_behavior_field(field_name),
-        )
-        try:
-            menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            menu.grab_release()
-
-    def _open_behavior_field_in_editor(self, field_name: str) -> None:
-        """Jump the editor cursor to the field's annotation line so
-        the user can fix the type / rename / inline-edit. Falls back
-        to opening the file at line 1 when AST scan can't locate the
-        field (out of date scan, syntax error, etc.).
-        """
-        from app.core.settings import load_settings
-        from app.core.script_paths import (
-            behavior_class_name, behavior_file_path,
-        )
-        from app.io.scripts import (
-            launch_editor,
-            parse_behavior_class_fields,
-            resolve_project_root_for_editor as _resolve_project_root,
-        )
-        if not getattr(self.project, "path", None):
-            return
-        if self.project.active_document is None:
-            return
-        document = self.project.active_document
-        file_path = behavior_file_path(self.project.path, document)
-        if file_path is None or not file_path.exists():
-            return
-        class_name = behavior_class_name(document)
-        line = None
-        for spec in parse_behavior_class_fields(file_path, class_name):
-            if spec.name == field_name:
-                line = spec.lineno or None
-                break
-        settings = load_settings() or {}
-        editor_command = settings.get("editor_command", "")
-        launch_editor(
-            file_path,
-            line=line,
-            editor_command=editor_command,
-            project_root=_resolve_project_root(self.project),
-        )
-
-    def _delete_behavior_field(self, field_name: str) -> None:
-        """Remove the field's annotation from the per-window
-        behavior class + clear any saved widget binding. Confirms
-        first via a yes/no dialog so an accidental right-click drag
-        doesn't nuke a slot the user spent time wiring.
-        """
-        from tkinter import messagebox
-        from app.core.commands import SetBehaviorFieldCommand
-        from app.core.script_paths import (
-            behavior_class_name, behavior_file_path,
-        )
-        from app.io.scripts import delete_behavior_field_annotation
-        if self.project is None or self.project.active_document is None:
-            return
-        if not getattr(self.project, "path", None):
-            return
-        document = self.project.active_document
-        file_path = behavior_file_path(self.project.path, document)
-        if file_path is None or not file_path.exists():
-            return
-        class_name = behavior_class_name(document)
-        is_bound = field_name in document.behavior_field_values
-        bound_hint = (
-            "\n\nThis will also clear the widget binding."
-            if is_bound else ""
-        )
-        if not messagebox.askyesno(
-            "Delete behavior field",
-            (
-                f"Remove `{field_name}` from the {class_name} class?"
-                f"{bound_hint}\n\n"
-                "The annotation line will be deleted from the "
-                "behavior file. Methods that reference "
-                f"`self.{field_name}` will need to be updated by hand."
-            ),
-            parent=self.winfo_toplevel(),
-        ):
-            return
-        # Clear the binding first via the standard command so the
-        # mutation lands on the undo stack (a future undo restores
-        # the binding even though the annotation lives on a separate
-        # text-mutation path that does NOT undo). The annotation
-        # delete is a permanent text edit — the user re-runs Add
-        # Field to bring it back, same as Phase 2 method delete.
-        if is_bound:
-            cmd = SetBehaviorFieldCommand(document.id, field_name, "")
-            cmd.redo(self.project)
-            self.project.history.push(cmd)
-        delete_behavior_field_annotation(file_path, class_name, field_name)
-        # Force a panel rebuild so the now-deleted row disappears
-        # from the Behavior Fields group — the file change isn't
-        # tied to a project event the panel listens to, so push a
-        # synthetic refresh.
-        self._on_behavior_field_changed(document.id, field_name)
-
-    def _show_add_behavior_field_dialog(self) -> None:
-        """Phase 3 Step 1.x — open the Add Field dialog. Picks a
-        widget, auto-suggests a Python identifier, then performs
-        three coordinated mutations:
-
-        1. ``add_behavior_field_annotation`` writes the
-           ``<name>: ref[<Type>]`` line above the first method on
-           the active doc's behavior class.
-        2. ``ensure_imports_in_behavior_file`` adds the matching
-           ``from .._runtime import ref`` and ``from customtkinter
-           import <Type>`` rows when missing.
-        3. ``SetBehaviorFieldCommand`` pushes the resulting binding
-           through history so the picked widget id round-trips
-           through the project file + supports undo.
-        """
-        from tkinter import messagebox
-        from app.core.commands import SetBehaviorFieldCommand
-        from app.core.script_paths import (
-            behavior_class_name, behavior_file_path,
-        )
-        from app.io.scripts import (
-            add_behavior_field_annotation,
-            ensure_imports_in_behavior_file,
-            existing_behavior_field_names,
-            load_or_create_behavior_file,
-        )
-        from app.ui.add_behavior_field_dialog import (
-            run_add_behavior_field_dialog,
-        )
-
-        if self.project is None or self.project.active_document is None:
-            return
-        if not getattr(self.project, "path", None):
-            messagebox.showinfo(
-                "Save first",
-                "Save the project before adding behavior fields — "
-                "the annotation lands in assets/scripts/ inside the "
-                "project folder.",
-                parent=self.winfo_toplevel(),
-            )
-            return
-        document = self.project.active_document
-        # Materialise the behavior file if it doesn't exist yet so
-        # the dialog operates against a real file path.
-        file_path = load_or_create_behavior_file(
-            self.project.path, document,
-        )
-        if file_path is None:
-            messagebox.showerror(
-                "Couldn't write behavior file",
-                "Failed to create assets/scripts/ folder. Check "
-                "folder permissions on the project directory.",
-                parent=self.winfo_toplevel(),
-            )
-            return
-        class_name = behavior_class_name(document)
-        existing = existing_behavior_field_names(file_path, class_name)
-        result = run_add_behavior_field_dialog(
-            self.winfo_toplevel(),
-            document=document,
-            existing_field_names=existing,
-        )
-        if result is None:
-            return
-        widget_id, field_name, widget_type = result
-        # Imports first so the annotation lands in a file that
-        # already references ``ref`` — keeps the .py runnable as
-        # standalone Python at every save point. ``ref`` lives in
-        # ``assets/scripts/_runtime.py`` (level=2 relative from a
-        # behavior file at ``assets/scripts/<page>/<window>.py``),
-        # so the runtime import goes through a relative-aware
-        # helper. The widget type's import is a regular absolute
-        # ``from customtkinter import <Type>``.
-        from app.io.scripts import ensure_relative_import_in_behavior_file
-        ensure_relative_import_in_behavior_file(
-            file_path, level=2, module="_runtime", name="ref",
-        )
-        ensure_imports_in_behavior_file(
-            file_path, [("customtkinter", widget_type)],
-        )
-        added = add_behavior_field_annotation(
-            file_path, class_name, field_name, widget_type,
-        )
-        if not added:
-            messagebox.showerror(
-                "Couldn't add field",
-                "Failed to write the annotation into the behavior "
-                "file. The field name may have already been taken "
-                "or the file was changed externally.",
-                parent=self.winfo_toplevel(),
-            )
-            return
-        cmd = SetBehaviorFieldCommand(document.id, field_name, widget_id)
-        cmd.redo(self.project)
-        self.project.history.push(cmd)
-
-    def _show_behavior_field_picker(
-        self, field_name: str, type_name: str,
-    ) -> None:
-        """Phase 3 — open the modal widget picker for a Behavior
-        Field row. Resolves the active document, runs
-        ``WidgetPickerDialog``, and on a positive pick (or explicit
-        Clear) dispatches a ``SetBehaviorFieldCommand`` so the choice
-        round-trips through history. Cancel returns ``None`` and the
-        slot stays as-is.
-        """
-        from app.core.commands import SetBehaviorFieldCommand
-        from app.ui.widget_picker_dialog import run_widget_picker
-
-        if self.project is None or self.project.active_document is None:
-            return
-        document = self.project.active_document
-        current_id = document.behavior_field_values.get(field_name, "")
-        result = run_widget_picker(
-            self.winfo_toplevel(),
-            document=document,
-            expected_type=type_name,
-            field_name=field_name,
-            current_widget_id=current_id,
-        )
-        if result is None:
-            return  # User cancelled.
-        # Cleared (empty string) and picked-a-widget paths share the
-        # same command — empty string instructs the command to drop
-        # the entry. ``history.push`` records an already-applied
-        # command (drop the redo stack and stop), so we apply via
-        # ``cmd.redo(project)`` first to actually mutate the model
-        # + publish the ``behavior_field_changed`` event the panel
-        # listens to.
-        cmd = SetBehaviorFieldCommand(
-            document.id, field_name, result,
-        )
-        cmd.redo(self.project)
-        self.project.history.push(cmd)
-
-    def _clear_behavior_field(self, field_name: str) -> None:
-        """Inline ``[✕]`` shortcut — bypasses the picker for one-click
-        unbind from a slot the user already filled.
-        """
-        from app.core.commands import SetBehaviorFieldCommand
-        if self.project is None or self.project.active_document is None:
-            return
-        document = self.project.active_document
-        if field_name not in document.behavior_field_values:
-            return
-        cmd = SetBehaviorFieldCommand(document.id, field_name, "")
-        cmd.redo(self.project)
-        self.project.history.push(cmd)
-
-    def _on_behavior_field_changed(
-        self, document_id: str, *_args, **_kwargs,
-    ) -> None:
-        """Repaint after a SetBehaviorFieldCommand mutates the active
-        document's field map. Filtered to the active document so
-        cross-document edits (rare; mostly undo / redo on inactive
-        windows) don't trigger spurious rebuilds.
-        """
-        if self.project is None:
-            return
-        active = self.project.active_document
-        if active is None or active.id != document_id:
-            return
-        if self.current_id is not None:
-            self._rebuild()
-
     # ------------------------------------------------------------------
     # v1.10.8 — Object Reference toggle handlers
     # ------------------------------------------------------------------
@@ -1743,7 +1438,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
                 behavior_class_name,
             )
             from app.io.scripts import (
-                add_behavior_field_annotation,
+                add_object_reference_annotation,
                 ensure_imports_in_behavior_file,
                 load_or_create_behavior_file,
             )
@@ -1751,7 +1446,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             if file_path is None:
                 return
             class_name = behavior_class_name(doc)
-            add_behavior_field_annotation(
+            add_object_reference_annotation(
                 file_path, class_name, name, type_name,
             )
             ensure_imports_in_behavior_file(
@@ -1781,21 +1476,21 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
                 behavior_class_name, behavior_file_path,
             )
             from app.io.scripts import (
-                delete_behavior_field_annotation,
+                delete_object_reference_annotation,
             )
             file_path = behavior_file_path(path, doc)
             if file_path is None or not file_path.exists():
                 return
-            delete_behavior_field_annotation(
+            delete_object_reference_annotation(
                 file_path, behavior_class_name(doc), name,
             )
         except Exception:
             pass
 
     def _on_object_reference_changed(self, *_args, **_kwargs) -> None:
-        """Live repaint after any ObjectReference mutation. Same gate
-        as ``_on_behavior_field_changed`` — only the active panel
-        rebuilds, inactive selections wait for their own activation.
+        """Live repaint after any ObjectReference mutation. Only the
+        active panel rebuilds — inactive selections wait for their
+        own activation.
         """
         if self.current_id is not None:
             self._rebuild()

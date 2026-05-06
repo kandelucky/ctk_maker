@@ -17,6 +17,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
+from app.core.logger import log_error
 from app.core.widget_node import WidgetNode
 
 if TYPE_CHECKING:
@@ -236,7 +237,7 @@ class AddWidgetCommand(Command):
                 try:
                     project.update_property(parent_id, key, before)
                 except Exception:
-                    pass
+                    log_error("AddWidgetCommand.undo: parent grid-dim revert")
 
     def redo(self, project: "Project") -> None:
         node = _restore_widget(
@@ -244,88 +245,6 @@ class AddWidgetCommand(Command):
             self._index, self._document_id,
         )
         project.select_widget(node.id)
-
-
-# ======================================================================
-# Behavior Field cascade (legacy — superseded by Object References in
-# v1.10.8). The Behavior Field UI in properties_panel_v2 still writes
-# to ``Document.behavior_field_values`` within a session; the loader
-# migrates those entries to ``local_object_references`` on next open
-# and clears the dict. These helpers keep delete-undo correct as long
-# as the legacy path is reachable — for migrated / new projects the
-# behavior_field_values dict is empty and the helpers are fast no-ops.
-# Remove together with SetBehaviorFieldCommand once the v2 panel stops
-# binding to behavior_field_values.
-# ======================================================================
-def _collect_ids_from_snapshot(snapshot: dict) -> set[str]:
-    """Walk a ``WidgetNode.to_dict()`` snapshot recursively and
-    return every ``id`` it carries — root + every descendant. Used
-    by the delete commands to know which Behavior Field bindings
-    need clearing when a subtree disappears.
-    """
-    ids: set[str] = set()
-    stack = [snapshot]
-    while stack:
-        cur = stack.pop()
-        if not isinstance(cur, dict):
-            continue
-        wid = cur.get("id")
-        if isinstance(wid, str):
-            ids.add(wid)
-        for child in cur.get("children") or ():
-            stack.append(child)
-    return ids
-
-
-def _clear_behavior_field_bindings_for_ids(
-    project: "Project", widget_ids: set[str],
-) -> list[tuple[str, str, str]]:
-    """Drop every ``behavior_field_values`` entry that points at any
-    id in ``widget_ids`` across every Document in the project.
-    Returns the cleared entries as ``(doc_id, field_name,
-    previous_widget_id)`` tuples so the caller can replay them on
-    undo. Publishes one ``behavior_field_changed`` event per cleared
-    entry so the Properties panel re-renders affected slots.
-    """
-    cleared: list[tuple[str, str, str]] = []
-    if not widget_ids:
-        return cleared
-    for doc in project.documents:
-        if not doc.behavior_field_values:
-            continue
-        # Snapshot keys before mutation — popping during iteration
-        # would corrupt the loop.
-        for field_name in list(doc.behavior_field_values):
-            wid = doc.behavior_field_values[field_name]
-            if wid in widget_ids:
-                cleared.append((doc.id, field_name, wid))
-                doc.behavior_field_values.pop(field_name, None)
-                project.event_bus.publish(
-                    "behavior_field_changed", doc.id, field_name,
-                )
-    return cleared
-
-
-def _restore_behavior_field_bindings(
-    project: "Project",
-    cleared: list[tuple[str, str, str]],
-) -> None:
-    """Replay the cleared Behavior Field bindings produced by
-    ``_clear_behavior_field_bindings_for_ids``. Used on delete-undo
-    so a widget restore brings its Behavior Field slots back to the
-    state they were in before the delete.
-    """
-    if not cleared:
-        return
-    by_doc: dict[str, "Document"] = {d.id: d for d in project.documents}
-    for doc_id, field_name, widget_id in cleared:
-        doc = by_doc.get(doc_id)
-        if doc is None:
-            continue
-        doc.behavior_field_values[field_name] = widget_id
-        project.event_bus.publish(
-            "behavior_field_changed", doc_id, field_name,
-        )
 
 
 class DeleteWidgetCommand(Command):
@@ -340,10 +259,6 @@ class DeleteWidgetCommand(Command):
         self._parent_id = parent_id
         self._index = index
         self._document_id = document_id
-        # Captured on first redo() so undo can replay the bindings
-        # the deletion cascade had to clear. Empty when no field
-        # pointed at the deleted subtree.
-        self._cleared_bindings: list[tuple[str, str, str]] = []
         label = snapshot.get("name") or snapshot.get("widget_type", "widget")
         self.description = f"Delete {label}"
 
@@ -352,14 +267,9 @@ class DeleteWidgetCommand(Command):
             project, self._snapshot, self._parent_id,
             self._index, self._document_id,
         )
-        _restore_behavior_field_bindings(project, self._cleared_bindings)
         project.select_widget(node.id)
 
     def redo(self, project: "Project") -> None:
-        ids = _collect_ids_from_snapshot(self._snapshot)
-        self._cleared_bindings = _clear_behavior_field_bindings_for_ids(
-            project, ids,
-        )
         project.remove_widget(self._snapshot["id"])
 
 
@@ -379,9 +289,6 @@ class DeleteMultipleCommand(Command):
         entries: list[tuple[dict, str | None, int, str | None]],
     ):
         self._entries = entries
-        # Captured on first redo() so the undo path replays every
-        # cleared Behavior Field binding once all widgets restore.
-        self._cleared_bindings: list[tuple[str, str, str]] = []
         self.description = f"Delete {len(entries)} widgets"
 
     def undo(self, project: "Project") -> None:
@@ -391,22 +298,12 @@ class DeleteMultipleCommand(Command):
                 project, snapshot, parent_id, index, document_id,
             )
             restored_ids.append(node.id)
-        _restore_behavior_field_bindings(project, self._cleared_bindings)
         if restored_ids:
             project.set_multi_selection(
                 set(restored_ids), primary=restored_ids[0],
             )
 
     def redo(self, project: "Project") -> None:
-        # Pre-collect every id across all snapshots so a single sweep
-        # clears bindings rather than fan-out per snapshot — fewer
-        # publish-subscribe ripples.
-        all_ids: set[str] = set()
-        for snapshot, _p, _i, _d in self._entries:
-            all_ids |= _collect_ids_from_snapshot(snapshot)
-        self._cleared_bindings = _clear_behavior_field_bindings_for_ids(
-            project, all_ids,
-        )
         for snapshot, _parent_id, _index, _doc_id in self._entries:
             project.remove_widget(snapshot["id"])
 
@@ -682,78 +579,6 @@ class UnbindHandlerCommand(Command):
         self._do(project)
 
 
-class SetBehaviorFieldCommand(Command):
-    """Phase 3 visual scripting — assign / clear an Inspector slot
-    on a window's behavior class. ``new_widget_id`` may be ``""`` to
-    unbind the slot. Captures both before + after so the undo path
-    restores the prior binding (or empty state) precisely.
-
-    Field declarations live in the ``.py`` source — this command only
-    persists the user's widget-picker choice on the Document model.
-    """
-
-    def __init__(
-        self,
-        document_id: str,
-        field_name: str,
-        new_widget_id: str,
-    ):
-        self.document_id = document_id
-        self.field_name = field_name
-        self.new_widget_id = new_widget_id
-        # Captured on first redo() so undo can restore the precise
-        # previous mapping (including the absent-key state — we
-        # delete the entry rather than write back an empty string).
-        self._previous_widget_id: str | None = None
-        self._had_entry: bool = False
-        self.description = "Set behavior field"
-
-    def _doc(self, project: "Project"):
-        for d in project.documents:
-            if d.id == self.document_id:
-                return d
-        return None
-
-    def _do(self, project: "Project") -> None:
-        doc = self._doc(project)
-        if doc is None:
-            return
-        if self._previous_widget_id is None:
-            self._had_entry = self.field_name in doc.behavior_field_values
-            self._previous_widget_id = doc.behavior_field_values.get(
-                self.field_name, "",
-            )
-        if self.new_widget_id:
-            doc.behavior_field_values[self.field_name] = self.new_widget_id
-        else:
-            doc.behavior_field_values.pop(self.field_name, None)
-        project.event_bus.publish(
-            "behavior_field_changed",
-            self.document_id, self.field_name,
-        )
-
-    def _undo(self, project: "Project") -> None:
-        doc = self._doc(project)
-        if doc is None:
-            return
-        if self._had_entry and self._previous_widget_id:
-            doc.behavior_field_values[self.field_name] = (
-                self._previous_widget_id
-            )
-        else:
-            doc.behavior_field_values.pop(self.field_name, None)
-        project.event_bus.publish(
-            "behavior_field_changed",
-            self.document_id, self.field_name,
-        )
-
-    def undo(self, project: "Project") -> None:
-        self._undo(project)
-
-    def redo(self, project: "Project") -> None:
-        self._do(project)
-
-
 class MultiChangePropertyCommand(Command):
     """Bundle multiple property changes for a single widget into
     one undo step. Used when a single UI action triggers derived
@@ -788,7 +613,7 @@ class MultiChangePropertyCommand(Command):
                 try:
                     project.update_property(parent_id, key, before)
                 except Exception:
-                    pass
+                    log_error("MultiChangePropertyCommand.undo: parent grid-dim revert")
         project.select_widget(self.widget_id)
 
     def redo(self, project: "Project") -> None:
@@ -798,7 +623,7 @@ class MultiChangePropertyCommand(Command):
                 try:
                     project.update_property(parent_id, key, after)
                 except Exception:
-                    pass
+                    log_error("MultiChangePropertyCommand.redo: parent grid-dim apply")
         for name, (_before, after) in self.changes.items():
             project.update_property(self.widget_id, name, after)
         project.select_widget(self.widget_id)
@@ -998,7 +823,7 @@ class ReparentCommand(Command):
                 try:
                     project.update_property(parent_id, key, before)
                 except Exception:
-                    pass
+                    log_error("ReparentCommand.undo: parent grid-dim revert")
 
     def redo(self, project: "Project") -> None:
         if self._parent_dim_changes is not None:
@@ -1007,7 +832,7 @@ class ReparentCommand(Command):
                 try:
                     project.update_property(parent_id, key, after)
                 except Exception:
-                    pass
+                    log_error("ReparentCommand.redo: parent grid-dim apply")
         self._move(
             project, self.new_parent_id, self.new_index,
             self.new_x, self.new_y, self.new_document_id,
@@ -1120,7 +945,7 @@ class BulkAddCommand(Command):
                     try:
                         project.update_property(container_id, key, before)
                     except Exception:
-                        pass
+                        log_error("BulkAddCommand.undo: container grid-dim revert")
 
     def redo(self, project: "Project") -> None:
         restored_ids: list[str] = []
@@ -1133,7 +958,7 @@ class BulkAddCommand(Command):
                     try:
                         project.update_property(container_id, key, after)
                     except Exception:
-                        pass
+                        log_error("BulkAddCommand.redo: container grid-dim apply")
             node = _restore_widget(
                 project, snapshot, parent_id, index, document_id,
             )
