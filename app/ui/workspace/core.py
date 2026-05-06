@@ -1288,11 +1288,19 @@ class Workspace(ctk.CTkFrame):
         CTkButton's text label (which can slip behind its background
         when corner_radius approaches half the widget height).
         """
+        from app.core.variables import resolve_bindings
         try:
             if descriptor is not None:
-                transformed = descriptor.transform_properties(
-                    _strip_layout_keys(node.properties),
+                clean_props = _strip_layout_keys(node.properties)
+                # Substitute live values for ``var:<uuid>`` tokens —
+                # otherwise CTk.configure raises on the raw token and
+                # silently drops every other kwarg in the same call
+                # (e.g. editing text_color won't apply when fg_color
+                # is bound to a variable).
+                clean_props, _ = resolve_bindings(
+                    self.project, node.widget_type, clean_props,
                 )
+                transformed = descriptor.transform_properties(clean_props)
                 if transformed:
                     widget.configure(**transformed)
                 descriptor.apply_state(widget, node.properties)
