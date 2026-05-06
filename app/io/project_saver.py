@@ -46,23 +46,34 @@ BAK_SUFFIX = ".bak"
 
 def project_to_dict(project: Project) -> dict:
     """Serialise the in-memory project to the ``.ctkproj`` page file
-    schema. Project-level fields (``name``, ``font_defaults``,
-    ``system_fonts``) are still emitted so legacy single-file projects
-    round-trip — multi-page mode reads them from ``project.json``
-    instead and the page-level copies are ignored.
+    schema.
+
+    Multi-page projects (``project.folder_path`` set) emit only
+    page-level fields. Project-level metadata (``name``,
+    ``font_defaults``, ``system_fonts``, ``variables``,
+    ``object_references``) lives in ``project.json`` and is the only
+    authoritative copy; emitting it here too would silently overwrite
+    user-meaningful fields (e.g. a manually edited page-file ``name``)
+    with the project-level values on every save.
+
+    Legacy single-file projects (``folder_path is None``) still emit
+    everything so the lone ``.ctkproj`` round-trips on its own.
     """
-    data = {
+    data: dict = {
         "version": FILE_VERSION,
-        "name": project.name,
         "active_document": project.active_document_id,
         "documents": [doc.to_dict() for doc in project.documents],
-        "font_defaults": dict(project.font_defaults or {}),
-        "system_fonts": sorted(set(project.system_fonts or [])),
-        "variables": [v.to_dict() for v in (project.variables or [])],
-        "object_references": [
-            r.to_dict() for r in (project.object_references or [])
-        ],
     }
+    if not project.folder_path:
+        data["name"] = project.name
+        data["font_defaults"] = dict(project.font_defaults or {})
+        data["system_fonts"] = sorted(set(project.system_fonts or []))
+        data["variables"] = [
+            v.to_dict() for v in (project.variables or [])
+        ]
+        data["object_references"] = [
+            r.to_dict() for r in (project.object_references or [])
+        ]
     # Convert any in-assets absolute image paths to portable tokens
     # so the saved JSON survives a project-folder move.
     if project.path:

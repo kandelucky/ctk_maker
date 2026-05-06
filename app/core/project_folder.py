@@ -406,9 +406,12 @@ def _unique_filename(folder: Path, base: str, ext: str = ".ctkproj") -> str:
 
 
 def _empty_page_data(name: str) -> dict:
-    """Build the minimal v2 .ctkproj payload for a fresh page.
-    Mirrors what ``project_to_dict`` would emit for a brand-new
-    Project, but without needing to instantiate Project itself.
+    """Build the minimal v2 .ctkproj payload for a fresh page in a
+    multi-page project. Only page-level fields appear — project-level
+    metadata (``name``, ``font_defaults``, ``system_fonts``,
+    ``variables``, ``object_references``) lives in ``project.json``
+    and is read from there on load. Mirrors the multi-page branch of
+    ``project_to_dict``.
     """
     from app.core.document import (
         DEFAULT_DOCUMENT_HEIGHT, DEFAULT_DOCUMENT_WIDTH,
@@ -422,11 +425,8 @@ def _empty_page_data(name: str) -> dict:
     )
     return {
         "version": 2,
-        "name": name,
         "active_document": doc.id,
         "documents": [doc.to_dict()],
-        "font_defaults": {},
-        "system_fonts": [],
     }
 
 

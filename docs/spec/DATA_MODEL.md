@@ -318,12 +318,33 @@ Generated code uses `self.<name>` directly — no sanitization at export.
 
 ## Save format
 
-JSON, schema version 2. Top-level shape:
+JSON, schema version 2. Two layouts:
+
+### Multi-page project (default for new projects)
+
+`<project>/project.json` — project-level metadata, single source of truth:
+
+```json
+{
+    "version": 1,
+    "name": "MyProject",
+    "active_page": "<page-uuid>",
+    "pages": [
+        { "id": "<page-uuid>", "file": "main.ctkproj", "name": "Main" },
+        ...
+    ],
+    "font_defaults": { "_all": "Inter", "CTkButton": "Roboto" },
+    "system_fonts": [ "Segoe UI" ],
+    "variables": [ <VariableEntry.to_dict()>, ... ],
+    "object_references": [ <ObjectReferenceEntry.to_dict()>, ... ]
+}
+```
+
+`<project>/assets/pages/<page_slug>.ctkproj` — one per page, page-level fields only:
 
 ```json
 {
     "version": 2,
-    "name": "MyProject",
     "active_document": "<doc-uuid>",
     "documents": [
         {
@@ -340,15 +361,32 @@ JSON, schema version 2. Top-level shape:
             "local_variables": [ ... ],
             "local_object_references": [ ... ]
         }
-    ],
-    "variables": [ <VariableEntry.to_dict()>, ... ],
-    "object_references": [ <ObjectReferenceEntry.to_dict()>, ... ],
-    "font_defaults": { "_all": "Inter", "CTkButton": "Roboto" },
-    "system_fonts": [ "Segoe UI" ]
+    ]
 }
 ```
 
-Multi-page projects: each `.ctkproj` lives at `<project>/assets/pages/<page_id>.ctkproj` and represents one page. Top-level `<project>/project.json` tracks the page list. Shared assets live in `<project>/assets/{images,fonts,icons,scripts,components}/`.
+Project-level fields (`name`, `font_defaults`, `system_fonts`, `variables`, `object_references`) are deliberately **absent** from the page `.ctkproj` — they live in `project.json` and were silently overwritten on every save when emitted twice. Page files written by older builds keep those fields until next save, when the saver drops them.
+
+Shared assets live in `<project>/assets/{images,fonts,icons,scripts,components}/`.
+
+### Legacy single-file project
+
+A lone `.ctkproj` with no `project.json`. Carries everything in one file:
+
+```json
+{
+    "version": 2,
+    "name": "MyProject",
+    "active_document": "<doc-uuid>",
+    "documents": [ ... ],
+    "variables": [ ... ],
+    "object_references": [ ... ],
+    "font_defaults": { ... },
+    "system_fonts": [ ... ]
+}
+```
+
+The saver keeps writing the project-level fields when `Project.folder_path is None` so single-file projects round-trip without losing metadata.
 
 ### Migration
 
