@@ -99,7 +99,8 @@ class CTkLabelDescriptor(WidgetDescriptor):
          "clearable": True, "clear_value": "transparent"},
     ]
 
-    derived_triggers = {"text", "width", "height", "font_bold", "font_autofit"}
+    derived_triggers = {"text", "width", "height", "font_bold",
+                        "font_autofit", "font_wrap"}
 
     _NODE_ONLY_KEYS = {"x", "y"}
     _FONT_KEYS = {
@@ -108,6 +109,9 @@ class CTkLabelDescriptor(WidgetDescriptor):
         "font_underline", "font_overstrike", "font_autofit",
         "font_wrap",
     }
+    # Internal descriptor state persisted to JSON for runtime continuity
+    # (e.g. autofit OFF→ON→OFF restore) but never passed to CTk kwargs.
+    _SHADOW_KEYS = {"_font_size_pre_autofit"}
 
     # ==================================================================
     # Autofit (Best Fit) — derives font_size from width/height/text
@@ -133,7 +137,8 @@ class CTkLabelDescriptor(WidgetDescriptor):
         except (ValueError, TypeError):
             return result
         bold = bool(properties.get("font_bold", False))
-        new_size = cls._compute_autofit_size(text, width, height, bold)
+        wrap = bool(properties.get("font_wrap", False))
+        new_size = cls._compute_autofit_size(text, width, height, bold, wrap)
         if new_size > 0:
             # Stash the user's size on the OFF→ON transition only.
             # While autofit stays on, font_size already holds a derived
@@ -148,7 +153,7 @@ class CTkLabelDescriptor(WidgetDescriptor):
 
     @classmethod
     def _compute_autofit_size(cls, text: str, width: int, height: int,
-                              bold: bool) -> int:
+                              bold: bool, wrap: bool = False) -> int:
         import tkinter.font as tkfont
         avail_w = max(10, width - 12)
         avail_h = max(10, height - 4)
@@ -159,8 +164,14 @@ class CTkLabelDescriptor(WidgetDescriptor):
             mid = (lo + hi) // 2
             try:
                 f = tkfont.Font(size=mid, weight=weight)
-                tw = f.measure(text)
-                th = f.metrics("linespace")
+                line_h = f.metrics("linespace")
+                if wrap:
+                    lines = cls._wrap_lines(f, text, avail_w)
+                    tw = max((f.measure(L) for L in lines), default=0)
+                    th = line_h * len(lines)
+                else:
+                    tw = f.measure(text)
+                    th = line_h
             except Exception:
                 return 13
             if tw <= avail_w and th <= avail_h:
@@ -170,6 +181,30 @@ class CTkLabelDescriptor(WidgetDescriptor):
                 hi = mid - 1
         return best
 
+    @staticmethod
+    def _wrap_lines(font, text: str, max_w: int) -> list[str]:
+        # Greedy word-wrap mimicking Tk's wraplength behavior. Used by
+        # autofit to estimate how many lines the text will occupy at a
+        # given font size.
+        lines: list[str] = []
+        for paragraph in text.split("\n"):
+            if not paragraph:
+                lines.append("")
+                continue
+            words = paragraph.split(" ")
+            cur = ""
+            for w in words:
+                trial = w if not cur else cur + " " + w
+                if font.measure(trial) <= max_w:
+                    cur = trial
+                else:
+                    if cur:
+                        lines.append(cur)
+                    cur = w
+            if cur:
+                lines.append(cur)
+        return lines or [""]
+
     # ==================================================================
     # Builder → CTkLabel kwargs
     # ==================================================================
@@ -177,7 +212,9 @@ class CTkLabelDescriptor(WidgetDescriptor):
     def transform_properties(cls, properties: dict) -> dict:
         result = {
             k: v for k, v in properties.items()
-            if k not in cls._NODE_ONLY_KEYS and k not in cls._FONT_KEYS
+            if k not in cls._NODE_ONLY_KEYS
+            and k not in cls._FONT_KEYS
+            and k not in cls._SHADOW_KEYS
         }
 
         try:
@@ -200,6 +237,16 @@ class CTkLabelDescriptor(WidgetDescriptor):
             )
         except Exception:
             log_error("CTkLabelDescriptor.transform_properties font")
+
+        # Wrap on + length 0 → fall back to widget width so Tk actually
+        # wraps. Tk's native wraplength=0 means "no wrap", which clashes
+        # with the user-facing "Wrap > Enabled" checkbox semantics.
+        if properties.get("font_wrap") and not properties.get("wraplength"):
+            try:
+                w = int(properties.get("width", 100))
+            except (ValueError, TypeError):
+                w = 100
+            result["wraplength"] = max(1, w - 8)
 
         return result
 
