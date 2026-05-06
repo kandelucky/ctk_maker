@@ -415,6 +415,12 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         # render with a soft red foreground so the user spots the
         # break before they hit F5. Pairs with the ``❌ `` label
         # prefix added in ``_populate_events_group``.
+        # Trailing-section spacer row on the Window panel — darker
+        # band that visually breaks the schema/window-property block
+        # from the trailing Local Variables / Object References list.
+        self.tree.tag_configure(
+            "spacer", background="#121212", foreground="#121212",
+        )
         self.tree.tag_configure(
             "missing_method", foreground="#ef4444", background=TREE_BG,
         )

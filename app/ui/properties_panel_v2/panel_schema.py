@@ -179,13 +179,19 @@ class SchemaMixin:
         # at the very end so the user can see what locals belong to the
         # current document without opening the F11 Variables window.
         if descriptor.type_name == WINDOW_ID:
-            self._populate_local_variables_group()
             # v1.10.8 — symmetric per-Window global toggle. Mirrors
             # the per-widget local toggle: ``+`` creates a global
             # reference whose target is this Window/Dialog itself;
             # ``×`` removes it. Behavior code from any doc reaches
-            # the window class through ``self.<name>``.
+            # the window class through ``self.<name>``. Sits with the
+            # schema-side window properties — it describes how the
+            # window itself is exposed, not user-declared content.
             self._populate_window_global_reference_toggle()
+            # Spacer separates the trailing declarations block (locals
+            # + references list) from the window-property block above
+            # so the user reads them as a distinct zone.
+            self._insert_section_spacer()
+            self._populate_local_variables_group()
             # Local refs of this doc — read-only list.
             self._populate_object_references_group()
 
@@ -203,6 +209,17 @@ class SchemaMixin:
         # it shows the consolidated list above.
         if node is not None and node.id != WINDOW_ID:
             self._populate_object_reference_toggle(node)
+
+    def _insert_section_spacer(self) -> None:
+        """Empty top-level row that visually offsets the trailing
+        Local Variables / Object References sections from the schema
+        groups above. Selectable but click-inert.
+        """
+        self.tree.insert(
+            "", "end", iid="spacer:trailing",
+            text="", values=("",),
+            tags=("spacer",),
+        )
 
     def _populate_local_variables_group(self) -> None:
         doc = self.project.active_document if self.project else None
