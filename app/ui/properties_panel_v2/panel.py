@@ -975,7 +975,6 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         if iid and iid in self._event_row_meta:
             self._show_event_menu(event, iid)
             return
-        # Phase 3 — Behavior Field rows route to their own menu.
         if self.current_id is None:
             return
         if not iid or not iid.startswith("p:"):

@@ -1763,8 +1763,8 @@ def _resolve_var_names(doc: Document) -> dict[str, str]:
     """Walk a doc's widget tree DFS and produce the canonical
     ``{widget_id: var_name}`` map for every node. Single source of
     truth used by both ``_emit_subtree`` (live emission) and
-    ``_build_id_to_var_name`` (Phase 3 Behavior Field replay) so the
-    two walks can never drift.
+    ``_build_id_to_var_name`` (Object Reference replay) so the two
+    walks can never drift.
 
     Naming priority per node:
     1. ``node.name`` (user-set in the Properties panel) when it's a
@@ -1857,11 +1857,11 @@ def _resolve_var_names(doc: Document) -> dict[str, str]:
 
 
 def _build_id_to_var_name(doc: Document) -> dict[str, str]:
-    """Phase 3 Behavior Fields replay — alias of
-    ``_resolve_var_names`` so callers reading post-build assignments
-    line up with whatever ``_emit_subtree`` actually emitted.
-    Memoisation in ``_NAME_MAP_CACHE`` keeps this from re-walking the
-    tree or duplicating user warnings.
+    """Object Reference replay helper — alias of ``_resolve_var_names``
+    so callers reading post-build assignments line up with whatever
+    ``_emit_subtree`` actually emitted. Memoisation in
+    ``_NAME_MAP_CACHE`` keeps this from re-walking the tree or
+    duplicating user warnings.
     """
     return _resolve_var_names(doc)
 
@@ -2058,21 +2058,21 @@ def _emit_class_body(
             f'{INDENT}{INDENT}self.configure(fg_color="{fg_color}")',
         )
     lines.append(f"{INDENT}{INDENT}self._build_ui()")
-    # Phase 3 — Behavior Field assignments must run AFTER _build_ui()
-    # since they reference widgets created inside it. Per-doc id-to-
-    # var map mirrors the naming the subtree walk emits, so the
-    # right-hand sides line up with the actual ``self.<widget_var>``
+    # Object Reference assignments must run AFTER _build_ui() since
+    # they reference widgets created inside it. Per-doc id-to-var
+    # map mirrors the naming the subtree walk emits, so the right-
+    # hand sides line up with the actual ``self.<widget_var>``
     # attributes set during the build.
     if _doc_needs_behavior(doc) and (doc.local_object_references):
         id_to_var = _build_id_to_var_name(doc)
         field_lines = _emit_object_reference_lines(doc, id_to_var, "self.")
         lines.extend(field_lines)
-    # Phase 2 setup() — runs AFTER _build_ui + Phase 3 field
-    # assignments so user code can reference both ``self.<widget>``
-    # attributes and the bound ``self._behavior.<field>`` slots
-    # without worrying about ordering. Widget command kwargs
-    # captured ``self._behavior.<method>`` during _build_ui; those
-    # bindings are stable references whose call sites fire later.
+    # ``setup()`` runs AFTER _build_ui + Object Reference assignments
+    # so user code can reference both ``self.<widget>`` attributes
+    # and the bound ``self._behavior.<field>`` slots without worrying
+    # about ordering. Widget command kwargs captured
+    # ``self._behavior.<method>`` during _build_ui; those bindings
+    # are stable references whose call sites fire later.
     if _doc_needs_behavior(doc):
         lines.append(
             f"{INDENT}{INDENT}self._behavior.setup(self)",
@@ -2084,8 +2084,8 @@ def _emit_class_body(
     # user-set Properties-panel "Name" through to the emitted
     # ``self.<var> = ctk.<Type>(...)`` line so behavior files can
     # reference widgets as ``self.window.<user_name>`` instead of
-    # the legacy ``<type>_<N>`` shape. Same map fuels the Phase 3
-    # Behavior Field replay above (memoised in ``_NAME_MAP_CACHE``).
+    # the legacy ``<type>_<N>`` shape. Same map fuels the Object
+    # Reference replay above (memoised in ``_NAME_MAP_CACHE``).
     id_to_var = _resolve_var_names(doc)
     body_lines: list[str] = []
     # Phase 1.5 binding: shared variables come BEFORE widget

@@ -7,13 +7,13 @@ bodies in their own editor. The file lives at
 and is imported by exported code as
 ``from assets.scripts.<page>.<window> import <WindowName>Page``.
 
-Phase 3 adds Behavior Fields — annotated class attributes typed as
-``ref[<WidgetType>]`` declare Inspector slots that the Properties
-panel renders with a widget picker. Resolution happens at export
-time via ``self._behavior.<field> = self.<widget_var>`` lines after
-``_build_ui()``. The ``ref`` marker class lives in an auto-generated
-``assets/scripts/_runtime.py`` so behavior files stay importable
-outside CTkMaker (IDE typing, standalone tests, etc.).
+Object References (v1.10.8+) — annotated class attributes typed as
+``ref[<WidgetType>]`` declare Inspector slots that pair with entries
+in the document's ``local_object_references``. Resolution happens at
+export time via ``self._behavior.<field> = self.<widget_var>`` lines
+after ``_build_ui()``. The ``ref`` marker class lives in an
+auto-generated ``assets/scripts/_runtime.py`` so behavior files stay
+importable outside CTkMaker (IDE typing, standalone tests, etc.).
 
 Public API:
 - ``load_or_create_behavior_file(project_path, document)`` — return
@@ -63,18 +63,18 @@ Methods here run in response to widget events. CTkMaker stubs new
 methods automatically — fill in the bodies here. Each method maps
 to a handler binding configured in the Properties panel.
 
-Phase 3 — to add an Inspector slot, declare a ``ref[<WidgetType>]``
-annotation on the class (e.g. ``target_label: ref[CTkLabel]``).
-The Properties panel's "Behavior Fields" group will render a
-widget picker for it. Import ``ref`` from the auto-generated
-``_runtime`` module and the widget class from ``customtkinter``.
+To bind a widget as an Inspector slot, declare a ``ref[<WidgetType>]``
+annotation on the class (e.g. ``target_label: ref[CTkLabel]``) and
+add a matching entry in the Properties panel's Object References
+group. Import ``ref`` from the auto-generated ``_runtime`` module
+and the widget class from ``customtkinter``.
 """
 
 
 class {class_name}:
     def setup(self, window):
-        """Called once after the UI is built and Behavior Fields are
-        wired. ``self.<field>`` slots and ``window.<widget>``
+        """Called once after the UI is built and Object References
+        are wired. ``self.<field>`` slots and ``window.<widget>``
         attributes are both available at this point.
         """
         self.window = window
@@ -98,12 +98,12 @@ def load_or_create_behavior_file(
         return None
     if ensure_scripts_root(project_file_path) is None:
         return None
-    # Phase 3 — drop ``_runtime.py`` next to the per-page subfolders
-    # so Behavior Field annotations (``target: ref[CTkLabel]``) have
-    # an importable ``ref`` marker. Idempotent: existing file is
-    # left untouched. Runs on every behavior-file create so legacy
-    # Phase 2 projects pick it up the first time the user adds
-    # any handler in v1.8.0+ without a separate migration step.
+    # Drop ``_runtime.py`` next to the per-page subfolders so Object
+    # Reference annotations (``target: ref[CTkLabel]``) have an
+    # importable ``ref`` marker. Idempotent: existing file is left
+    # untouched. Runs on every behavior-file create so older projects
+    # pick it up the first time the user adds any handler without a
+    # separate migration step.
     ensure_runtime_helpers(project_file_path)
     file_path = behavior_file_path(project_file_path, document)
     if file_path is None:
@@ -150,7 +150,7 @@ def parse_handler_methods(
 
 
 # ---------------------------------------------------------------------
-# Behavior Fields — Phase 3 Step 1
+# Object Reference annotation parser (v1.10.8+)
 # ---------------------------------------------------------------------
 class FieldSpec:
     """One Inspector-bindable annotation found on a behavior class.
