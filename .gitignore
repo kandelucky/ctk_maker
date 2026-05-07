@@ -17,6 +17,7 @@ ENV/
 .vscode/
 .idea/
 .obsidian/
+.claude/
 *.swp
 *.swo
 .DS_Store
@@ -35,6 +36,9 @@ docs/architecture_graph.svg
 # Test artifacts
 tools/_test_alpha.png
 test_grid_drag.py
+
+# Local-only test / experiment scripts (not shipped)
+test_scripts/
 
 # Personal task list — kept local only
 TODO.md
