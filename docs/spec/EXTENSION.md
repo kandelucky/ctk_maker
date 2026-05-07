@@ -284,6 +284,9 @@ class EventEntry:
     signature: str     # "(self)" or "(self, value)" or "(self, event=None)"
     wiring_kind: str   # "command" → constructor kwarg
                        # "bind"    → post-construction widget.bind(seq, fn, add="+")
+    warning: str = ""  # optional caveat shown alongside the event in
+                       # cascades / docs — e.g. "fires at 60+ Hz" or
+                       # "requires takefocus=True". Default empty.
 ```
 
 ### Existing entries — [event_registry.py:41](../../app/widgets/event_registry.py#L41)
@@ -299,9 +302,15 @@ EVENT_REGISTRY = {
     "CTkComboBox":        [EventEntry("command", "on select", ...)],
     "CTkOptionMenu":      [EventEntry("command", "on select", ...)],
     "CTkEntry":           [EventEntry("bind:<Return>", "on Return", ...)],
-    # ... plus more bind-style entries on input widgets
+    "CTkTextbox":         [EventEntry("bind:<KeyRelease>", ...)],
+    "CTkLabel":           [EventEntry("bind:<Button-1>", "on click", ...),
+                           # 16 bind events total — mouse buttons,
+                           # motion / wheel, lifecycle, focus / keyboard
+                          ],
 }
 ```
+
+CTkLabel uses bind-style events exclusively (no `command=` constructor kwarg in standard CTkLabel). Six of its 16 events carry `warning` strings — `<Motion>` / `<Configure>` for high-frequency firing, and `<FocusIn>` / `<FocusOut>` / `<KeyPress>` / `<KeyRelease>` for the `takefocus=True` requirement.
 
 ### Adding events for a new widget
 

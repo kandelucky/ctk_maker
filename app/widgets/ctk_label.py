@@ -99,11 +99,11 @@ class CTkLabelDescriptor(WidgetDescriptor):
         {"name": "anchor", "type": "anchor", "label": "",
          "group": "Alignment", "row_label": "Anchor"},
         {"name": "padx", "type": "number", "label": "X",
-         "group": "Alignment", "subgroup": "Padding",
+         "group": "Alignment",
          "pair": "pad", "row_label": "Padding",
          "min": 0, "max": 50},
         {"name": "pady", "type": "number", "label": "Y",
-         "group": "Alignment", "subgroup": "Padding",
+         "group": "Alignment",
          "pair": "pad",
          "min": 0, "max": 50},
 
