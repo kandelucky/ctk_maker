@@ -198,10 +198,9 @@ class CTkButtonDescriptor(WidgetDescriptor):
     ]
 
     # Properties whose change should re-run `compute_derived` to update
-    # derived props (font_size via autofit, image_height via preserve_aspect).
+    # derived props (font_size via autofit).
     derived_triggers = {
         "text", "width", "height", "font_bold", "font_autofit",
-        "image", "image_width", "preserve_aspect",
     }
 
     # Schema props that are NOT passed as kwargs to CTkButton directly.
@@ -221,8 +220,6 @@ class CTkButtonDescriptor(WidgetDescriptor):
         "state_disabled",
     }
 
-    # Cache of image path -> native aspect ratio (width / height).
-    _aspect_cache: dict[str, float] = {}
     _FONT_KEYS = {
         "font_family",
         "font_size", "font_bold", "font_italic",
@@ -252,36 +249,7 @@ class CTkButtonDescriptor(WidgetDescriptor):
                 except (ValueError, TypeError):
                     pass
 
-        # --- Preserve aspect: derive image_height from image_width ----
-        if properties.get("preserve_aspect") and properties.get("image"):
-            aspect = cls._native_aspect(properties["image"])
-            if aspect:
-                try:
-                    w = int(properties.get("image_width") or 20)
-                    result["image_height"] = max(1, round(w / aspect))
-                except (ValueError, TypeError):
-                    pass
-
         return result
-
-    @classmethod
-    def _native_aspect(cls, path: str) -> float | None:
-        """Return native width/height ratio of the image at `path`."""
-        if not path:
-            return None
-        if path in cls._aspect_cache:
-            return cls._aspect_cache[path]
-        try:
-            from PIL import Image
-            with Image.open(path) as img:
-                w, h = img.size
-            if h == 0:
-                return None
-            aspect = w / h
-            cls._aspect_cache[path] = aspect
-            return aspect
-        except Exception:
-            return None
 
     @classmethod
     def _compute_autofit_size(cls, text: str, width: int, height: int,
@@ -369,17 +337,36 @@ class CTkButtonDescriptor(WidgetDescriptor):
         try:
             from PIL import Image
             img = Image.open(image_path)
+            native_w, native_h = img.size
+            # ``transparent`` is the colour-editor's "cleared" sentinel
+            # — treat it as "no tint" alongside ``None`` so a cleared
+            # disabled colour falls through to the normal tint instead
+            # of being routed to ``_tint_image`` (whose ValueError
+            # catch would silently drop the tint without trying the
+            # fallback colour).
+            def _active(c):
+                return c if c and c != "transparent" else None
             if not properties.get("button_enabled", True):
                 color = (
-                    properties.get("image_color_disabled")
-                    or properties.get("image_color")
+                    _active(properties.get("image_color_disabled"))
+                    or _active(properties.get("image_color"))
                 )
             else:
-                color = properties.get("image_color")
+                color = _active(properties.get("image_color"))
             if color:
                 img = cls._tint_image(img, color)
             iw = int(properties.get("image_width", 20) or 20)
             ih = int(properties.get("image_height", 20) or 20)
+            # preserve_aspect=True → contain-fit the native image inside
+            # the (image_width, image_height) box: scale so the smaller
+            # side dictates and the longer axis leaves padding around the
+            # icon. Render-time so saved-state mismatches and live edits
+            # both render correctly without an OFF→ON toggle.
+            if (properties.get("preserve_aspect")
+                    and native_w > 0 and native_h > 0):
+                scale = min(iw / native_w, ih / native_h)
+                iw = max(1, int(round(native_w * scale)))
+                ih = max(1, int(round(native_h * scale)))
             return ctk.CTkImage(
                 light_image=img, dark_image=img, size=(iw, ih),
             )

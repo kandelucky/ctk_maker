@@ -2608,13 +2608,19 @@ def _emit_widget(
         if has_disabled_tint:
             on_attr = f"self.{var_name}_icon_on"
             off_attr = f"self.{var_name}_icon_off"
+            # Normalise the colour-editor's "cleared" sentinel
+            # ("transparent") to the same fallback as ``None`` so a
+            # cleared field doesn't propagate ``"transparent"`` into
+            # ``_tint_image`` and crash the export at hex-parse time.
+            def _tint_or(c, fallback):
+                return c if c and c != "transparent" else fallback
             on_src = _image_source_with_color(
                 props, image_path,
-                props.get("image_color") or "#ffffff",
+                _tint_or(props.get("image_color"), "#ffffff"),
             )
             off_src = _image_source_with_color(
                 props, image_path,
-                props.get("image_color_disabled") or "#ffffff",
+                _tint_or(props.get("image_color_disabled"), "#ffffff"),
             )
             pre_lines.append(f"{on_attr} = {on_src}")
             pre_lines.append(f"{off_attr} = {off_src}")
@@ -2907,10 +2913,36 @@ def _path_for_export(image_path: str) -> str:
         return str(image_path).replace("\\", "/")
 
 
+def _aspect_corrected_height(
+    props: dict, image_path: str, iw: int, ih: int,
+) -> int:
+    """Override ``ih`` with the aspect-derived value when
+    ``preserve_aspect=True``. Mirrors the runtime ``_build_image``
+    rule so a project saved with a stale ``image_height`` still
+    exports a non-stretched icon. Returns ``ih`` unchanged when
+    the flag is off, the file can't be read, or the image is empty.
+    """
+    if not props.get("preserve_aspect"):
+        return ih
+    try:
+        from PIL import Image as PILImage
+        with PILImage.open(image_path) as probe:
+            nw, nh = probe.size
+        if nw > 0 and nh > 0:
+            return max(1, int(round(iw * nh / nw)))
+    except Exception:
+        pass
+    return ih
+
+
 def _image_source(props: dict, image_path: str) -> str:
     if "image_width" in props or "image_height" in props:
         iw = _safe_int(props.get("image_width"), 20)
         ih = _safe_int(props.get("image_height"), 20)
+        # Icon-mode aspect correction. Image-widget contain-fit lives
+        # on a different prop pair (width/height) with different
+        # semantics — handled elsewhere, skip here.
+        ih = _aspect_corrected_height(props, image_path, iw, ih)
     else:
         iw = _safe_int(props.get("width"), 64)
         ih = _safe_int(props.get("height"), 64)
@@ -2923,21 +2955,35 @@ def _image_source(props: dict, image_path: str) -> str:
     path_src = _py_literal(normalised_path)
     # image_color / image_color_disabled are builder-only PIL tints
     # (CTk doesn't expose a native image tint param). Pick between the
-    # two based on ``button_enabled`` — the builder's preview does the
-    # same, so the exported file matches what the designer saw.
-    # ``button_enabled`` only lives on command-capable widgets
-    # (CTkButton etc.); leaf widgets without that key fall through to
-    # the plain ``image_color``.
+    # two based on the widget's enabled-flag — the builder's preview
+    # does the same, so the exported file matches what the designer
+    # saw. ``button_enabled`` (CTkButton et al.) and ``label_enabled``
+    # (CTkLabel) carry identical tint semantics here; widgets without
+    # either key fall through to the plain ``image_color``. Note: only
+    # the PIL tint side is shared. Label deliberately does NOT also
+    # emit ``state="disabled"`` (Tk Label's native disabled rendering
+    # paints a stipple wash over the image); the manual color swap
+    # below is what makes the label look disabled.
+    #
+    # ``transparent`` is the colour-editor's "cleared" sentinel — both
+    # ``None`` and ``"transparent"`` mean "no tint", so we normalise
+    # both away before falling through the OR chain. Without this, a
+    # cleared ``image_color_disabled`` would propagate ``"transparent"``
+    # into ``_tint_image`` and crash the export at hex-parse time.
+    def _active(c):
+        return c if c and c != "transparent" else None
     if (
-        "button_enabled" in props
-        and not bool(props.get("button_enabled"))
+        ("button_enabled" in props
+         and not bool(props.get("button_enabled")))
+        or ("label_enabled" in props
+            and not bool(props.get("label_enabled")))
     ):
         color = (
-            props.get("image_color_disabled")
-            or props.get("image_color")
+            _active(props.get("image_color_disabled"))
+            or _active(props.get("image_color"))
         )
     else:
-        color = props.get("image_color")
+        color = _active(props.get("image_color"))
     if color:
         return (
             f"_tint_image({path_src}, {_py_literal(color)}, ({iw}, {ih}))"
@@ -2960,6 +3006,7 @@ def _image_source_with_color(
     if "image_width" in props or "image_height" in props:
         iw = _safe_int(props.get("image_width"), 20)
         ih = _safe_int(props.get("image_height"), 20)
+        ih = _aspect_corrected_height(props, image_path, iw, ih)
     else:
         iw = _safe_int(props.get("width"), 64)
         ih = _safe_int(props.get("height"), 64)

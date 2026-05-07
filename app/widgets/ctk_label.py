@@ -129,8 +129,7 @@ class CTkLabelDescriptor(WidgetDescriptor):
         {"name": "image_height", "type": "number", "label": "H",
          "group": "Icon",
          "pair": "img_size", "min": 4, "max": 512,
-         "disabled_when": lambda p: (
-             not p.get("image") or bool(p.get("preserve_aspect")))},
+         "disabled_when": lambda p: not p.get("image")},
         {"name": "compound", "type": "compound", "label": "",
          "group": "Icon", "row_label": "Icon Side",
          "disabled_when": lambda p: not p.get("image")},
@@ -201,7 +200,6 @@ class CTkLabelDescriptor(WidgetDescriptor):
     derived_triggers = {
         "text", "width", "height", "font_bold",
         "font_autofit", "font_wrap",
-        "image", "image_width", "preserve_aspect",
     }
 
     _NODE_ONLY_KEYS = {
@@ -221,13 +219,9 @@ class CTkLabelDescriptor(WidgetDescriptor):
     # (e.g. autofit OFF→ON→OFF restore) but never passed to CTk kwargs.
     _SHADOW_KEYS = {"_font_size_pre_autofit"}
 
-    # Cache of image path -> native aspect ratio (width / height).
-    _aspect_cache: dict[str, float] = {}
-
     # ==================================================================
     # Derived properties:
     #   - Autofit (Auto Fit)        — derives font_size from box + text
-    #   - Preserve aspect           — derives image_height from image_width
     # ==================================================================
     @classmethod
     def compute_derived(cls, properties: dict) -> dict:
@@ -267,36 +261,7 @@ class CTkLabelDescriptor(WidgetDescriptor):
                 except (ValueError, TypeError):
                     pass
 
-        # --- Preserve aspect: derive image_height from image_width ----
-        if properties.get("preserve_aspect") and properties.get("image"):
-            aspect = cls._native_aspect(properties["image"])
-            if aspect:
-                try:
-                    w = int(properties.get("image_width") or 20)
-                    result["image_height"] = max(1, round(w / aspect))
-                except (ValueError, TypeError):
-                    pass
-
         return result
-
-    @classmethod
-    def _native_aspect(cls, path: str) -> float | None:
-        """Return native width/height ratio of the image at `path`."""
-        if not path:
-            return None
-        if path in cls._aspect_cache:
-            return cls._aspect_cache[path]
-        try:
-            from PIL import Image
-            with Image.open(path) as img:
-                w, h = img.size
-            if h == 0:
-                return None
-            aspect = w / h
-            cls._aspect_cache[path] = aspect
-            return aspect
-        except Exception:
-            return None
 
     @classmethod
     def _compute_autofit_size(cls, text: str, width: int, height: int,
@@ -357,6 +322,7 @@ class CTkLabelDescriptor(WidgetDescriptor):
     # ==================================================================
     @classmethod
     def export_kwarg_overrides(cls, properties: dict) -> dict:
+        overrides: dict = {}
         # Mirror transform_properties' "wrap on + length 0 → derive from
         # width" rule so exported code wraps the same way the editor does.
         if properties.get("font_wrap") and not properties.get("wraplength"):
@@ -364,8 +330,18 @@ class CTkLabelDescriptor(WidgetDescriptor):
                 w = int(properties.get("width", 100))
             except (ValueError, TypeError):
                 w = 100
-            return {"wraplength": max(1, w - 8)}
-        return {}
+            overrides["wraplength"] = max(1, w - 8)
+        # Mirror transform_properties' manual disabled-text swap. We
+        # deliberately don't emit ``state="disabled"`` for labels (Tk
+        # Label's native disabled rendering paints a stipple wash over
+        # the image); instead we pre-substitute ``text_color`` with
+        # ``text_color_disabled`` so the exported file shows the same
+        # disabled appearance the editor renders.
+        if not properties.get("label_enabled", True):
+            disabled_color = properties.get("text_color_disabled")
+            if disabled_color:
+                overrides["text_color"] = disabled_color
+        return overrides
 
     @classmethod
     def transform_properties(cls, properties: dict) -> dict:
@@ -430,17 +406,37 @@ class CTkLabelDescriptor(WidgetDescriptor):
         try:
             from PIL import Image
             img = Image.open(image_path)
+            native_w, native_h = img.size
+            # ``transparent`` is the colour-editor's "cleared" sentinel
+            # — treat it as "no tint" alongside ``None`` so a cleared
+            # disabled colour falls through to the normal tint instead
+            # of being passed to ``_tint_image`` (which would otherwise
+            # silently no-op via the ValueError catch but skip a valid
+            # ``image_color`` fallback).
+            def _active(c):
+                return c if c and c != "transparent" else None
             if not properties.get("label_enabled", True):
                 color = (
-                    properties.get("image_color_disabled")
-                    or properties.get("image_color")
+                    _active(properties.get("image_color_disabled"))
+                    or _active(properties.get("image_color"))
                 )
             else:
-                color = properties.get("image_color")
+                color = _active(properties.get("image_color"))
             if color:
                 img = cls._tint_image(img, color)
             iw = int(properties.get("image_width", 20) or 20)
             ih = int(properties.get("image_height", 20) or 20)
+            # preserve_aspect=True → contain-fit the native image inside
+            # the (image_width, image_height) box: scale so the smaller
+            # side dictates and the longer axis leaves padding around the
+            # icon (CTkLabel's compound + image_anchor handle placement).
+            # Render-time so saved-state mismatches and live edits both
+            # render correctly without needing an OFF→ON toggle.
+            if (properties.get("preserve_aspect")
+                    and native_w > 0 and native_h > 0):
+                scale = min(iw / native_w, ih / native_h)
+                iw = max(1, int(round(native_w * scale)))
+                ih = max(1, int(round(native_h * scale)))
             return ctk.CTkImage(
                 light_image=img, dark_image=img, size=(iw, ih),
             )
