@@ -24,7 +24,7 @@ from pathlib import Path
 
 import customtkinter as ctk
 
-from app.ui.dialog_utils import safe_grab_set
+from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 
 DIALOG_W = 500
 
@@ -59,6 +59,7 @@ class QuickExportDialog(ctk.CTkToplevel):
         output_path_preview: str,
     ):
         super().__init__(parent)
+        prepare_dialog(self)
         self.result: str | None = None
 
         self.title("Quick Export")
@@ -74,6 +75,7 @@ class QuickExportDialog(ctk.CTkToplevel):
         self.bind("<Return>", lambda _e: self._pick("py"))
         self.bind("<Escape>", lambda _e: self._pick(None))
         self.protocol("WM_DELETE_WINDOW", lambda: self._pick(None))
+        reveal_dialog(self)
 
     def _build(
         self, document_name: str, output_path_preview: str,

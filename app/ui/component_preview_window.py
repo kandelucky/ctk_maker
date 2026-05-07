@@ -30,6 +30,7 @@ from app.core.variables import is_var_token, parse_var_token
 from app.io.component_assets import (
     extract_assets_to_folder, rewrite_bundle_tokens_to_paths,
 )
+from app.ui.dialog_utils import prepare_dialog, reveal_dialog
 from app.widgets.registry import get_descriptor
 
 if TYPE_CHECKING:
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
 class ComponentPreviewWindow(ctk.CTkToplevel):
     def __init__(self, parent, payload: dict, component_path: Path | None = None):
         super().__init__(parent)
+        prepare_dialog(self)
         name = payload.get("name") or "(component)"
         self.title(f"{name} — Preview")
         self.transient(parent)
@@ -206,9 +208,11 @@ class ComponentPreviewWindow(ctk.CTkToplevel):
             pw = parent.winfo_width()
             ph = parent.winfo_height()
         except tk.TclError:
+            reveal_dialog(self)
             return
         w = self.winfo_width()
         h = self.winfo_height()
         x = px + (pw - w) // 2
         y = py + (ph - h) // 2
         self.geometry(f"+{max(0, x)}+{max(0, y)}")
+        reveal_dialog(self)

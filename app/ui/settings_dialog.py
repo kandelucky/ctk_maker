@@ -26,7 +26,7 @@ from typing import Any
 import customtkinter as ctk
 
 from app.core.settings import load_settings, save_setting
-from app.ui.dialog_utils import safe_grab_set
+from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 
 DIALOG_W = 700
 DIALOG_H = 520
@@ -116,6 +116,7 @@ class SettingsDialog(tk.Toplevel):
         on_workspace_changed=None,
     ):
         super().__init__(parent)
+        prepare_dialog(self)
         self._on_appearance_change = on_appearance_change
         self._on_workspace_changed = on_workspace_changed
 
@@ -135,6 +136,7 @@ class SettingsDialog(tk.Toplevel):
         self.bind("<Escape>", lambda _e: self._on_cancel())
         self.bind("<Return>", lambda _e: self._on_ok())
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
+        reveal_dialog(self)
 
     # ------------------------------------------------------------------
     # Style

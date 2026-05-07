@@ -17,7 +17,7 @@ from pathlib import Path
 import customtkinter as ctk
 
 from app.core.component_paths import COMPONENT_EXT
-from app.ui.dialog_utils import safe_grab_set
+from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 
 _FORBIDDEN = set('\\/:*?"<>|')
 _ROOT_LABEL = "(root)"
@@ -52,6 +52,7 @@ class ComponentSaveDialog(ctk.CTkToplevel):
         initial_folder: str = "",
     ):
         super().__init__(parent)
+        prepare_dialog(self)
         self.title("Save as component")
         self.resizable(False, False)
         self.transient(parent)
@@ -191,9 +192,11 @@ class ComponentSaveDialog(ctk.CTkToplevel):
             pw = parent.winfo_width()
             ph = parent.winfo_height()
         except tk.TclError:
+            reveal_dialog(self)
             return
         w = self.winfo_width()
         h = self.winfo_height()
         x = px + (pw - w) // 2
         y = py + (ph - h) // 2
         self.geometry(f"+{max(0, x)}+{max(0, y)}")
+        reveal_dialog(self)

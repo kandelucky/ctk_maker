@@ -20,7 +20,7 @@ from app.core.component_paths import (
 from app.core.logger import log_error
 from app.core.settings import load_settings, save_setting
 from app.io.component_io import load_metadata, rewrite_payload_for_publish
-from app.ui.dialog_utils import safe_grab_set
+from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 
 CATEGORY_GUIDE_URL = (
     "https://github.com/kandelucky/ctk_maker/wiki/Component-Categories"
@@ -80,6 +80,7 @@ def _format_date(iso: str) -> str:
 class ComponentPublishFormDialog(ctk.CTkToplevel):
     def __init__(self, parent, source_path: Path):
         super().__init__(parent)
+        prepare_dialog(self)
         self.title("Publish component")
         self.resizable(False, False)
         self.transient(parent)
@@ -429,9 +430,11 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
             pw = parent.winfo_width()
             ph = parent.winfo_height()
         except tk.TclError:
+            reveal_dialog(self)
             return
         w = self.winfo_width()
         h = self.winfo_height()
         x = px + (pw - w) // 2
         y = py + (ph - h) // 2
         self.geometry(f"+{max(0, x)}+{max(0, y)}")
+        reveal_dialog(self)

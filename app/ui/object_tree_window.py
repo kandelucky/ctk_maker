@@ -29,6 +29,7 @@ from app.core.commands import (
     paste_target_parent_id,
     push_zorder_history,
 )
+from app.ui.dialog_utils import prepare_dialog, reveal_dialog
 from app.ui.dialogs import RenameDialog
 from app.ui.icons import load_icon, load_tk_icon
 from app.widgets.layout_schema import normalise_layout_type
@@ -2183,6 +2184,7 @@ class ObjectTreeWindow(ctk.CTkToplevel):
         on_close: Callable[[], None] | None = None,
     ):
         super().__init__(parent)
+        prepare_dialog(self)
         self.title("Object Tree")
         self.configure(fg_color=BG)
         self.geometry(f"{DIALOG_W}x{DIALOG_H}")
@@ -2224,10 +2226,12 @@ class ObjectTreeWindow(ctk.CTkToplevel):
             py = self.master.winfo_rooty()
             pw = self.master.winfo_width()
         except tk.TclError:
+            reveal_dialog(self)
             return
         x = px + pw - DIALOG_W - 24
         y = py + 80
         self.geometry(f"+{max(0, x)}+{max(0, y)}")
+        reveal_dialog(self)
 
     def _on_close(self) -> None:
         if self._on_close_callback is not None:

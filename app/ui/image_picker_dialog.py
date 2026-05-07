@@ -26,7 +26,7 @@ import customtkinter as ctk
 
 from app.core.assets import copy_to_assets, resolve_asset_token
 from app.core.logger import log_error
-from app.ui.dialog_utils import safe_grab_set
+from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 from app.core.paths import ASSETS_DIR_NAME
 from app.ui.icons import load_tk_icon
 
@@ -60,6 +60,7 @@ IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico"}
 class ImagePickerDialog(tk.Toplevel):
     def __init__(self, parent, project_file: str, event_bus=None):
         super().__init__(parent)
+        prepare_dialog(self)
         self.project_file = project_file
         self._event_bus = event_bus
         self.result: str | None = None
@@ -85,6 +86,7 @@ class ImagePickerDialog(tk.Toplevel):
         self.bind("<Return>", lambda _e: self._on_ok())
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
 
+        reveal_dialog(self)
         # Defer the first list build so the CTkScrollableFrame is
         # realised — packing into an unmapped scrollable canvas can
         # leave children invisible until the next layout pass.

@@ -31,7 +31,7 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
 from app.core.paths import get_default_projects_dir
-from app.ui.dialog_utils import safe_grab_set
+from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 from app.ui.icons import load_icon
 
 DIALOG_W = 540
@@ -67,6 +67,7 @@ class SaveAsDialog(ctk.CTkToplevel):
 
     def __init__(self, parent, project):
         super().__init__(parent)
+        prepare_dialog(self)
         self.project = project
         self.result: dict | None = None
 
@@ -122,6 +123,7 @@ class SaveAsDialog(ctk.CTkToplevel):
         self.bind("<Return>", lambda _e: self._on_save())
         self.bind("<Escape>", lambda _e: self._on_cancel())
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
+        reveal_dialog(self)
 
     # ------------------------------------------------------------------
     # Layout

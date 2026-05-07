@@ -13,7 +13,7 @@ import tkinter as tk
 
 import customtkinter as ctk
 
-from app.ui.dialog_utils import safe_grab_set
+from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 
 
 class ComponentWindowInsertDialog(ctk.CTkToplevel):
@@ -24,6 +24,7 @@ class ComponentWindowInsertDialog(ctk.CTkToplevel):
         target_doc_name: str,
     ):
         super().__init__(parent)
+        prepare_dialog(self)
         self.title("Insert Window component")
         self.resizable(False, False)
         self.transient(parent)
@@ -99,9 +100,11 @@ class ComponentWindowInsertDialog(ctk.CTkToplevel):
             pw = parent.winfo_width()
             ph = parent.winfo_height()
         except tk.TclError:
+            reveal_dialog(self)
             return
         w = self.winfo_width()
         h = self.winfo_height()
         x = px + (pw - w) // 2
         y = py + (ph - h) // 2
         self.geometry(f"+{max(0, x)}+{max(0, y)}")
+        reveal_dialog(self)

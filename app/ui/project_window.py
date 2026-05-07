@@ -46,6 +46,7 @@ from app.core.logger import log_error
 from app.core.paths import (
     ASSET_SUBDIRS, assets_dir, ensure_project_folder,
 )
+from app.ui.dialog_utils import prepare_dialog, reveal_dialog
 
 if TYPE_CHECKING:
     from app.core.project import Project
@@ -2146,6 +2147,7 @@ class ProjectWindow(ctk.CTkToplevel):
         on_active_page_path_changed: Callable[[str], None] | None = None,
     ):
         super().__init__(parent)
+        prepare_dialog(self)
         self.title("Assets")
         self.configure(fg_color=BG)
         self.geometry(f"{DIALOG_W}x{DIALOG_H}")
@@ -2164,6 +2166,7 @@ class ProjectWindow(ctk.CTkToplevel):
         self.panel.pack(fill="both", expand=True, padx=6, pady=6)
         self._place_relative_to(parent)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        reveal_dialog(self)
 
     def _place_relative_to(self, parent) -> None:
         try:

@@ -43,8 +43,11 @@ class StartupDialog(ctk.CTkToplevel):
         # Hide before the WM maps the window; reveal at the end of
         # __init__ once geometry has been positioned. Otherwise the
         # window flashes at the WM-default location and jumps to the
-        # centered position.
+        # centered position. Alpha=0 layered on top so even the
+        # first map after deiconify doesn't show Windows' default
+        # white background for one frame.
         self.withdraw()
+        self.attributes("-alpha", 0.0)
         self.title("CTkMaker")
         self.resizable(False, False)
         self.transient(parent)
@@ -63,12 +66,17 @@ class StartupDialog(ctk.CTkToplevel):
         self.bind("<Escape>", lambda e: self._on_close())
         self.bind("<Return>", lambda e: self._on_create())
 
+        self.deiconify()
+        self.update_idletasks()
+        self.attributes("-alpha", 1.0)
+        # Dismiss the splash AFTER this window is fully revealed, not
+        # before — otherwise there's a visible gap with neither window
+        # on screen while we paint.
         if on_ready is not None:
             try:
                 on_ready()
             except Exception:
                 pass
-        self.deiconify()
         safe_grab_set(self)
 
     # ------------------------------------------------------------------

@@ -28,6 +28,7 @@ from tkinter import ttk
 
 import customtkinter as ctk
 
+from app.ui.dialog_utils import prepare_dialog, reveal_dialog
 from app.ui.palette import CATALOG
 from app.widgets.registry import get_descriptor
 
@@ -214,6 +215,7 @@ def _renamed_to(descriptor, ctk_kwarg: str) -> tuple[str, ...]:
 class WidgetInspectorWindow(ctk.CTkToplevel):
     def __init__(self, master):
         super().__init__(master)
+        prepare_dialog(self)
         self.title("Inspect CTk Widget")
         self.geometry("760x560")
         self.minsize(560, 380)
@@ -262,6 +264,8 @@ class WidgetInspectorWindow(ctk.CTkToplevel):
         if labels:
             self._dropdown.set(labels[0])
             self._on_widget_change(labels[0])
+
+        reveal_dialog(self)
 
     def _raise_self(self) -> None:
         try:

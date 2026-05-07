@@ -65,8 +65,8 @@ The PyPI package at [ctkmaker/](../../ctkmaker/) is a name-reservation stub. Run
 | **Workspace** | [workspace/](../../app/ui/workspace/) (`core.py`, `render.py`, `drag.py`, `widget_lifecycle.py`, `layout_overlay.py`, `chrome.py`, `controls.py`, `grid_drop_indicator.py`) | Canvas — real CTk widgets via `Canvas.create_window`. |
 | **Properties** | [properties_panel/](../../app/ui/properties_panel/) (`panel.py`, `panel_commit.py`, `panel_schema.py`, `editors/*.py`, `overlays.py`, `drag_scrub.py`, `type_icons.py`, `format_utils.py`, `constants.py`, `property_help.py`, `tooltip.py`) | ttk.Treeview-based inspector with overlay editor widgets + label-column hover tooltips. |
 | **Floating panels** | `variables_window.py`, `object_tree_window.py`, `history_window.py`, `components_panel.py` | F11 / F8 / F10 docked panels. |
-| **Dialogs** | `export_dialog.py`, `new_project_form.py`, `font_picker_dialog.py`, `image_picker_dialog.py`, `lucide_icon_picker_dialog.py`, `bug_reporter.py`, `crash_dialog.py`, `handler_delete_dialogs.py`, 9× `component_*_dialog.py` | Modal flows. |
-| **Helpers** | `dialogs.py`, `dialog_utils.py`, `icons.py`, `dark_titlebar.py` | Shared dialog scaffolding + icon loader + Win32 dark titlebar. |
+| **Dialogs** | `startup_dialog.py`, `splash.py`, `export_dialog.py`, `new_project_form.py`, `font_picker_dialog.py`, `image_picker_dialog.py`, `lucide_icon_picker_dialog.py`, `bug_reporter.py`, `crash_dialog.py`, `handler_delete_dialogs.py`, 9× `component_*_dialog.py` | Modal flows. |
+| **Helpers** | `dialogs.py`, `dialog_utils.py`, `icons.py`, `dark_titlebar.py` | Shared dialog scaffolding (`safe_grab_set`, `prepare_dialog`/`reveal_dialog` alpha-hide pair) + icon loader + Win32 dark titlebar. |
 
 ### `app/io/` — persistence + export
 
@@ -94,13 +94,19 @@ main.py
   → patch CTkToplevel icon
   → install dark titlebar persistence
   → MainWindow()
-        → empty Project
-        → mount UI panels
-        → restore recent project (if configured)
+        → withdraw + alpha=0 (hidden until project loads)
+        → SplashScreen (frameless logo + version + Loading...)
+        → mount UI panels (toolbar, palette, properties, ...)
         → install shortcut bindings
+        → after(120): _show_startup_dialog
+              → StartupDialog (recent / new project picker)
+              → on_ready callback destroys splash at reveal
+              → user picks → MainWindow loads project → alpha=1
   → install crash handlers (sys.excepthook + Tk.report_callback_exception)
   → app.mainloop()
 ```
+
+Every modal dialog (`ctk.CTkToplevel` and `tk.Toplevel` subclasses except crash_dialog) calls `prepare_dialog(self)` at the top of `__init__` (alpha=0) and `reveal_dialog(self)` after layout settles (force-paint + alpha=1). Centering paths that defer via `after(N, _center_on_parent)` call `reveal_dialog` at the end of the centering method so the window only becomes visible at its final position.
 
 ### Edit cycle
 

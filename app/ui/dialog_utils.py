@@ -19,3 +19,30 @@ def safe_grab_set(toplevel: tk.Misc) -> None:
         toplevel.grab_set()
     except tk.TclError:
         pass
+
+
+def prepare_dialog(toplevel: tk.Misc) -> None:
+    """Hide the toplevel via alpha while __init__ builds widgets.
+    Pair with ``reveal_dialog`` at the end of __init__. Otherwise
+    Windows briefly paints the WM-default white BG before Tk applies
+    the configured colours — a visible flash on dialog open.
+    """
+    try:
+        toplevel.attributes("-alpha", 0.0)
+    except tk.TclError:
+        pass
+
+
+def reveal_dialog(toplevel: tk.Misc) -> None:
+    """Reveal a dialog hidden by ``prepare_dialog``. Forces a paint
+    pass while still invisible, then flips alpha to 1 so the user
+    only ever sees the fully-rendered window.
+    """
+    try:
+        toplevel.update_idletasks()
+    except tk.TclError:
+        pass
+    try:
+        toplevel.attributes("-alpha", 1.0)
+    except tk.TclError:
+        pass

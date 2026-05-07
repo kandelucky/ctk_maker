@@ -18,7 +18,7 @@ from tkinter import ttk
 
 import customtkinter as ctk
 
-from app.ui.dialog_utils import safe_grab_set
+from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 
 _BG = "#1a1a1a"
 _HEADING_FG = "#e6e6e6"
@@ -40,12 +40,14 @@ def _center_on_parent(dialog: ctk.CTkToplevel) -> None:
         pw = parent.winfo_width()
         ph = parent.winfo_height()
     except tk.TclError:
+        reveal_dialog(dialog)
         return
     w = dialog.winfo_width()
     h = dialog.winfo_height()
     x = px + (pw - w) // 2
     y = py + (ph - h) // 2
     dialog.geometry(f"+{max(0, x)}+{max(0, y)}")
+    reveal_dialog(dialog)
 
 
 class WidgetPickerDialog(ctk.CTkToplevel):
@@ -67,6 +69,7 @@ class WidgetPickerDialog(ctk.CTkToplevel):
         current_widget_id: str = "",
     ):
         super().__init__(parent)
+        prepare_dialog(self)
         self.title(f"Pick widget for {field_name}")
         self.transient(parent)
         safe_grab_set(self)

@@ -22,7 +22,7 @@ from tkinter import messagebox
 import customtkinter as ctk
 from PIL import Image, ImageTk
 
-from app.ui.dialog_utils import safe_grab_set
+from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 
 LUCIDE_DIR = Path(__file__).resolve().parent.parent / "assets" / "lucide"
 PNG_DIR = LUCIDE_DIR / "png-icons"
@@ -68,6 +68,7 @@ class LucideIconPickerDialog(tk.Toplevel):
 
     def __init__(self, parent, target_dir: Path | str) -> None:
         super().__init__(parent)
+        prepare_dialog(self)
         self.target_dir = Path(target_dir)
         self.result: str | None = None
 
@@ -102,6 +103,7 @@ class LucideIconPickerDialog(tk.Toplevel):
         self.bind("<Return>", lambda _e: self._on_apply())
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
 
+        reveal_dialog(self)
         # Defer first paint until the scrollable frames are realised —
         # tk's CTkScrollableFrame leaves children unmapped if you push
         # them in before the canvas has been packed.

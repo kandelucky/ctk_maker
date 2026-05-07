@@ -35,7 +35,7 @@ from app.core.fonts import (
     register_font_file, resolve_system_font_path,
 )
 from app.core.logger import log_error
-from app.ui.dialog_utils import safe_grab_set
+from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 from app.ui.icons import load_tk_icon
 
 HELP_TEXT = (
@@ -89,6 +89,7 @@ class FontPickerDialog(tk.Toplevel):
         type_display: str | None = None,
     ):
         super().__init__(parent)
+        prepare_dialog(self)
         self.project = project
         self.project_file = getattr(project, "path", None)
         self.current = current
@@ -137,6 +138,7 @@ class FontPickerDialog(tk.Toplevel):
         self.bind("<Return>", lambda _e: self._on_ok())
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
 
+        reveal_dialog(self)
         self.after_idle(self._refresh)
 
     # ------- layout -------
@@ -660,6 +662,7 @@ class SystemFontPickerDialog(tk.Toplevel):
 
     def __init__(self, parent, exclude: set[str] | None = None):
         super().__init__(parent)
+        prepare_dialog(self)
         self.exclude = set(exclude or [])
         self.result: str | None = None
 
@@ -682,6 +685,7 @@ class SystemFontPickerDialog(tk.Toplevel):
         self.bind("<Return>", lambda _e: self._on_ok())
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
 
+        reveal_dialog(self)
         self.after_idle(self._refresh)
 
     def _center_on_parent(self, parent) -> None:

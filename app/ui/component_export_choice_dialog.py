@@ -12,7 +12,7 @@ from typing import Any
 
 import customtkinter as ctk
 
-from app.ui.dialog_utils import safe_grab_set
+from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 from app.ui.system_fonts import derive_mono_font
 
 
@@ -24,6 +24,7 @@ COMPONENT_LIBRARY_URL = (
 class ComponentExportChoiceDialog(ctk.CTkToplevel):
     def __init__(self, parent, source_path: Path):
         super().__init__(parent)
+        prepare_dialog(self)
         self.title("Export component")
         self.resizable(False, False)
         self.transient(parent)
@@ -145,12 +146,14 @@ class ComponentExportChoiceDialog(ctk.CTkToplevel):
             pw = parent.winfo_width()
             ph = parent.winfo_height()
         except tk.TclError:
+            reveal_dialog(self)
             return
         w = self.winfo_width()
         h = self.winfo_height()
         x = px + (pw - w) // 2
         y = py + (ph - h) // 2
         self.geometry(f"+{max(0, x)}+{max(0, y)}")
+        reveal_dialog(self)
 
 
 MIT_LICENSE_TEXT = """MIT License
@@ -181,6 +184,7 @@ SOFTWARE."""
 class _MITTextWindow(ctk.CTkToplevel):
     def __init__(self, parent):
         super().__init__(parent)
+        prepare_dialog(self)
         self.title("MIT License — full text")
         self.geometry("560x440")
         self.transient(parent)
@@ -203,6 +207,7 @@ class _MITTextWindow(ctk.CTkToplevel):
             command=self.destroy,
         ).pack(side="bottom", pady=(0, 14))
         self.bind("<Escape>", lambda _e: self.destroy())
+        reveal_dialog(self)
 
 
 class ComponentPublishLicenseDialog(ctk.CTkToplevel):
@@ -213,6 +218,7 @@ class ComponentPublishLicenseDialog(ctk.CTkToplevel):
 
     def __init__(self, parent, source_path: Path):
         super().__init__(parent)
+        prepare_dialog(self)
         self.title("License agreement")
         self.resizable(False, False)
         self.transient(parent)
@@ -349,12 +355,14 @@ class ComponentPublishLicenseDialog(ctk.CTkToplevel):
             pw = parent.winfo_width()
             ph = parent.winfo_height()
         except tk.TclError:
+            reveal_dialog(self)
             return
         w = self.winfo_width()
         h = self.winfo_height()
         x = px + (pw - w) // 2
         y = py + (ph - h) // 2
         self.geometry(f"+{max(0, x)}+{max(0, y)}")
+        reveal_dialog(self)
 
 
 def run_export_flow(parent, source_path: Path) -> None:

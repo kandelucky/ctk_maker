@@ -345,6 +345,16 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         # user picks a project — this avoids the "main window appears
         # then resizes when dialog opens" flicker.
         self.withdraw()
+        # Hide via alpha too — withdraw alone leaves the window briefly
+        # showing the WM-default white BG when it eventually deiconifies
+        # while project content is still loading. Reveal at the end of
+        # ``_show_startup_dialog`` after the content fills in.
+        self.attributes("-alpha", 0.0)
+        # Splash covers the heavy construction below (toolbar, panels,
+        # fonts, ...). Destroyed right before StartupDialog reveals.
+        from app.ui.splash import SplashScreen
+        self._splash: SplashScreen | None = SplashScreen(self)
+        self.update()
         # Set the default window icon BEFORE any Toplevels (dialogs,
         # floating panels, palette popups) are constructed below — Tk
         # only inherits ``default=`` onto Toplevels created AFTER this
@@ -793,18 +803,22 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         self.destroy()
 
     def _show_startup_dialog(self) -> None:
-        dialog = StartupDialog(self)
+        # Hand the splash dismissal hook to the dialog so the splash
+        # disappears in the same flush as the dialog reveal — avoids
+        # a frame where neither window is visible.
+        splash = self._splash
+        self._splash = None
+
+        def _dismiss_splash() -> None:
+            if splash is not None:
+                try:
+                    splash.destroy()
+                except Exception:
+                    pass
+
+        dialog = StartupDialog(self, on_ready=_dismiss_splash)
         self.wait_window(dialog)
         result = dialog.result
-        # Apply geometry / maximize state and reveal the main window
-        # only after the user has picked a project. The window stays
-        # withdrawn until now (set in __init__), so the user only ever
-        # sees the dialog at first — no flicker, no resize race.
-        if result is not None:
-            self._apply_saved_window_state()
-            self.deiconify()
-            if getattr(self, "_wants_maximized", False):
-                self._safe_zoom()
         if result is None:
             # No "untitled" fallback any more — every project lives
             # inside a folder structure, which means it must be either
@@ -812,28 +826,42 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             # dialog. Cancelling the startup dialog quits the app.
             self.destroy()
             return
-        if result[0] == "open":
-            self._open_path(result[1])
-        elif result[0] == "new":
-            _, name, w, h, path = result
-            self.project.clear()
-            self.project.resize_document(w, h)
-            self.project.name = name
-            self.project.active_document.name = name
-            from app.core.project_folder import seed_multi_page_meta_from_disk
-            seed_multi_page_meta_from_disk(self.project, path)
+        # Apply geometry / maximize state and load project content
+        # while still alpha-hidden, then reveal in finally so the user
+        # never sees the WM-default white BG nor content filling in.
+        try:
+            self._apply_saved_window_state()
+            self.deiconify()
+            if getattr(self, "_wants_maximized", False):
+                self._safe_zoom()
+            if result[0] == "open":
+                self._open_path(result[1])
+            elif result[0] == "new":
+                _, name, w, h, path = result
+                self.project.clear()
+                self.project.resize_document(w, h)
+                self.project.name = name
+                self.project.active_document.name = name
+                from app.core.project_folder import seed_multi_page_meta_from_disk
+                seed_multi_page_meta_from_disk(self.project, path)
+                try:
+                    save_project(self.project, path)
+                except OSError:
+                    log_error("save_project (new project)")
+                    messagebox.showerror(
+                        "Save failed",
+                        f"Could not create project file at:\n{path}",
+                        parent=self,
+                    )
+                    return
+                clear_autosave(path)
+                self._set_current_path(path)
+        finally:
             try:
-                save_project(self.project, path)
-            except OSError:
-                log_error("save_project (new project)")
-                messagebox.showerror(
-                    "Save failed",
-                    f"Could not create project file at:\n{path}",
-                    parent=self,
-                )
-                return
-            clear_autosave(path)
-            self._set_current_path(path)
+                self.update_idletasks()
+                self.attributes("-alpha", 1.0)
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
     # Current-path tracking

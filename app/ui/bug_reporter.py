@@ -35,7 +35,7 @@ except Exception:
     def load_icon(*_args, **_kwargs) -> "ctk.CTkImage | None":
         return None
 
-from app.ui.dialog_utils import safe_grab_set
+from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 
 REPO = "kandelucky/ctk_maker"
 NEW_ISSUE_URL = f"https://github.com/{REPO}/issues/new"
@@ -346,6 +346,7 @@ def build_screenshot_hint_panel(
 class BugReporterWindow(ctk.CTkToplevel):
     def __init__(self, master) -> None:
         super().__init__(master)
+        prepare_dialog(self)
         self.configure(fg_color=BG)
         self.title("Report a Bug — CTkMaker")
         self.geometry("660x590")
@@ -373,6 +374,7 @@ class BugReporterWindow(ctk.CTkToplevel):
         self._show_picker()
         self._refresh_all()
         self._on_autodetect()
+        reveal_dialog(self)
 
     # ------------------------------------------------------------------
     # View state — picker on open, form after the user picks a mode.
@@ -1058,6 +1060,7 @@ class BugReporterWindow(ctk.CTkToplevel):
 class ReportDialog(ctk.CTkToplevel):
     def __init__(self, master: "BugReporterWindow") -> None:
         super().__init__(master)
+        prepare_dialog(self)
         self.configure(fg_color=BG)
         self._owner = master
         self.title("Report")
@@ -1108,6 +1111,7 @@ class ReportDialog(ctk.CTkToplevel):
             cancel_row, text="Cancel", command=self.destroy,
             width=90,
         ).pack(side="right")
+        reveal_dialog(self)
 
     def _add_card(
         self,

@@ -38,7 +38,7 @@ from app.core.variables import (
     sanitize_var_name,
 )
 from app.core.logger import log_error
-from app.ui.dialog_utils import safe_grab_set
+from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 from app.ui.system_fonts import derive_ui_font
 
 if TYPE_CHECKING:
@@ -593,6 +593,7 @@ class ReparentVariablesDialog(ctk.CTkToplevel):
         external_usage: int,
     ):
         super().__init__(parent)
+        prepare_dialog(self)
         self.title("Move widget(s) across windows")
         self.configure(fg_color=BG)
         # Tight minsize so the dialog auto-sizes to its content
@@ -779,6 +780,7 @@ class ReparentVariablesDialog(ctk.CTkToplevel):
             self.geometry(f"+{x}+{y}")
         except tk.TclError:
             pass
+        reveal_dialog(self)
 
 
 def confirm_clipboard_paste_policy(
@@ -834,6 +836,7 @@ class VariableEditDialog(ctk.CTkToplevel):
         allowed_types: tuple[str, ...] | None = None,
     ):
         super().__init__(parent)
+        prepare_dialog(self)
         self.title(title)
         self.configure(fg_color=BG)
         self.geometry(f"{DIALOG_W}x{DIALOG_H}")
@@ -1104,6 +1107,7 @@ class VariableEditDialog(ctk.CTkToplevel):
             self.geometry(f"{DIALOG_W}x{DIALOG_H}+{x}+{y}")
         except tk.TclError:
             pass
+        reveal_dialog(self)
 
 
 class AddGlobalReferenceDialog(ctk.CTkToplevel):
@@ -1118,6 +1122,7 @@ class AddGlobalReferenceDialog(ctk.CTkToplevel):
 
     def __init__(self, parent, project, existing_names: set[str]):
         super().__init__(parent)
+        prepare_dialog(self)
         self.title("Add global reference")
         self.transient(parent)
         safe_grab_set(self)
@@ -1353,6 +1358,7 @@ class AddGlobalReferenceDialog(ctk.CTkToplevel):
             self.geometry(f"+{max(0, x)}+{max(0, y)}")
         except tk.TclError:
             pass
+        reveal_dialog(self)
 
 
 def run_add_global_reference_dialog(
@@ -1815,6 +1821,7 @@ class VariablesWindow(ctk.CTkToplevel):
         initial_variable_id: str | None = None,
     ):
         super().__init__(parent)
+        prepare_dialog(self)
         self.title("Data")
         self.configure(fg_color=BG)
         self.geometry("460x440")
@@ -1879,6 +1886,7 @@ class VariablesWindow(ctk.CTkToplevel):
             )
         self._place_relative_to(parent)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        reveal_dialog(self)
 
     def _select_variable(self, var_id: str) -> None:
         """Select ``var_id`` in whichever panel currently owns it.

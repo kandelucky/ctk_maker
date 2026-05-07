@@ -31,7 +31,7 @@ import customtkinter as ctk
 from app.core.logger import log_error
 from app.core.settings import load_settings, save_setting
 from app.io.code_exporter import export_project
-from app.ui.dialog_utils import safe_grab_set
+from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 from app.ui.icons import load_icon
 
 SETTING_INCLUDE_DESCRIPTIONS = "export_include_descriptions"
@@ -80,6 +80,7 @@ class ExportDialog(ctk.CTkToplevel):
 
     def __init__(self, parent, project, preselected_doc_id=None):
         super().__init__(parent)
+        prepare_dialog(self)
         self.project = project
         self.result: str | None = None
 
@@ -803,9 +804,11 @@ class ExportDialog(ctk.CTkToplevel):
             pw = parent.winfo_width()
             ph = parent.winfo_height()
         except tk.TclError:
+            reveal_dialog(self)
             return
         w = self.winfo_width()
         h = self.winfo_height()
         x = px + (pw - w) // 2
         y = py + (ph - h) // 2
         self.geometry(f"+{max(0, x)}+{max(0, y)}")
+        reveal_dialog(self)

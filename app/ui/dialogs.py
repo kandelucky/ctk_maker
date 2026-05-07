@@ -24,7 +24,7 @@ from app.core.project_folder import (
     read_project_meta,
     slugify_page_name,
 )
-from app.ui.dialog_utils import safe_grab_set
+from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 from app.ui.new_project_form import NewProjectForm
 
 
@@ -91,6 +91,7 @@ class AddDialogSizeDialog(ctk.CTkToplevel):
         main_h: int = 600,
     ):
         super().__init__(parent)
+        prepare_dialog(self)
         self.title("Add dialog")
         self.resizable(False, False)
         self.transient(parent)
@@ -251,12 +252,14 @@ class AddDialogSizeDialog(ctk.CTkToplevel):
             pw = parent.winfo_width()
             ph = parent.winfo_height()
         except tk.TclError:
+            reveal_dialog(self)
             return
         w = self.winfo_width()
         h = self.winfo_height()
         x = px + (pw - w) // 2
         y = py + (ph - h) // 2
         self.geometry(f"+{max(0, x)}+{max(0, y)}")
+        reveal_dialog(self)
 
 
 class NewProjectSizeDialog(ctk.CTkToplevel):
@@ -269,6 +272,7 @@ class NewProjectSizeDialog(ctk.CTkToplevel):
         default_save_dir: str | None = None,
     ):
         super().__init__(parent)
+        prepare_dialog(self)
         self.title("New project")
         self.resizable(False, False)
         self.transient(parent)
@@ -316,12 +320,14 @@ class NewProjectSizeDialog(ctk.CTkToplevel):
             pw = parent.winfo_width()
             ph = parent.winfo_height()
         except tk.TclError:
+            reveal_dialog(self)
             return
         w = self.winfo_width()
         h = self.winfo_height()
         x = px + (pw - w) // 2
         y = py + (ph - h) // 2
         self.geometry(f"+{max(0, x)}+{max(0, y)}")
+        reveal_dialog(self)
 
     def _on_ok(self) -> None:
         validated = self._form.validate_and_get()
@@ -368,6 +374,7 @@ _BMC_OUTLINE = "#000000"
 class AboutDialog(tk.Toplevel):
     def __init__(self, parent, app_version: str = ""):
         super().__init__(parent)
+        prepare_dialog(self)
         self.title("About CTkMaker")
         self.configure(bg=_ABT_BG)
         self.resizable(False, False)
@@ -381,6 +388,7 @@ class AboutDialog(tk.Toplevel):
         self.geometry(f"{W}x{H}+{px - W // 2}+{py - H // 2}")
         self.lift()
         self.focus_set()
+        reveal_dialog(self)
 
     def _build(self, version: str) -> None:
         import webbrowser
@@ -503,6 +511,7 @@ class ConfirmDialog(tk.Toplevel):
         ok_text: str = "OK", cancel_text: str = "Cancel",
     ) -> None:
         super().__init__(parent)
+        prepare_dialog(self)
         self.title(title)
         self.configure(bg=_ABT_BG)
         self.resizable(False, False)
@@ -518,6 +527,7 @@ class ConfirmDialog(tk.Toplevel):
         self.lift()
         self.focus_set()
         safe_grab_set(self)
+        reveal_dialog(self)
 
     def _build(
         self, message: str, ok_text: str, cancel_text: str,
@@ -567,6 +577,7 @@ class RenamePageDialog(tk.Toplevel):
 
     def __init__(self, parent, current_name: str) -> None:
         super().__init__(parent)
+        prepare_dialog(self)
         self.title("Rename page")
         self.configure(bg=_ABT_BG)
         self.resizable(False, False)
@@ -591,6 +602,7 @@ class RenamePageDialog(tk.Toplevel):
         self.lift()
         self.focus_set()
         safe_grab_set(self)
+        reveal_dialog(self)
         # Defer entry focus until the window is mapped + realized.
         # Otherwise focus_set on the entry can fire before Tk has
         # finished wiring the widget into its window manager, which
@@ -771,6 +783,7 @@ class ChoiceDialog(tk.Toplevel):
         cancel_text: str = "Cancel",
     ) -> None:
         super().__init__(parent)
+        prepare_dialog(self)
         self.title(title)
         self.configure(bg=_ABT_BG)
         self.resizable(False, False)
@@ -786,6 +799,7 @@ class ChoiceDialog(tk.Toplevel):
         self.lift()
         self.focus_set()
         safe_grab_set(self)
+        reveal_dialog(self)
 
     def _build(
         self, message: str,
@@ -847,6 +861,7 @@ class _AmbiguousProjectPicker(tk.Toplevel):
 
     def __init__(self, parent, folder: Path, candidates: list[Path]) -> None:
         super().__init__(parent)
+        prepare_dialog(self)
         self.title("Pick project file")
         self.configure(bg=_ABT_BG)
         self.resizable(False, False)
@@ -904,6 +919,7 @@ class _AmbiguousProjectPicker(tk.Toplevel):
         self.lift()
         self._listbox.focus_set()
         safe_grab_set(self)
+        reveal_dialog(self)
 
     def _on_ok(self) -> None:
         sel = self._listbox.curselection()
