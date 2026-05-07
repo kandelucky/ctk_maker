@@ -10,6 +10,7 @@ import tkinter as tk
 from ..constants import TREE_BG
 from ..overlays import SLOT_ENUM_BUTTON, place_enum_button
 from .base import Editor
+from app.ui.system_fonts import ui_font
 
 
 class EnumEditor(Editor):
@@ -18,7 +19,7 @@ class EnumEditor(Editor):
         btn = tk.Label(
             panel.tree, text="▾",
             bg=TREE_BG, fg="#aaaaaa",
-            font=("Segoe UI", 12, "bold"),
+            font=ui_font(12, "bold"),
             cursor="hand2", borderwidth=0,
         )
         btn.bind(

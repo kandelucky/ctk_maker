@@ -18,6 +18,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
 from typing import TYPE_CHECKING, Sequence
+from app.ui.system_fonts import ui_font
 
 if TYPE_CHECKING:
     from PIL import ImageTk
@@ -115,7 +116,7 @@ class ImagePickerDialog(tk.Toplevel):
         self._help_lbl = tk.Label(
             bar, bg=HEADER_BG, image=help_img if help_img else "",
             text="" if help_img else "?", fg="#cccccc",
-            font=("Segoe UI", 12, "bold"), cursor="hand2",
+            font=ui_font(12, "bold"), cursor="hand2",
         )
         self._help_lbl.image = help_img  # type: ignore[attr-defined]  # keep ref
         self._help_lbl.pack(side="right", padx=14, pady=8)
@@ -133,7 +134,7 @@ class ImagePickerDialog(tk.Toplevel):
         # Empty placeholder when no images — replaced on _refresh.
         self._empty_label = ctk.CTkLabel(
             wrap, text="No images yet. Click + Import to add one.",
-            font=("Segoe UI", 10),
+            font=ui_font(10),
             text_color=DIM_FG,
         )
 
@@ -204,7 +205,7 @@ class ImagePickerDialog(tk.Toplevel):
             ctk.CTkLabel(
                 self._list_wrap,
                 text="No images yet. Click + Import to add one.",
-                font=("Segoe UI", 10), text_color=DIM_FG,
+                font=ui_font(10), text_color=DIM_FG,
             ).pack(pady=40)
             self._set_selected(None)
             return
@@ -232,7 +233,7 @@ class ImagePickerDialog(tk.Toplevel):
 
         name_lbl = tk.Label(
             row, text=path.name, bg=PANEL_BG, fg="#cccccc",
-            font=("Segoe UI", 11), anchor="w",
+            font=ui_font(11), anchor="w",
         )
         name_lbl.pack(side="left", fill="x", expand=True, padx=4)
 
@@ -259,7 +260,7 @@ class ImagePickerDialog(tk.Toplevel):
             self, tearoff=0,
             bg="#2d2d30", fg="#cccccc",
             activebackground="#094771", activeforeground="#ffffff",
-            relief="flat", bd=0, font=("Segoe UI", 10),
+            relief="flat", bd=0, font=ui_font(10),
         )
         menu.add_command(
             label=f"Remove '{path.name}' from project...",
@@ -445,7 +446,7 @@ class ImagePickerDialog(tk.Toplevel):
         frame.pack()
         tk.Label(
             frame, text=HELP_TEXT, bg="#1c1c1c", fg="#dddddd",
-            font=("Segoe UI", 11), justify="left", anchor="w",
+            font=ui_font(11), justify="left", anchor="w",
         ).pack()
         tip.geometry(f"+{x}+{y}")
         self._tip_window = tip

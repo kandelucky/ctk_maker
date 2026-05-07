@@ -14,6 +14,7 @@ import tkinter as tk
 
 from ..overlays import SLOT_TEXT_VALUE, place_text_value
 from .base import Editor
+from app.ui.system_fonts import ui_font
 
 
 # Slightly raised colours so the cell reads as a button, not a label.
@@ -38,7 +39,7 @@ class SegmentValuesEditor(Editor):
         btn = tk.Label(
             panel.tree, text=label_text,
             bg=BTN_BG, fg=BTN_FG,
-            font=("Segoe UI", 10), anchor="center",
+            font=ui_font(10), anchor="center",
             relief="flat", bd=0, cursor="hand2",
         )
         btn.bind(

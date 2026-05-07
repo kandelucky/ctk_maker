@@ -31,6 +31,7 @@ import customtkinter as ctk
 from app.ui.dialog_utils import prepare_dialog, reveal_dialog
 from app.ui.palette import CATALOG
 from app.widgets.registry import get_descriptor
+from app.ui.system_fonts import ui_font
 
 
 WINDOW_BG = "#1e1e1e"
@@ -283,7 +284,7 @@ class WidgetInspectorWindow(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             bar, text="Widget:", text_color=ROW_FG,
-            font=("Segoe UI", 11),
+            font=ui_font(11),
         ).pack(side="left", padx=(12, 6), pady=8)
 
         self._dropdown = ctk.CTkOptionMenu(
@@ -300,7 +301,7 @@ class WidgetInspectorWindow(ctk.CTkToplevel):
                 f"{STATUS_CTK_ONLY} CTk-only     "
                 f"{STATUS_BUILDER_ONLY} builder helper"
             ),
-            text_color=DIM_FG, font=("Segoe UI", 10),
+            text_color=DIM_FG, font=ui_font(10),
         )
         legend.pack(side="right", padx=12)
 
@@ -323,12 +324,12 @@ class WidgetInspectorWindow(ctk.CTkToplevel):
             bordercolor="#3c3c3c",
             borderwidth=0,
             rowheight=22,
-            font=("Segoe UI", 10),
+            font=ui_font(10),
         )
         style.configure(
             "Inspector.Treeview.Heading",
             background=HEADER_BG, foreground=ROW_FG,
-            font=("Segoe UI", 10, "bold"),
+            font=ui_font(10, "bold"),
             relief="flat",
         )
         style.map(
@@ -371,7 +372,7 @@ class WidgetInspectorWindow(ctk.CTkToplevel):
         # glance how complete coverage is for the chosen widget.
         self._status_lbl = ctk.CTkLabel(
             self, text="", text_color=DIM_FG,
-            font=("Segoe UI", 10), anchor="w",
+            font=ui_font(10), anchor="w",
         )
         self._status_lbl.pack(fill="x", padx=12, pady=(0, 8))
 

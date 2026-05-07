@@ -28,6 +28,7 @@ from app.core.widget_node import WidgetNode
 from app.ui.icons import load_icon
 from app.ui.toolbar import _attach_tooltip
 from app.widgets.registry import get_descriptor
+from app.ui.system_fonts import ui_font
 
 DRAG_THRESHOLD = 5
 
@@ -187,7 +188,7 @@ class Palette(ctk.CTkFrame):
 
         self._title_lbl = ctk.CTkLabel(
             self._header, textvariable=self._title_var,
-            font=("Segoe UI", 13, "bold"), text_color=TITLE_FG,
+            font=ui_font(13, "bold"), text_color=TITLE_FG,
         )
         self._title_lbl.pack(side="left", expand=True)
 
@@ -198,7 +199,7 @@ class Palette(ctk.CTkFrame):
 
         btn_kw = dict(
             height=24, corner_radius=5, border_width=0,
-            font=("Segoe UI", 11),
+            font=ui_font(11),
         )
         self._btn_widgets = ctk.CTkButton(
             self._tab_bar, text="Widgets",
@@ -340,7 +341,7 @@ class Palette(ctk.CTkFrame):
 
         title_lbl = ctk.CTkLabel(
             header, text=group.title,
-            font=("Segoe UI", 10, "bold"), text_color=GROUP_HEADER_FG, anchor="w",
+            font=ui_font(10, "bold"), text_color=GROUP_HEADER_FG, anchor="w",
         )
         title_lbl.pack(side="left", fill="x", expand=True)
 
@@ -372,7 +373,7 @@ class Palette(ctk.CTkFrame):
         fg = ITEM_FG if implemented else ITEM_DISABLED_FG
         name_lbl = ctk.CTkLabel(
             row, text=entry.display_name,
-            font=("Segoe UI", 10), text_color=fg, anchor="w",
+            font=ui_font(10), text_color=fg, anchor="w",
         )
         name_lbl.pack(side="left", fill="x", expand=True)
         bind_targets = (row, icon_lbl, name_lbl)
@@ -479,7 +480,7 @@ class Palette(ctk.CTkFrame):
         label = tk.Label(
             frame, text=f"+ {entry.display_name}",
             bg=bg_color, fg="white",
-            font=("Segoe UI", 10, "bold"), padx=10, pady=4,
+            font=ui_font(10, "bold"), padx=10, pady=4,
         )
         label.pack()
         ghost.update_idletasks()

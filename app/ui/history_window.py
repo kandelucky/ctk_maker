@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Callable
 import customtkinter as ctk
 
 from app.ui.dialog_utils import prepare_dialog, reveal_dialog
+from app.ui.system_fonts import ui_font
 
 if TYPE_CHECKING:
     from app.core.project import Project
@@ -66,7 +67,7 @@ class HistoryPanel(ctk.CTkFrame):
             foreground=TREE_FG,
             rowheight=TREE_ROW_HEIGHT,
             borderwidth=0,
-            font=("Segoe UI", TREE_FONT_SIZE),
+            font=ui_font(TREE_FONT_SIZE),
         )
         style.map(
             style_name,

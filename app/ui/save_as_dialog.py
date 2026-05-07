@@ -33,6 +33,7 @@ import customtkinter as ctk
 from app.core.paths import get_default_projects_dir
 from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 from app.ui.icons import load_icon
+from app.ui.system_fonts import ui_font
 
 DIALOG_W = 540
 DIALOG_H = 410
@@ -134,7 +135,7 @@ class SaveAsDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             outer, text="Save As",
-            font=("Segoe UI", 11, "bold"),
+            font=ui_font(11, "bold"),
             text_color=SUBTITLE_FG, anchor="w",
         ).pack(fill="x", padx=14, pady=(10, 10))
 
@@ -146,7 +147,7 @@ class SaveAsDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             outer, text="Scope:",
-            font=("Segoe UI", 10, "bold"),
+            font=ui_font(10, "bold"),
             text_color=FIELD_FG, anchor="w",
         ).pack(fill="x", padx=14, pady=(2, 6))
 
@@ -173,7 +174,7 @@ class SaveAsDialog(ctk.CTkToplevel):
         row.pack(fill="x", padx=14, pady=2)
         ctk.CTkLabel(
             row, text=f"{label}:", width=LABEL_WIDTH, anchor="w",
-            font=("Segoe UI", 11), text_color=FIELD_FG,
+            font=ui_font(11), text_color=FIELD_FG,
         ).pack(side="left")
         builder(row)
 
@@ -185,7 +186,7 @@ class SaveAsDialog(ctk.CTkToplevel):
     def _build_name_entry(self, row) -> None:
         entry = ctk.CTkEntry(
             row, textvariable=self._name_var, height=26,
-            corner_radius=3, font=("Segoe UI", 11), justify="left",
+            corner_radius=3, font=ui_font(11), justify="left",
             border_color=ENTRY_BORDER_NORMAL, border_width=1,
         )
         entry.pack(side="left", fill="x", expand=True)
@@ -194,7 +195,7 @@ class SaveAsDialog(ctk.CTkToplevel):
     def _build_save_to_row(self, row) -> None:
         entry = ctk.CTkEntry(
             row, textvariable=self._save_to_var, height=26,
-            corner_radius=3, font=("Segoe UI", 10), justify="left",
+            corner_radius=3, font=ui_font(10), justify="left",
             border_color=ENTRY_BORDER_NORMAL, border_width=1,
         )
         entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
@@ -212,7 +213,7 @@ class SaveAsDialog(ctk.CTkToplevel):
     def _build_preview_label(self, parent) -> None:
         lbl = tk.Label(
             parent, textvariable=self._preview_var,
-            font=("Segoe UI", 9, "italic"),
+            font=ui_font(9, "italic"),
             fg=PREVIEW_FG, bg=PANEL_BG,
             anchor="w", justify="left", width=58,
         )
@@ -225,13 +226,13 @@ class SaveAsDialog(ctk.CTkToplevel):
         wrap.pack(fill="x", padx=14, pady=1)
         rb = ctk.CTkRadioButton(
             wrap, text=title, variable=self._scope_var, value=value,
-            font=("Segoe UI", 11), text_color=FIELD_FG,
+            font=ui_font(11), text_color=FIELD_FG,
             radiobutton_height=16, radiobutton_width=16,
             border_width_checked=4, border_width_unchecked=2,
         )
         rb.pack(anchor="w")
         ctk.CTkLabel(
-            wrap, text=blurb, font=("Segoe UI", 9),
+            wrap, text=blurb, font=ui_font(9),
             text_color=SUBTITLE_FG, anchor="w", justify="left",
             wraplength=DIALOG_W - 80,
         ).pack(anchor="w", padx=(28, 0), pady=(0, 4))

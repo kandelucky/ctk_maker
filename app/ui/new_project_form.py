@@ -22,6 +22,7 @@ import customtkinter as ctk
 from app.core.paths import (
     get_default_projects_dir, project_folder,
 )
+from app.ui.system_fonts import ui_font
 from app.core.project_folder import bootstrap_project_folder
 from app.ui.icons import load_icon
 
@@ -154,7 +155,7 @@ class NewProjectForm(ctk.CTkFrame):
     def _build(self) -> None:
         ctk.CTkLabel(
             self, text="New Project",
-            font=("Segoe UI", 11, "bold"),
+            font=ui_font(11, "bold"),
             text_color=SUBTITLE_FG, anchor="w",
         ).pack(fill="x", padx=14, pady=(10, 10))
 
@@ -174,7 +175,7 @@ class NewProjectForm(ctk.CTkFrame):
         row.pack(fill="x", padx=14, pady=2)
         ctk.CTkLabel(
             row, text=f"{label}:", width=88, anchor="w",
-            font=("Segoe UI", 11), text_color=FIELD_FG,
+            font=ui_font(11), text_color=FIELD_FG,
         ).pack(side="left")
         builder(row)
 
@@ -186,7 +187,7 @@ class NewProjectForm(ctk.CTkFrame):
     def _build_name_entry(self, row) -> None:
         entry = ctk.CTkEntry(
             row, textvariable=self._name_var, height=26,
-            corner_radius=3, font=("Segoe UI", 11), justify="left",
+            corner_radius=3, font=ui_font(11), justify="left",
             border_color=ENTRY_BORDER_NORMAL, border_width=1,
         )
         entry.pack(side="left", fill="x", expand=True)
@@ -195,7 +196,7 @@ class NewProjectForm(ctk.CTkFrame):
     def _build_save_dir_row(self, row) -> None:
         ctk.CTkEntry(
             row, textvariable=self._save_dir_var, height=26,
-            corner_radius=3, font=("Segoe UI", 10), justify="left",
+            corner_radius=3, font=ui_font(10), justify="left",
             border_color=ENTRY_BORDER_NORMAL, border_width=1,
         ).pack(side="left", fill="x", expand=True, padx=(0, 4))
 
@@ -215,7 +216,7 @@ class NewProjectForm(ctk.CTkFrame):
         # the Name entry).
         lbl = tk.Label(
             self, textvariable=self._preview_var,
-            font=("Segoe UI", 9, "italic"),
+            font=ui_font(9, "italic"),
             fg=SUBTITLE_FG, bg=PANEL_BG,
             anchor="w", justify="left",
             width=58,  # in chars; bounds the label visually
@@ -245,7 +246,7 @@ class NewProjectForm(ctk.CTkFrame):
         ctk.CTkOptionMenu(
             row, values=DEVICE_OPTIONS, variable=self._device_var,
             width=220, height=26,
-            font=("Segoe UI", 10), dropdown_font=("Segoe UI", 10),
+            font=ui_font(10), dropdown_font=ui_font(10),
             fg_color="#2d2d2d", button_color="#2d2d2d",
             button_hover_color="#3a3a3a", corner_radius=3,
             command=self._on_device_selected,
@@ -256,7 +257,7 @@ class NewProjectForm(ctk.CTkFrame):
         menu = ctk.CTkOptionMenu(
             row, values=values, variable=self._screen_var,
             width=220, height=26,
-            font=("Segoe UI", 10), dropdown_font=("Segoe UI", 10),
+            font=ui_font(10), dropdown_font=ui_font(10),
             fg_color="#2d2d2d", button_color="#2d2d2d",
             button_hover_color="#3a3a3a", corner_radius=3,
             command=self._on_screen_selected,
@@ -267,13 +268,13 @@ class NewProjectForm(ctk.CTkFrame):
     def _build_width_entry(self, row) -> None:
         ctk.CTkEntry(
             row, textvariable=self._w_var, width=80, height=26,
-            corner_radius=3, font=("Segoe UI", 11), justify="left",
+            corner_radius=3, font=ui_font(11), justify="left",
         ).pack(side="left")
 
     def _build_height_entry(self, row) -> None:
         ctk.CTkEntry(
             row, textvariable=self._h_var, width=80, height=26,
-            corner_radius=3, font=("Segoe UI", 11), justify="left",
+            corner_radius=3, font=ui_font(11), justify="left",
         ).pack(side="left")
 
     # ------------------------------------------------------------------

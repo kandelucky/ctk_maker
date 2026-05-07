@@ -18,6 +18,7 @@ import customtkinter as ctk
 from app.core.logger import log_error
 from app.core.screen import get_dpi_factor
 from app.ui.icons import load_icon
+from app.ui.system_fonts import ui_font
 
 ZOOM_LEVELS = (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0)
 ZOOM_MIN = ZOOM_LEVELS[0]
@@ -350,7 +351,7 @@ class ZoomController:
 
         ctk.CTkButton(
             bar, text="1:1",
-            font=("Segoe UI", 10, "bold"),
+            font=ui_font(10, "bold"),
             width=28, height=20,
             corner_radius=3,
             fg_color="transparent", hover_color="#3a3a3a",
@@ -364,8 +365,8 @@ class ZoomController:
             values=ZOOM_MENU_LABELS,
             variable=self._menu_var,
             width=120, height=20,
-            font=("Segoe UI", 10),
-            dropdown_font=("Segoe UI", 10),
+            font=ui_font(10),
+            dropdown_font=ui_font(10),
             fg_color="#2d2d2d", button_color="#2d2d2d",
             button_hover_color="#3a3a3a", corner_radius=3,
             command=self._on_menu_select,
@@ -374,7 +375,7 @@ class ZoomController:
 
         self._warning = ctk.CTkLabel(
             bar, text="",
-            font=("Segoe UI", 10), text_color=ZOOM_WARNING_FG,
+            font=ui_font(10), text_color=ZOOM_WARNING_FG,
             anchor="w",
         )
         self._warning.pack(side="left", padx=(4, 0), pady=3)

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 import customtkinter as ctk
 
 from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui.system_fonts import ui_font
 
 if TYPE_CHECKING:
     from app.io.component_io import VarConflict
@@ -50,7 +51,7 @@ class ComponentVarConflictDialog(ctk.CTkToplevel):
                 "These variables already exist in the target window "
                 "with a different type. Pick a resolution for each:"
             ),
-            font=("Segoe UI", 10),
+            font=ui_font(10),
             text_color="#cccccc",
             wraplength=420,
             justify="left",
@@ -95,7 +96,7 @@ class ComponentVarConflictDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             wrap,
             text=f"{name}",
-            font=("Segoe UI", 11, "bold"),
+            font=ui_font(11, "bold"),
             text_color="#e6e6e6",
             anchor="w",
         ).pack(fill="x", padx=10, pady=(8, 0))
@@ -105,7 +106,7 @@ class ComponentVarConflictDialog(ctk.CTkToplevel):
                 f"component: {comp_type}    "
                 f"existing: {existing_type}"
             ),
-            font=("Segoe UI", 9),
+            font=ui_font(9),
             text_color="#888888",
             anchor="w",
         ).pack(fill="x", padx=10, pady=(0, 4))
@@ -117,7 +118,7 @@ class ComponentVarConflictDialog(ctk.CTkToplevel):
         row1.pack(fill="x", padx=10, pady=(0, 2))
         ctk.CTkRadioButton(
             row1, text="Rename to", variable=choice_var, value="rename",
-            font=("Segoe UI", 10),
+            font=ui_font(10),
         ).pack(side="left")
         name_entry = ctk.CTkEntry(
             row1, textvariable=name_var, width=200, height=24,
@@ -128,7 +129,7 @@ class ComponentVarConflictDialog(ctk.CTkToplevel):
         row2.pack(fill="x", padx=10, pady=(0, 8))
         ctk.CTkRadioButton(
             row2, text="Skip binding", variable=choice_var, value="skip",
-            font=("Segoe UI", 10),
+            font=ui_font(10),
         ).pack(side="left")
 
         self._row_state.append({

@@ -26,6 +26,7 @@ from .constants import (
     TOOLTIP_WARNING_FG,
     TOOLTIP_WRAPLENGTH,
 )
+from app.ui.system_fonts import ui_font
 
 
 class PropertyTooltip:
@@ -98,7 +99,7 @@ class PropertyTooltip:
             text=description,
             bg=TOOLTIP_BG,
             fg=TOOLTIP_FG,
-            font=("Segoe UI", 9),
+            font=ui_font(9),
             justify="left",
             wraplength=TOOLTIP_WRAPLENGTH,
         ).pack(anchor="w")
@@ -109,7 +110,7 @@ class PropertyTooltip:
                 text=f"⚠  {warning}",
                 bg=TOOLTIP_BG,
                 fg=TOOLTIP_WARNING_FG,
-                font=("Segoe UI", 9),
+                font=ui_font(9),
                 justify="left",
                 wraplength=TOOLTIP_WRAPLENGTH,
             ).pack(anchor="w", pady=(4, 0))

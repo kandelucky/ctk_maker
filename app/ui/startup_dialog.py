@@ -24,6 +24,7 @@ from app.core.screen import center_geometry
 from app.ui.dialog_utils import safe_grab_set
 from app.ui.new_project_form import NewProjectForm
 from app.ui.recent_list import RecentList
+from app.ui.system_fonts import ui_font
 
 DIALOG_W = 740
 DIALOG_H = 510
@@ -122,18 +123,18 @@ class StartupDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             title_row, text="CTkMaker",
-            font=("Segoe UI", 18, "bold"),
+            font=ui_font(18, "bold"),
             text_color=TITLE_FG, anchor="w",
         ).pack(side="left")
         ctk.CTkLabel(
             title_row, text=f"v{__version__}",
-            font=("Segoe UI", 10),
+            font=ui_font(10),
             text_color=VERSION_FG, anchor="sw",
         ).pack(side="left", padx=(6, 0), pady=(0, 2))
 
         ctk.CTkLabel(
             header, text="Open a recent project or create a new one",
-            font=("Segoe UI", 11),
+            font=ui_font(11),
             text_color=SUBTITLE_FG, anchor="w",
         ).pack(fill="x", pady=(2, 0))
 
@@ -173,13 +174,13 @@ class StartupDialog(ctk.CTkToplevel):
         ctk.CTkButton(
             btn_row, text="Browse...", height=28, corner_radius=4,
             fg_color="#3c3c3c", hover_color="#4a4a4a",
-            font=("Segoe UI", 10),
+            font=ui_font(10),
             command=self._on_browse,
         ).grid(row=0, column=0, sticky="ew", padx=(0, 3))
 
         self._open_btn = ctk.CTkButton(
             btn_row, text="Open", height=28, corner_radius=4,
-            font=("Segoe UI", 10),
+            font=ui_font(10),
             state="disabled",
             command=self._on_open_selected,
         )

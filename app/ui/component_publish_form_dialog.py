@@ -17,6 +17,7 @@ import customtkinter as ctk
 from app.core.component_paths import (
     COMPONENT_EXT, PUBLISH_COMPONENT_EXT, component_display_stem,
 )
+from app.ui.system_fonts import ui_font
 from app.core.logger import log_error
 from app.core.settings import load_settings, save_setting
 from app.io.component_io import load_metadata, rewrite_payload_for_publish
@@ -102,7 +103,7 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             body, text=meta.get("name") or component_display_stem(source_path),
-            font=("Segoe UI", 14, "bold"),
+            font=ui_font(14, "bold"),
             text_color="#e6e6e6", anchor="w",
         ).grid(row=0, column=0, sticky="w")
         ctk.CTkLabel(
@@ -112,7 +113,7 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
                 f"  ·  {_format_size(file_bytes)}"
                 f"  ·  {_format_date(meta.get('created_at', ''))}"
             ),
-            font=("Segoe UI", 9),
+            font=ui_font(9),
             text_color="#888888", anchor="w",
         ).grid(row=1, column=0, sticky="w", pady=(0, 10))
 
@@ -124,12 +125,12 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             banner,
             text=("✓ License agreement accepted — MIT  ·  signed at export"),
-            font=("Segoe UI", 9, "bold"),
+            font=ui_font(9, "bold"),
             text_color="#9ec3ff", anchor="w",
         ).pack(anchor="w", padx=10, pady=6)
 
         ctk.CTkLabel(
-            body, text="Name", font=("Segoe UI", 10),
+            body, text="Name", font=ui_font(10),
         ).grid(row=3, column=0, sticky="w", pady=(0, 4))
         self._name_var = tk.StringVar(
             value=component_display_stem(self._source_path),
@@ -140,7 +141,7 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             body, text="Author (required — used as MIT copyright holder)",
-            font=("Segoe UI", 10),
+            font=ui_font(10),
         ).grid(row=5, column=0, sticky="w", pady=(0, 4))
         cached_author = str(
             load_settings().get(LAST_AUTHOR_KEY, "") or "",
@@ -158,12 +159,12 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
         cat_label_row.grid(row=7, column=0, sticky="ew", pady=(0, 4))
         cat_label_row.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
-            cat_label_row, text="Category", font=("Segoe UI", 10),
+            cat_label_row, text="Category", font=ui_font(10),
         ).grid(row=0, column=0, sticky="w")
         ctk.CTkButton(
             cat_label_row, text="Need help picking?",
             width=130, height=20, corner_radius=3,
-            font=("Segoe UI", 9, "underline"),
+            font=ui_font(9, "underline"),
             fg_color="transparent", hover_color="#2b2b2b",
             text_color="#9ec3ff",
             command=self._open_category_guide,
@@ -176,7 +177,7 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
         )
         self._category_menu.grid(row=8, column=0, sticky="ew", pady=(0, 2))
         self._category_hint = ctk.CTkLabel(
-            body, text="", font=("Segoe UI", 9),
+            body, text="", font=ui_font(9),
             text_color="#888888", anchor="w", justify="left",
         )
         self._category_hint.grid(
@@ -185,11 +186,11 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
         self._refresh_category_hint()
 
         ctk.CTkLabel(
-            body, text="Description", font=("Segoe UI", 10),
+            body, text="Description", font=ui_font(10),
         ).grid(row=10, column=0, sticky="w", pady=(0, 4))
         self._desc_box = ctk.CTkTextbox(
             body, height=70, width=340,
-            font=("Segoe UI", 10), wrap="word",
+            font=ui_font(10), wrap="word",
         )
         self._desc_box.grid(row=11, column=0, sticky="ew", pady=(0, 2))
         self._desc_box.bind(
@@ -197,12 +198,12 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
         )
         self._desc_counter = ctk.CTkLabel(
             body, text=f"0 / {DESCRIPTION_MAX}",
-            font=("Segoe UI", 9), text_color="#888888", anchor="e",
+            font=ui_font(9), text_color="#888888", anchor="e",
         )
         self._desc_counter.grid(row=12, column=0, sticky="e", pady=(0, 12))
 
         ctk.CTkLabel(
-            body, text="Destination folder", font=("Segoe UI", 10),
+            body, text="Destination folder", font=ui_font(10),
         ).grid(row=13, column=0, sticky="w", pady=(0, 4))
         path_row = ctk.CTkFrame(body, fg_color="transparent")
         path_row.grid(row=14, column=0, sticky="ew", pady=(0, 12))

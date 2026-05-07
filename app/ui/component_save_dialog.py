@@ -18,6 +18,7 @@ import customtkinter as ctk
 
 from app.core.component_paths import COMPONENT_EXT
 from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui.system_fonts import ui_font
 
 _FORBIDDEN = set('\\/:*?"<>|')
 _ROOT_LABEL = "(root)"
@@ -95,7 +96,7 @@ class ComponentSaveDialog(ctk.CTkToplevel):
                     "with component."
                 ),
                 text_color="#cc7e1f",
-                font=("Segoe UI", 10),
+                font=ui_font(10),
                 wraplength=320,
                 justify="left",
             )
@@ -106,7 +107,7 @@ class ComponentSaveDialog(ctk.CTkToplevel):
                     "Global bindings become local in the target window."
                 ),
                 text_color="#888888",
-                font=("Segoe UI", 9),
+                font=ui_font(9),
                 wraplength=320,
                 justify="left",
             )
@@ -124,7 +125,7 @@ class ComponentSaveDialog(ctk.CTkToplevel):
                     f"({size_str})."
                 ),
                 text_color="#7ea4c7",
-                font=("Segoe UI", 10),
+                font=ui_font(10),
                 wraplength=320, justify="left",
             ).pack(padx=20, pady=(0, 8), anchor="w")
 

@@ -34,6 +34,7 @@ from app.core.fonts import (
     FONT_EXTS, list_project_fonts, list_system_families,
     register_font_file, resolve_system_font_path,
 )
+from app.ui.system_fonts import ui_font
 from app.core.logger import log_error
 from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 from app.ui.icons import load_tk_icon
@@ -162,7 +163,7 @@ class FontPickerDialog(tk.Toplevel):
         self._help_lbl = tk.Label(
             bar, bg=HEADER_BG, image=help_img if help_img else "",
             text="" if help_img else "?", fg="#cccccc",
-            font=("Segoe UI", 12, "bold"), cursor="hand2",
+            font=ui_font(12, "bold"), cursor="hand2",
         )
         self._help_lbl.image = help_img  # type: ignore[attr-defined]  # keep ref
         self._help_lbl.pack(side="right", padx=14, pady=8)
@@ -201,12 +202,12 @@ class FontPickerDialog(tk.Toplevel):
         head.pack(fill="x", padx=6, pady=(4, 2))
         tk.Label(
             head, text="Preview", bg=PANEL_BG, fg=HEADER_FG,
-            font=("Segoe UI", 9, "bold"),
+            font=ui_font(9, "bold"),
         ).pack(side="left")
         entry = tk.Entry(
             head, textvariable=self._preview_var,
             bg="#1e1e1e", fg="#cccccc", insertbackground="#cccccc",
-            relief="flat", bd=1, font=("Segoe UI", 10),
+            relief="flat", bd=1, font=ui_font(10),
             highlightthickness=1, highlightbackground="#3a3a3a",
             highlightcolor="#3b8ed0",
         )
@@ -221,7 +222,7 @@ class FontPickerDialog(tk.Toplevel):
             lbl = tk.Label(
                 self._preview_body,
                 text=PREVIEW_TEXT, bg=PANEL_BG, fg="#dddddd",
-                font=("Segoe UI", size), anchor="w", justify="left",
+                font=ui_font(size), anchor="w", justify="left",
             )
             lbl.pack(fill="x", pady=1)
             self._preview_labels.append(lbl)
@@ -234,7 +235,7 @@ class FontPickerDialog(tk.Toplevel):
         text = self._preview_var.get() or PREVIEW_TEXT
         family = self._selected_family
         for lbl, size in zip(self._preview_labels, PREVIEW_SIZES):
-            font_tuple = (family, size) if family else ("Segoe UI", size)
+            font_tuple = (family, size) if family else ui_font(size)
             try:
                 lbl.configure(text=text, font=font_tuple)
             except tk.TclError:
@@ -248,7 +249,7 @@ class FontPickerDialog(tk.Toplevel):
         scope_wrap = tk.Frame(self, bg=BG)
         tk.Label(
             scope_wrap, text="Apply to:", bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 10, "bold"), anchor="w",
+            font=ui_font(10, "bold"), anchor="w",
         ).pack(fill="x", pady=(0, 4))
         scope_labels = (
             "Just this widget",
@@ -262,7 +263,7 @@ class FontPickerDialog(tk.Toplevel):
         }
         self._scope_segmented = ctk.CTkSegmentedButton(
             scope_wrap, values=list(scope_labels),
-            font=("Segoe UI", 10),
+            font=ui_font(10),
             height=32,
             # Match the dialog frame's rounded look — sharp 4px
             # buttons inside a softer container felt off.
@@ -296,7 +297,7 @@ class FontPickerDialog(tk.Toplevel):
         # → Apply (primary, widest). Visual weight matches each
         # action's importance.
         btn_kw: dict[str, Any] = {
-            "height": 32, "corner_radius": 10, "font": ("Segoe UI", 10),
+            "height": 32, "corner_radius": 10, "font": ui_font(10),
         }
         ctk.CTkButton(
             foot, text="Reset", width=70,
@@ -361,7 +362,7 @@ class FontPickerDialog(tk.Toplevel):
                     "• Click + Import file to bundle a .ttf / .otf.\n"
                     "• Click + Add system font to pick from the OS."
                 ),
-                font=("Segoe UI", 10), text_color=DIM_FG,
+                font=ui_font(10), text_color=DIM_FG,
                 justify="left",
             ).pack(pady=40, padx=20, anchor="w")
             self._set_selected(None)
@@ -379,7 +380,7 @@ class FontPickerDialog(tk.Toplevel):
 
         name_lbl = tk.Label(
             row, text=family, bg=PANEL_BG, fg="#cccccc",
-            font=("Segoe UI", 10), anchor="w",
+            font=ui_font(10), anchor="w",
         )
         name_lbl.pack(side="left", padx=(8, 6), pady=4)
 
@@ -392,7 +393,7 @@ class FontPickerDialog(tk.Toplevel):
         except tk.TclError:
             preview_lbl = tk.Label(
                 row, text=PREVIEW_TEXT, bg=PANEL_BG, fg="#888888",
-                font=("Segoe UI", 11), anchor="w",
+                font=ui_font(11), anchor="w",
             )
         preview_lbl.pack(side="right", padx=8, pady=4)
 
@@ -433,7 +434,7 @@ class FontPickerDialog(tk.Toplevel):
             self, tearoff=0,
             bg="#2d2d30", fg=HEADER_FG,
             activebackground="#094771", activeforeground="#ffffff",
-            relief="flat", bd=0, font=("Segoe UI", 10),
+            relief="flat", bd=0, font=ui_font(10),
         )
         menu.add_command(
             label=f"Remove '{family}' from project...",
@@ -633,7 +634,7 @@ class FontPickerDialog(tk.Toplevel):
         frame.pack()
         tk.Label(
             frame, text=HELP_TEXT, bg="#1c1c1c", fg="#dddddd",
-            font=("Segoe UI", 11), justify="left", anchor="w",
+            font=ui_font(11), justify="left", anchor="w",
         ).pack()
         tip.geometry(f"+{max(0, x)}+{y}")
         self._tip_window = tip
@@ -706,14 +707,14 @@ class SystemFontPickerDialog(tk.Toplevel):
         bar.pack(fill="x")
         tk.Label(
             bar, text="System fonts", bg=HEADER_BG, fg=HEADER_FG,
-            font=("Segoe UI", 11, "bold"),
+            font=ui_font(11, "bold"),
         ).pack(side="left", padx=12, pady=8)
         # Search entry — narrows the long OS list to substring matches.
         self._search_var = tk.StringVar()
         entry = tk.Entry(
             bar, textvariable=self._search_var,
             bg="#1e1e1e", fg="#cccccc", insertbackground="#cccccc",
-            relief="flat", bd=1, font=("Segoe UI", 10),
+            relief="flat", bd=1, font=ui_font(10),
             highlightthickness=1, highlightbackground="#3a3a3a",
             highlightcolor="#3b8ed0",
         )
@@ -762,7 +763,7 @@ class SystemFontPickerDialog(tk.Toplevel):
             ctk.CTkLabel(
                 self._list_wrap,
                 text="No matching system fonts.",
-                font=("Segoe UI", 10), text_color=DIM_FG,
+                font=ui_font(10), text_color=DIM_FG,
             ).pack(pady=40)
             self._set_selected(None)
             return
@@ -777,7 +778,7 @@ class SystemFontPickerDialog(tk.Toplevel):
         row.pack(fill="x", padx=2, pady=1)
         name_lbl = tk.Label(
             row, text=family, bg=PANEL_BG, fg="#cccccc",
-            font=("Segoe UI", 10), anchor="w",
+            font=ui_font(10), anchor="w",
         )
         name_lbl.pack(side="left", padx=(8, 6), pady=4)
         try:
@@ -789,7 +790,7 @@ class SystemFontPickerDialog(tk.Toplevel):
         except tk.TclError:
             preview_lbl = tk.Label(
                 row, text=PREVIEW_TEXT, bg=PANEL_BG, fg="#888888",
-                font=("Segoe UI", 11), anchor="w",
+                font=ui_font(11), anchor="w",
             )
         preview_lbl.pack(side="right", padx=8, pady=4)
         for w in (row, name_lbl, preview_lbl):

@@ -16,6 +16,7 @@ from typing import Callable
 import customtkinter as ctk
 
 from app.ui.icons import load_icon
+from app.ui.system_fonts import ui_font
 
 BAR_BG = "#252526"
 BTN_HOVER = "#3a3a3a"
@@ -256,7 +257,7 @@ class Toolbar(ctk.CTkFrame):
             fg_color="#3b3026",
             hover_color="#4a3b2c",
             text_color=ICON_TINT,
-            font=ctk.CTkFont("Segoe UI", 11, "bold"),
+            font=ui_font(11, "bold"),
             compound="left",
             command=command,
         )
@@ -289,7 +290,7 @@ def _attach_tooltip(widget, text: str) -> None:
         label = tk.Label(
             tip, text=text,
             bg=TOOLTIP_BG, fg=TOOLTIP_FG,
-            font=("Segoe UI", 9),
+            font=ui_font(9),
             padx=6, pady=2,
             bd=0,
         )

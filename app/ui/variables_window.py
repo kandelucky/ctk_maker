@@ -29,6 +29,7 @@ from app.core.commands import (
     DeleteVariableCommand,
     RenameVariableCommand,
 )
+from app.ui.system_fonts import ui_font
 from app.core.variables import (
     COLOR_DEFAULT,
     VAR_TYPES,
@@ -192,7 +193,7 @@ class VariablesPanel(ctk.CTkFrame):
             add_hover = "#1177bb"
         self._add_btn = ctk.CTkButton(
             bar, text="+ Add", width=70, height=30,
-            corner_radius=3, font=("Segoe UI", 11),
+            corner_radius=3, font=ui_font(11),
             fg_color=add_fg, hover_color=add_hover,
             command=self._on_add,
         )
@@ -200,7 +201,7 @@ class VariablesPanel(ctk.CTkFrame):
 
         self._edit_btn = ctk.CTkButton(
             bar, text="Edit", width=60, height=30,
-            corner_radius=3, font=("Segoe UI", 11),
+            corner_radius=3, font=ui_font(11),
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_edit,
         )
@@ -208,7 +209,7 @@ class VariablesPanel(ctk.CTkFrame):
 
         self._dup_btn = ctk.CTkButton(
             bar, text="Duplicate", width=78, height=30,
-            corner_radius=3, font=("Segoe UI", 11),
+            corner_radius=3, font=ui_font(11),
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_duplicate,
         )
@@ -216,7 +217,7 @@ class VariablesPanel(ctk.CTkFrame):
 
         self._del_btn = ctk.CTkButton(
             bar, text="Delete", width=64, height=30,
-            corner_radius=3, font=("Segoe UI", 11),
+            corner_radius=3, font=ui_font(11),
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_delete,
         )
@@ -235,7 +236,7 @@ class VariablesPanel(ctk.CTkFrame):
             foreground=TREE_FG,
             rowheight=TREE_ROW_HEIGHT,
             borderwidth=0,
-            font=("Segoe UI", TREE_FONT_SIZE),
+            font=ui_font(TREE_FONT_SIZE),
         )
         style.map(
             style_name,
@@ -246,7 +247,7 @@ class VariablesPanel(ctk.CTkFrame):
             f"{style_name}.Heading",
             background=TREE_HEADING_BG,
             foreground=TREE_HEADING_FG,
-            font=("Segoe UI", TREE_FONT_SIZE, "bold"),
+            font=ui_font(TREE_FONT_SIZE, "bold"),
             relief="flat",
         )
 
@@ -635,7 +636,7 @@ class ReparentVariablesDialog(ctk.CTkToplevel):
                 f"local variable{'s' if len(self._var_entries) != 1 else ''} "
                 f"from `{self._source_name}`:"
             ),
-            font=("Segoe UI", 11),
+            font=ui_font(11),
             text_color="#cccccc", anchor="w", justify="left",
         ).pack(fill="x", padx=14, pady=(12, 6))
 
@@ -647,7 +648,7 @@ class ReparentVariablesDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             outer,
             text="Global variables are never affected.",
-            font=("Segoe UI", 10, "italic"),
+            font=ui_font(10, "italic"),
             text_color="#7da7d9", anchor="w",
         ).pack(fill="x", padx=14, pady=(8, 12))
 
@@ -688,7 +689,7 @@ class ReparentVariablesDialog(ctk.CTkToplevel):
             bg=TREE_BG, fg=TREE_FG,
             selectbackground=TREE_SELECTED_BG,
             selectforeground="#ffffff",
-            font=("Segoe UI", 10),
+            font=ui_font(10),
             borderwidth=0, highlightthickness=1,
             highlightbackground=BORDER,
             activestyle="none",
@@ -715,7 +716,7 @@ class ReparentVariablesDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             parent,
             text=f"In the source window — `{self._source_name}`:",
-            font=("Segoe UI", 11, "bold"),
+            font=ui_font(11, "bold"),
             text_color="#cccccc", anchor="w",
         ).pack(fill="x", padx=14, pady=(4, 4))
         n = self._external_usage
@@ -727,31 +728,31 @@ class ReparentVariablesDialog(ctk.CTkToplevel):
         ctk.CTkRadioButton(
             parent, text=keep_label,
             variable=self._source_var, value="keep",
-            font=("Segoe UI", 11),
+            font=ui_font(11),
         ).pack(fill="x", padx=24, pady=(0, 2), anchor="w")
         ctk.CTkRadioButton(
             parent, text="Delete variables",
             variable=self._source_var, value="delete",
-            font=("Segoe UI", 11),
+            font=ui_font(11),
         ).pack(fill="x", padx=24, pady=(0, 6), anchor="w")
 
     def _build_target_section(self, parent) -> None:
         ctk.CTkLabel(
             parent,
             text=f"In the target window — `{self._target_name}`:",
-            font=("Segoe UI", 11, "bold"),
+            font=ui_font(11, "bold"),
             text_color="#cccccc", anchor="w",
         ).pack(fill="x", padx=14, pady=(4, 4))
         ctk.CTkRadioButton(
             parent,
             text="Duplicate (or reuse existing same-name)",
             variable=self._target_var, value="duplicate",
-            font=("Segoe UI", 11),
+            font=ui_font(11),
         ).pack(fill="x", padx=24, pady=(0, 2), anchor="w")
         ctk.CTkRadioButton(
             parent, text="Unbind widgets from variables",
             variable=self._target_var, value="unbind",
-            font=("Segoe UI", 11),
+            font=ui_font(11),
         ).pack(fill="x", padx=24, pady=(0, 6), anchor="w")
 
     def _on_ok(self) -> None:
@@ -887,7 +888,7 @@ class VariableEditDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             panel, text="Variable",
-            font=("Segoe UI", 11, "bold"),
+            font=ui_font(11, "bold"),
             text_color="#888888", anchor="w",
         ).pack(fill="x", padx=14, pady=(10, 6))
 
@@ -901,7 +902,7 @@ class VariableEditDialog(ctk.CTkToplevel):
             panel,
             textvariable=self._error_var,
             bg=PANEL_BG, fg="#e07a7a",
-            font=("Segoe UI", 9, "italic"),
+            font=ui_font(9, "italic"),
             anchor="w",
         ).pack(fill="x", padx=(98, 14), pady=(2, 8))
 
@@ -923,14 +924,14 @@ class VariableEditDialog(ctk.CTkToplevel):
         row.pack(fill="x", padx=14, pady=4)
         ctk.CTkLabel(
             row, text=f"{label}:", width=80, anchor="w",
-            font=("Segoe UI", 11), text_color="#cccccc",
+            font=ui_font(11), text_color="#cccccc",
         ).pack(side="left")
         builder(row)
 
     def _build_name_row(self, row) -> None:
         self._name_entry = ctk.CTkEntry(
             row, textvariable=self._name_var, height=28,
-            corner_radius=3, font=("Segoe UI", 11),
+            corner_radius=3, font=ui_font(11),
             border_color=BORDER, border_width=1,
         )
         self._name_entry.pack(side="left", fill="x", expand=True)
@@ -963,7 +964,7 @@ class VariableEditDialog(ctk.CTkToplevel):
         self._default_row = row
         self._default_entry = ctk.CTkEntry(
             row, textvariable=self._default_var, height=28,
-            corner_radius=3, font=("Segoe UI", 11),
+            corner_radius=3, font=ui_font(11),
             border_color=BORDER, border_width=1,
         )
         # Color editor: swatch label + Pick… button. The swatch is a
@@ -980,7 +981,7 @@ class VariableEditDialog(ctk.CTkToplevel):
             self._color_frame, text="Pick…",
             width=70, height=28, corner_radius=3,
             fg_color="#3c3c3c", hover_color="#4a4a4a",
-            font=("Segoe UI", 11),
+            font=ui_font(11),
             command=self._open_color_picker,
         )
         self._color_pick_btn.pack(side="left")
@@ -988,7 +989,7 @@ class VariableEditDialog(ctk.CTkToplevel):
             self._color_frame,
             textvariable=self._default_var,
             bg=PANEL_BG, fg="#cccccc",
-            font=("Segoe UI", 10),
+            font=ui_font(10),
         )
         self._color_hex_label.pack(side="left", padx=(10, 0))
         # Keep the swatch fill in lock-step with the hex string —
@@ -1410,7 +1411,7 @@ class ObjectReferencesPanel(ctk.CTkFrame):
         bar.pack_propagate(False)
         self._add_global_btn = ctk.CTkButton(
             bar, text="+ Add Window", width=110, height=30,
-            corner_radius=3, font=("Segoe UI", 11),
+            corner_radius=3, font=ui_font(11),
             fg_color="#0e8a7d", hover_color="#149a8c",
             command=self._on_add_global,
         )
@@ -1419,7 +1420,7 @@ class ObjectReferencesPanel(ctk.CTkFrame):
             bar,
             text="Window / Dialog refs only. Toggle locals via widget panel.",
             text_color="#9aa4b2",
-            font=("Segoe UI", 10),
+            font=ui_font(10),
             anchor="w",
             justify="left",
         ).pack(side="left", padx=(2, 10), pady=8, fill="x", expand=True)
@@ -1473,7 +1474,7 @@ class ObjectReferencesPanel(ctk.CTkFrame):
             foreground=TREE_FG,
             rowheight=TREE_ROW_HEIGHT,
             borderwidth=0,
-            font=("Segoe UI", TREE_FONT_SIZE),
+            font=ui_font(TREE_FONT_SIZE),
         )
         style.map(
             "ObjectRefs.Treeview",
@@ -1484,7 +1485,7 @@ class ObjectReferencesPanel(ctk.CTkFrame):
             "ObjectRefs.Treeview.Heading",
             background=TREE_HEADING_BG,
             foreground=TREE_HEADING_FG,
-            font=("Segoe UI", TREE_FONT_SIZE, "bold"),
+            font=ui_font(TREE_FONT_SIZE, "bold"),
             relief="flat",
         )
         self.tree = ttk.Treeview(
@@ -1503,7 +1504,7 @@ class ObjectReferencesPanel(ctk.CTkFrame):
         self.tree.tag_configure("empty", foreground=EMPTY_FG)
         self.tree.tag_configure(
             "section", foreground="#9aa4b2",
-            font=("Segoe UI", TREE_FONT_SIZE, "bold"),
+            font=ui_font(TREE_FONT_SIZE, "bold"),
         )
         self.tree.bind("<Button-3>", self._on_right_click)
         self.tree.bind("<Double-Button-1>", self._on_double_click)
@@ -1982,7 +1983,7 @@ class VariablesWindow(ctk.CTkToplevel):
         # bg gives the same visual result without the hover risk.
         return ctk.CTkButton(
             parent, text=text, width=10, height=28,
-            corner_radius=4, font=("Segoe UI", 11, "bold"),
+            corner_radius=4, font=ui_font(11, "bold"),
             fg_color=BG, hover_color="#2a2a2a",
             text_color="#888888",
             border_width=0,

@@ -5,6 +5,7 @@ panel, format utilities, and any future editor modules.
 """
 
 from __future__ import annotations
+from app.ui.system_fonts import ui_font
 
 
 # =====================================================================
@@ -77,12 +78,15 @@ UNIT_SUFFIX_OPTIONS = ["none", "%", "°", "°C", "°F", "kg", "g", "km", "m", "s
 # =====================================================================
 # Popup menu style
 # =====================================================================
-MENU_STYLE = dict(
-    bg="#2d2d30", fg="#cccccc",
-    activebackground="#094771", activeforeground="#ffffff",
-    bd=0, borderwidth=0, relief="flat",
-    font=("Segoe UI", 10),
-)
+def menu_style() -> dict:
+    """Return popup-menu kwargs. Built lazily so the ``ui_font`` call
+    runs after Tk root exists (it reads ``TkDefaultFont``)."""
+    return dict(
+        bg="#2d2d30", fg="#cccccc",
+        activebackground="#094771", activeforeground="#ffffff",
+        bd=0, borderwidth=0, relief="flat",
+        font=ui_font(10),
+    )
 
 
 # Style bool rows that contribute to the "Style" subgroup preview.

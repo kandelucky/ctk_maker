@@ -16,6 +16,7 @@ from app.core.commands import ChangePropertyCommand
 from ..constants import DISABLED_FG, TREE_FG, VALUE_BG
 from ..overlays import SLOT_NUMBER_SPIN, place_number_spin
 from .base import Editor
+from app.ui.system_fonts import ui_font
 
 
 _REPEAT_DELAY_MS = 350
@@ -78,7 +79,7 @@ class _NumberSpinner(tk.Frame):
     def _make_button(self, glyph: str, direction: int) -> tk.Label:
         lbl = tk.Label(
             self, text=glyph, bg=_BTN_BG, fg=TREE_FG,
-            font=("Segoe UI", 6), cursor="arrow",
+            font=ui_font(6), cursor="arrow",
         )
         lbl.bind(
             "<ButtonPress-1>", lambda _e, d=direction: self._press(d),

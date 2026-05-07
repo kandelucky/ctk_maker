@@ -14,6 +14,7 @@ import customtkinter as ctk
 from app.core.autosave import (
     AutosaveController, autosave_path_for, clear_autosave,
 )
+from app.ui.system_fonts import ui_font
 from app.core.fonts import (
     register_project_fonts, set_active_project_defaults,
 )
@@ -392,7 +393,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                     tkfont.nametofont(_font_name).configure(family="Segoe UI")
                 except tk.TclError:
                     pass
-        self.option_add("*Font", "{Segoe UI} 11")
+            self.option_add("*Font", "{Segoe UI} 11")
 
         # Non-Latin keyboard layouts remap the V/C/X/A keysyms, so
         # tk's default <Control-v> etc. never fire and clipboard
@@ -532,7 +533,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
 
         _btn_kw: dict[str, Any] = {
             "height": 20, "corner_radius": 5,
-            "font": ("Segoe UI", 11), "border_width": 0,
+            "font": ui_font(11), "border_width": 0,
         }
         self._btn_tree = ctk.CTkButton(
             _pill_top, text="Object Tree", command=_show_tree,
@@ -1199,7 +1200,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             tk.Label(
                 toast, text=text,
                 bg="#2d2d30", fg="#cccccc",
-                font=("Segoe UI", 10),
+                font=ui_font(10),
                 padx=18, pady=8,
             ).pack()
             toast.update_idletasks()

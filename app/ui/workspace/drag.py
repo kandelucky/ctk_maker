@@ -31,6 +31,7 @@ from app.core.commands import (
     MultiChangePropertyCommand,
     ReparentCommand,
 )
+from app.ui.system_fonts import ui_font
 from app.ui.workspace.grid_drop_indicator import GridDropIndicator
 from app.widgets.layout_schema import (
     is_layout_container,
@@ -1242,7 +1243,7 @@ class WidgetDragController:
                 text_id = canvas.create_text(
                     nx + 10, ny + 4,
                     text=label_text, anchor="nw",
-                    font=("Segoe UI", 10, "bold"),
+                    font=ui_font(10, "bold"),
                     fill="white",
                     tags=("drag_ghost", "drag_ghost_text"),
                 )

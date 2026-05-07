@@ -12,6 +12,7 @@ from ..overlays import (
     place_image_buttons,
     place_image_value,
 )
+from app.ui.system_fonts import ui_font
 from .base import Editor
 
 
@@ -23,7 +24,7 @@ class ImageEditor(Editor):
         value_label = tk.Label(
             panel.tree, text=display_name,
             bg=TEXT_BG, fg="#cccccc",
-            font=("Segoe UI", 11), anchor="w",
+            font=ui_font(11), anchor="w",
             relief="flat", bd=0, padx=6,
         )
         panel.overlays.add(
@@ -33,7 +34,7 @@ class ImageEditor(Editor):
         btn_frame = tk.Frame(panel.tree, bg=TREE_BG)
         open_btn = tk.Label(
             btn_frame, text="⋯", bg=TREE_BG, fg="#aaaaaa",
-            font=("Segoe UI", 14, "bold"),
+            font=ui_font(14, "bold"),
             padx=4, cursor="hand2",
         )
         open_btn.pack(side="left", padx=(0, 2))
@@ -43,7 +44,7 @@ class ImageEditor(Editor):
         )
         clear_btn = tk.Label(
             btn_frame, text="✕", bg=TREE_BG, fg="#aaaaaa",
-            font=("Segoe UI", 11, "bold"),
+            font=ui_font(11, "bold"),
             padx=4, cursor="hand2",
         )
         clear_btn.pack(side="left")

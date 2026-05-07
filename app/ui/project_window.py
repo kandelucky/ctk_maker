@@ -46,6 +46,7 @@ from app.core.logger import log_error
 from app.core.paths import (
     ASSET_SUBDIRS, assets_dir, ensure_project_folder,
 )
+from app.ui.system_fonts import ui_font
 from app.ui.dialog_utils import prepare_dialog, reveal_dialog
 
 if TYPE_CHECKING:
@@ -252,7 +253,7 @@ class ProjectPanel(ctk.CTkFrame):
         ctk.CTkLabel(
             type_bar, textvariable=self._name_var,
             fg_color="#2a2a2a",
-            font=("Segoe UI", 11, "bold"),
+            font=ui_font(11, "bold"),
             text_color=HEADER_FG, height=18, anchor="w",
         ).pack(side="left", padx=(6, 0))
 
@@ -266,7 +267,7 @@ class ProjectPanel(ctk.CTkFrame):
             type_bar, text="" if plus_icon else "+",
             image=plus_icon,
             width=24, height=20, corner_radius=3,
-            font=("Segoe UI", 12, "bold"),
+            font=ui_font(12, "bold"),
             fg_color="#2a2a2a", hover_color="#3a3a3a",
             text_color="#cccccc",
             command=self._on_show_add_menu,
@@ -281,7 +282,7 @@ class ProjectPanel(ctk.CTkFrame):
         tk.Label(
             path_row, textvariable=self._path_var,
             bg=BG, fg=DIM_FG,
-            font=("Segoe UI", 9), anchor="w",
+            font=ui_font(9), anchor="w",
         ).pack(side="left", padx=(6, 6), fill="x", expand=True)
 
     def _menu_icon(self, name: str) -> tk.PhotoImage | None:
@@ -324,7 +325,7 @@ class ProjectPanel(ctk.CTkFrame):
             self, tearoff=0,
             bg="#2d2d30", fg=HEADER_FG,
             activebackground="#094771", activeforeground="#ffffff",
-            relief="flat", bd=0, font=("Segoe UI", 10),
+            relief="flat", bd=0, font=ui_font(10),
         )
         self._menu_command(menu, "Folder", "folder", self._on_new_folder)
         menu.add_separator()
@@ -359,7 +360,7 @@ class ProjectPanel(ctk.CTkFrame):
             parent_menu, tearoff=0,
             bg="#2d2d30", fg=HEADER_FG,
             activebackground="#094771", activeforeground="#ffffff",
-            relief="flat", bd=0, font=("Segoe UI", 10),
+            relief="flat", bd=0, font=ui_font(10),
         )
         self._menu_command(
             sub, "Lucide Icon...", "layout-list", self._on_add_lucide_icon,
@@ -408,7 +409,7 @@ class ProjectPanel(ctk.CTkFrame):
             style_name,
             background=TREE_BG, fieldbackground=TREE_BG,
             foreground=TREE_FG, rowheight=TREE_ROW_HEIGHT,
-            borderwidth=0, font=("Segoe UI", 10),
+            borderwidth=0, font=ui_font(10),
         )
         style.map(
             style_name,
@@ -454,7 +455,7 @@ class ProjectPanel(ctk.CTkFrame):
         self._info_label = tk.Label(
             wrap, textvariable=self._info_var,
             bg=PANEL_BG, fg=DIM_FG,
-            font=("Segoe UI", 9), justify="left", anchor="nw",
+            font=ui_font(9), justify="left", anchor="nw",
             wraplength=DIALOG_W - 30, height=4,
         )
         self._info_label.pack(fill="x", padx=2)
@@ -828,7 +829,7 @@ class ProjectPanel(ctk.CTkFrame):
         text = f"{count} item" if count == 1 else f"{count} items"
         tk.Label(
             frame, text=text, bg="#1c1c1c", fg="#cccccc",
-            font=("Segoe UI", 9),
+            font=ui_font(9),
         ).pack(side="left")
         ghost.geometry("+0+0")
         self._drag_ghost = ghost
@@ -924,7 +925,7 @@ class ProjectPanel(ctk.CTkFrame):
             self, tearoff=0,
             bg="#2d2d30", fg=HEADER_FG,
             activebackground="#094771", activeforeground="#ffffff",
-            relief="flat", bd=0, font=("Segoe UI", 10),
+            relief="flat", bd=0, font=ui_font(10),
         )
         meta = self._iid_meta.get(iid)
         if meta is None:
@@ -1926,7 +1927,7 @@ class ProjectPanel(ctk.CTkFrame):
         try:
             self._tree.tag_configure(
                 "active_page",
-                font=("Segoe UI", 10, "bold"),
+                font=ui_font(10, "bold"),
                 foreground="#5bc0f8",
             )
         except tk.TclError:

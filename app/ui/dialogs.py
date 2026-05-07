@@ -24,6 +24,7 @@ from app.core.project_folder import (
     read_project_meta,
     slugify_page_name,
 )
+from app.ui.system_fonts import ui_font
 from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 from app.ui.new_project_form import NewProjectForm
 
@@ -397,16 +398,16 @@ class AboutDialog(tk.Toplevel):
         tk.Frame(self, bg=_ABT_BG, height=16).pack()
         tk.Label(
             self, text="CTkMaker",
-            bg=_ABT_BG, fg=_ABT_FG, font=("Segoe UI", 16, "bold"),
+            bg=_ABT_BG, fg=_ABT_FG, font=ui_font(16, "bold"),
         ).pack(**pad)
         tk.Label(
             self, text=version or "",
-            bg=_ABT_BG, fg=_ABT_DIM, font=("Segoe UI", 10),
+            bg=_ABT_BG, fg=_ABT_DIM, font=ui_font(10),
         ).pack(**pad, pady=(2, 0))
         tk.Label(
             self,
             text="Design CustomTkinter, visually — for free.",
-            bg=_ABT_BG, fg=_ABT_DIM, font=("Segoe UI", 10),
+            bg=_ABT_BG, fg=_ABT_DIM, font=ui_font(10),
             justify="center",
         ).pack(padx=24, pady=(10, 0))
 
@@ -414,7 +415,7 @@ class AboutDialog(tk.Toplevel):
 
         tk.Label(
             self, text="Built with",
-            bg=_ABT_BG, fg=_ABT_FG, font=("Segoe UI", 10, "bold"),
+            bg=_ABT_BG, fg=_ABT_FG, font=ui_font(10, "bold"),
         ).pack(**pad, pady=(0, 6))
 
         for name, url, lic in _BUILT_WITH:
@@ -422,35 +423,35 @@ class AboutDialog(tk.Toplevel):
             row.pack(fill="x", padx=24, pady=1)
             tk.Label(
                 row, text=f"{name}  ", bg=_ABT_BG, fg=_ABT_FG,
-                font=("Segoe UI", 10), anchor="w",
+                font=ui_font(10), anchor="w",
             ).pack(side="left")
             link = tk.Label(
                 row, text=url, bg=_ABT_BG, fg=_ABT_LINK,
-                font=("Segoe UI", 10, "underline"), cursor="hand2",
+                font=ui_font(10, "underline"), cursor="hand2",
             )
             link.pack(side="left")
             link.bind("<Button-1>", lambda _e, u=url: webbrowser.open(u))
             tk.Label(
                 row, text=f"  ({lic})", bg=_ABT_BG, fg=_ABT_DIM,
-                font=("Segoe UI", 9),
+                font=ui_font(9),
             ).pack(side="left")
 
         tk.Frame(self, bg=_ABT_SEP, height=1).pack(fill="x", padx=24, pady=12)
 
         tk.Label(
             self, text="Links",
-            bg=_ABT_BG, fg=_ABT_FG, font=("Segoe UI", 10, "bold"),
+            bg=_ABT_BG, fg=_ABT_FG, font=ui_font(10, "bold"),
         ).pack(**pad, pady=(0, 6))
         for name, url in _PROJECT_LINKS:
             row = tk.Frame(self, bg=_ABT_BG)
             row.pack(fill="x", padx=24, pady=1)
             tk.Label(
                 row, text=f"{name}  ", bg=_ABT_BG, fg=_ABT_FG,
-                font=("Segoe UI", 10), anchor="w",
+                font=ui_font(10), anchor="w",
             ).pack(side="left")
             link = tk.Label(
                 row, text=url, bg=_ABT_BG, fg=_ABT_LINK,
-                font=("Segoe UI", 10, "underline"), cursor="hand2",
+                font=ui_font(10, "underline"), cursor="hand2",
             )
             link.pack(side="left")
             link.bind("<Button-1>", lambda _e, u=url: webbrowser.open(u))
@@ -477,7 +478,7 @@ class AboutDialog(tk.Toplevel):
             activebackground="#FFE54B", activeforeground=_BMC_FG,
             relief="solid", bd=1,
             highlightbackground=_BMC_OUTLINE,
-            font=("Segoe UI", 11, "bold"),
+            font=ui_font(11, "bold"),
             padx=18, pady=6, cursor="hand2",
             command=lambda: webbrowser.open(_BMC_URL),
         )
@@ -491,7 +492,7 @@ class AboutDialog(tk.Toplevel):
             self, text="Close", command=self.destroy,
             bg="#3a3a3a", fg=_ABT_FG, activebackground="#4a4a4a",
             activeforeground=_ABT_FG, relief="flat", bd=0,
-            font=("Segoe UI", 10), padx=20, pady=4, cursor="hand2",
+            font=ui_font(10), padx=20, pady=4, cursor="hand2",
         )
         btn.pack(pady=(10, 16))
 
@@ -535,7 +536,7 @@ class ConfirmDialog(tk.Toplevel):
         tk.Frame(self, bg=_ABT_BG, height=20).pack()
         tk.Label(
             self, text=message,
-            bg=_ABT_BG, fg=_ABT_FG, font=("Segoe UI", 10),
+            bg=_ABT_BG, fg=_ABT_FG, font=ui_font(10),
             justify="left", wraplength=380,
         ).pack(padx=24, pady=(0, 16))
         btn_row = tk.Frame(self, bg=_ABT_BG)
@@ -544,13 +545,13 @@ class ConfirmDialog(tk.Toplevel):
             btn_row, text=cancel_text, command=self._on_cancel,
             bg="#3a3a3a", fg=_ABT_FG, activebackground="#4a4a4a",
             activeforeground=_ABT_FG, relief="flat", bd=0,
-            font=("Segoe UI", 10), padx=20, pady=4, cursor="hand2",
+            font=ui_font(10), padx=20, pady=4, cursor="hand2",
         ).pack(side="left", padx=(0, 8))
         tk.Button(
             btn_row, text=ok_text, command=self._on_ok,
             bg="#6366f1", fg="#ffffff", activebackground="#4f46e5",
             activeforeground="#ffffff", relief="flat", bd=0,
-            font=("Segoe UI", 10), padx=20, pady=4, cursor="hand2",
+            font=ui_font(10), padx=20, pady=4, cursor="hand2",
         ).pack(side="left")
         self.bind("<Escape>", lambda _e: self._on_cancel())
         self.bind("<Return>", lambda _e: self._on_ok())
@@ -810,7 +811,7 @@ class ChoiceDialog(tk.Toplevel):
         tk.Frame(self, bg=_ABT_BG, height=20).pack()
         tk.Label(
             self, text=message,
-            bg=_ABT_BG, fg=_ABT_FG, font=("Segoe UI", 10),
+            bg=_ABT_BG, fg=_ABT_FG, font=ui_font(10),
             justify="left", wraplength=420,
         ).pack(padx=24, pady=(0, 16))
         btn_row = tk.Frame(self, bg=_ABT_BG)
@@ -819,7 +820,7 @@ class ChoiceDialog(tk.Toplevel):
             btn_row, text=cancel_text, command=self._on_cancel,
             bg="#3a3a3a", fg=_ABT_FG, activebackground="#4a4a4a",
             activeforeground=_ABT_FG, relief="flat", bd=0,
-            font=("Segoe UI", 10), padx=16, pady=4, cursor="hand2",
+            font=ui_font(10), padx=16, pady=4, cursor="hand2",
         ).pack(side="left", padx=(0, 8))
         if secondary is not None:
             sec_key, sec_text = secondary
@@ -828,7 +829,7 @@ class ChoiceDialog(tk.Toplevel):
                 command=lambda: self._pick(sec_key),
                 bg="#3a3a3a", fg=_ABT_FG, activebackground="#4a4a4a",
                 activeforeground=_ABT_FG, relief="flat", bd=0,
-                font=("Segoe UI", 10), padx=16, pady=4, cursor="hand2",
+                font=ui_font(10), padx=16, pady=4, cursor="hand2",
             ).pack(side="left", padx=(0, 8))
         prim_key, prim_text = primary
         tk.Button(
@@ -836,7 +837,7 @@ class ChoiceDialog(tk.Toplevel):
             command=lambda: self._pick(prim_key),
             bg="#6366f1", fg="#ffffff", activebackground="#4f46e5",
             activeforeground="#ffffff", relief="flat", bd=0,
-            font=("Segoe UI", 10), padx=16, pady=4, cursor="hand2",
+            font=ui_font(10), padx=16, pady=4, cursor="hand2",
         ).pack(side="left")
         self.bind("<Escape>", lambda _e: self._on_cancel())
         self.bind("<Return>", lambda _e: self._pick(prim_key))
@@ -875,7 +876,7 @@ class _AmbiguousProjectPicker(tk.Toplevel):
                 f"Several '.ctkproj' files were found in:\n{folder}\n\n"
                 "Pick the one to open."
             ),
-            bg=_ABT_BG, fg=_ABT_FG, font=("Segoe UI", 10),
+            bg=_ABT_BG, fg=_ABT_FG, font=ui_font(10),
             justify="left", wraplength=420,
         ).pack(padx=24, pady=(20, 10))
 
@@ -885,7 +886,7 @@ class _AmbiguousProjectPicker(tk.Toplevel):
             width=50,
             bg="#2a2a2a", fg=_ABT_FG, selectbackground="#6366f1",
             relief="flat", bd=0, highlightthickness=0,
-            font=("Segoe UI", 10),
+            font=ui_font(10),
         )
         for c in candidates:
             self._listbox.insert(tk.END, c.name)
@@ -899,13 +900,13 @@ class _AmbiguousProjectPicker(tk.Toplevel):
             btn_row, text="Cancel", command=self._on_cancel,
             bg="#3a3a3a", fg=_ABT_FG, activebackground="#4a4a4a",
             activeforeground=_ABT_FG, relief="flat", bd=0,
-            font=("Segoe UI", 10), padx=16, pady=4, cursor="hand2",
+            font=ui_font(10), padx=16, pady=4, cursor="hand2",
         ).pack(side="left", padx=(0, 8))
         tk.Button(
             btn_row, text="Open", command=self._on_ok,
             bg="#6366f1", fg="#ffffff", activebackground="#4f46e5",
             activeforeground="#ffffff", relief="flat", bd=0,
-            font=("Segoe UI", 10), padx=16, pady=4, cursor="hand2",
+            font=ui_font(10), padx=16, pady=4, cursor="hand2",
         ).pack(side="left")
         self.bind("<Escape>", lambda _e: self._on_cancel())
         self.bind("<Return>", lambda _e: self._on_ok())

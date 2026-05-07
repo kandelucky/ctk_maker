@@ -14,6 +14,7 @@ import tkinter as tk
 import customtkinter as ctk
 
 from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui.system_fonts import ui_font
 
 
 class ComponentWindowInsertDialog(ctk.CTkToplevel):
@@ -38,7 +39,7 @@ class ComponentWindowInsertDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             body, text="Insert as a new Dialog?",
-            font=("Segoe UI", 14, "bold"),
+            font=ui_font(14, "bold"),
             text_color="#e6e6e6", anchor="w",
         ).pack(anchor="w", pady=(0, 6))
         ctk.CTkLabel(
@@ -46,7 +47,7 @@ class ComponentWindowInsertDialog(ctk.CTkToplevel):
             text=(
                 f"\"{component_name}\" is a Window component."
             ),
-            font=("Segoe UI", 10),
+            font=ui_font(10),
             text_color="#bdbdbd", anchor="w",
             wraplength=380, justify="left",
         ).pack(anchor="w", pady=(0, 14))
@@ -60,7 +61,7 @@ class ComponentWindowInsertDialog(ctk.CTkToplevel):
                 f"• Default name: {target_doc_name}\n"
                 "• You can rename it from the Forms tab."
             ),
-            font=("Segoe UI", 10),
+            font=ui_font(10),
             text_color="#cc7e1f",
             justify="left", anchor="w", wraplength=380,
         ).pack(anchor="w", padx=12, pady=10)

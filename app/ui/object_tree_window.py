@@ -29,6 +29,7 @@ from app.core.commands import (
     paste_target_parent_id,
     push_zorder_history,
 )
+from app.ui.system_fonts import ui_font
 from app.ui.dialog_utils import prepare_dialog, reveal_dialog
 from app.ui.dialogs import RenameDialog
 from app.ui.icons import load_icon, load_tk_icon
@@ -92,18 +93,21 @@ _FRAME_LAYOUT_INITIALS: dict[str, str] = {
     "grid":  "GFr",
 }
 
-CTX_MENU_STYLE = dict(
-    bg="#2d2d30",
-    fg="#cccccc",
-    activebackground="#094771",
-    activeforeground="#ffffff",
-    disabledforeground="#888888",
-    bd=0,
-    borderwidth=0,
-    activeborderwidth=0,
-    relief="flat",
-    font=("Segoe UI", 11),
-)
+def ctx_menu_style() -> dict:
+    """Return context-menu kwargs. Built lazily so ``ui_font`` runs
+    after Tk root exists."""
+    return dict(
+        bg="#2d2d30",
+        fg="#cccccc",
+        activebackground="#094771",
+        activeforeground="#ffffff",
+        disabledforeground="#888888",
+        bd=0,
+        borderwidth=0,
+        activeborderwidth=0,
+        relief="flat",
+        font=ui_font(11),
+    )
 
 
 class ObjectTreePanel(ctk.CTkFrame):
@@ -268,7 +272,7 @@ class ObjectTreePanel(ctk.CTkFrame):
             bordercolor=BG,
             borderwidth=0,
             rowheight=TREE_ROW_HEIGHT,
-            font=("Segoe UI", TREE_FONT_SIZE),
+            font=ui_font(TREE_FONT_SIZE),
             indent=0,  # kill depth indentation — we fake it in the name col
         )
         # Tk Treeview's default style.map for foreground/background
@@ -295,7 +299,7 @@ class ObjectTreePanel(ctk.CTkFrame):
             "ObjectTree.Treeview.Heading",
             background=TREE_HEADING_BG,
             foreground=TREE_HEADING_FG,
-            font=("Segoe UI", 9, "bold"),
+            font=ui_font(9, "bold"),
             relief="flat",
         )
         style.layout(
@@ -354,7 +358,7 @@ class ObjectTreePanel(ctk.CTkFrame):
             text="",
             bg=BG,
             fg=accent,
-            font=("Segoe UI", 10, "bold"),
+            font=ui_font(10, "bold"),
             anchor="w",
         )
         self._doc_header_label.pack(side="left", fill="x", expand=True)
@@ -373,8 +377,8 @@ class ObjectTreePanel(ctk.CTkFrame):
             values=[FILTER_ALL_LABEL],
             variable=self._filter_var,
             width=110, height=26,
-            font=("Segoe UI", 10),
-            dropdown_font=("Segoe UI", 10),
+            font=ui_font(10),
+            dropdown_font=ui_font(10),
             fg_color="#2d2d2d", button_color="#2d2d2d",
             button_hover_color="#3a3a3a", corner_radius=3,
         )
@@ -392,7 +396,7 @@ class ObjectTreePanel(ctk.CTkFrame):
             placeholder_text_color="#888888",
             height=26,
             corner_radius=3,
-            font=("Segoe UI", 10),
+            font=ui_font(10),
             border_color="#3c3c3c", border_width=1,
             fg_color="#2d2d2d",
         )
@@ -458,7 +462,7 @@ class ObjectTreePanel(ctk.CTkFrame):
         self.tree.tag_configure("hidden-row", foreground=HIDDEN_ROW_FG)
         self.tree.tag_configure(
             "locked-row",
-            font=("Segoe UI", TREE_FONT_SIZE, "italic"),
+            font=ui_font(TREE_FONT_SIZE, "italic"),
         )
         # Group rows — name text colored, NOT the row background
         # (background tint would override the tk selection highlight
@@ -1293,7 +1297,10 @@ class ObjectTreePanel(ctk.CTkFrame):
         # the tree font — measure it directly rather than guessing
         # 18px/depth (which is far off for 6-space indents in Segoe UI).
         import tkinter.font as tkfont
-        font = tkfont.Font(family="Segoe UI", size=TREE_FONT_SIZE)
+        font = tkfont.Font(
+            family=tkfont.nametofont("TkDefaultFont").cget("family"),
+            size=TREE_FONT_SIZE,
+        )
         indent_px = font.measure(INDENT_STR * depth)
         arrow_px = font.measure(ARROW_EXPANDED)
         # ttk Treeview's default cell text padding is ~4px from cell_x.
@@ -1692,7 +1699,10 @@ class ObjectTreePanel(ctk.CTkFrame):
         arrow = (ARROW_EXPANDED if expanded else ARROW_COLLAPSED) if has_children else ARROW_LEAF
         prefix = INDENT_STR * depth + arrow
         try:
-            prefix_px = tkfont.Font(family="Segoe UI", size=TREE_FONT_SIZE).measure(prefix)
+            prefix_px = tkfont.Font(
+                family=tkfont.nametofont("TkDefaultFont").cget("family"),
+                size=TREE_FONT_SIZE,
+            ).measure(prefix)
         except Exception:
             prefix_px = 0
 
@@ -1702,7 +1712,7 @@ class ObjectTreePanel(ctk.CTkFrame):
 
         entry = tk.Entry(
             self.tree,
-            font=("Segoe UI", TREE_FONT_SIZE),
+            font=ui_font(TREE_FONT_SIZE),
             bg="#2d2d30", fg="#cccccc",
             insertbackground="#cccccc",
             relief="flat", bd=0,
@@ -1751,7 +1761,7 @@ class ObjectTreePanel(ctk.CTkFrame):
                 return "break"
             toplevel = self.winfo_toplevel()
             menu = tk.Menu(
-                self.winfo_toplevel(), tearoff=0, **CTX_MENU_STYLE,
+                self.winfo_toplevel(), tearoff=0, **ctx_menu_style(),
             )
             menu.add_command(
                 label=f"Select Group ({len(members)})",
@@ -1783,7 +1793,7 @@ class ObjectTreePanel(ctk.CTkFrame):
         )
 
         menu = tk.Menu(
-            self.winfo_toplevel(), tearoff=0, **CTX_MENU_STYLE,
+            self.winfo_toplevel(), tearoff=0, **ctx_menu_style(),
         )
         toplevel = self.winfo_toplevel()
         if multi_active:
@@ -1818,8 +1828,9 @@ class ObjectTreePanel(ctk.CTkFrame):
                 descriptor is not None
                 and getattr(descriptor, "is_container", False)
             )
-            disabled_fg = CTX_MENU_STYLE.get("disabledforeground", "#888888")
-            enabled_fg = CTX_MENU_STYLE.get("fg", "#cccccc")
+            _ctx_style = ctx_menu_style()
+            disabled_fg = _ctx_style.get("disabledforeground", "#888888")
+            enabled_fg = _ctx_style.get("fg", "#cccccc")
             paste_fg = enabled_fg if self.project.clipboard else disabled_fg
             paste_child_fg = (
                 enabled_fg

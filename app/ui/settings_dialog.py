@@ -27,6 +27,7 @@ import customtkinter as ctk
 
 from app.core.settings import load_settings, save_setting
 from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui.system_fonts import ui_font
 
 DIALOG_W = 700
 DIALOG_H = 520
@@ -204,7 +205,7 @@ class SettingsDialog(tk.Toplevel):
         row = tk.Label(
             self._sidebar, text=name, anchor="w",
             bg=SIDEBAR_ROW_BG, fg=SIDEBAR_ROW_FG,
-            font=("Segoe UI", 11),
+            font=ui_font(11),
             padx=14, pady=7,
             cursor="hand2",
         )
@@ -241,13 +242,13 @@ class SettingsDialog(tk.Toplevel):
     def _section_label(self, parent: tk.Misc, text: str) -> tk.Label:
         return tk.Label(
             parent, text=text, bg=BG, fg=SECTION_FG,
-            font=("Segoe UI", 11, "bold"), anchor="w",
+            font=ui_font(11, "bold"), anchor="w",
         )
 
     def _hint(self, parent: tk.Misc, text: str) -> tk.Label:
         return tk.Label(
             parent, text=text, bg=BG, fg=DIM_FG,
-            font=("Segoe UI", 10), anchor="w", justify="left",
+            font=ui_font(10), anchor="w", justify="left",
             # Sidebar takes SIDEBAR_W on the left + tab_frame padx — give
             # the hint room to wrap without bleeding past the content
             # pane's right edge.
@@ -263,7 +264,7 @@ class SettingsDialog(tk.Toplevel):
         row.pack(anchor="w", pady=(8, 4))
         tk.Label(
             row, text="Mode:", bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 11), width=12, anchor="w",
+            font=ui_font(11), width=12, anchor="w",
         ).pack(side="left")
         self._theme_var = tk.StringVar(
             value=self._initial.get(KEY_THEME, "Dark"),
@@ -294,7 +295,7 @@ class SettingsDialog(tk.Toplevel):
         loc_row.pack(fill="x", pady=(6, 4))
         tk.Label(
             loc_row, text="Save location:", bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 11), width=14, anchor="w",
+            font=ui_font(11), width=14, anchor="w",
         ).pack(side="left")
         self._dir_var = tk.StringVar(
             value=self._initial.get(KEY_DEFAULT_DIR)
@@ -314,7 +315,7 @@ class SettingsDialog(tk.Toplevel):
         size_row.pack(fill="x")
         tk.Label(
             size_row, text="Project size:", bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 11), width=14, anchor="w",
+            font=ui_font(11), width=14, anchor="w",
         ).pack(side="left")
         self._w_var = tk.StringVar(
             value=str(
@@ -326,7 +327,7 @@ class SettingsDialog(tk.Toplevel):
         ).pack(side="left", padx=(8, 4))
         tk.Label(
             size_row, text="×", bg=BG, fg=DIM_FG,
-            font=("Segoe UI", 11),
+            font=ui_font(11),
         ).pack(side="left")
         self._h_var = tk.StringVar(
             value=str(
@@ -338,7 +339,7 @@ class SettingsDialog(tk.Toplevel):
         ).pack(side="left", padx=(4, 0))
         tk.Label(
             size_row, text="px", bg=BG, fg=DIM_FG,
-            font=("Segoe UI", 11),
+            font=ui_font(11),
         ).pack(side="left", padx=(6, 0))
 
         self._hint(
@@ -369,7 +370,7 @@ class SettingsDialog(tk.Toplevel):
         style_row.pack(fill="x", pady=(6, 4))
         tk.Label(
             style_row, text="Style:", bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 11), width=14, anchor="w",
+            font=ui_font(11), width=14, anchor="w",
         ).pack(side="left")
         self._grid_style_var = tk.StringVar(
             value=str(
@@ -387,7 +388,7 @@ class SettingsDialog(tk.Toplevel):
         color_row.pack(fill="x", pady=(0, 6))
         tk.Label(
             color_row, text="Color:", bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 11), width=14, anchor="w",
+            font=ui_font(11), width=14, anchor="w",
         ).pack(side="left")
         self._grid_color_var = tk.StringVar(
             value=str(
@@ -414,7 +415,7 @@ class SettingsDialog(tk.Toplevel):
         spacing_row.pack(fill="x")
         tk.Label(
             spacing_row, text="Spacing (px):", bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 11), width=14, anchor="w",
+            font=ui_font(11), width=14, anchor="w",
         ).pack(side="left")
         self._grid_spacing_var = tk.StringVar(
             value=str(
@@ -484,7 +485,7 @@ class SettingsDialog(tk.Toplevel):
         preset_row.pack(fill="x", pady=(6, 4))
         tk.Label(
             preset_row, text="Editor:", bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 11), width=14, anchor="w",
+            font=ui_font(11), width=14, anchor="w",
         ).pack(side="left")
         ctk.CTkOptionMenu(
             preset_row,
@@ -499,7 +500,7 @@ class SettingsDialog(tk.Toplevel):
         cmd_row.pack(fill="x", pady=(0, 6))
         tk.Label(
             cmd_row, text="Command:", bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 11), width=14, anchor="w",
+            font=ui_font(11), width=14, anchor="w",
         ).pack(side="left")
         self._editor_cmd_var = tk.StringVar(value=current_cmd)
         # Manual edits should flip the preset label to "Custom" so
@@ -532,7 +533,7 @@ class SettingsDialog(tk.Toplevel):
             rec_frame,
             text="★ Recommended:  VS Code",
             bg=BG, fg="#7dd3fc",
-            font=("Segoe UI", 11, "bold"),
+            font=ui_font(11, "bold"),
             anchor="w",
         ).pack(anchor="w")
         tk.Label(
@@ -542,7 +543,7 @@ class SettingsDialog(tk.Toplevel):
                 "terminal, and a dedicated CTkMaker extension is on "
                 "the roadmap."
             ),
-            bg=BG, fg=DIM_FG, font=("Segoe UI", 10),
+            bg=BG, fg=DIM_FG, font=ui_font(10),
             anchor="w", justify="left",
             wraplength=DIALOG_W - 80,
         ).pack(anchor="w", pady=(2, 4))
@@ -550,7 +551,7 @@ class SettingsDialog(tk.Toplevel):
             rec_frame,
             text="https://code.visualstudio.com/download",
             bg=BG, fg="#5eb3ff",
-            font=("Segoe UI", 9, "underline"),
+            font=ui_font(9, "underline"),
             anchor="w", cursor="hand2",
         )
         link_lbl.pack(anchor="w")
@@ -565,7 +566,7 @@ class SettingsDialog(tk.Toplevel):
             fix_frame,
             text="VS Code showing red import errors?",
             bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 10, "bold"),
+            font=ui_font(10, "bold"),
             anchor="w",
         ).pack(anchor="w")
         tk.Label(
@@ -574,7 +575,7 @@ class SettingsDialog(tk.Toplevel):
                 "Writes .vscode/settings.json with the correct Python path "
                 "so Pylance finds your packages."
             ),
-            bg=BG, fg=DIM_FG, font=("Segoe UI", 9),
+            bg=BG, fg=DIM_FG, font=ui_font(9),
             anchor="w", justify="left",
             wraplength=DIALOG_W - 80,
         ).pack(anchor="w", pady=(2, 6))
@@ -589,7 +590,7 @@ class SettingsDialog(tk.Toplevel):
             fix_frame,
             textvariable=self._vscode_fix_status,
             bg=BG, fg="#4ade80",
-            font=("Segoe UI", 9),
+            font=ui_font(9),
             anchor="w",
         ).pack(anchor="w", pady=(4, 0))
 
@@ -698,7 +699,7 @@ class SettingsDialog(tk.Toplevel):
             cb_row, text="Show preview tools (orange ring + Save/Copy buttons + title prefix)",
             variable=self._preview_floater_var,
             checkbox_width=16, checkbox_height=16,
-            font=("Segoe UI", 11),
+            font=ui_font(11),
             fg_color="#0e639c", hover_color="#1177bb",
         ).pack(anchor="w")
 
@@ -708,7 +709,7 @@ class SettingsDialog(tk.Toplevel):
             cb_row2, text="Show preview console (Windows console window for print + tracebacks)",
             variable=self._preview_console_var,
             checkbox_width=16, checkbox_height=16,
-            font=("Segoe UI", 11),
+            font=ui_font(11),
             fg_color="#0e639c", hover_color="#1177bb",
         ).pack(anchor="w")
 
@@ -735,7 +736,7 @@ class SettingsDialog(tk.Toplevel):
         row.pack(fill="x", pady=(10, 0))
         tk.Label(
             row, text="Interval (minutes):", bg=BG, fg=HEADER_FG,
-            font=("Segoe UI", 11), width=18, anchor="w",
+            font=ui_font(11), width=18, anchor="w",
         ).pack(side="left")
         self._autosave_var = tk.StringVar(
             value=str(
@@ -768,7 +769,7 @@ class SettingsDialog(tk.Toplevel):
             cb_row, text="Reset dismissed warnings on OK",
             variable=self._reset_advisories_var,
             checkbox_width=16, checkbox_height=16,
-            font=("Segoe UI", 11),
+            font=ui_font(11),
             fg_color="#0e639c", hover_color="#1177bb",
         ).pack(anchor="w")
 

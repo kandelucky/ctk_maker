@@ -23,6 +23,7 @@ import customtkinter as ctk
 from PIL import Image, ImageTk
 
 from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui.system_fonts import ui_font
 
 LUCIDE_DIR = Path(__file__).resolve().parent.parent / "assets" / "lucide"
 PNG_DIR = LUCIDE_DIR / "png-icons"
@@ -142,7 +143,7 @@ class LucideIconPickerDialog(tk.Toplevel):
 
         tk.Label(
             bar, text="Search:", bg=HEADER_BG, fg=HEADER_FG,
-            font=("Segoe UI", 10),
+            font=ui_font(10),
         ).pack(side="left", padx=(12, 6), pady=8)
 
         self._search_var = tk.StringVar()
@@ -155,7 +156,7 @@ class LucideIconPickerDialog(tk.Toplevel):
         ).pack(side="left", padx=(0, 8), pady=6)
 
         self._count_lbl = tk.Label(
-            bar, text="", bg=HEADER_BG, fg=DIM_FG, font=("Segoe UI", 10),
+            bar, text="", bg=HEADER_BG, fg=DIM_FG, font=ui_font(10),
         )
         self._count_lbl.pack(side="left", padx=(8, 0), pady=8)
 
@@ -192,14 +193,14 @@ class LucideIconPickerDialog(tk.Toplevel):
 
         self._name_lbl = tk.Label(
             wrap, text="(no selection)", bg=PANEL_BG, fg="#cccccc",
-            font=("Segoe UI", 11, "bold"),
+            font=ui_font(11, "bold"),
             wraplength=PREVIEW_W - 16,
         )
         self._name_lbl.pack(pady=(0, 4))
 
         self._tags_lbl = tk.Label(
             wrap, text="", bg=PANEL_BG, fg=DIM_FG,
-            font=("Segoe UI", 9), wraplength=PREVIEW_W - 16,
+            font=ui_font(9), wraplength=PREVIEW_W - 16,
             justify="center",
         )
         self._tags_lbl.pack(pady=(0, 12))
@@ -208,7 +209,7 @@ class LucideIconPickerDialog(tk.Toplevel):
         tint_row.pack(pady=(8, 0))
         tk.Label(
             tint_row, text="Tint:", bg=PANEL_BG, fg=HEADER_FG,
-            font=("Segoe UI", 10),
+            font=ui_font(10),
         ).pack(side="left", padx=(0, 4))
         self._tint_entry = ctk.CTkEntry(
             tint_row, width=80, height=26,
@@ -236,7 +237,7 @@ class LucideIconPickerDialog(tk.Toplevel):
         size_row.pack(pady=(8, 0))
         tk.Label(
             size_row, text="Size:", bg=PANEL_BG, fg=HEADER_FG,
-            font=("Segoe UI", 10),
+            font=ui_font(10),
         ).pack(side="left", padx=(0, 4))
         self._size_var = tk.StringVar(value=str(self._output_size))
         self._size_menu = ctk.CTkOptionMenu(
@@ -281,7 +282,7 @@ class LucideIconPickerDialog(tk.Toplevel):
         row.pack(fill="x", padx=2, pady=1)
         lbl = tk.Label(
             row, text=f"  {title}  ({count})", bg=PANEL_BG, fg=HEADER_FG,
-            font=("Segoe UI", 10), anchor="w",
+            font=ui_font(10), anchor="w",
         )
         lbl.pack(fill="x", padx=4, pady=4)
         for w in (row, lbl):
@@ -368,7 +369,7 @@ class LucideIconPickerDialog(tk.Toplevel):
         if not capped:
             ctk.CTkLabel(
                 self._grid_scroll, text="No icons match.",
-                text_color=DIM_FG, font=("Segoe UI", 11),
+                text_color=DIM_FG, font=ui_font(11),
             ).grid(row=0, column=0, columnspan=GRID_COLS, pady=40)
             return
 

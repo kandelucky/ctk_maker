@@ -23,6 +23,7 @@ from ..overlays import (
     place_color_clear,
     place_color_swatch,
 )
+from app.ui.system_fonts import ui_font
 from .base import Editor
 
 # CTk-only sentinel values that Tk's colour parser rejects. Map them
@@ -108,7 +109,7 @@ class ColorEditor(Editor):
         btn = tk.Label(
             panel.tree, text="✕", bg=VALUE_BG,
             fg=self._clear_fg(value, clear_value),
-            font=("Segoe UI", 9),
+            font=ui_font(9),
             cursor="arrow" if cleared else "hand2",
             highlightthickness=0, bd=0,
         )

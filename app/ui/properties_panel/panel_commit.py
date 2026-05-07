@@ -29,6 +29,7 @@ from app.core.commands import (
     ChangePropertyCommand,
     MultiChangePropertyCommand,
 )
+from app.ui.system_fonts import ui_font
 from app.core.variables import is_var_token, parse_var_token
 from app.ui.dialog_utils import safe_grab_set
 from app.ui.icons import load_tk_icon
@@ -38,7 +39,7 @@ from app.widgets.layout_schema import (
 )
 from tools.text_editor_dialog import TextEditorDialog
 
-from .constants import ANCHOR_LABEL_TO_CODE, MENU_STYLE, VALUE_BG
+from .constants import ANCHOR_LABEL_TO_CODE, VALUE_BG, menu_style
 from .editors import get_editor
 from .format_utils import coerce_value, enum_options_for
 from .overlays import SLOT_TEXT_VALUE
@@ -63,7 +64,7 @@ class CommitMixin:
             if not options:
                 # Empty values → show a single disabled hint instead
                 # of an empty menu the user can't interact with.
-                menu = tk.Menu(self, tearoff=0, **MENU_STYLE)
+                menu = tk.Menu(self, tearoff=0, **menu_style())
                 menu.add_command(
                     label="(no segments)",
                     foreground="#555555",
@@ -78,7 +79,7 @@ class CommitMixin:
         if not options:
             return
         current = node.properties.get(pname) if node else None
-        menu = tk.Menu(self, tearoff=0, **MENU_STYLE)
+        menu = tk.Menu(self, tearoff=0, **menu_style())
         # tk.Menu drops PhotoImage refs as soon as the caller scope
         # returns — stash them on the menu itself so the icons
         # actually render.
@@ -137,7 +138,7 @@ class CommitMixin:
         node = self.project.get_widget(self.current_id)
         current = node.properties.get(pname, "") if node else ""
         entry = tk.Entry(
-            self.tree, font=("Segoe UI", 11),
+            self.tree, font=ui_font(11),
             bg=VALUE_BG, fg="#cccccc", insertbackground="#cccccc",
             bd=1, relief="flat",
             highlightthickness=1, highlightbackground="#3a3a3a",
@@ -278,7 +279,7 @@ class CommitMixin:
         current = node.properties.get(pname, "")
         entry = tk.Entry(
             self.tree,
-            font=("Segoe UI", 11),
+            font=ui_font(11),
             bg=VALUE_BG, fg="#cccccc", insertbackground="#cccccc",
             bd=1, relief="flat",
             highlightthickness=1, highlightbackground="#3a3a3a",
@@ -723,7 +724,7 @@ class CommitMixin:
         )
         lbl = tk.Label(
             dialog, text=msg, bg="#2b2b2b", fg="#cccccc",
-            font=("Segoe UI", 10), justify="left", anchor="w",
+            font=ui_font(10), justify="left", anchor="w",
             padx=20, pady=16,
         )
         lbl.pack(fill="x")
@@ -733,7 +734,7 @@ class CommitMixin:
             bg="#2b2b2b", fg="#cccccc",
             activebackground="#2b2b2b", activeforeground="#ffffff",
             selectcolor="#2b2b2b", bd=0, padx=20,
-            font=("Segoe UI", 10),
+            font=ui_font(10),
         )
         chk.pack(anchor="w", pady=(0, 12))
 
@@ -746,7 +747,7 @@ class CommitMixin:
             dialog, text="OK", width=10,
             bg="#3b8ed0", fg="#ffffff",
             activebackground="#4f46e5", activeforeground="#ffffff",
-            bd=0, font=("Segoe UI", 10, "bold"), relief="flat",
+            bd=0, font=ui_font(10, "bold"), relief="flat",
             command=_on_ok,
         )
         btn.pack(pady=(0, 16))
@@ -836,7 +837,7 @@ class CommitMixin:
         section (used for the multi-line text inline editor).
         """
         def _popup(event):
-            menu = tk.Menu(entry, tearoff=0, **MENU_STYLE)
+            menu = tk.Menu(entry, tearoff=0, **menu_style())
             has_selection = bool(entry.selection_present()) \
                 if hasattr(entry, "selection_present") else False
             try:
@@ -844,7 +845,7 @@ class CommitMixin:
                 has_selection = bool(entry.selection_present())
             except tk.TclError:
                 has_selection = False
-            _fg = MENU_STYLE.get("fg", "#cccccc")
+            _fg = menu_style().get("fg", "#cccccc")
             _dim = "#555555"
             menu.add_command(
                 label="Cut",

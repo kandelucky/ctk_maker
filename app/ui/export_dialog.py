@@ -33,6 +33,7 @@ from app.core.settings import load_settings, save_setting
 from app.io.code_exporter import export_project
 from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 from app.ui.icons import load_icon
+from app.ui.system_fonts import ui_font
 
 SETTING_INCLUDE_DESCRIPTIONS = "export_include_descriptions"
 
@@ -226,7 +227,7 @@ class ExportDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             self._panel, text="Export Project",
-            font=("Segoe UI", 11, "bold"),
+            font=ui_font(11, "bold"),
             text_color=SUBTITLE_FG, anchor="w",
         ).pack(fill="x", padx=14, pady=(10, 10))
 
@@ -249,7 +250,7 @@ class ExportDialog(ctk.CTkToplevel):
                 "Editor: IDLE / VSCode / Notepad++ for code review.   "
                 "Preview: runs the .py like Preview ▶."
             ),
-            font=("Segoe UI", 9, "italic"),
+            font=ui_font(9, "italic"),
             fg=PREVIEW_FG, bg=PANEL_BG,
             anchor="w", justify="left",
         ).pack(fill="x", padx=(LABEL_WIDTH + 28, 14), pady=(2, 0))
@@ -261,7 +262,7 @@ class ExportDialog(ctk.CTkToplevel):
         row.pack(fill="x", padx=14, pady=2)
         ctk.CTkLabel(
             row, text=f"{label}:", width=LABEL_WIDTH, anchor="w",
-            font=("Segoe UI", 11), text_color=FIELD_FG,
+            font=ui_font(11), text_color=FIELD_FG,
         ).pack(side="left")
         builder(row)
 
@@ -273,14 +274,14 @@ class ExportDialog(ctk.CTkToplevel):
     def _build_name_entry(self, row) -> None:
         ctk.CTkEntry(
             row, textvariable=self._name_var, height=26,
-            corner_radius=3, font=("Segoe UI", 11), justify="left",
+            corner_radius=3, font=ui_font(11), justify="left",
             border_color=ENTRY_BORDER_NORMAL, border_width=1,
         ).pack(side="left", fill="x", expand=True)
 
     def _build_save_row(self, row) -> None:
         ctk.CTkEntry(
             row, textvariable=self._dir_var, height=26,
-            corner_radius=3, font=("Segoe UI", 10), justify="left",
+            corner_radius=3, font=ui_font(10), justify="left",
             border_color=ENTRY_BORDER_NORMAL, border_width=1,
         ).pack(side="left", fill="x", expand=True, padx=(0, 4))
 
@@ -299,7 +300,7 @@ class ExportDialog(ctk.CTkToplevel):
         # doesn't reflow the dialog.
         lbl = tk.Label(
             self._panel, textvariable=self._preview_var,
-            font=("Segoe UI", 9, "italic"),
+            font=ui_font(9, "italic"),
             fg=PREVIEW_FG, bg=PANEL_BG,
             anchor="w", justify="left",
             width=58,
@@ -318,7 +319,7 @@ class ExportDialog(ctk.CTkToplevel):
         info = f"{n_forms} form{'s' if n_forms != 1 else ''} in project"
         tk.Label(
             row, text=info, bg=PANEL_BG, fg=PREVIEW_FG,
-            font=("Segoe UI", 9, "italic"),
+            font=ui_font(9, "italic"),
         ).pack(side="left", padx=(10, 0))
 
     def _build_format_checkbox(self, row) -> None:
@@ -334,7 +335,7 @@ class ExportDialog(ctk.CTkToplevel):
             zip_row, text="Export as ZIP archive",
             variable=self._as_zip_var,
             checkbox_width=18, checkbox_height=18,
-            font=("Segoe UI", 11),
+            font=ui_font(11),
             text_color=FIELD_FG,
             fg_color="#0e639c", hover_color="#1177bb",
         ).pack(side="left")
@@ -342,7 +343,7 @@ class ExportDialog(ctk.CTkToplevel):
             zip_row,
             text="Python code + assets bundled into one .zip — easy to share",
             bg=PANEL_BG, fg=PREVIEW_FG,
-            font=("Segoe UI", 9, "italic"),
+            font=ui_font(9, "italic"),
         ).pack(side="left", padx=(10, 0))
         # Asset filter — only meaningful for multi-page projects
         # (legacy projects always copy the whole asset pool).
@@ -353,7 +354,7 @@ class ExportDialog(ctk.CTkToplevel):
                 filter_row, text="Include only used assets",
                 variable=self._only_used_assets_var,
                 checkbox_width=18, checkbox_height=18,
-                font=("Segoe UI", 11),
+                font=ui_font(11),
                 text_color=FIELD_FG,
                 fg_color="#0e639c", hover_color="#1177bb",
             ).pack(side="left")
@@ -361,7 +362,7 @@ class ExportDialog(ctk.CTkToplevel):
                 filter_row,
                 text="Skip fonts / images / icons not referenced by the exported pages",
                 bg=PANEL_BG, fg=PREVIEW_FG,
-                font=("Segoe UI", 9, "italic"),
+                font=ui_font(9, "italic"),
             ).pack(side="left", padx=(10, 0))
 
     def _build_descriptions_checkbox(self, row) -> None:
@@ -378,7 +379,7 @@ class ExportDialog(ctk.CTkToplevel):
             desc_row, text="Include descriptions as comments",
             variable=self._include_descriptions_var,
             checkbox_width=18, checkbox_height=18,
-            font=("Segoe UI", 11),
+            font=ui_font(11),
             text_color=FIELD_FG,
             fg_color="#0e639c", hover_color="#1177bb",
         ).pack(side="left")
@@ -389,7 +390,7 @@ class ExportDialog(ctk.CTkToplevel):
                 "uncheck for clean production code"
             ),
             bg=PANEL_BG, fg=PREVIEW_FG,
-            font=("Segoe UI", 9, "italic"),
+            font=ui_font(9, "italic"),
         ).pack(side="left", padx=(10, 0))
 
     def _build_after_checkbox(self, row) -> None:
@@ -401,7 +402,7 @@ class ExportDialog(ctk.CTkToplevel):
             row, text="Open in editor",
             variable=self._open_editor_var,
             checkbox_width=18, checkbox_height=18,
-            font=("Segoe UI", 11),
+            font=ui_font(11),
             text_color=FIELD_FG,
             fg_color="#0e639c", hover_color="#1177bb",
         )
@@ -410,7 +411,7 @@ class ExportDialog(ctk.CTkToplevel):
             row, text="Run preview",
             variable=self._run_preview_var,
             checkbox_width=18, checkbox_height=18,
-            font=("Segoe UI", 11),
+            font=ui_font(11),
             text_color=FIELD_FG,
             fg_color="#0e639c", hover_color="#1177bb",
         )

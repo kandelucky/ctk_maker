@@ -15,6 +15,7 @@ from PIL import Image, ImageTk
 
 from app import __version__
 from app.core.screen import center_geometry
+from app.ui.system_fonts import ui_font
 
 SPLASH_W = 460
 SPLASH_H = 280
@@ -67,17 +68,17 @@ class SplashScreen(tk.Toplevel):
         tk.Label(
             inner, text="CTkMaker",
             bg=BG, fg=TITLE_FG, borderwidth=0,
-            font=("Segoe UI", 18, "bold"),
+            font=ui_font(18, "bold"),
         ).pack()
         tk.Label(
             inner, text=f"v{__version__}",
             bg=BG, fg=VERSION_FG, borderwidth=0,
-            font=("Segoe UI", 10),
+            font=ui_font(10),
         ).pack(pady=(2, 0))
         tk.Label(
             inner, text="Loading...",
             bg=BG, fg=SUBTITLE_FG, borderwidth=0,
-            font=("Segoe UI", 9),
+            font=ui_font(9),
         ).pack(pady=(10, 0))
 
         self.attributes("-topmost", True)

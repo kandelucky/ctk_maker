@@ -25,6 +25,7 @@ from pathlib import Path
 import customtkinter as ctk
 
 from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui.system_fonts import ui_font
 
 DIALOG_W = 500
 
@@ -85,7 +86,7 @@ class QuickExportDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             outer, text="Quick Export",
-            font=("Segoe UI", 11, "bold"),
+            font=ui_font(11, "bold"),
             text_color=SUBTITLE_FG, anchor="w",
         ).pack(fill="x", padx=14, pady=(10, 8))
 
@@ -94,12 +95,12 @@ class QuickExportDialog(ctk.CTkToplevel):
         head.pack(fill="x", padx=14, pady=(0, 6))
         ctk.CTkLabel(
             head, text="Exporting document:",
-            font=("Segoe UI", 10),
+            font=ui_font(10),
             text_color=SUBTITLE_FG, anchor="w",
         ).pack(side="left")
         ctk.CTkLabel(
             head, text=document_name,
-            font=("Segoe UI", 11, "bold"),
+            font=ui_font(11, "bold"),
             text_color=ACCENT, anchor="w",
         ).pack(side="left", padx=(6, 0))
 
@@ -110,7 +111,7 @@ class QuickExportDialog(ctk.CTkToplevel):
         )
         tk.Label(
             outer, text=body,
-            font=("Segoe UI", 10), fg=BODY_FG, bg=PANEL_BG,
+            font=ui_font(10), fg=BODY_FG, bg=PANEL_BG,
             anchor="w", justify="left",
             wraplength=DIALOG_W - 60,
         ).pack(fill="x", padx=14, pady=(0, 10))
@@ -120,11 +121,11 @@ class QuickExportDialog(ctk.CTkToplevel):
         out_row.pack(fill="x", padx=14, pady=(0, 12))
         tk.Label(
             out_row, text="Output:",
-            font=("Segoe UI", 9), fg=SUBTITLE_FG, bg=PANEL_BG,
+            font=ui_font(9), fg=SUBTITLE_FG, bg=PANEL_BG,
         ).pack(side="left")
         tk.Label(
             out_row, text=output_path_preview,
-            font=("Segoe UI", 9, "italic"), fg=PATH_FG, bg=PANEL_BG,
+            font=ui_font(9, "italic"), fg=PATH_FG, bg=PANEL_BG,
         ).pack(side="left", padx=(6, 0))
 
         # Format explainer block — one line per format so the
@@ -134,7 +135,7 @@ class QuickExportDialog(ctk.CTkToplevel):
         )
         ctk.CTkLabel(
             outer, text="Choose format:",
-            font=("Segoe UI", 10, "bold"),
+            font=ui_font(10, "bold"),
             text_color=HEADER_FG, anchor="w",
         ).pack(fill="x", padx=14, pady=(0, 6))
 
@@ -156,18 +157,18 @@ class QuickExportDialog(ctk.CTkToplevel):
             row.pack(fill="x", padx=14, pady=(0, 4))
             tk.Label(
                 row, text=icon,
-                font=("Segoe UI", 11), fg=ACCENT, bg=PANEL_BG,
+                font=ui_font(11), fg=ACCENT, bg=PANEL_BG,
             ).pack(side="left", padx=(2, 6), anchor="n")
             text = ctk.CTkFrame(row, fg_color="transparent")
             text.pack(side="left", fill="x", expand=True)
             tk.Label(
                 text, text=title,
-                font=("Segoe UI", 10, "bold"),
+                font=ui_font(10, "bold"),
                 fg=HEADER_FG, bg=PANEL_BG, anchor="w",
             ).pack(fill="x")
             tk.Label(
                 text, text=blurb,
-                font=("Segoe UI", 9), fg=BODY_FG, bg=PANEL_BG,
+                font=ui_font(9), fg=BODY_FG, bg=PANEL_BG,
                 anchor="w", justify="left",
                 wraplength=DIALOG_W - 80,
             ).pack(fill="x")

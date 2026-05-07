@@ -51,6 +51,7 @@ from .constants import (
     TYPE_LABEL_FG,
     VALUE_BG,
 )
+from app.ui.system_fonts import ui_font
 from .drag_scrub import DragScrubController
 from .overlays import (
     SLOT_STYLE_PREVIEW,
@@ -212,7 +213,7 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
 
         self._type_label = ctk.CTkLabel(
             self._type_bar, text="", fg_color=HEADER_BG,
-            font=("Segoe UI", 11, "bold"), text_color=TYPE_LABEL_FG,
+            font=ui_font(11, "bold"), text_color=TYPE_LABEL_FG,
             height=18,
         )
         self._type_label.pack(side="left", padx=(4, 0))
@@ -228,7 +229,7 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
 
         self._id_label = ctk.CTkLabel(
             self._type_bar, text="", fg_color=HEADER_BG,
-            font=("Segoe UI", 9), text_color="#999999", height=18,
+            font=ui_font(9), text_color="#999999", height=18,
         )
         self._id_label.pack(side="right", padx=(0, 4))
 
@@ -240,7 +241,7 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
 
         tk.Label(
             self._name_row, text="Name", bg=BG, fg=STATIC_FG,
-            font=("Segoe UI", 10), anchor="w",
+            font=ui_font(10), anchor="w",
         ).pack(side="left", padx=(6, 8))
 
         # Edit-tool shortcut button — only packed (i.e. visible) when
@@ -255,7 +256,7 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             width=26, height=22, corner_radius=3,
             fg_color="#2d2d2d", hover_color="#3a3a3a",
             text_color="#cccccc",
-            font=("Segoe UI", 10, "bold"),
+            font=ui_font(10, "bold"),
             command=self._on_edit_button,
         )
         self._edit_btn_visible = False
@@ -265,7 +266,7 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             self._name_row, textvariable=self._name_var,
             bg=VALUE_BG, fg="#cccccc", insertbackground="#cccccc",
             disabledbackground=VALUE_BG, disabledforeground="#555555",
-            font=("Segoe UI", 11),
+            font=ui_font(11),
             relief="flat", bd=0,
             highlightthickness=1,
             highlightbackground="#3a3a3a",
@@ -290,7 +291,7 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
 
         tk.Label(
             self._desc_row, text="Desc", bg=BG, fg=STATIC_FG,
-            font=("Segoe UI", 10), anchor="w",
+            font=ui_font(10), anchor="w",
         ).pack(side="left", padx=(6, 8))
 
         self._desc_preview_var = tk.StringVar(
@@ -299,7 +300,7 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         self._desc_preview = tk.Label(
             self._desc_row, textvariable=self._desc_preview_var,
             bg=VALUE_BG, fg="#666666",
-            font=("Segoe UI", 10, "italic"), anchor="w",
+            font=ui_font(10, "italic"), anchor="w",
             relief="flat", bd=0, padx=6, cursor="hand2",
         )
         self._desc_preview.pack(side="left", fill="x", expand=True)
@@ -314,7 +315,7 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             width=26, height=22, corner_radius=3,
             fg_color="#2d2d2d", hover_color="#3a3a3a",
             text_color="#cccccc",
-            font=("Segoe UI", 10, "bold"),
+            font=ui_font(10, "bold"),
             command=self._open_description_dialog,
         )
         self._desc_edit_btn.pack(side="right", padx=(4, 6))
@@ -383,11 +384,11 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
 
         tk.Label(
             header_bar, text="Property", bg=TREE_HEADING_BG,
-            fg=TREE_HEADING_FG, font=("Segoe UI", 10, "bold"),
+            fg=TREE_HEADING_FG, font=ui_font(10, "bold"),
         ).grid(row=0, column=0, sticky="nsew")
         tk.Label(
             header_bar, text="Value", bg=TREE_HEADING_BG,
-            fg=TREE_HEADING_FG, font=("Segoe UI", 10, "bold"),
+            fg=TREE_HEADING_FG, font=ui_font(10, "bold"),
         ).grid(row=0, column=1, sticky="nsew")
 
         self._build_style()
@@ -494,7 +495,7 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             bordercolor=BG,
             borderwidth=0,
             rowheight=ROW_HEIGHT,
-            font=("Segoe UI", 11),
+            font=ui_font(11),
         )
         style.map(
             "PropTreeV2.Treeview",
@@ -948,7 +949,7 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         for prop_name, label_text in STYLE_BOOL_NAMES.items():
             lbl = tk.Label(
                 frame, text=label_text, bg=TREE_BG,
-                font=("Segoe UI", 10),
+                font=ui_font(10),
                 fg="#cccccc" if properties.get(prop_name)
                 else BOOL_OFF_FG,
             )
@@ -1722,7 +1723,7 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             activeforeground="#ffffff",
             disabledforeground="#777777",
             bd=0, borderwidth=0, relief="flat",
-            font=("Segoe UI", 10),
+            font=ui_font(10),
         )
         menu = tk.Menu(self.tree, tearoff=0, **menu_style)
 

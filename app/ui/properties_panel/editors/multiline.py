@@ -15,6 +15,7 @@ from ..overlays import (
     place_text_edit_pencil,
     place_text_value,
 )
+from app.ui.system_fonts import ui_font
 from .base import Editor
 
 
@@ -27,7 +28,7 @@ class MultilineEditor(Editor):
         value_label = tk.Label(
             panel.tree, text=first_line,
             bg=TEXT_BG, fg="#cccccc",
-            font=("Segoe UI", 11), anchor="w",
+            font=ui_font(11), anchor="w",
             relief="flat", bd=0, padx=6, cursor="xterm",
         )
         value_label.bind(

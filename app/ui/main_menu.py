@@ -16,7 +16,7 @@ menubar and the keyboard shortcut layer (``main_shortcuts.py``).
 
 Menu colours / styling constants live here (shared only within this
 mixin); the MainWindow imports ``MENU_STYLE`` etc. via
-``from app.ui.main_menu import MENU_STYLE`` for the very few call
+``from app.ui.main_menu import menu_style`` for the very few call
 sites that need them directly.
 """
 
@@ -31,6 +31,7 @@ from app.core.widget_node import WidgetNode
 from app.ui._main_window_host import _MainWindowHost
 from app.ui.icons import load_tk_icon
 from app.ui.palette import CATALOG
+from app.ui.system_fonts import ui_font
 
 
 MENU_BG = "#2d2d30"
@@ -38,21 +39,28 @@ MENU_FG = "#cccccc"
 MENU_ACTIVE_BG = "#094771"
 MENU_ACTIVE_FG = "#ffffff"
 MENU_DISABLED_FG = "#888888"
-MENU_FONT = ("Segoe UI", 11)
 MENU_ICON_SIZE = 18
 
-MENU_STYLE: dict[str, Any] = {
-    "bg": MENU_BG,
-    "fg": MENU_FG,
-    "activebackground": MENU_ACTIVE_BG,
-    "activeforeground": MENU_ACTIVE_FG,
-    "disabledforeground": MENU_DISABLED_FG,
-    "bd": 0,
-    "borderwidth": 0,
-    "activeborderwidth": 0,
-    "relief": "flat",
-    "font": MENU_FONT,
-}
+
+def menu_style() -> dict[str, Any]:
+    """Return menu kwargs for ``tk.Menu(**menu_style())``.
+
+    Built lazily because ``ui_font`` reads ``TkDefaultFont`` which
+    requires a live Tk root — module-level evaluation runs before
+    any root exists.
+    """
+    return {
+        "bg": MENU_BG,
+        "fg": MENU_FG,
+        "activebackground": MENU_ACTIVE_BG,
+        "activeforeground": MENU_ACTIVE_FG,
+        "disabledforeground": MENU_DISABLED_FG,
+        "bd": 0,
+        "borderwidth": 0,
+        "activeborderwidth": 0,
+        "relief": "flat",
+        "font": ui_font(11),
+    }
 
 APPEARANCE_MODES = ["Light", "Dark", "System"]
 
@@ -139,10 +147,10 @@ class MenuMixin(_MainWindowHost):
     # ------------------------------------------------------------------
     def _build_menubar(self) -> None:
         self._menu_icons: list = []
-        menubar = tk.Menu(self, **MENU_STYLE)
+        menubar = tk.Menu(self, **menu_style())
 
         # ---- File ----
-        file_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
+        file_menu = tk.Menu(menubar, tearoff=0, **menu_style())
         self._add_cmd(file_menu, "New...", self._on_new, icon="file-plus", accelerator=f"{MOD_LABEL_PLUS}N")
         self._add_cmd(file_menu, "Open...", self._on_open, icon="folder-open", accelerator=f"{MOD_LABEL_PLUS}O")
         self._add_cmd(
@@ -150,7 +158,7 @@ class MenuMixin(_MainWindowHost):
             self._on_recover_from_backup, icon="rotate-ccw",
         )
 
-        self._recent_menu = tk.Menu(file_menu, tearoff=0, **MENU_STYLE)
+        self._recent_menu = tk.Menu(file_menu, tearoff=0, **menu_style())
         self._add_cascade(file_menu, "Recent Projects", self._recent_menu, icon="history")
         self._rebuild_recent_menu()
 
@@ -183,7 +191,7 @@ class MenuMixin(_MainWindowHost):
         edit_menu = tk.Menu(
             menubar, tearoff=0,
             postcommand=self._refresh_edit_menu_state,
-            **MENU_STYLE,
+            **menu_style(),
         )
         self._edit_menu = edit_menu
         self._add_cmd(
@@ -260,7 +268,7 @@ class MenuMixin(_MainWindowHost):
         form_menu = tk.Menu(
             menubar, tearoff=0,
             postcommand=self._refresh_form_menu_state,
-            **MENU_STYLE,
+            **menu_style(),
         )
         self._form_menu = form_menu
         # indices: 0=Preview, 1=Preview Active, 2=sep,
@@ -290,15 +298,15 @@ class MenuMixin(_MainWindowHost):
         self._windows_menu = tk.Menu(
             form_menu, tearoff=0,
             postcommand=self._rebuild_windows_menu,
-            **MENU_STYLE,
+            **menu_style(),
         )
         form_menu.add_cascade(label="All Windows", menu=self._windows_menu)
         menubar.add_cascade(label="Window", menu=form_menu)
 
         # ---- Widget ----
-        widget_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
+        widget_menu = tk.Menu(menubar, tearoff=0, **menu_style())
         for group in CATALOG:
-            group_menu = tk.Menu(widget_menu, tearoff=0, **MENU_STYLE)
+            group_menu = tk.Menu(widget_menu, tearoff=0, **menu_style())
             for entry in group.items:
                 self._add_cmd(
                     group_menu,
@@ -310,7 +318,7 @@ class MenuMixin(_MainWindowHost):
         menubar.add_cascade(label="Widget", menu=widget_menu)
 
         # ---- View ----
-        view_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
+        view_menu = tk.Menu(menubar, tearoff=0, **menu_style())
         view_menu.add_checkbutton(
             label="Object Tree",
             variable=self._object_tree_var,
@@ -338,7 +346,7 @@ class MenuMixin(_MainWindowHost):
         menubar.add_cascade(label="View", menu=view_menu)
 
         # ---- Data ----
-        data_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
+        data_menu = tk.Menu(menubar, tearoff=0, **menu_style())
         self._add_cmd(
             data_menu, "Global Variables",
             lambda: self._on_request_open_variables_window("global"),
@@ -354,7 +362,7 @@ class MenuMixin(_MainWindowHost):
         menubar.add_cascade(label="Data", menu=data_menu)
 
         # ---- Tools ----
-        tools_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
+        tools_menu = tk.Menu(menubar, tearoff=0, **menu_style())
         self._add_cmd(
             tools_menu, "Inspect CTk Widget...",
             self._on_inspect_widget, icon="search",
@@ -362,7 +370,7 @@ class MenuMixin(_MainWindowHost):
         menubar.add_cascade(label="Tools", menu=tools_menu)
 
         # ---- Settings ----
-        settings_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
+        settings_menu = tk.Menu(menubar, tearoff=0, **menu_style())
         self._add_cmd(
             settings_menu, "Preferences...",
             self._on_open_preferences, icon="settings",
@@ -371,7 +379,7 @@ class MenuMixin(_MainWindowHost):
         menubar.add_cascade(label="Settings", menu=settings_menu)
 
         # ---- Help ----
-        help_menu = tk.Menu(menubar, tearoff=0, **MENU_STYLE)
+        help_menu = tk.Menu(menubar, tearoff=0, **menu_style())
         self._add_cmd(
             help_menu, "Documentation", self._on_widget_docs,
             icon="book-open", accelerator=f"{MOD_LABEL_PLUS}Shift+I",
@@ -677,7 +685,7 @@ class MenuMixin(_MainWindowHost):
             MODE_TOP, MODE_CENTER_V, MODE_BOTTOM,
             MODE_DISTRIBUTE_H, MODE_DISTRIBUTE_V,
         )
-        align_menu = tk.Menu(parent_menu, tearoff=0, **MENU_STYLE)
+        align_menu = tk.Menu(parent_menu, tearoff=0, **menu_style())
         self._align_menu = align_menu
         self._align_menu_modes: list[str] = []
 

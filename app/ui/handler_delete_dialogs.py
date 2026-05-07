@@ -24,6 +24,7 @@ from pathlib import Path
 import customtkinter as ctk
 
 from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui.system_fonts import ui_font
 
 _BG = "#1a1a1a"
 _HEADING_FG = "#e6e6e6"
@@ -105,7 +106,7 @@ class WindowDeleteDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             body, text=f"Delete \"{window_name}\"?",
-            font=("Segoe UI", 14, "bold"),
+            font=ui_font(14, "bold"),
             text_color=_HEADING_FG, anchor="w",
         ).pack(anchor="w", pady=(0, 10))
 
@@ -133,7 +134,7 @@ class WindowDeleteDialog(ctk.CTkToplevel):
             bullets.append("• No behavior script attached")
         ctk.CTkLabel(
             info, text="\n".join(bullets),
-            font=("Segoe UI", 10),
+            font=ui_font(10),
             text_color=_BODY_FG,
             justify="left", anchor="w", wraplength=420,
         ).pack(anchor="w", padx=12, pady=10)
@@ -141,7 +142,7 @@ class WindowDeleteDialog(ctk.CTkToplevel):
         if self._has_script:
             ctk.CTkLabel(
                 body, text="Behavior script:",
-                font=("Segoe UI", 10, "bold"),
+                font=ui_font(10, "bold"),
                 text_color=_HEADING_FG, anchor="w",
             ).pack(anchor="w", pady=(0, 4))
 
@@ -159,7 +160,7 @@ class WindowDeleteDialog(ctk.CTkToplevel):
             ctk.CTkLabel(
                 recycle_row,
                 text="(recoverable from your OS trash)",
-                font=("Segoe UI", 9),
+                font=ui_font(9),
                 text_color="#888888", anchor="w",
             ).pack(side="left", padx=(8, 0))
 
@@ -198,7 +199,7 @@ class WindowDeleteDialog(ctk.CTkToplevel):
                     "An existing file at the target path keeps the "
                     "original — the new copy gets a _2 / _3 suffix."
                 ),
-                font=("Segoe UI", 9),
+                font=ui_font(9),
                 text_color="#888888",
                 anchor="w", justify="left", wraplength=420,
             ).pack(anchor="w", padx=(24, 0), pady=(6, 0))
@@ -299,7 +300,7 @@ class ActionDeleteDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             body,
             text=f"Delete action \"{method_name}\"?",
-            font=("Segoe UI", 13, "bold"),
+            font=ui_font(13, "bold"),
             text_color=_HEADING_FG, anchor="w",
         ).pack(anchor="w", pady=(0, 8))
 
@@ -314,7 +315,7 @@ class ActionDeleteDialog(ctk.CTkToplevel):
         )
         ctk.CTkLabel(
             info, text=body_text,
-            font=("Segoe UI", 10),
+            font=ui_font(10),
             text_color=_BODY_FG,
             justify="left", anchor="w", wraplength=420,
         ).pack(anchor="w", padx=12, pady=10)
@@ -333,7 +334,7 @@ class ActionDeleteDialog(ctk.CTkToplevel):
                     "this window. Deleting the file definition will "
                     "break those too."
                 ),
-                font=("Segoe UI", 10),
+                font=ui_font(10),
                 text_color="#e8a45e",
                 justify="left", anchor="w", wraplength=420,
             ).pack(anchor="w", padx=12, pady=10)

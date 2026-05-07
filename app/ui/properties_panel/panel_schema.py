@@ -31,6 +31,7 @@ from app.widgets.layout_schema import (
     DEFAULT_LAYOUT_TYPE,
     child_layout_schema,
 )
+from app.ui.system_fonts import ui_font
 
 from app.ui.system_fonts import derive_ui_font
 
@@ -699,7 +700,7 @@ class SchemaMixin:
         btn = tk.Label(
             self.tree,
             text="+", bg=TREE_BG, fg="#7dd3fc",
-            font=("Segoe UI", 11, "bold"),
+            font=ui_font(11, "bold"),
             cursor="hand2", borderwidth=0, padx=0, pady=0,
         )
         btn.bind(
@@ -733,7 +734,7 @@ class SchemaMixin:
         btn = tk.Label(
             self.tree,
             text="✕", bg=TREE_BG, fg="#888888",
-            font=("Segoe UI", 9),
+            font=ui_font(9),
             cursor="hand2", borderwidth=0, padx=0, pady=0,
         )
         btn.bind(

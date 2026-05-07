@@ -23,6 +23,7 @@ import customtkinter as ctk
 from app.ui.icons import load_icon
 from app.ui.toolbar import _attach_tooltip
 from app.core.platform_compat import MOD_KEY, ALT_STATE_BIT
+from app.ui.system_fonts import ui_font
 
 # Tool identifiers — also used by ``chrome.py`` (via the workspace
 # delegator) and ``drag.py`` (via the literal ``"hand"`` string).
@@ -181,7 +182,7 @@ class WorkspaceControls:
             bg="#2d2d30", fg="#cccccc",
             activebackground="#094771", activeforeground="#ffffff",
             bd=0, borderwidth=0, relief="flat",
-            font=("Segoe UI", 10),
+            font=ui_font(10),
         )
 
         def _show_forms_menu(event=None, btn=None):
@@ -210,7 +211,7 @@ class WorkspaceControls:
             image=chevron_icon, compound="right",
             width=100, height=24, corner_radius=3,
             fg_color="transparent", hover_color=TOOL_BTN_HOVER,
-            text_color="#cccccc", font=("Segoe UI", 10),
+            text_color="#cccccc", font=ui_font(10),
         )
         forms_btn.configure(
             command=lambda b=forms_btn: _show_forms_menu(btn=b),
@@ -234,7 +235,7 @@ class WorkspaceControls:
             fg_color="transparent",
             hover_color=TOOL_BTN_HOVER,
             text_color="#cccccc",
-            font=("Segoe UI", 10),
+            font=ui_font(10),
             command=self._on_add_dialog_click,
         )
         add_btn.pack(side="right", padx=(0, 2), pady=3)
@@ -264,7 +265,7 @@ class WorkspaceControls:
             fg_color="transparent",
             hover_color=TOOL_BTN_HOVER,
             text_color="#cccccc",
-            font=("Segoe UI", 10),
+            font=ui_font(10),
             command=self._on_variables_click,
         )
         vars_btn.pack(side="right", padx=(0, 4), pady=3)

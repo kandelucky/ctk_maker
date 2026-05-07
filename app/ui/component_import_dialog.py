@@ -22,6 +22,7 @@ from app.core.component_paths import COMPONENT_EXT, component_display_stem
 from app.core.logger import log_error
 from app.io.component_io import load_metadata, load_payload
 from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui.system_fonts import ui_font
 
 _ROOT_LABEL = "(root)"
 
@@ -94,7 +95,7 @@ class ComponentImportDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             body, text=meta.get("name") or component_display_stem(source_path),
-            font=("Segoe UI", 14, "bold"),
+            font=ui_font(14, "bold"),
             text_color="#e6e6e6", anchor="w",
         ).grid(row=0, column=0, sticky="w")
 
@@ -111,7 +112,7 @@ class ComponentImportDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             body,
             text="  ·  ".join(info_parts),
-            font=("Segoe UI", 9),
+            font=ui_font(9),
             text_color="#888888", anchor="w",
         ).grid(row=1, column=0, sticky="w", pady=(0, 12))
 
@@ -123,7 +124,7 @@ class ComponentImportDialog(ctk.CTkToplevel):
         ).grid(row=2, column=0, sticky="w", pady=(0, 12))
 
         ctk.CTkLabel(
-            body, text="Import to", font=("Segoe UI", 10),
+            body, text="Import to", font=ui_font(10),
         ).grid(row=3, column=0, sticky="w", pady=(0, 4))
         folders = [_ROOT_LABEL] + _list_folders(components_dir)
         self._folder_var = tk.StringVar(value=_ROOT_LABEL)
@@ -222,7 +223,7 @@ class ComponentImportDialog(ctk.CTkToplevel):
                 f"'{self._source_path.name}' already exists in this "
                 "folder. Pick how to resolve:"
             ),
-            font=("Segoe UI", 10),
+            font=ui_font(10),
             wraplength=320, justify="left",
         ).pack(padx=18, pady=(16, 12))
         row = ctk.CTkFrame(modal, fg_color="transparent")

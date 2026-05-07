@@ -21,6 +21,7 @@ from app.core.logger import log_error
 from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 from app.core.settings import load_settings, save_setting
 from app.io.component_io import load_metadata, rewrite_payload_author
+from app.ui.system_fonts import ui_font
 
 LAST_AUTHOR_KEY = "last_component_author"
 
@@ -72,7 +73,7 @@ class ComponentExportDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             body, text=meta.get("name") or component_display_stem(source_path),
-            font=("Segoe UI", 14, "bold"),
+            font=ui_font(14, "bold"),
             text_color="#e6e6e6", anchor="w",
         ).grid(row=0, column=0, sticky="w")
         ctk.CTkLabel(
@@ -82,12 +83,12 @@ class ComponentExportDialog(ctk.CTkToplevel):
                 f"  ·  {_format_size(file_bytes)}"
                 f"  ·  {_format_date(meta.get('created_at', ''))}"
             ),
-            font=("Segoe UI", 9),
+            font=ui_font(9),
             text_color="#888888", anchor="w",
         ).grid(row=1, column=0, sticky="w", pady=(0, 12))
 
         ctk.CTkLabel(
-            body, text="Name", font=("Segoe UI", 10),
+            body, text="Name", font=ui_font(10),
         ).grid(row=2, column=0, sticky="w", pady=(0, 4))
         self._name_var = tk.StringVar(
             value=component_display_stem(self._source_path),
@@ -97,7 +98,7 @@ class ComponentExportDialog(ctk.CTkToplevel):
         ).grid(row=3, column=0, sticky="ew", pady=(0, 12))
 
         ctk.CTkLabel(
-            body, text="Author", font=("Segoe UI", 10),
+            body, text="Author", font=ui_font(10),
         ).grid(row=4, column=0, sticky="w", pady=(0, 4))
         # Prefer the file's stored author; fall back to the last
         # author the user typed in any export so they don't have to
@@ -115,7 +116,7 @@ class ComponentExportDialog(ctk.CTkToplevel):
         ).grid(row=5, column=0, sticky="ew", pady=(0, 12))
 
         ctk.CTkLabel(
-            body, text="Destination folder", font=("Segoe UI", 10),
+            body, text="Destination folder", font=ui_font(10),
         ).grid(row=6, column=0, sticky="w", pady=(0, 4))
         path_row = ctk.CTkFrame(body, fg_color="transparent")
         path_row.grid(row=7, column=0, sticky="ew", pady=(0, 12))

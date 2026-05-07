@@ -21,6 +21,7 @@ from typing import Callable
 import customtkinter as ctk
 
 from app.core.recent_files import load_recent, remove_recent
+from app.ui.system_fonts import ui_font
 
 PANEL_BG = "#252526"
 HOVER_BG = "#2d2d30"
@@ -75,7 +76,7 @@ class RecentList(ctk.CTkFrame):
 
         ctk.CTkLabel(
             self, text="Recent",
-            font=("Segoe UI", 11, "bold"),
+            font=ui_font(11, "bold"),
             text_color=SUBTITLE_FG, anchor="w",
         ).pack(fill="x", padx=12, pady=(10, 6))
 
@@ -102,7 +103,7 @@ class RecentList(ctk.CTkFrame):
         if not recent:
             ctk.CTkLabel(
                 self._scroll, text="No recent projects",
-                font=("Segoe UI", 10, "italic"),
+                font=ui_font(10, "italic"),
                 text_color=FILE_PATH_FG,
             ).pack(pady=20)
             return
@@ -152,20 +153,20 @@ class RecentList(ctk.CTkFrame):
             parent_dir = "…" + parent_dir[-(PATH_MAX_LEN - 1):]
 
         name_lbl = ctk.CTkLabel(
-            row, text=name, font=("Segoe UI", 12, "bold"),
+            row, text=name, font=ui_font(12, "bold"),
             text_color=MISSING_NAME_FG if missing else FILE_NAME_FG,
             anchor="w",
         )
         name_lbl.pack(side="left", padx=(8, 16))
 
         time_lbl = ctk.CTkLabel(
-            row, text=time_text, font=("Segoe UI", 9),
+            row, text=time_text, font=ui_font(9),
             text_color=MISSING_META_FG if missing else META_FG, anchor="e",
         )
         time_lbl.pack(side="right", padx=(0, 8))
 
         path_lbl = ctk.CTkLabel(
-            row, text=parent_dir, font=("Segoe UI", 9),
+            row, text=parent_dir, font=ui_font(9),
             text_color=MISSING_PATH_FG if missing else FILE_PATH_FG,
             anchor="w",
         )
@@ -226,7 +227,7 @@ class RecentList(ctk.CTkFrame):
             self, tearoff=0,
             bg="#2d2d30", fg=FILE_NAME_FG,
             activebackground="#094771", activeforeground="#ffffff",
-            relief="flat", bd=0, font=("Segoe UI", 10),
+            relief="flat", bd=0, font=ui_font(10),
         )
         missing = not Path(path).exists()
         menu.add_command(

@@ -100,10 +100,15 @@ class SettingsDialog(ctk.CTkToplevel):
         # ... (same shape; globals reach via self.master.var_X)
 
 if __name__ == "__main__":
+    import sys
     ctk.set_appearance_mode("dark")
+    if sys.platform == "win32":
+        ctk.ThemeManager.theme["CTkFont"]["family"] = "Segoe UI"
     app = MainWindow()
     app.mainloop()
 ```
+
+The Windows-only theme patch mirrors [main.py:main()](../../main.py)'s startup. CTk ships only `Roboto-Regular.ttf` and `Roboto-Medium.ttf` — there is no `Roboto-Bold.ttf`, so `CTkFont(weight="bold")` silently falls back to a synthetic bold that is barely visible at large font sizes. Roboto on Windows also lacks coverage for many non-Latin scripts. Patching `theme["CTkFont"]["family"]` to Segoe UI fixes both. macOS (`SF Display`) and Linux (Roboto) are left at the CTk default — Linux currently inherits the same Roboto-bold limitation as the editor itself.
 
 ## Per-class structure
 

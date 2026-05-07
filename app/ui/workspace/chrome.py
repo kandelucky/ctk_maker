@@ -26,6 +26,7 @@ from app.widgets.layout_schema import (
     LAYOUT_DISPLAY_NAMES,
     normalise_layout_type,
 )
+from app.ui.system_fonts import ui_font
 
 # Canvas tags — shared between chrome and the outer canvas motion
 # handlers that peek at ``CHROME_TAG`` to decide whether the click
@@ -265,7 +266,7 @@ class ChromeManager:
             text=title_raw,
             anchor="w",
             fill=title_fg,
-            font=("Segoe UI", 10),
+            font=ui_font(10),
             tags=(CHROME_TAG, CHROME_TITLE_TAG, doc_title_tag, doc_tag),
         )
         if self._settings_icon is not None:
@@ -390,7 +391,7 @@ class ChromeManager:
             text="−",
             anchor="center",
             fill=CHROME_FG_DIM,
-            font=("Segoe UI", 16, "bold"),
+            font=ui_font(16, "bold"),
             tags=(CHROME_TAG, CHROME_MIN_TAG, doc_tag),
         )
         self.canvas.create_text(
@@ -398,7 +399,7 @@ class ChromeManager:
             text="✕",
             anchor="center",
             fill=title_fg,
-            font=("Segoe UI", 12, "bold"),
+            font=ui_font(12, "bold"),
             tags=(
                 CHROME_TAG, CHROME_CLOSE_TAG,
                 doc_close_tag, doc_tag,

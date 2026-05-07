@@ -54,17 +54,19 @@ ALT_STATE_BIT = 0x10 if IS_MAC else 0x20000
 
 # Font handling note
 # ------------------
-# Intentionally no UI / mono font constants here. The codebase used
-# to hardcode ``("Segoe UI", N)`` / ``("Consolas", N)`` font tuples,
-# which forces a Windows-only family on every platform and defeats
-# both Tk's named-font system and CTk's own platform-aware default.
-# The migration target is:
+# Intentionally no UI / mono font constants here. Use
+# ``app.ui.system_fonts`` instead — it exposes:
 #
-#   * CTk widgets → ``ctk.CTkFont(size=N, weight=...)`` so CTk's
-#     theme family (Roboto on Win/Linux, SF Display on Mac) wins
-#   * raw ``tk.*`` / ``ttk.*`` widgets → derive from Tk named fonts:
-#     ``tkinter.font.nametofont("TkDefaultFont").copy().configure(size=N)``
-#     (use ``"TkFixedFont"`` for monospace surfaces)
+#   * ``ui_font(size, *style)`` — tuple form for ``font=(...)`` kwargs
+#   * ``derive_ui_font(**overrides)`` — Font object copied from
+#     ``TkDefaultFont`` (use when ``.measure()`` / ``.configure()``
+#     is needed)
+#   * ``derive_mono_font(**overrides)`` — Font copied from
+#     ``TkFixedFont`` for monospace surfaces
 #
-# Both strategies adapt to the host platform automatically — no
-# ``IS_MAC`` branching needed for fonts.
+# All three read Tk's named fonts at call time, so the host's native
+# UI font wins automatically — no ``IS_MAC`` branching needed. For
+# CTk widgets that should inherit the theme family (Roboto on
+# Win/Linux, SF Display on Mac, with ``main.py`` patching to Segoe
+# UI on Windows), prefer plain ``ctk.CTkFont(size=N, weight=...)``
+# without a family.
