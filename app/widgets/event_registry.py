@@ -21,6 +21,10 @@ Properties panel "Handlers" group. Each ``EventEntry`` pairs:
   shorten the surface for widgets with many bind events (CTkLabel)
   by hiding rare / high-frequency / takefocus-gated events behind
   one extra click. Default False.
+- ``description`` — one-line plain-English explanation of when the
+  event fires + what gets passed to the handler. Surfaced in the
+  Properties panel hover tooltip on event-header rows. Default
+  empty falls back to the capitalised ``label``.
 
 Adding a new widget's events: extend ``EVENT_REGISTRY`` here and the
 matching wiring in (Part 3) ``app/widgets/event_wirings.py``.
@@ -50,6 +54,10 @@ class EventEntry:
     # expect — keeps the default surface short while leaving the
     # full registry one click away.
     advanced: bool = False
+    # One-line "what does this event do" — shown in the Properties
+    # panel hover tooltip on event-header rows. Empty falls back to
+    # the capitalised label so older entries still render something.
+    description: str = ""
 
 
 _COMMAND = "command"
@@ -57,7 +65,10 @@ _BIND = "bind"
 
 EVENT_REGISTRY: dict[str, list[EventEntry]] = {
     "CTkButton": [
-        EventEntry("command", "on click", "click", "(self)", _COMMAND),
+        EventEntry(
+            "command", "on click", "click", "(self)", _COMMAND,
+            description="Fires when the user clicks the button.",
+        ),
     ],
     "CTkLabel": [
         # CTkLabel has no `command` constructor kwarg — every binding
@@ -68,31 +79,47 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
         EventEntry(
             "bind:<Button-1>", "on click", "click",
             "(self, event=None)", _BIND,
+            description=(
+                "Fires on left mouse button click anywhere on the "
+                "label's body."
+            ),
         ),
         EventEntry(
             "bind:<Double-Button-1>", "on double click", "double_click",
             "(self, event=None)", _BIND,
+            description="Fires when the user double-clicks the label.",
         ),
         EventEntry(
             "bind:<Button-2>", "on middle click", "middle_click",
             "(self, event=None)", _BIND, advanced=True,
+            description="Fires on middle mouse button click.",
         ),
         EventEntry(
             "bind:<Button-3>", "on right click", "right_click",
             "(self, event=None)", _BIND, advanced=True,
+            description=(
+                "Fires on right mouse button click — typical place "
+                "to open a context menu."
+            ),
         ),
         EventEntry(
             "bind:<ButtonRelease-1>", "on mouse release", "mouse_release",
             "(self, event=None)", _BIND, advanced=True,
+            description=(
+                "Fires when the user releases the left mouse button "
+                "after pressing it."
+            ),
         ),
         # ----- Mouse motion / wheel -----
         EventEntry(
             "bind:<Enter>", "on mouse enter", "mouse_enter",
             "(self, event=None)", _BIND,
+            description="Fires when the cursor enters the label's bounds.",
         ),
         EventEntry(
             "bind:<Leave>", "on mouse leave", "mouse_leave",
             "(self, event=None)", _BIND,
+            description="Fires when the cursor leaves the label's bounds.",
         ),
         EventEntry(
             "bind:<Motion>", "on mouse move", "mouse_move",
@@ -100,10 +127,18 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
             warning="Fires at 60+ Hz while the cursor is inside — "
                     "keep the handler cheap.",
             advanced=True,
+            description=(
+                "Fires while the cursor moves across the label. "
+                "event.x / event.y carry the cursor position."
+            ),
         ),
         EventEntry(
             "bind:<MouseWheel>", "on mouse wheel", "mouse_wheel",
             "(self, event=None)", _BIND,
+            description=(
+                "Fires when the user scrolls the mouse wheel over the "
+                "label. Direction is in event.delta."
+            ),
         ),
         # ----- Lifecycle / geometry -----
         EventEntry(
@@ -112,14 +147,26 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
             warning="Fires repeatedly during a window resize — "
                     "keep the handler cheap.",
             advanced=True,
+            description=(
+                "Fires when the label's geometry (size or position) "
+                "changes."
+            ),
         ),
         EventEntry(
             "bind:<Map>", "on shown", "shown",
             "(self, event=None)", _BIND, advanced=True,
+            description=(
+                "Fires when the label becomes visible (mapped onto "
+                "the screen)."
+            ),
         ),
         EventEntry(
             "bind:<Unmap>", "on hidden", "hidden",
             "(self, event=None)", _BIND, advanced=True,
+            description=(
+                "Fires when the label becomes hidden (unmapped from "
+                "the screen)."
+            ),
         ),
         # ----- Focus / keyboard (require takefocus=True) -----
         EventEntry(
@@ -128,6 +175,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
             warning="Requires takefocus=True; the Label cannot "
                     "receive focus otherwise.",
             advanced=True,
+            description="Fires when the label receives keyboard focus.",
         ),
         EventEntry(
             "bind:<FocusOut>", "on focus out", "focus_out",
@@ -135,6 +183,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
             warning="Requires takefocus=True; the Label cannot "
                     "receive focus otherwise.",
             advanced=True,
+            description="Fires when the label loses keyboard focus.",
         ),
         EventEntry(
             "bind:<KeyPress>", "on key press", "key_press",
@@ -142,6 +191,10 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
             warning="Requires takefocus=True; key events are "
                     "delivered only to the focused widget.",
             advanced=True,
+            description=(
+                "Fires while a key is held down on the focused label. "
+                "event.keysym names the key."
+            ),
         ),
         EventEntry(
             "bind:<KeyRelease>", "on key release", "key_release",
@@ -149,63 +202,114 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
             warning="Requires takefocus=True; key events are "
                     "delivered only to the focused widget.",
             advanced=True,
+            description=(
+                "Fires when a key is released on the focused label."
+            ),
         ),
     ],
     "CTkSwitch": [
-        EventEntry("command", "on toggle", "toggle", "(self)", _COMMAND),
+        EventEntry(
+            "command", "on toggle", "toggle", "(self)", _COMMAND,
+            description="Fires when the user flips the switch on or off.",
+        ),
     ],
     "CTkCheckBox": [
-        EventEntry("command", "on toggle", "toggle", "(self)", _COMMAND),
+        EventEntry(
+            "command", "on toggle", "toggle", "(self)", _COMMAND,
+            description=(
+                "Fires when the user toggles the checkbox on or off."
+            ),
+        ),
     ],
     "CTkRadioButton": [
-        EventEntry("command", "on select", "select", "(self)", _COMMAND),
+        EventEntry(
+            "command", "on select", "select", "(self)", _COMMAND,
+            description=(
+                "Fires when the user picks this radio button — group "
+                "siblings deselect automatically."
+            ),
+        ),
     ],
     "CTkSlider": [
         EventEntry(
             "command", "on change", "change",
             "(self, value)", _COMMAND,
+            description=(
+                "Fires every time the slider's value changes; the new "
+                "value is passed as the second argument."
+            ),
         ),
     ],
     "CTkSegmentedButton": [
         EventEntry(
             "command", "on select", "select",
             "(self, value)", _COMMAND,
+            description=(
+                "Fires when the user picks a segment; the picked "
+                "segment's text is passed as the second argument."
+            ),
         ),
     ],
     "CTkComboBox": [
         EventEntry(
             "command", "on select", "select",
             "(self, value)", _COMMAND,
+            description=(
+                "Fires when the user picks a value from the dropdown "
+                "or commits a typed value; the value is passed as the "
+                "second argument."
+            ),
         ),
     ],
     "CTkOptionMenu": [
         EventEntry(
             "command", "on select", "select",
             "(self, value)", _COMMAND,
+            description=(
+                "Fires when the user picks a value from the dropdown; "
+                "the value is passed as the second argument."
+            ),
         ),
     ],
     "CTkEntry": [
         EventEntry(
             "bind:<Return>", "on Return", "return_pressed",
             "(self, event=None)", _BIND,
+            description=(
+                "Fires when the user presses Enter while the entry "
+                "has focus."
+            ),
         ),
         EventEntry(
             "bind:<KeyRelease>", "on key release", "key_release",
             "(self, event=None)", _BIND,
+            description=(
+                "Fires every time a key is released — useful for live "
+                "validation or filtering as the user types."
+            ),
         ),
         EventEntry(
             "bind:<FocusOut>", "on focus out", "focus_out",
             "(self, event=None)", _BIND,
+            description=(
+                "Fires when the entry loses focus — typical place to "
+                "commit a final value."
+            ),
         ),
     ],
     "CTkTextbox": [
         EventEntry(
             "bind:<KeyRelease>", "on key release", "key_release",
             "(self, event=None)", _BIND,
+            description=(
+                "Fires every time a key is released — useful for live "
+                "counts or validation while the user types."
+            ),
         ),
         EventEntry(
             "bind:<FocusOut>", "on focus out", "focus_out",
             "(self, event=None)", _BIND,
+            description="Fires when the textbox loses focus.",
         ),
     ],
 }

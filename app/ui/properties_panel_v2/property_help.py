@@ -48,6 +48,37 @@ ROW_HELP: dict[str, dict[str, str]] = {
         ),
     },
 
+    # --- Widget-agnostic parent rows ---------------------------------
+    "events:advanced": {
+        "description": (
+            "Less commonly used events — collapsed by default. "
+            "Auto-expands when any of its events already has a "
+            "handler attached."
+        ),
+    },
+    "g:Object Reference": {
+        "description": (
+            "Expose this widget as a typed reference on the window's "
+            "behavior class. Toggle on to make the widget reachable "
+            "as `self.<name>` in handler code; off to remove it."
+        ),
+    },
+    "objref_toggle": {
+        "description": (
+            "Click + to expose this widget as `self.<name>` on the "
+            "behavior class. The Name field above becomes the slot "
+            "name. Click × on an existing reference to remove it."
+        ),
+    },
+    "g:Object References": {
+        "description": (
+            "Local Object References declared on this window. Each "
+            "entry maps a widget to a `self.<name>` slot on the "
+            "behavior class. Toggle bindings from the widget's own "
+            "panel."
+        ),
+    },
+
     # --- Schema subgroups --------------------------------------------
     "g:Text/Style": {
         "description": (

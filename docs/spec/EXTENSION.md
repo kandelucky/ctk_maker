@@ -277,7 +277,7 @@ Hovering over a row's label column (`#0`) for ~750 ms surfaces a dark popup with
 - `ROW_HELP["pair:<name>"]` — for virtual numeric pairs (Position, Size, …).
 - `ROW_HELP["g:<group>/<sub>"]` — for schema subgroups (e.g. `Text/Style`).
 
-Event-header rows (`events:e:N`) source from `EventEntry.label` + `EventEntry.warning` in [`app/widgets/event_registry.py`](../../app/widgets/event_registry.py) — no per-event entries needed in `property_help.py`.
+Event-header rows (`events:e:N`) source from `EventEntry.description` + `EventEntry.warning` in [`app/widgets/event_registry.py`](../../app/widgets/event_registry.py) — no per-event entries needed in `property_help.py`. Description falls back to the capitalised `label` when empty.
 
 V1 scope is CTkLabel; other widgets fall back to no tooltip (event rows excepted — they work for every widget). Adding entries for another widget = filling more keys in the same two dicts.
 
@@ -306,6 +306,10 @@ class EventEntry:
                             # Used to keep the surface short for
                             # widgets with many bind events
                             # (CTkLabel: 5 default + 11 advanced).
+    description: str = ""   # one-line "what does this event do" —
+                            # surfaced in the Properties panel hover
+                            # tooltip on event-header rows. Empty
+                            # falls back to the capitalised label.
 ```
 
 `events_partitioned(widget_type)` returns `(default, advanced)` in registration order — the cascade builder ([app/ui/workspace/core.py](../../app/ui/workspace/core.py)) and the Properties panel ([app/ui/properties_panel_v2/panel_schema.py](../../app/ui/properties_panel_v2/panel_schema.py)) both call it so they stay in sync without re-implementing the partition.

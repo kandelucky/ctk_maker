@@ -61,6 +61,15 @@ from .overlays import (
 from .panel_commit import CommitMixin
 from .panel_schema import SchemaMixin
 from .property_help import PROPERTY_HELP, ROW_HELP
+
+# Tooltip iids that work on every widget type — bypass the CTkLabel
+# scope gate. Object Reference rows + the Advanced events sub-group
+# are universal across panels, so they should always show their help.
+_WIDGET_AGNOSTIC_TOOLTIP_IIDS = frozenset({
+    "events:advanced",
+    "g:Object Reference",
+    "g:Object References",
+})
 from .tooltip import PropertyTooltip
 from .type_icons import icon_for_type
 
@@ -568,6 +577,29 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             self._show_event_tooltip(iid, event.x_root, event.y_root)
             return
 
+        # Widget-agnostic parent rows — Advanced events sub-group +
+        # Object Reference list / per-widget toggle group + the
+        # ``Reference`` row inside the toggle group (dynamic iid
+        # ``objref_toggle:<widget_id>`` — matched by prefix). Bypass
+        # the CTkLabel scope gate below.
+        agnostic_key: str | None = None
+        if iid in _WIDGET_AGNOSTIC_TOOLTIP_IIDS:
+            agnostic_key = iid
+        elif iid.startswith("objref_toggle:"):
+            agnostic_key = "objref_toggle"
+        if agnostic_key is not None:
+            entry = ROW_HELP.get(agnostic_key)
+            if entry is not None:
+                self._tooltip.schedule(
+                    event.x_root, event.y_root,
+                    entry["description"],
+                    entry.get("warning"),
+                    key=agnostic_key,
+                )
+            else:
+                self._tooltip.cancel()
+            return
+
         # Property + subgroup rows — V1 scope is CTkLabel only.
         if not self._is_label_selected():
             self._tooltip.cancel()
@@ -625,8 +657,12 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         if entry is None:
             self._tooltip.cancel()
             return
-        label = (entry.label[:1].upper() + entry.label[1:]).rstrip(".")
-        description = f"{label}. Trigger: {entry.key}"
+        # Prefer the explicit per-event description; fall back to the
+        # capitalised label when an entry hasn't been backfilled yet.
+        if entry.description:
+            description = entry.description
+        else:
+            description = (entry.label[:1].upper() + entry.label[1:])
         warning = entry.warning or None
         self._tooltip.schedule(
             x_root, y_root, description, warning, key=f"event:{iid}",
