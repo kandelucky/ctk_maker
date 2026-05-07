@@ -43,7 +43,7 @@ No event introspection, no priority, no async. If an event fires no one cares ab
 | `widget_visibility_changed` | `(widget_id, visible: bool)` | [project.py:1441](../../app/core/project.py#L1441) | |
 | `widget_locked_changed` | `(widget_id, locked: bool)` | [project.py:1456](../../app/core/project.py#L1456) | |
 | `widget_group_changed` | `(widget_id, group_id \| None)` | [project.py:1471](../../app/core/project.py#L1471) | Ctrl+G / Ctrl+Shift+G. |
-| `widget_description_changed` | `(widget_id, new_description)` | commands.py, [panel.py:933](../../app/ui/properties_panel_v2/panel.py#L933) | AI-bridge field. |
+| `widget_description_changed` | `(widget_id, new_description)` | commands.py, [panel.py:933](../../app/ui/properties_panel/panel.py#L933) | AI-bridge field. |
 | `widget_handler_changed` | `(widget_id, event_key, method_name)` | commands.py (5 sites), workspace/core.py:2147, panel.py:1141 | Phase 2. `event_key` is `"command"` or `"bind:<seq>"`; `method_name` may be `None` for unbind. |
 | `property_changed` | `(widget_id, prop_name, value)` | [project.py:923](../../app/core/project.py#L923) (and 4 more) | Also fires with `widget_id == WINDOW_ID` for window-level properties. |
 
@@ -140,7 +140,7 @@ widget_renamed                → update on-canvas label fallbacks
 documents_reordered           → reorder document chrome strip
 ```
 
-### Properties panel — [app/ui/properties_panel_v2/panel.py:148](../../app/ui/properties_panel_v2/panel.py#L148)
+### Properties panel — [app/ui/properties_panel/panel.py:148](../../app/ui/properties_panel/panel.py#L148)
 
 ```
 selection_changed             → repopulate tree

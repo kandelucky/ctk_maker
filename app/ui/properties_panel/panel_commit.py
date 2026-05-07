@@ -1,4 +1,4 @@
-﻿"""Commit path + editor lifecycle mixin for PropertiesPanelV2.
+﻿"""Commit path + editor lifecycle mixin for PropertiesPanel.
 
 Split out of the monolithic ``panel.py`` (v0.0.15.11 refactor round).
 Covers every user-interaction path that turns a value into a
@@ -11,7 +11,7 @@ Covers every user-interaction path that turns a value into a
 - Color / image / text pickers
 - ``_commit_prop`` — the commit bottleneck with container-bound clamp
 
-The mixin relies on attributes set up by ``PropertiesPanelV2.__init__``
+The mixin relies on attributes set up by ``PropertiesPanel.__init__``
 (``self.tree``, ``self.project``, ``self.current_id``, ``self.overlays``,
 ``self._active_editor`` family, ``self._disabled_states``,
 ``self._prop_iids``, ``self._suspend_history``) plus the schema helpers

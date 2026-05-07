@@ -1,4 +1,4 @@
-"""Schema traversal + disabled/hidden state mixin for PropertiesPanelV2.
+"""Schema traversal + disabled/hidden state mixin for PropertiesPanel.
 
 Split out of the monolithic ``panel.py`` (v0.0.15.11 refactor round).
 Covers the "schema → Treeview rows" pipeline:
@@ -18,7 +18,7 @@ Covers the "schema → Treeview rows" pipeline:
 Relies on ``self.tree``, ``self.project``, ``self.current_id``,
 ``self._prop_iids``, ``self._subgroup_preview_iids``,
 ``self._style_subgroup_iid``, ``self._disabled_states``,
-``self._layout_extras`` — all set up in ``PropertiesPanelV2.__init__``.
+``self._layout_extras`` — all set up in ``PropertiesPanel.__init__``.
 """
 
 from __future__ import annotations

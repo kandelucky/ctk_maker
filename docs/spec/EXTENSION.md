@@ -221,9 +221,9 @@ The Properties panel reads these to build the Layout group when the parent's `la
 
 ## Property editors
 
-Per-row UI for the Properties panel. One file per editor type at [app/ui/properties_panel_v2/editors/](../../app/ui/properties_panel_v2/editors/).
+Per-row UI for the Properties panel. One file per editor type at [app/ui/properties_panel/editors/](../../app/ui/properties_panel/editors/).
 
-### Editor base class — [editors/base.py](../../app/ui/properties_panel_v2/editors/base.py)
+### Editor base class — [editors/base.py](../../app/ui/properties_panel/editors/base.py)
 
 ```python
 class Editor:
@@ -261,17 +261,17 @@ All methods default to no-op. Concrete editors override only what they need.
 
 ### Adding a new property editor
 
-1. Create `app/ui/properties_panel_v2/editors/<name>.py` with an `Editor` subclass.
-2. Register the type → editor mapping in `app/ui/properties_panel_v2/panel.py` (look for the `_EDITORS` dict initialization).
+1. Create `app/ui/properties_panel/editors/<name>.py` with an `Editor` subclass.
+2. Register the type → editor mapping in `app/ui/properties_panel/panel.py` (look for the `_EDITORS` dict initialization).
 3. Use `"type": "<name>"` in any widget descriptor's `property_schema`.
 
 ### Overlay registry
 
-Editors that need persistent on-row widgets (color swatches, drag-scrub overlays) register them via the panel's overlay tracking dicts in `properties_panel_v2/overlays.py`. The panel handles repositioning on scroll / tree refresh.
+Editors that need persistent on-row widgets (color swatches, drag-scrub overlays) register them via the panel's overlay tracking dicts in `properties_panel/overlays.py`. The panel handles repositioning on scroll / tree refresh.
 
 ## Property tooltips
 
-Hovering over a row's label column (`#0`) for ~750 ms surfaces a dark popup with a description and an optional ⚠ warning. Content lives in `properties_panel_v2/property_help.py`:
+Hovering over a row's label column (`#0`) for ~750 ms surfaces a dark popup with a description and an optional ⚠ warning. Content lives in `properties_panel/property_help.py`:
 
 - `PROPERTY_HELP[<pname>]` — for `p:<pname>` rows.
 - `ROW_HELP["pair:<name>"]` — for virtual numeric pairs (Position, Size, …).
@@ -312,7 +312,7 @@ class EventEntry:
                             # falls back to the capitalised label.
 ```
 
-`events_partitioned(widget_type)` returns `(default, advanced)` in registration order — the cascade builder ([app/ui/workspace/core.py](../../app/ui/workspace/core.py)) and the Properties panel ([app/ui/properties_panel_v2/panel_schema.py](../../app/ui/properties_panel_v2/panel_schema.py)) both call it so they stay in sync without re-implementing the partition.
+`events_partitioned(widget_type)` returns `(default, advanced)` in registration order — the cascade builder ([app/ui/workspace/core.py](../../app/ui/workspace/core.py)) and the Properties panel ([app/ui/properties_panel/panel_schema.py](../../app/ui/properties_panel/panel_schema.py)) both call it so they stay in sync without re-implementing the partition.
 
 ### Existing entries — [event_registry.py:41](../../app/widgets/event_registry.py#L41)
 

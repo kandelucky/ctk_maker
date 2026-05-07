@@ -228,7 +228,7 @@ class ProjectPanel(ctk.CTkFrame):
     # ------- internal layout -------
 
     def _build_header(self) -> None:
-        # Mirrors PropertiesPanelV2's chrome shape so the docked
+        # Mirrors PropertiesPanel's chrome shape so the docked
         # Assets tab reads as a sibling of Properties: a dark
         # ``type_bar``-like stripe with folder icon + project name
         # bold (header foreground, NOT a coloured accent — Assets

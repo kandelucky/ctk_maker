@@ -5,7 +5,7 @@ and drag horizontally to change the value by ±1 per pixel. Alt-hold
 switches to 0.2× fine-scrub. The schema's `min` / `max` (ints or
 lambdas over the current property dict) are respected.
 
-Attaches to an existing `PropertiesPanelV2` by binding mouse events on
+Attaches to an existing `PropertiesPanel` by binding mouse events on
 its Treeview. All state lives inside this controller — the panel only
 wires it up once in `_build_tree`.
 """
@@ -18,14 +18,14 @@ from typing import TYPE_CHECKING
 from app.core.commands import ChangePropertyCommand
 
 if TYPE_CHECKING:
-    from .panel import PropertiesPanelV2
+    from .panel import PropertiesPanel
 
 
 _ALT_MASK = 0x20000  # Tk event.state bit for the Alt modifier
 
 
 class DragScrubController:
-    def __init__(self, panel: "PropertiesPanelV2"):
+    def __init__(self, panel: "PropertiesPanel"):
         self.panel = panel
         self._state: dict | None = None
         self._cursor_mode: str = ""

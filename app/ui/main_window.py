@@ -32,7 +32,7 @@ from app.ui.main_shortcuts import ShortcutsMixin
 from app.ui.object_tree_window import ObjectTreePanel, ObjectTreeWindow
 from app.ui.palette import Palette
 from app.ui.project_window import ProjectPanel, ProjectWindow
-from app.ui.properties_panel_v2 import PropertiesPanelV2 as PropertiesPanel
+from app.ui.properties_panel import PropertiesPanel
 from app.ui.crash_dialog import show_crash_dialog
 from app.ui.startup_dialog import StartupDialog
 from app.ui.toolbar import Toolbar

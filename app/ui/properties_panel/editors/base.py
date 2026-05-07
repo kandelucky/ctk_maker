@@ -1,4 +1,4 @@
-"""Editor base class for the Properties panel v2.
+"""Editor base class for the Properties panel.
 
 An Editor encapsulates the per-row behavior for one schema property
 type: overlay creation, value refresh, disabled styling, click routing.
@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..panel import PropertiesPanelV2
+    from ..panel import PropertiesPanel
 
 
 class Editor:
@@ -22,7 +22,7 @@ class Editor:
 
     def populate(
         self,
-        panel: "PropertiesPanelV2",
+        panel: "PropertiesPanel",
         iid: str,
         pname: str,
         prop: dict,
@@ -32,7 +32,7 @@ class Editor:
 
     def refresh(
         self,
-        panel: "PropertiesPanelV2",
+        panel: "PropertiesPanel",
         iid: str,
         pname: str,
         prop: dict,
@@ -42,7 +42,7 @@ class Editor:
 
     def set_disabled(
         self,
-        panel: "PropertiesPanelV2",
+        panel: "PropertiesPanel",
         iid: str,
         pname: str,
         prop: dict,
@@ -52,7 +52,7 @@ class Editor:
 
     def on_single_click(
         self,
-        panel: "PropertiesPanelV2",
+        panel: "PropertiesPanel",
         pname: str,
         prop: dict,
     ) -> bool:
@@ -61,7 +61,7 @@ class Editor:
 
     def on_double_click(
         self,
-        panel: "PropertiesPanelV2",
+        panel: "PropertiesPanel",
         pname: str,
         prop: dict,
         event,

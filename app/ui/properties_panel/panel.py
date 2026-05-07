@@ -1,19 +1,18 @@
-"""Properties panel v2 — ttk.Treeview-based implementation.
+"""Properties panel — ttk.Treeview-based implementation.
 
-Phase 1 port of the `tools/ctk_button_treeview_mock.py` prototype
-to the real builder. Uses a single `ttk.Treeview` as the backbone
-(same pattern as `app/ui/object_tree_window.py`) plus thin overlays
-for editors that can't be text-only:
+Uses a single `ttk.Treeview` as the backbone (same pattern as
+`app/ui/object_tree_window.py`) plus thin overlays for editors
+that can't be text-only:
 
     - Inline `tk.Entry` overlay on double-click for number / multiline
     - `tk.Frame` color swatches persistently overlaid on color rows
     - Native `tk.Menu` popup for anchor / compound enums
     - Unicode checkboxes (☑ / ☐) for bools + `bool_off` tag graying
 
-After Phase A refactor this class lives inside the
-`app.ui.properties_panel_v2` package. Pure helpers (formatting,
-enum options, value coercion) moved to `format_utils`; shared
-constants to `constants`; widget-type icon lookup to `type_icons`.
+The class lives inside the `app.ui.properties_panel` package.
+Pure helpers (formatting, enum options, value coercion) live in
+`format_utils`; shared constants in `constants`; widget-type icon
+lookup in `type_icons`.
 """
 
 from __future__ import annotations
@@ -74,7 +73,7 @@ from .tooltip import PropertyTooltip
 from .type_icons import icon_for_type
 
 
-class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
+class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
     """ttk.Treeview-based Properties panel. API-compatible with v1.
 
     Method surface split across mixins:
@@ -352,7 +351,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         try:
             webbrowser.open(url)
         except Exception:
-            log_error("PropertiesPanelV2._open_widget_docs")
+            log_error("PropertiesPanel._open_widget_docs")
 
     def _current_descriptor(self):
         if self.current_id is None:
