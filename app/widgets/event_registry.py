@@ -42,6 +42,32 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
     "CTkButton": [
         EventEntry("command", "on click", "click", "(self)", _COMMAND),
     ],
+    "CTkLabel": [
+        # CTkLabel has no `command` constructor kwarg — every binding
+        # is post-construction `.bind()`, which CTkLabel routes onto
+        # both the inner canvas and inner Tk Label so the hit-area
+        # covers the rounded corners as well as the text glyphs.
+        EventEntry(
+            "bind:<Button-1>", "on click", "click",
+            "(self, event=None)", _BIND,
+        ),
+        EventEntry(
+            "bind:<Double-Button-1>", "on double click", "double_click",
+            "(self, event=None)", _BIND,
+        ),
+        EventEntry(
+            "bind:<Button-3>", "on right click", "right_click",
+            "(self, event=None)", _BIND,
+        ),
+        EventEntry(
+            "bind:<Enter>", "on mouse enter", "mouse_enter",
+            "(self, event=None)", _BIND,
+        ),
+        EventEntry(
+            "bind:<Leave>", "on mouse leave", "mouse_leave",
+            "(self, event=None)", _BIND,
+        ),
+    ],
     "CTkSwitch": [
         EventEntry("command", "on toggle", "toggle", "(self)", _COMMAND),
     ],
@@ -104,8 +130,8 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
 
 def events_for(widget_type: str) -> list[EventEntry]:
     """Events available on ``widget_type``. Empty list when the type
-    has no registered events (Label, Frame, Image, etc.) — callers
-    use this to decide whether to render the cascade at all.
+    has no registered events (Frame, Image, etc.) — callers use this
+    to decide whether to render the cascade at all.
     """
     return EVENT_REGISTRY.get(widget_type, [])
 

@@ -59,7 +59,7 @@ Every widget has: `x`, `y`, `width`, `height` (in pixels — for `place` layout)
 | Widget | Key property | Common extras |
 |---|---|---|
 | Button | `text`, `command` | `fg_color`, `hover_color`, `corner_radius`, `image`, `compound` |
-| Label | `text` | `font_*`, `text_color`, `image`, `anchor` |
+| Label | `text` | `font_*`, `text_color` / `text_color_disabled`, `corner_radius`, `image` / `compound`, `anchor`, `label_enabled` |
 | Entry | `placeholder_text`, `initial_value` | `font_*`, `width`, `show` (password) |
 | Textbox | `initial_value` | `wrap`, font props |
 | Slider | `from_`, `to`, `initial_value` | `orientation`, `number_of_steps` |
@@ -127,7 +127,9 @@ class SettingsDialog(ctk.CTkToplevel):
 Bind a method to a widget event from the Properties panel **Events** group:
 
 - **`command`** — click / change events: Button, Switch, CheckBox, RadioButton, Slider, ComboBox, OptionMenu, SegmentedButton.
-- **`bind:<sequence>`** — Tk bind events: `bind:<Return>`, `bind:<Button-1>`, etc.
+- **`bind:<sequence>`** — Tk bind events:
+  - **Entry / Textbox** — `<Return>`, `<KeyRelease>`, `<FocusOut>`.
+  - **Label** — `<Button-1>` (click), `<Double-Button-1>`, `<Button-3>` (right click), `<Enter>` / `<Leave>` (mouse hover). CTkLabel routes the bind onto both inner canvas and inner Tk Label so the rounded-corner area is also clickable.
 
 Methods live in a per-window behavior file at `<project>/assets/scripts/<page>/<window>.py`:
 
