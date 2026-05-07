@@ -115,7 +115,7 @@ class WorkspaceControls:
 
         tools = [
             (TOOL_EDIT,   "vector-square",        "Edit (Q)"),
-            (TOOL_SELECT, "square-mouse-pointer", "Select (W)"),
+            (TOOL_SELECT, "mouse-pointer-2",      "Select (W)"),
             (TOOL_HAND,   "hand",                 "Hand (E)"),
         ]
         for tool_id, icon_name, _tooltip in tools:
