@@ -66,15 +66,15 @@ For the descriptor system itself see [EXTENSION.md](EXTENSION.md). For user-faci
 |---|---|---|---|---|---|
 | `text` | multiline | Label | `"CTkLabel"` |  |  |
 | `font_family` | font | Font | `None` |  |  |
-| `font_size` | number | Size | `13` | min=`6`, max=`96` | disabled when <function CTkLabelDescriptor.<lambda> at 0x000001A986B06E50> |
-| `font_autofit` | boolean | Best Fit | `False` |  |  |
+| `font_size` | number | Size | `13` | min=`6`, max=`96` | disabled when <function CTkLabelDescriptor.<lambda> at 0x000001FFC405F110> |
+| `font_autofit` | boolean | Auto Fit | `False` |  |  |
 | `font_bold` | boolean | Bold | `False` |  |  |
 | `font_italic` | boolean | Italic | `False` |  |  |
 | `font_underline` | boolean | Underline | `False` |  |  |
 | `font_overstrike` | boolean | Strike | `False` |  |  |
 | `justify` | justify | Line Align | `"center"` |  |  |
 | `font_wrap` | boolean | Enabled | `True` |  |  |
-| `wraplength` | number | Length | `0` | min=`0`, max=`2000` | disabled when <function CTkLabelDescriptor.<lambda> at 0x000001A986B06F00> |
+| `wraplength` | number | Length | `0` | min=`0`, max=`2000` | disabled when <function CTkLabelDescriptor.<lambda> at 0x000001FFC405F1C0> |
 | `text_color` | color | Normal Text Color | `"#ffffff"` |  |  |
 | `text_color_disabled` | color | Disabled Text Color | `"#a0a0a0"` |  |  |
 
@@ -83,12 +83,12 @@ For the descriptor system itself see [EXTENSION.md](EXTENSION.md). For user-faci
 | Property | Type | Label | Default | Range / Values | Notes |
 |---|---|---|---|---|---|
 | `image` | image | Icon | `None` |  |  |
-| `image_color` | color | Normal Color | `None` |  | disabled when <function CTkLabelDescriptor.<lambda> at 0x000001A986B06FB0> |
-| `image_color_disabled` | color | Disabled Color | `None` |  | disabled when <function CTkLabelDescriptor.<lambda> at 0x000001A986B07060> |
-| `image_width` | number | W | `20` | min=`4`, max=`512` | disabled when <function CTkLabelDescriptor.<lambda> at 0x000001A986B07110> |
-| `image_height` | number | H | `20` | min=`4`, max=`512` | disabled when <function CTkLabelDescriptor.<lambda> at 0x000001A986B071C0> |
-| `compound` | compound | Icon Side | `"left"` |  | disabled when <function CTkLabelDescriptor.<lambda> at 0x000001A986B07270> |
-| `preserve_aspect` | boolean | Preserve Aspect | `False` |  | disabled when <function CTkLabelDescriptor.<lambda> at 0x000001A986B07320> |
+| `image_color` | color | Normal Color | `None` |  | disabled when <function CTkLabelDescriptor.<lambda> at 0x000001FFC405F270> |
+| `image_color_disabled` | color | Disabled Color | `None` |  | disabled when <function CTkLabelDescriptor.<lambda> at 0x000001FFC405F320> |
+| `image_width` | number | W | `20` | min=`4`, max=`512` | disabled when <function CTkLabelDescriptor.<lambda> at 0x000001FFC405F3D0> |
+| `image_height` | number | H | `20` | min=`4`, max=`512` | disabled when <function CTkLabelDescriptor.<lambda> at 0x000001FFC405F480> |
+| `compound` | compound | Icon Side | `"left"` |  | disabled when <function CTkLabelDescriptor.<lambda> at 0x000001FFC405F530> |
+| `preserve_aspect` | boolean | Preserve Aspect | `False` |  | disabled when <function CTkLabelDescriptor.<lambda> at 0x000001FFC405F5E0> |
 
 ### Geometry
 
@@ -129,7 +129,7 @@ For the descriptor system itself see [EXTENSION.md](EXTENSION.md). For user-faci
 | `takefocus` | boolean | Take Focus | `False` |  |  |
 
 <!-- BEGIN MANUAL -->
-### Notes — Option Menu
+### Notes — Radio Button
 
 _(none yet)_
 
@@ -147,13 +147,13 @@ _(none yet)_
 | Property | Type | Label | Default | Range / Values | Notes |
 |---|---|---|---|---|---|
 | `image` | image | Image | `"C:\Users\likak\Desktop\ctk_maker\app\assets\defaults\image.png"` |  |  |
-| `preserve_aspect` | boolean | Preserve Aspect | `True` |  | disabled when <function ImageDescriptor.<lambda> at 0x000001A986B6CEB0> |
+| `preserve_aspect` | boolean | Preserve Aspect | `True` |  | disabled when <function ImageDescriptor.<lambda> at 0x000001FFC40B5010> |
 
 ### Tint
 
 | Property | Type | Label | Default | Range / Values | Notes |
 |---|---|---|---|---|---|
-| `image_color` | color | Normal Color | `None` |  | disabled when <function ImageDescriptor.<lambda> at 0x000001A986B6CF60> |
+| `image_color` | color | Normal Color | `None` |  | disabled when <function ImageDescriptor.<lambda> at 0x000001FFC40B50C0> |
 
 ### Geometry
 
@@ -162,7 +162,7 @@ _(none yet)_
 | `x` | number | X | `120` |  |  |
 | `y` | number | Y | `120` |  |  |
 | `width` | number | W | `128` | min=`4`, max=`4000` |  |
-| `height` | number | H | `128` | min=`4`, max=`4000` | disabled when <function ImageDescriptor.<lambda> at 0x000001A986B6D010> |
+| `height` | number | H | `128` | min=`4`, max=`4000` | disabled when <function ImageDescriptor.<lambda> at 0x000001FFC40B5170> |
 
 ### Main Colors
 
@@ -171,7 +171,7 @@ _(none yet)_
 | `fg_color` | color | Background | `"transparent"` |  |  |
 
 <!-- BEGIN MANUAL -->
-### Notes — Slider
+### Notes — Switch
 
 _(none yet)_
 
@@ -190,13 +190,13 @@ _(none yet)_
 | Property | Type | Label | Default | Range / Values | Notes |
 |---|---|---|---|---|---|
 | `image` | image | File | `None` |  |  |
-| `image_color` | color | Tint | `None` |  | disabled when <function CardDescriptor.<lambda> at 0x000001A986B4E1F0> |
-| `image_anchor` | anchor | Alignment | `"center"` |  | disabled when <function CardDescriptor.<lambda> at 0x000001A986B4E2A0> |
-| `image_width` | number | W | `48` | min=`4`, max=`4000` | disabled when <function CardDescriptor.<lambda> at 0x000001A986B4E350> |
-| `image_height` | number | H | `48` | min=`4`, max=`4000` | disabled when <function CardDescriptor.<lambda> at 0x000001A986B4E400> |
-| `image_preserve_aspect` | boolean | Preserve Aspect | `True` |  | disabled when <function CardDescriptor.<lambda> at 0x000001A986B4E4B0> |
-| `image_pad_x` | number | X | `0` | min=_dynamic_, max=_dynamic_ | disabled when <function CardDescriptor.<lambda> at 0x000001A986B4E6C0> |
-| `image_pad_y` | number | Y | `0` | min=_dynamic_, max=_dynamic_ | disabled when <function CardDescriptor.<lambda> at 0x000001A986B4E8D0> |
+| `image_color` | color | Tint | `None` |  | disabled when <function CardDescriptor.<lambda> at 0x000001FFC409E350> |
+| `image_anchor` | anchor | Alignment | `"center"` |  | disabled when <function CardDescriptor.<lambda> at 0x000001FFC409E400> |
+| `image_width` | number | W | `48` | min=`4`, max=`4000` | disabled when <function CardDescriptor.<lambda> at 0x000001FFC409E4B0> |
+| `image_height` | number | H | `48` | min=`4`, max=`4000` | disabled when <function CardDescriptor.<lambda> at 0x000001FFC409E560> |
+| `image_preserve_aspect` | boolean | Preserve Aspect | `True` |  | disabled when <function CardDescriptor.<lambda> at 0x000001FFC409E610> |
+| `image_pad_x` | number | X | `0` | min=_dynamic_, max=_dynamic_ | disabled when <function CardDescriptor.<lambda> at 0x000001FFC409E820> |
+| `image_pad_y` | number | Y | `0` | min=_dynamic_, max=_dynamic_ | disabled when <function CardDescriptor.<lambda> at 0x000001FFC409EA30> |
 
 ### Geometry
 
@@ -212,15 +212,15 @@ _(none yet)_
 | Property | Type | Label | Default | Range / Values | Notes |
 |---|---|---|---|---|---|
 | `shape_type` | enum | Type | `"rounded"` |  |  |
-| `corner_radius` | number | Corner Radius | `12` | min=`0`, max=_dynamic_ | disabled when <function CardDescriptor.<lambda> at 0x000001A986B4EA30> |
+| `corner_radius` | number | Corner Radius | `12` | min=`0`, max=_dynamic_ | disabled when <function CardDescriptor.<lambda> at 0x000001FFC409EB90> |
 
 ### Border
 
 | Property | Type | Label | Default | Range / Values | Notes |
 |---|---|---|---|---|---|
 | `border_enabled` | boolean | Enabled | `False` |  |  |
-| `border_width` | number | Thickness | `1` | min=`1`, max=_dynamic_ | disabled when <function CardDescriptor.<lambda> at 0x000001A986B4EB90> |
-| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CardDescriptor.<lambda> at 0x000001A986B4EC40> |
+| `border_width` | number | Thickness | `1` | min=`1`, max=_dynamic_ | disabled when <function CardDescriptor.<lambda> at 0x000001FFC409ECF0> |
+| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CardDescriptor.<lambda> at 0x000001FFC409EDA0> |
 
 ### Main Colors
 
@@ -229,7 +229,7 @@ _(none yet)_
 | `fg_color` | color | Fill | `"#a2a2a2"` |  |  |
 
 <!-- BEGIN MANUAL -->
-### Notes — Frame
+### Notes — Entry
 
 _(none yet)_
 
@@ -251,8 +251,8 @@ _(none yet)_
 |---|---|---|---|---|---|
 | `text` | multiline | Label | `"CTkButton"` |  |  |
 | `font_family` | font | Font | `None` |  |  |
-| `font_size` | number | Size | `13` | min=`6`, max=`96` | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001A986AE9DD0> |
-| `font_autofit` | boolean | Best Fit | `False` |  |  |
+| `font_size` | number | Size | `13` | min=`6`, max=`96` | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001FFC3809F30> |
+| `font_autofit` | boolean | Auto Fit | `False` |  |  |
 | `font_bold` | boolean | Bold | `False` |  |  |
 | `font_italic` | boolean | Italic | `False` |  |  |
 | `font_underline` | boolean | Underline | `False` |  |  |
@@ -261,19 +261,19 @@ _(none yet)_
 | `text_color` | color | Normal Text Color | `"#ffffff"` |  |  |
 | `text_color_disabled` | color | Disabled Text Color | `"#a0a0a0"` |  |  |
 | `text_hover` | boolean | Hover Color Effect | `False` |  |  |
-| `text_hover_color` | color | Hover Color | `"#b2b2b2"` |  | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001A986AEA1F0> |
+| `text_hover_color` | color | Hover Color | `"#b2b2b2"` |  | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001FFC380A350> |
 
 ### Icon
 
 | Property | Type | Label | Default | Range / Values | Notes |
 |---|---|---|---|---|---|
 | `image` | image | Icon | `None` |  |  |
-| `image_color` | color | Normal Color | `None` |  | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001A986AEA2A0> |
-| `image_color_disabled` | color | Disabled Color | `None` |  | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001A986AEA350> |
-| `image_width` | number | W | `20` | min=`4`, max=`512` | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001A986AEA400> |
-| `image_height` | number | H | `20` | min=`4`, max=`512` | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001A986AEA4B0> |
-| `compound` | compound | Icon Side | `"left"` |  | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001A986AEA560> |
-| `preserve_aspect` | boolean | Preserve Aspect | `False` |  | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001A986AEA610> |
+| `image_color` | color | Normal Color | `None` |  | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001FFC380A400> |
+| `image_color_disabled` | color | Disabled Color | `None` |  | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001FFC380A4B0> |
+| `image_width` | number | W | `20` | min=`4`, max=`512` | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001FFC380A560> |
+| `image_height` | number | H | `20` | min=`4`, max=`512` | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001FFC380A610> |
+| `compound` | compound | Icon Side | `"left"` |  | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001FFC380A6C0> |
+| `preserve_aspect` | boolean | Preserve Aspect | `False` |  | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001FFC380A770> |
 
 ### Geometry
 
@@ -290,8 +290,8 @@ _(none yet)_
 |---|---|---|---|---|---|
 | `corner_radius` | number | Corner Radius | `6` | min=`0`, max=_dynamic_ |  |
 | `border_enabled` | boolean | Enabled | `False` |  |  |
-| `border_width` | number | Thickness | `1` | min=`1`, max=_dynamic_ | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001A986AEA820> |
-| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001A986AEA8D0> |
+| `border_width` | number | Thickness | `1` | min=`1`, max=_dynamic_ | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001FFC380A980> |
+| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001FFC380AA30> |
 | `border_spacing` | number | Inner Padding | `2` | min=`0`, max=`20` |  |
 
 ### Main Colors
@@ -299,7 +299,7 @@ _(none yet)_
 | Property | Type | Label | Default | Range / Values | Notes |
 |---|---|---|---|---|---|
 | `fg_color` | color | Background | `"#6366f1"` |  |  |
-| `hover_color` | color | Hover Color | `"#4f46e5"` |  | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001A986AEA980> |
+| `hover_color` | color | Hover Color | `"#4f46e5"` |  | disabled when <function CTkButtonDescriptor.<lambda> at 0x000001FFC380AAE0> |
 
 ### Button Interaction
 
@@ -358,8 +358,8 @@ _(none yet)_
 |---|---|---|---|---|---|
 | `corner_radius` | number | Corner Radius | `6` | min=`0`, max=_dynamic_ |  |
 | `border_enabled` | boolean | Enabled | `True` |  |  |
-| `border_width` | number | Thickness | `2` | min=`1`, max=_dynamic_ | disabled when <function CTkEntryDescriptor.<lambda> at 0x000001A986B05170> |
-| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkEntryDescriptor.<lambda> at 0x000001A986B05220> |
+| `border_width` | number | Thickness | `2` | min=`1`, max=_dynamic_ | disabled when <function CTkEntryDescriptor.<lambda> at 0x000001FFC405D2D0> |
+| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkEntryDescriptor.<lambda> at 0x000001FFC405D380> |
 
 ### Main Colors
 
@@ -371,11 +371,11 @@ _(none yet)_
 
 | Property | Type | Label | Default | Range / Values | Notes |
 |---|---|---|---|---|---|
-| `button_enabled` | boolean | Interactable | `True` |  | disabled when <function CTkEntryDescriptor.<lambda> at 0x000001A986B052D0> |
+| `button_enabled` | boolean | Interactable | `True` |  | disabled when <function CTkEntryDescriptor.<lambda> at 0x000001FFC405D430> |
 | `readonly` | boolean | Read-only | `False` |  |  |
 
 <!-- BEGIN MANUAL -->
-### Notes — Tab View
+### Notes — Combo Box
 
 _(none yet)_
 
@@ -423,8 +423,8 @@ _(none yet)_
 |---|---|---|---|---|---|
 | `corner_radius` | number | Corner Radius | `6` | min=`0`, max=_dynamic_ |  |
 | `border_enabled` | boolean | Enabled | `False` |  |  |
-| `border_width` | number | Thickness | `1` | min=`1`, max=`20` | disabled when <function CTkTextboxDescriptor.<lambda> at 0x000001A986B4DA60> |
-| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkTextboxDescriptor.<lambda> at 0x000001A986B4DB10> |
+| `border_width` | number | Thickness | `1` | min=`1`, max=`20` | disabled when <function CTkTextboxDescriptor.<lambda> at 0x000001FFC409DBC0> |
+| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkTextboxDescriptor.<lambda> at 0x000001FFC409DC70> |
 | `border_spacing` | number | Inner Padding | `3` | min=`0`, max=`50` |  |
 
 ### Main Colors
@@ -445,13 +445,13 @@ _(none yet)_
 ### Notes — Label
 
 - **Autofit + Wrap:** when `font_autofit=True` and `font_wrap=True`,
-  Best Fit picks the largest font size where the *wrapped* text fits
+  Auto Fit picks the largest font size where the *wrapped* text fits
   the box (multi-line aware via greedy word-wrap).
 - **Wraplength fallback:** `font_wrap=True` + `wraplength=0` →
   effective wraplength = `width - 8`. Tk's native `wraplength=0` means
   "no wrap"; the descriptor remaps it so the "Enabled" checkbox
   actually enables wrap without forcing the user to type a length.
-- **`_font_size_pre_autofit` shadow:** stashed when Best Fit toggles
+- **`_font_size_pre_autofit` shadow:** stashed when Auto Fit toggles
   ON so the user's pre-autofit size is restored on toggle OFF.
   Persists to JSON; filtered out of CTk kwargs by `_SHADOW_KEYS`.
 - **Anchor scope is the content block, not text alone.** `anchor`
@@ -561,15 +561,15 @@ _(none yet)_
 | `checkbox_height` | number | H | `24` | min=`10`, max=`200` |  |
 | `corner_radius` | number | Corner Radius | `6` | min=`0`, max=_dynamic_ |  |
 | `border_enabled` | boolean | Enabled | `True` |  |  |
-| `border_width` | number | Thickness | `3` | min=`1`, max=_dynamic_ | disabled when <function CTkCheckBoxDescriptor.<lambda> at 0x000001A986AEB950> |
-| `border_color` | color | Color | `"#949A9F"` |  | disabled when <function CTkCheckBoxDescriptor.<lambda> at 0x000001A986AEBA00> |
+| `border_width` | number | Thickness | `3` | min=`1`, max=_dynamic_ | disabled when <function CTkCheckBoxDescriptor.<lambda> at 0x000001FFC380BAB0> |
+| `border_color` | color | Color | `"#949A9F"` |  | disabled when <function CTkCheckBoxDescriptor.<lambda> at 0x000001FFC380BB60> |
 
 ### Main Colors
 
 | Property | Type | Label | Default | Range / Values | Notes |
 |---|---|---|---|---|---|
 | `fg_color` | color | Fill (Checked) | `"#6366f1"` |  |  |
-| `hover_color` | color | Hover | `"#4f46e5"` |  | disabled when <function CTkCheckBoxDescriptor.<lambda> at 0x000001A986AEBAB0> |
+| `hover_color` | color | Hover | `"#4f46e5"` |  | disabled when <function CTkCheckBoxDescriptor.<lambda> at 0x000001FFC380BC10> |
 | `checkmark_color` | color | Check Mark | `"#e5e5e5"` |  |  |
 
 ### Button Interaction
@@ -630,7 +630,7 @@ _(none yet)_
 | `fg_color` | color | Track (Off) | `"#4a4d50"` |  |  |
 | `progress_color` | color | Track (On) | `"#6366f1"` |  |  |
 | `button_color` | color | Knob | `"#d5d9de"` |  |  |
-| `button_hover_color` | color | Knob Hover | `"#ffffff"` |  | disabled when <function CTkSwitchDescriptor.<lambda> at 0x000001A986B4C250> |
+| `button_hover_color` | color | Knob Hover | `"#ffffff"` |  | disabled when <function CTkSwitchDescriptor.<lambda> at 0x000001FFC409C460> |
 
 ### Button Interaction
 
@@ -689,7 +689,7 @@ _(none yet)_
 | Property | Type | Label | Default | Range / Values | Notes |
 |---|---|---|---|---|---|
 | `fg_color` | color | Fill (Checked) | `"#6366f1"` |  |  |
-| `hover_color` | color | Hover | `"#4f46e5"` |  | disabled when <function CTkRadioButtonDescriptor.<lambda> at 0x000001A986B1DA60> |
+| `hover_color` | color | Hover | `"#4f46e5"` |  | disabled when <function CTkRadioButtonDescriptor.<lambda> at 0x000001FFC4079C70> |
 
 ### Button Interaction
 
@@ -701,7 +701,7 @@ _(none yet)_
 | `group` | multiline | Group | `""` |  |  |
 
 <!-- BEGIN MANUAL -->
-### Notes — Scrollable Frame
+### Notes — Textbox
 
 _(none yet)_
 
@@ -751,7 +751,7 @@ Third"` |  |  |
 |---|---|---|---|---|---|
 | `corner_radius` | number | Corner Radius | `6` | min=`0`, max=_dynamic_ |  |
 | `border_enabled` | boolean | Enabled | `False` |  |  |
-| `border_width` | number | Thickness | `2` | min=`1`, max=`20` | disabled when <function CTkSegmentedButtonDescriptor.<lambda> at 0x000001A986B1EAE0> |
+| `border_width` | number | Thickness | `2` | min=`1`, max=`20` | disabled when <function CTkSegmentedButtonDescriptor.<lambda> at 0x000001FFC407ACF0> |
 
 ### Main Colors
 
@@ -820,8 +820,8 @@ Option 3"` |  |  |
 |---|---|---|---|---|---|
 | `corner_radius` | number | Corner Radius | `6` | min=`0`, max=_dynamic_ |  |
 | `border_enabled` | boolean | Enabled | `True` |  |  |
-| `border_width` | number | Thickness | `2` | min=`1`, max=_dynamic_ | disabled when <function CTkComboBoxDescriptor.<lambda> at 0x000001A986B04510> |
-| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkComboBoxDescriptor.<lambda> at 0x000001A986B045C0> |
+| `border_width` | number | Thickness | `2` | min=`1`, max=_dynamic_ | disabled when <function CTkComboBoxDescriptor.<lambda> at 0x000001FFC405C670> |
+| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkComboBoxDescriptor.<lambda> at 0x000001FFC405C720> |
 
 ### Main Colors
 
@@ -829,7 +829,7 @@ Option 3"` |  |  |
 |---|---|---|---|---|---|
 | `fg_color` | color | Field Background | `"#343638"` |  |  |
 | `button_color` | color | Arrow Button | `"#565b5e"` |  |  |
-| `button_hover_color` | color | Arrow Hover | `"#7a848d"` |  | disabled when <function CTkComboBoxDescriptor.<lambda> at 0x000001A986B04670> |
+| `button_hover_color` | color | Arrow Hover | `"#7a848d"` |  | disabled when <function CTkComboBoxDescriptor.<lambda> at 0x000001FFC405C7D0> |
 
 ### Dropdown Colors
 
@@ -848,8 +848,8 @@ Option 3"` |  |  |
 | `dropdown_max_visible` | number | Max Visible | `8` | min=`1`, max=`30` |  |
 | `dropdown_corner_radius` | number | Corner Radius | `6` | min=`0`, max=`30` |  |
 | `dropdown_border_enabled` | boolean | Enabled | `True` |  |  |
-| `dropdown_border_width` | number | Thickness | `1` | min=`1`, max=`10` | disabled when <function CTkComboBoxDescriptor.<lambda> at 0x000001A986B04720> |
-| `dropdown_border_color` | color | Color | `"#3c3c3c"` |  | disabled when <function CTkComboBoxDescriptor.<lambda> at 0x000001A986B047D0> |
+| `dropdown_border_width` | number | Thickness | `1` | min=`1`, max=`10` | disabled when <function CTkComboBoxDescriptor.<lambda> at 0x000001FFC405C880> |
+| `dropdown_border_color` | color | Color | `"#3c3c3c"` |  | disabled when <function CTkComboBoxDescriptor.<lambda> at 0x000001FFC405C930> |
 
 ### Button Interaction
 
@@ -915,7 +915,7 @@ Option 3"` |  |  |
 |---|---|---|---|---|---|
 | `fg_color` | color | Background | `"#6366f1"` |  |  |
 | `button_color` | color | Arrow Button | `"#4f46e5"` |  |  |
-| `button_hover_color` | color | Arrow Hover | `"#203a4f"` |  | disabled when <function CTkOptionMenuDescriptor.<lambda> at 0x000001A986B1C250> |
+| `button_hover_color` | color | Arrow Hover | `"#203a4f"` |  | disabled when <function CTkOptionMenuDescriptor.<lambda> at 0x000001FFC4078510> |
 
 ### Dropdown Colors
 
@@ -934,8 +934,8 @@ Option 3"` |  |  |
 | `dropdown_max_visible` | number | Max Visible | `8` | min=`1`, max=`30` |  |
 | `dropdown_corner_radius` | number | Corner Radius | `6` | min=`0`, max=`30` |  |
 | `dropdown_border_enabled` | boolean | Enabled | `True` |  |  |
-| `dropdown_border_width` | number | Thickness | `1` | min=`1`, max=`10` | disabled when <function CTkOptionMenuDescriptor.<lambda> at 0x000001A986B1C300> |
-| `dropdown_border_color` | color | Color | `"#3c3c3c"` |  | disabled when <function CTkOptionMenuDescriptor.<lambda> at 0x000001A986B1C3B0> |
+| `dropdown_border_width` | number | Thickness | `1` | min=`1`, max=`10` | disabled when <function CTkOptionMenuDescriptor.<lambda> at 0x000001FFC40785C0> |
+| `dropdown_border_color` | color | Color | `"#3c3c3c"` |  | disabled when <function CTkOptionMenuDescriptor.<lambda> at 0x000001FFC4078670> |
 
 ### Button Interaction
 
@@ -945,7 +945,7 @@ Option 3"` |  |  |
 | `hover` | boolean | Hover Effect | `True` |  |  |
 
 <!-- BEGIN MANUAL -->
-### Notes — Radio Button
+### Notes — Option Menu
 
 _(none yet)_
 
@@ -990,8 +990,8 @@ _(none yet)_
 | `button_corner_radius` | number | Button Radius | `8` | min=`1`, max=`50` |  |
 | `button_length` | number | Button Length | `1` | min=`1`, max=_dynamic_ |  |
 | `border_enabled` | boolean | Enabled | `False` |  |  |
-| `border_width` | number | Thickness | `6` | min=`1`, max=`20` | disabled when <function CTkSliderDescriptor.<lambda> at 0x000001A986B1F480> |
-| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkSliderDescriptor.<lambda> at 0x000001A986B1F530> |
+| `border_width` | number | Thickness | `6` | min=`1`, max=`20` | disabled when <function CTkSliderDescriptor.<lambda> at 0x000001FFC407B690> |
+| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkSliderDescriptor.<lambda> at 0x000001FFC407B740> |
 
 ### Main Colors
 
@@ -1000,7 +1000,7 @@ _(none yet)_
 | `fg_color` | color | Track | `"#4a4d50"` |  |  |
 | `progress_color` | color | Progress | `"#aab0b5"` |  |  |
 | `button_color` | color | Button | `"#6366f1"` |  |  |
-| `button_hover_color` | color | Button Hover | `"#4f46e5"` |  | disabled when <function CTkSliderDescriptor.<lambda> at 0x000001A986B1F5E0> |
+| `button_hover_color` | color | Button Hover | `"#4f46e5"` |  | disabled when <function CTkSliderDescriptor.<lambda> at 0x000001FFC407B7F0> |
 
 ### Button Interaction
 
@@ -1010,7 +1010,7 @@ _(none yet)_
 | `hover` | boolean | Hover Effect | `True` |  |  |
 
 <!-- BEGIN MANUAL -->
-### Notes — Switch
+### Notes — Slider
 
 _(none yet)_
 
@@ -1040,8 +1040,8 @@ _(none yet)_
 |---|---|---|---|---|---|
 | `corner_radius` | number | Corner Radius | `6` | min=`0`, max=_dynamic_ |  |
 | `border_enabled` | boolean | Enabled | `False` |  |  |
-| `border_width` | number | Thickness | `1` | min=`1`, max=_dynamic_ | disabled when <function CTkFrameDescriptor.<lambda> at 0x000001A986B06980> |
-| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkFrameDescriptor.<lambda> at 0x000001A986B06A30> |
+| `border_width` | number | Thickness | `1` | min=`1`, max=_dynamic_ | disabled when <function CTkFrameDescriptor.<lambda> at 0x000001FFC405EAE0> |
+| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkFrameDescriptor.<lambda> at 0x000001FFC405EB90> |
 
 ### Main Colors
 
@@ -1054,12 +1054,12 @@ _(none yet)_
 | Property | Type | Label | Default | Range / Values | Notes |
 |---|---|---|---|---|---|
 | `layout_type` | layout_type | Manager | `"place"` |  |  |
-| `layout_spacing` | number | Spacing | `4` | min=`0`, max=`200` | hidden when <function <lambda> at 0x000001A986B05B10> |
-| `grid_rows` | number | R | `2` | min=`1`, max=`50` | hidden when <function <lambda> at 0x000001A986B05BC0> |
-| `grid_cols` | number | C | `2` | min=`1`, max=`50` | hidden when <function <lambda> at 0x000001A986B05BC0> |
+| `layout_spacing` | number | Spacing | `4` | min=`0`, max=`200` | hidden when <function <lambda> at 0x000001FFC405DC70> |
+| `grid_rows` | number | R | `2` | min=`1`, max=`50` | hidden when <function <lambda> at 0x000001FFC405DD20> |
+| `grid_cols` | number | C | `2` | min=`1`, max=`50` | hidden when <function <lambda> at 0x000001FFC405DD20> |
 
 <!-- BEGIN MANUAL -->
-### Notes — Entry
+### Notes — Frame
 
 _(none yet)_
 
@@ -1098,8 +1098,8 @@ _(none yet)_
 |---|---|---|---|---|---|
 | `corner_radius` | number | Corner Radius | `6` | min=`0`, max=_dynamic_ |  |
 | `border_enabled` | boolean | Enabled | `False` |  |  |
-| `border_width` | number | Thickness | `1` | min=`1`, max=`50` | disabled when <function CTkScrollableFrameDescriptor.<lambda> at 0x000001A986B1E2A0> |
-| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkScrollableFrameDescriptor.<lambda> at 0x000001A986B1E350> |
+| `border_width` | number | Thickness | `1` | min=`1`, max=`50` | disabled when <function CTkScrollableFrameDescriptor.<lambda> at 0x000001FFC407A4B0> |
+| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkScrollableFrameDescriptor.<lambda> at 0x000001FFC407A560> |
 
 ### Main Colors
 
@@ -1120,10 +1120,10 @@ _(none yet)_
 
 | Property | Type | Label | Default | Range / Values | Notes |
 |---|---|---|---|---|---|
-| `layout_spacing` | number | Spacing | `4` | min=`0`, max=`200` | hidden when <function <lambda> at 0x000001A986B05B10> |
+| `layout_spacing` | number | Spacing | `4` | min=`0`, max=`200` | hidden when <function <lambda> at 0x000001FFC405DC70> |
 
 <!-- BEGIN MANUAL -->
-### Notes — Textbox
+### Notes — Scrollable Frame
 
 _(none yet)_
 
@@ -1170,8 +1170,8 @@ Tab 3"` |  |  |
 |---|---|---|---|---|---|
 | `corner_radius` | number | Corner Radius | `6` | min=`0`, max=_dynamic_ |  |
 | `border_enabled` | boolean | Enabled | `False` |  |  |
-| `border_width` | number | Thickness | `2` | min=`1`, max=`20` | disabled when <function CTkTabviewDescriptor.<lambda> at 0x000001A986B4CA90> |
-| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkTabviewDescriptor.<lambda> at 0x000001A986B4CB40> |
+| `border_width` | number | Thickness | `2` | min=`1`, max=`20` | disabled when <function CTkTabviewDescriptor.<lambda> at 0x000001FFC409CCA0> |
+| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkTabviewDescriptor.<lambda> at 0x000001FFC409CD50> |
 
 ### Main Colors
 
@@ -1191,7 +1191,7 @@ Tab 3"` |  |  |
 | `button_enabled` | boolean | Interactable | `True` |  |  |
 
 <!-- BEGIN MANUAL -->
-### Notes — Combo Box
+### Notes — Tab View
 
 _(none yet)_
 
@@ -1223,8 +1223,8 @@ _(none yet)_
 |---|---|---|---|---|---|
 | `corner_radius` | number | Corner Radius | `6` | min=`0`, max=_dynamic_ |  |
 | `border_enabled` | boolean | Enabled | `False` |  |  |
-| `border_width` | number | Thickness | `1` | min=`1`, max=_dynamic_ | disabled when <function CTkFrameDescriptor.<lambda> at 0x000001A986B06980> |
-| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkFrameDescriptor.<lambda> at 0x000001A986B06A30> |
+| `border_width` | number | Thickness | `1` | min=`1`, max=_dynamic_ | disabled when <function CTkFrameDescriptor.<lambda> at 0x000001FFC405EAE0> |
+| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkFrameDescriptor.<lambda> at 0x000001FFC405EB90> |
 
 ### Main Colors
 
@@ -1237,9 +1237,9 @@ _(none yet)_
 | Property | Type | Label | Default | Range / Values | Notes |
 |---|---|---|---|---|---|
 | `layout_type` | layout_type | Manager | `"vbox"` |  |  |
-| `layout_spacing` | number | Spacing | `4` | min=`0`, max=`200` | hidden when <function <lambda> at 0x000001A986B05B10> |
-| `grid_rows` | number | R | `2` | min=`1`, max=`50` | hidden when <function <lambda> at 0x000001A986B05BC0> |
-| `grid_cols` | number | C | `2` | min=`1`, max=`50` | hidden when <function <lambda> at 0x000001A986B05BC0> |
+| `layout_spacing` | number | Spacing | `4` | min=`0`, max=`200` | hidden when <function <lambda> at 0x000001FFC405DC70> |
+| `grid_rows` | number | R | `2` | min=`1`, max=`50` | hidden when <function <lambda> at 0x000001FFC405DD20> |
+| `grid_cols` | number | C | `2` | min=`1`, max=`50` | hidden when <function <lambda> at 0x000001FFC405DD20> |
 
 <!-- BEGIN MANUAL -->
 ### Notes — Vertical Layout
@@ -1272,8 +1272,8 @@ _(none yet)_
 |---|---|---|---|---|---|
 | `corner_radius` | number | Corner Radius | `6` | min=`0`, max=_dynamic_ |  |
 | `border_enabled` | boolean | Enabled | `False` |  |  |
-| `border_width` | number | Thickness | `1` | min=`1`, max=_dynamic_ | disabled when <function CTkFrameDescriptor.<lambda> at 0x000001A986B06980> |
-| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkFrameDescriptor.<lambda> at 0x000001A986B06A30> |
+| `border_width` | number | Thickness | `1` | min=`1`, max=_dynamic_ | disabled when <function CTkFrameDescriptor.<lambda> at 0x000001FFC405EAE0> |
+| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkFrameDescriptor.<lambda> at 0x000001FFC405EB90> |
 
 ### Main Colors
 
@@ -1286,9 +1286,9 @@ _(none yet)_
 | Property | Type | Label | Default | Range / Values | Notes |
 |---|---|---|---|---|---|
 | `layout_type` | layout_type | Manager | `"hbox"` |  |  |
-| `layout_spacing` | number | Spacing | `4` | min=`0`, max=`200` | hidden when <function <lambda> at 0x000001A986B05B10> |
-| `grid_rows` | number | R | `2` | min=`1`, max=`50` | hidden when <function <lambda> at 0x000001A986B05BC0> |
-| `grid_cols` | number | C | `2` | min=`1`, max=`50` | hidden when <function <lambda> at 0x000001A986B05BC0> |
+| `layout_spacing` | number | Spacing | `4` | min=`0`, max=`200` | hidden when <function <lambda> at 0x000001FFC405DC70> |
+| `grid_rows` | number | R | `2` | min=`1`, max=`50` | hidden when <function <lambda> at 0x000001FFC405DD20> |
+| `grid_cols` | number | C | `2` | min=`1`, max=`50` | hidden when <function <lambda> at 0x000001FFC405DD20> |
 
 <!-- BEGIN MANUAL -->
 ### Notes — Horizontal Layout
@@ -1321,8 +1321,8 @@ _(none yet)_
 |---|---|---|---|---|---|
 | `corner_radius` | number | Corner Radius | `6` | min=`0`, max=_dynamic_ |  |
 | `border_enabled` | boolean | Enabled | `False` |  |  |
-| `border_width` | number | Thickness | `1` | min=`1`, max=_dynamic_ | disabled when <function CTkFrameDescriptor.<lambda> at 0x000001A986B06980> |
-| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkFrameDescriptor.<lambda> at 0x000001A986B06A30> |
+| `border_width` | number | Thickness | `1` | min=`1`, max=_dynamic_ | disabled when <function CTkFrameDescriptor.<lambda> at 0x000001FFC405EAE0> |
+| `border_color` | color | Color | `"#565b5e"` |  | disabled when <function CTkFrameDescriptor.<lambda> at 0x000001FFC405EB90> |
 
 ### Main Colors
 
@@ -1335,9 +1335,9 @@ _(none yet)_
 | Property | Type | Label | Default | Range / Values | Notes |
 |---|---|---|---|---|---|
 | `layout_type` | layout_type | Manager | `"grid"` |  |  |
-| `layout_spacing` | number | Spacing | `4` | min=`0`, max=`200` | hidden when <function <lambda> at 0x000001A986B05B10> |
-| `grid_rows` | number | R | `2` | min=`1`, max=`50` | hidden when <function <lambda> at 0x000001A986B05BC0> |
-| `grid_cols` | number | C | `2` | min=`1`, max=`50` | hidden when <function <lambda> at 0x000001A986B05BC0> |
+| `layout_spacing` | number | Spacing | `4` | min=`0`, max=`200` | hidden when <function <lambda> at 0x000001FFC405DC70> |
+| `grid_rows` | number | R | `2` | min=`1`, max=`50` | hidden when <function <lambda> at 0x000001FFC405DD20> |
+| `grid_cols` | number | C | `2` | min=`1`, max=`50` | hidden when <function <lambda> at 0x000001FFC405DD20> |
 
 <!-- BEGIN MANUAL -->
 ### Notes — Grid Layout
@@ -1377,8 +1377,8 @@ _(none yet)_
 |---|---|---|---|---|---|
 | `corner_radius` | number | Corner Radius | `8` | min=`1`, max=`50` |  |
 | `border_enabled` | boolean | Enabled | `False` |  |  |
-| `border_width` | number | Thickness | `2` | min=`1`, max=`20` | disabled when <function CTkProgressBarDescriptor.<lambda> at 0x000001A986B1CEB0> |
-| `border_color` | color | Color | `"#7a7a7a"` |  | disabled when <function CTkProgressBarDescriptor.<lambda> at 0x000001A986B1CF60> |
+| `border_width` | number | Thickness | `2` | min=`1`, max=`20` | disabled when <function CTkProgressBarDescriptor.<lambda> at 0x000001FFC4079170> |
+| `border_color` | color | Color | `"#7a7a7a"` |  | disabled when <function CTkProgressBarDescriptor.<lambda> at 0x000001FFC4079220> |
 
 ### Main Colors
 
@@ -1412,11 +1412,11 @@ _(none yet)_
 | Property | Type | Label | Default | Range / Values | Notes |
 |---|---|---|---|---|---|
 | `show_text` | boolean | Show | `True` |  |  |
-| `suffix` | unit | Unit | `"%"` |  | disabled when <function CircularProgressDescriptor.<lambda> at 0x000001A986B4FB60> |
-| `text_color` | color | Color | `"#ffffff"` |  | disabled when <function CircularProgressDescriptor.<lambda> at 0x000001A986B6C7D0> |
-| `font_family` | font | Font | `"TkDefaultFont"` |  | disabled when <function CircularProgressDescriptor.<lambda> at 0x000001A986B6C880> |
-| `font_size` | number | Size | `18` | min=`8`, max=`72` | disabled when <function CircularProgressDescriptor.<lambda> at 0x000001A986B6C930> |
-| `font_bold` | boolean | Bold | `True` |  | disabled when <function CircularProgressDescriptor.<lambda> at 0x000001A986B6C9E0> |
+| `suffix` | unit | Unit | `"%"` |  | disabled when <function CircularProgressDescriptor.<lambda> at 0x000001FFC409FCC0> |
+| `text_color` | color | Color | `"#ffffff"` |  | disabled when <function CircularProgressDescriptor.<lambda> at 0x000001FFC40B4930> |
+| `font_family` | font | Font | `"TkDefaultFont"` |  | disabled when <function CircularProgressDescriptor.<lambda> at 0x000001FFC40B49E0> |
+| `font_size` | number | Size | `18` | min=`8`, max=`72` | disabled when <function CircularProgressDescriptor.<lambda> at 0x000001FFC40B4A90> |
+| `font_bold` | boolean | Bold | `True` |  | disabled when <function CircularProgressDescriptor.<lambda> at 0x000001FFC40B4B40> |
 
 ### Geometry
 

@@ -84,7 +84,7 @@ class CTkLabelDescriptor(WidgetDescriptor):
          "group": "Text", "row_label": "Size", "min": 6, "max": 96,
          "disabled_when": lambda p: bool(p.get("font_autofit", False))},
         {"name": "font_autofit", "type": "boolean", "label": "",
-         "group": "Text", "row_label": "Best Fit"},
+         "group": "Text", "row_label": "Auto Fit"},
 
         {"name": "font_bold", "type": "boolean", "label": "",
          "group": "Text", "subgroup": "Style", "row_label": "Bold"},
@@ -226,7 +226,7 @@ class CTkLabelDescriptor(WidgetDescriptor):
 
     # ==================================================================
     # Derived properties:
-    #   - Autofit (Best Fit)        — derives font_size from box + text
+    #   - Autofit (Auto Fit)        — derives font_size from box + text
     #   - Preserve aspect           — derives image_height from image_width
     # ==================================================================
     @classmethod
@@ -236,7 +236,7 @@ class CTkLabelDescriptor(WidgetDescriptor):
         # --- Autofit font size ----------------------------------------
         prev_stash = properties.get("_font_size_pre_autofit")
         if not properties.get("font_autofit"):
-            # Toggling Best Fit off — restore the size we stashed when
+            # Toggling Auto Fit off — restore the size we stashed when
             # it turned on, so the user gets back their pre-autofit
             # value instead of the autofit-derived one.
             if prev_stash is not None:

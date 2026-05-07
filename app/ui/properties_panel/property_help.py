@@ -199,7 +199,7 @@ PROPERTY_HELP: dict[str, dict[str, str]] = {
     "font_size": {
         "description": "Font size in pixels.",
         "warning": (
-            "Ignored while Best Fit is on — autofit drives the size."
+            "Ignored while Auto Fit is on — autofit drives the size."
         ),
     },
     "font_autofit": {

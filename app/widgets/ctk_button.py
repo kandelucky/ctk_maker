@@ -89,7 +89,7 @@ class CTkButtonDescriptor(WidgetDescriptor):
          "group": "Text", "row_label": "Size", "min": 6, "max": 96,
          "disabled_when": lambda p: bool(p.get("font_autofit", False))},
         {"name": "font_autofit", "type": "boolean", "label": "",
-         "group": "Text", "row_label": "Best Fit"},
+         "group": "Text", "row_label": "Auto Fit"},
 
         {"name": "font_bold", "type": "boolean", "label": "",
          "group": "Text", "subgroup": "Style", "row_label": "Bold"},
@@ -230,7 +230,7 @@ class CTkButtonDescriptor(WidgetDescriptor):
     }
 
     # ==================================================================
-    # Autofit (Best Fit) — derives font_size from width/height/text
+    # Autofit (Auto Fit) — derives font_size from width/height/text
     # ==================================================================
     @classmethod
     def compute_derived(cls, properties: dict) -> dict:
