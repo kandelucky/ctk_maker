@@ -37,6 +37,16 @@ import customtkinter as ctk
 class CircleLabel(ctk.CTkLabel):
     """CTkLabel override — full-radius support without Frame growth."""
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Take the inner CTkCanvas out of Tab traversal. Canvas's default
+        # ``takefocus=""`` defers to Tk's heuristic, which includes any
+        # widget that has class-level key bindings — and Canvas does, so
+        # traversal walks through it before reaching the inner tk.Label.
+        # Result: ``takefocus=True`` labels need 2 Tab presses per move.
+        # Forcing ``0`` here keeps focus on the inner tk.Label only.
+        self._canvas.configure(takefocus=0)
+
     def _create_grid(self):
         # Temporarily zero ``_corner_radius`` so the parent's ``padx``
         # computation (``min(corner_radius, height/2)``) collapses to
