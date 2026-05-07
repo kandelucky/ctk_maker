@@ -2371,6 +2371,7 @@ def _emit_widget(
     props = node.properties
     node_only: set[str] = getattr(descriptor, "_NODE_ONLY_KEYS", set())
     font_keys: set[str] = getattr(descriptor, "_FONT_KEYS", set())
+    shadow_keys: set[str] = getattr(descriptor, "_SHADOW_KEYS", set())
     multiline_list_keys: set[str] = getattr(
         descriptor, "multiline_list_keys", set(),
     )
@@ -2446,7 +2447,12 @@ def _emit_widget(
                 continue  # stale binding — drop the kwarg entirely
         # Standard skip filter applies to non-binding (or
         # literal-substituted) values only.
-        if key in node_only or key in font_keys or key == "image":
+        if (
+            key in node_only
+            or key in font_keys
+            or key in shadow_keys
+            or key == "image"
+        ):
             continue
         if key in overrides:
             val = overrides[key]
@@ -2478,7 +2484,12 @@ def _emit_widget(
     # exported as 80px because CTk re-fits to content.
     emitted = {k for k, _ in kwargs}
     for key, val in overrides.items():
-        if key in emitted or key in node_only or key in font_keys:
+        if (
+            key in emitted
+            or key in node_only
+            or key in font_keys
+            or key in shadow_keys
+        ):
             continue
         if key in LAYOUT_NODE_ONLY_KEYS:
             continue

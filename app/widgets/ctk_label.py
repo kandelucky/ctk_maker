@@ -356,6 +356,18 @@ class CTkLabelDescriptor(WidgetDescriptor):
     # Builder → CTkLabel kwargs
     # ==================================================================
     @classmethod
+    def export_kwarg_overrides(cls, properties: dict) -> dict:
+        # Mirror transform_properties' "wrap on + length 0 → derive from
+        # width" rule so exported code wraps the same way the editor does.
+        if properties.get("font_wrap") and not properties.get("wraplength"):
+            try:
+                w = int(properties.get("width", 100))
+            except (ValueError, TypeError):
+                w = 100
+            return {"wraplength": max(1, w - 8)}
+        return {}
+
+    @classmethod
     def transform_properties(cls, properties: dict) -> dict:
         result = {
             k: v for k, v in properties.items()
