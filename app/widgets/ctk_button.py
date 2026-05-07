@@ -132,8 +132,7 @@ class CTkButtonDescriptor(WidgetDescriptor):
         {"name": "image_height", "type": "number", "label": "H",
          "group": "Icon",
          "pair": "img_size", "min": 4, "max": 512,
-         "disabled_when": lambda p: (
-             not p.get("image") or bool(p.get("preserve_aspect")))},
+         "disabled_when": lambda p: not p.get("image")},
         {"name": "compound", "type": "compound", "label": "",
          "group": "Icon", "row_label": "Icon Side",
          "disabled_when": lambda p: not p.get("image")},

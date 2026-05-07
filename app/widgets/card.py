@@ -105,8 +105,7 @@ class CardDescriptor(WidgetDescriptor):
         {"name": "image_height", "type": "number", "label": "H",
          "group": "Image", "pair": "image_size",
          "min": 4, "max": 4000,
-         "disabled_when": lambda p:
-             not p.get("image") or bool(p.get("image_preserve_aspect"))},
+         "disabled_when": lambda p: not p.get("image")},
         {"name": "image_preserve_aspect", "type": "boolean", "label": "",
          "group": "Image", "row_label": "Preserve Aspect",
          "disabled_when": lambda p: not p.get("image")},
@@ -189,17 +188,14 @@ class CardDescriptor(WidgetDescriptor):
 
     derived_triggers = {
         "shape_type", "width", "height",
-        "image", "image_width", "image_preserve_aspect",
     }
-
-    _aspect_cache: dict[str, float] = {}
 
     @classmethod
     def compute_derived(cls, properties: dict) -> dict:
-        # Lock corner_radius to the shape mode + auto-derive
-        # image_height from image_width when Preserve Aspect is on.
-        # Computed once per change — the dispatcher applies the diff
-        # back onto the node, then re-renders.
+        # Lock corner_radius to the shape mode. Image aspect is now
+        # handled at render time inside ``_sync_image_label`` (and the
+        # exporter mirrors it) so the icon can contain-fit the image
+        # without touching the stored ``image_height``.
         out: dict = {}
         shape = properties.get("shape_type", SHAPE_ROUNDED)
         try:
@@ -214,41 +210,7 @@ class CardDescriptor(WidgetDescriptor):
             target = max(0, min(w, h) // 2)
             if int(properties.get("corner_radius", -1) or -1) != target:
                 out["corner_radius"] = target
-        # Image aspect derive: only when an image is set AND the user
-        # asked for Preserve Aspect. Reads the image's natural ratio
-        # from disk (cached per path) and recomputes height from the
-        # current image_width.
-        image_path = properties.get("image")
-        if image_path and properties.get(
-            "image_preserve_aspect",
-        ):
-            ratio = cls._image_aspect_ratio(image_path)
-            if ratio and ratio > 0:
-                try:
-                    iw = int(properties.get("image_width", 48) or 48)
-                except (TypeError, ValueError):
-                    iw = 48
-                new_ih = max(4, int(round(iw / ratio)))
-                if int(
-                    properties.get("image_height", 0) or 0,
-                ) != new_ih:
-                    out["image_height"] = new_ih
         return out
-
-    @classmethod
-    def _image_aspect_ratio(cls, image_path: str) -> float | None:
-        if image_path in cls._aspect_cache:
-            return cls._aspect_cache[image_path]
-        try:
-            from PIL import Image as PILImage
-            with PILImage.open(image_path) as im:
-                iw, ih = im.size
-            ratio = iw / ih if ih else None
-        except Exception:
-            ratio = None
-        if ratio is not None:
-            cls._aspect_cache[image_path] = ratio
-        return ratio
 
     @classmethod
     def _tint_image(cls, img, hex_color: str):
@@ -311,6 +273,22 @@ class CardDescriptor(WidgetDescriptor):
             ih = max(4, int(properties.get("image_height", 48) or 48))
         except (TypeError, ValueError):
             iw = ih = 48
+        # Contain-fit when image_preserve_aspect=True so the exported
+        # code matches what ``_sync_image_label`` renders in the
+        # designer: scale the native image so it fits inside the
+        # (image_width, image_height) box with the smaller side
+        # dictating.
+        if properties.get("image_preserve_aspect"):
+            try:
+                from PIL import Image as PILImage
+                with PILImage.open(image_path) as probe:
+                    nw, nh = probe.size
+                if nw > 0 and nh > 0:
+                    scale = min(iw / nw, ih / nh)
+                    iw = max(1, int(round(nw * scale)))
+                    ih = max(1, int(round(nh * scale)))
+            except Exception:
+                pass
         anchor = properties.get("image_anchor") or "center"
         relx, rely = _ANCHOR_REL.get(anchor, (0.5, 0.5))
         try:
@@ -393,11 +371,22 @@ class CardDescriptor(WidgetDescriptor):
             img = PILImage.open(image_path)
             if img.mode != "RGBA":
                 img = img.convert("RGBA")
+            native_w, native_h = img.size
             tint = properties.get("image_color")
             if tint and tint != "transparent":
                 img = cls._tint_image(img, tint)
             iw = max(4, int(properties.get("image_width", 48) or 48))
             ih = max(4, int(properties.get("image_height", 48) or 48))
+            # image_preserve_aspect=True → contain-fit the native image
+            # inside the (image_width, image_height) box: scale by the
+            # smaller side, longer axis leaves padding around the icon.
+            # Render-time so saved-state mismatches and live edits both
+            # render correctly without an OFF→ON toggle.
+            if (properties.get("image_preserve_aspect")
+                    and native_w > 0 and native_h > 0):
+                scale = min(iw / native_w, ih / native_h)
+                iw = max(1, int(round(native_w * scale)))
+                ih = max(1, int(round(native_h * scale)))
             ctk_img = ctk.CTkImage(
                 light_image=img, dark_image=img, size=(iw, ih),
             )

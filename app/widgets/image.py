@@ -10,7 +10,9 @@ Groups shown in the Properties panel, in order
 
     Image       — file path, preserve aspect
     Tint        — optional normal colour overlay (icon-style tint)
-    Geometry    — x/y, width/height (= image pixel size)
+    Geometry    — x/y, width/height (= widget bounding box; with
+                  preserve_aspect on the image is contain-fit + centred,
+                  with it off the image stretches to fill)
     Main Colors — background colour (transparent by default)
 """
 from pathlib import Path
@@ -41,7 +43,7 @@ class ImageDescriptor(WidgetDescriptor):
         "height": 128,
         # Image — bundled sample so a fresh drop shows something.
         "image": DEFAULT_IMAGE_PATH,
-        "preserve_aspect": True,
+        "preserve_aspect": False,
         # Tint
         "image_color": None,
         # Main colors
@@ -79,8 +81,7 @@ class ImageDescriptor(WidgetDescriptor):
          "min": 4, "max": 4000},
         {"name": "height", "type": "number", "label": "H",
          "group": "Geometry", "pair": "size",
-         "min": 4, "max": 4000,
-         "disabled_when": lambda p: bool(p.get("preserve_aspect"))},
+         "min": 4, "max": 4000},
 
         # --- Main Colors -------------------------------------------------
         {"name": "fg_color", "type": "color", "label": "",
@@ -93,46 +94,6 @@ class ImageDescriptor(WidgetDescriptor):
         "image", "image_color",
         "preserve_aspect",
     }
-
-    _aspect_cache: dict[str, float] = {}
-    derived_triggers = {"image", "width", "preserve_aspect"}
-
-    # ------------------------------------------------------------------
-    # Derived geometry (preserve_aspect)
-    # ------------------------------------------------------------------
-    @classmethod
-    def compute_derived(cls, properties: dict) -> dict:
-        if not properties.get("preserve_aspect"):
-            return {}
-        image_path = properties.get("image")
-        if not image_path:
-            return {}
-        ratio = cls._aspect_ratio(image_path)
-        if ratio is None or ratio <= 0:
-            return {}
-        try:
-            width = int(properties.get("width", 128))
-        except (TypeError, ValueError):
-            return {}
-        new_h = max(4, int(round(width / ratio)))
-        if int(properties.get("height", 0) or 0) != new_h:
-            return {"height": new_h}
-        return {}
-
-    @classmethod
-    def _aspect_ratio(cls, image_path: str) -> float | None:
-        if image_path in cls._aspect_cache:
-            return cls._aspect_cache[image_path]
-        try:
-            from PIL import Image as PILImage
-            with PILImage.open(image_path) as im:
-                w, h = im.size
-            ratio = w / h if h else None
-        except Exception:
-            ratio = None
-        if ratio is not None:
-            cls._aspect_cache[image_path] = ratio
-        return ratio
 
     # ------------------------------------------------------------------
     # Property → CTkLabel kwargs
@@ -164,16 +125,35 @@ class ImageDescriptor(WidgetDescriptor):
 
     @classmethod
     def _build_image(cls, properties: dict, image_path: str):
+        # preserve_aspect=True → contain-fit the native image inside the
+        # widget's bounding box, scaling by the smaller side and letting
+        # CTkLabel's center anchor pad the longer axis. preserve_aspect
+        # =False keeps the legacy behaviour where the image stretches to
+        # fill the box. Fitting lives here (not in `compute_derived`)
+        # so resize-handle drags — which write width and height in two
+        # separate `update_property` calls — stay aspect-preserved on
+        # every tick. The previous derive-height-from-width path was
+        # racey: width's derived height was overwritten by the drag's
+        # raw height the very next call, leaving the icon stretched
+        # until the user toggled the flag off and on.
         try:
             from PIL import Image
             img = Image.open(image_path)
             if img.mode != "RGBA":
                 img = img.convert("RGBA")
+            native_w, native_h = img.size
             color = properties.get("image_color")
             if color:
                 img = cls._tint_image(img, color)
-            iw = int(properties.get("width", 128) or 128)
-            ih = int(properties.get("height", 128) or 128)
+            box_w = int(properties.get("width", 128) or 128)
+            box_h = int(properties.get("height", 128) or 128)
+            if (properties.get("preserve_aspect")
+                    and native_w > 0 and native_h > 0):
+                scale = min(box_w / native_w, box_h / native_h)
+                iw = max(1, int(round(native_w * scale)))
+                ih = max(1, int(round(native_h * scale)))
+            else:
+                iw, ih = box_w, box_h
             return ctk.CTkImage(
                 light_image=img, dark_image=img, size=(iw, ih),
             )

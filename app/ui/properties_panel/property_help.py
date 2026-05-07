@@ -276,10 +276,7 @@ PROPERTY_HELP: dict[str, dict[str, str]] = {
     },
     "image_height": {
         "description": "Icon height in pixels.",
-        "warning": (
-            "Ignored when Preserve Aspect is on (height derives "
-            "from width) or when no image is set."
-        ),
+        "warning": "Has no effect when no image is set.",
     },
     "compound": {
         "description": (
@@ -289,8 +286,9 @@ PROPERTY_HELP: dict[str, dict[str, str]] = {
     },
     "preserve_aspect": {
         "description": (
-            "Lock the icon's height to its native aspect ratio. "
-            "Height becomes derived from width."
+            "Keep the image's native aspect ratio — the icon is "
+            "contain-fit inside the (W, H) box, scaled by the smaller "
+            "side so it never stretches."
         ),
         "warning": "Has no effect when no image is set.",
     },

@@ -2913,36 +2913,41 @@ def _path_for_export(image_path: str) -> str:
         return str(image_path).replace("\\", "/")
 
 
-def _aspect_corrected_height(
+def _aspect_corrected_size(
     props: dict, image_path: str, iw: int, ih: int,
-) -> int:
-    """Override ``ih`` with the aspect-derived value when
-    ``preserve_aspect=True``. Mirrors the runtime ``_build_image``
-    rule so a project saved with a stale ``image_height`` still
-    exports a non-stretched icon. Returns ``ih`` unchanged when
-    the flag is off, the file can't be read, or the image is empty.
+) -> tuple[int, int]:
+    """Contain-fit ``(iw, ih)`` against the image's native dimensions
+    when ``preserve_aspect=True``. Scales by the smaller side so the
+    icon fits inside the (image_width, image_height) box with native
+    aspect intact. Mirrors the runtime ``_build_image`` rule so the
+    exported code matches what the designer sees, regardless of what
+    ``image_height`` was stored in the project file. Returns the
+    inputs unchanged when the flag is off or the file can't be read.
     """
     if not props.get("preserve_aspect"):
-        return ih
+        return iw, ih
     try:
         from PIL import Image as PILImage
         with PILImage.open(image_path) as probe:
             nw, nh = probe.size
         if nw > 0 and nh > 0:
-            return max(1, int(round(iw * nh / nw)))
+            scale = min(iw / nw, ih / nh)
+            return (
+                max(1, int(round(nw * scale))),
+                max(1, int(round(nh * scale))),
+            )
     except Exception:
         pass
-    return ih
+    return iw, ih
 
 
 def _image_source(props: dict, image_path: str) -> str:
     if "image_width" in props or "image_height" in props:
         iw = _safe_int(props.get("image_width"), 20)
         ih = _safe_int(props.get("image_height"), 20)
-        # Icon-mode aspect correction. Image-widget contain-fit lives
-        # on a different prop pair (width/height) with different
-        # semantics — handled elsewhere, skip here.
-        ih = _aspect_corrected_height(props, image_path, iw, ih)
+        # Icon-mode contain-fit. Image-widget keeps its own width/height
+        # branch below — different semantic, handled separately.
+        iw, ih = _aspect_corrected_size(props, image_path, iw, ih)
     else:
         iw = _safe_int(props.get("width"), 64)
         ih = _safe_int(props.get("height"), 64)
@@ -3006,7 +3011,7 @@ def _image_source_with_color(
     if "image_width" in props or "image_height" in props:
         iw = _safe_int(props.get("image_width"), 20)
         ih = _safe_int(props.get("image_height"), 20)
-        ih = _aspect_corrected_height(props, image_path, iw, ih)
+        iw, ih = _aspect_corrected_size(props, image_path, iw, ih)
     else:
         iw = _safe_int(props.get("width"), 64)
         ih = _safe_int(props.get("height"), 64)
