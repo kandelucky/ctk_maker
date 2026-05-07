@@ -61,10 +61,11 @@ def test_catalog_returns_ctk_button_defaults():
 
 
 def test_catalog_returns_empty_for_unknown_class():
-    # Custom widgets like CircleButton aren't on the customtkinter
-    # module — the catalog falls back to {} so emit-everything
-    # behavior is preserved.
+    # Custom widgets like CircleButton / CircleLabel aren't on the
+    # customtkinter module — the catalog falls back to {} so
+    # emit-everything behavior is preserved.
     assert _ctk_constructor_defaults("CircleButton") == {}
+    assert _ctk_constructor_defaults("CircleLabel") == {}
     assert _ctk_constructor_defaults("NotAClass") == {}
 
 

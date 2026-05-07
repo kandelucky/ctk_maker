@@ -1302,6 +1302,9 @@ def _generate_code_inner(
     needs_circle_button = any(
         w.widget_type == "CTkButton" for w in scoped_widgets
     )
+    needs_circle_label = any(
+        w.widget_type == "CTkLabel" for w in scoped_widgets
+    )
     needs_tk_import = (
         bool(project.variables)
         or has_local_vars
@@ -1379,6 +1382,10 @@ def _generate_code_inner(
 
     if needs_circle_button:
         lines.extend(_circle_button_class_lines())
+        lines.append("")
+
+    if needs_circle_label:
+        lines.extend(_circle_label_class_lines())
         lines.append("")
 
     if needs_auto_hover_text:
@@ -3046,6 +3053,21 @@ def _circle_button_class_lines() -> list[str]:
     from app.widgets.runtime.circle_button import CircleButton
 
     return inspect.getsource(CircleButton).splitlines()
+
+
+def _circle_label_class_lines() -> list[str]:
+    """Inline the ``CircleLabel`` runtime class (CTkLabel override
+    that zeroes the rounded-corner padx in ``_create_grid``) into
+    generated ``.py`` files. Source lives at
+    ``app/widgets/runtime/circle_label.py`` for builder use; reading
+    via ``inspect`` keeps a single edit propagating to every export.
+    The standard import block already covers ``customtkinter as ctk``.
+    """
+    import inspect
+
+    from app.widgets.runtime.circle_label import CircleLabel
+
+    return inspect.getsource(CircleLabel).splitlines()
 
 
 def _circular_progress_class_lines() -> list[str]:

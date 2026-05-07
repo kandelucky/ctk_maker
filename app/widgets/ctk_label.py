@@ -25,6 +25,17 @@ class CTkLabelDescriptor(WidgetDescriptor):
     type_name = "CTkLabel"
     display_name = "Label"
     prefers_fill_in_layout = True
+    # Live workspace + exported .py both render through ``CircleLabel``
+    # — a CTkLabel override that zeroes the rounded-corner padx
+    # reservation in ``_create_grid`` so full-circle / pill labels with
+    # text stop overflowing their nominal frame size. ``is_ctk_class =
+    # False`` + ``ctk_class_name = "CircleLabel"`` make the exporter
+    # emit a bare ``CircleLabel(...)`` constructor call (the class
+    # definition is inlined into the generated file by
+    # ``code_exporter``). Image descriptor still emits as
+    # ``ctk.CTkLabel(...)`` because its text is empty — no squeeze.
+    is_ctk_class = False
+    ctk_class_name = "CircleLabel"
 
     default_properties = {
         # Geometry
@@ -465,5 +476,6 @@ class CTkLabelDescriptor(WidgetDescriptor):
         kwargs = cls.transform_properties(properties)
         if init_kwargs:
             kwargs.update(init_kwargs)
-        widget = ctk.CTkLabel(master, **kwargs)
+        from app.widgets.runtime.circle_label import CircleLabel
+        widget = CircleLabel(master, **kwargs)
         return widget

@@ -177,7 +177,7 @@ That's the whole extension. No registration in palette, no manual import in Main
 |---|---|---|---|---|
 | `Window` | `window_descriptor.py` | — | — | Document metadata, not a palette widget |
 | `CTkButton` | `ctk_button.py` | Button | | Custom `CircleButton` shape support |
-| `CTkLabel` | `ctk_label.py` | Label | | Image + text composition |
+| `CTkLabel` | `ctk_label.py` | Label | | Custom `CircleLabel` shape support, image + text composition |
 | `CTkEntry` | `ctk_entry.py` | Entry | | textvariable binding |
 | `CTkTextbox` | `ctk_textbox.py` | Textbox | | Multiline |
 | `CTkCheckBox` | `ctk_check_box.py` | Check Box | | variable binding |
