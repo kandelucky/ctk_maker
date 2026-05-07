@@ -269,6 +269,18 @@ All methods default to no-op. Concrete editors override only what they need.
 
 Editors that need persistent on-row widgets (color swatches, drag-scrub overlays) register them via the panel's overlay tracking dicts in `properties_panel_v2/overlays.py`. The panel handles repositioning on scroll / tree refresh.
 
+## Property tooltips
+
+Hovering over a row's label column (`#0`) for ~750 ms surfaces a dark popup with a description and an optional ⚠ warning. Content lives in `properties_panel_v2/property_help.py`:
+
+- `PROPERTY_HELP[<pname>]` — for `p:<pname>` rows.
+- `ROW_HELP["pair:<name>"]` — for virtual numeric pairs (Position, Size, …).
+- `ROW_HELP["g:<group>/<sub>"]` — for schema subgroups (e.g. `Text/Style`).
+
+Event-header rows (`events:e:N`) source from `EventEntry.label` + `EventEntry.warning` in [`app/widgets/event_registry.py`](../../app/widgets/event_registry.py) — no per-event entries needed in `property_help.py`.
+
+V1 scope is CTkLabel; other widgets fall back to no tooltip (event rows excepted — they work for every widget). Adding entries for another widget = filling more keys in the same two dicts.
+
 ## Event registry
 
 [app/widgets/event_registry.py](../../app/widgets/event_registry.py) — Phase 2 — defines what events each widget can have handlers for.

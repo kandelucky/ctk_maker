@@ -60,6 +60,8 @@ from .overlays import (
 )
 from .panel_commit import CommitMixin
 from .panel_schema import SchemaMixin
+from .property_help import PROPERTY_HELP, ROW_HELP
+from .tooltip import PropertyTooltip
 from .type_icons import icon_for_type
 
 
@@ -425,6 +427,11 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             "missing_method", foreground="#ef4444", background=TREE_BG,
         )
 
+        # Tooltip created BEFORE the scrollbar wires up — yscrollcommand
+        # may fire during initial layout, and ``_on_yscrollcommand``
+        # touches ``self._tooltip``.
+        self._tooltip = PropertyTooltip(self.tree)
+
         vscroll = ctk.CTkScrollbar(
             wrap, orientation="vertical", command=self._on_vscroll,
             width=10, corner_radius=4,
@@ -454,6 +461,13 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         self.tree.bind("<<TreeviewClose>>", self._on_group_close, add="+")
         self.tree.bind("<Configure>", self._on_layout_change, add="+")
         self.tree.bind("<FocusOut>", self._on_tree_focus_out, add="+")
+        self.tree.bind("<Motion>", self._on_tree_motion, add="+")
+        self.tree.bind("<Leave>", self._on_tree_leave, add="+")
+        self.tree.bind(
+            "<MouseWheel>",
+            lambda _e: self._tooltip.cancel(),
+            add="+",
+        )
 
         self.overlays = OverlayRegistry(self.tree)
         self._drag_scrub = DragScrubController(self)
@@ -490,10 +504,12 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
     def _on_yscrollcommand(self, first, last) -> None:
         self._vscroll.set(first, last)
         self._schedule_reposition()
+        self._tooltip.cancel()
 
     def _on_vscroll(self, *args) -> None:
         self.tree.yview(*args)
         self._schedule_reposition()
+        self._tooltip.cancel()
 
     def _on_layout_change(self, _event=None) -> None:
         self._schedule_reposition()
@@ -529,6 +545,103 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
             self.tree.focus("")
         except tk.TclError:
             pass
+        self._tooltip.cancel()
+
+    # ==================================================================
+    # Property help tooltip
+    # ==================================================================
+    def _on_tree_motion(self, event) -> None:
+        # Only the property-name column (#0) gets a tooltip — value-cell
+        # hover would compete with the inline editors and color swatches.
+        if event.x > PROP_COL_WIDTH:
+            self._tooltip.cancel()
+            return
+
+        iid = self.tree.identify_row(event.y)
+        if not iid:
+            self._tooltip.cancel()
+            return
+
+        # Event rows — work for every widget type, sourced from the
+        # event registry (label + warning already maintained there).
+        if iid.startswith("events:e:"):
+            self._show_event_tooltip(iid, event.x_root, event.y_root)
+            return
+
+        # Property + subgroup rows — V1 scope is CTkLabel only.
+        if not self._is_label_selected():
+            self._tooltip.cancel()
+            return
+
+        # Parent rows — virtual numeric pairs (``pair:pos`` / ``pair:size``
+        # / ``pair:pad`` / ``pair:img_size``) and schema subgroups
+        # (``g:Text/Style``, ``g:Text/Wrap``). Top-level group headers
+        # (``g:<group>`` without ``/``) intentionally have no tooltip:
+        # the names ("Text", "Geometry", ...) read as self-explanatory.
+        if iid.startswith("pair:") or (
+            iid.startswith("g:") and "/" in iid
+        ):
+            entry = ROW_HELP.get(iid)
+            if entry is None:
+                self._tooltip.cancel()
+                return
+            self._tooltip.schedule(
+                event.x_root, event.y_root,
+                entry["description"],
+                entry.get("warning"),
+                key=iid,
+            )
+            return
+
+        if iid.startswith("p:"):
+            pname = iid[2:]
+            entry = PROPERTY_HELP.get(pname)
+            if entry is None:
+                self._tooltip.cancel()
+                return
+            self._tooltip.schedule(
+                event.x_root, event.y_root,
+                entry["description"],
+                entry.get("warning"),
+                key=pname,
+            )
+            return
+
+        self._tooltip.cancel()
+
+    def _show_event_tooltip(
+        self, iid: str, x_root: int, y_root: int,
+    ) -> None:
+        from app.widgets.event_registry import event_by_key
+        meta = self._event_row_meta.get(iid)
+        if meta is None or meta[0] != "header" or self.current_id is None:
+            self._tooltip.cancel()
+            return
+        node = self.project.get_widget(self.current_id)
+        if node is None:
+            self._tooltip.cancel()
+            return
+        entry = event_by_key(node.widget_type, meta[1])
+        if entry is None:
+            self._tooltip.cancel()
+            return
+        label = (entry.label[:1].upper() + entry.label[1:]).rstrip(".")
+        description = f"{label}. Trigger: {entry.key}"
+        warning = entry.warning or None
+        self._tooltip.schedule(
+            x_root, y_root, description, warning, key=f"event:{iid}",
+        )
+
+    def _on_tree_leave(self, _event=None) -> None:
+        self._tooltip.cancel()
+
+    def _is_label_selected(self) -> bool:
+        if self.current_id is None:
+            return False
+        node = self.project.get_widget(self.current_id)
+        if node is None:
+            return False
+        return getattr(node, "widget_type", None) == "CTkLabel"
 
     # ==================================================================
     # Event bus handlers
@@ -549,6 +662,7 @@ class PropertiesPanelV2(CommitMixin, SchemaMixin, ctk.CTkFrame):
         except tk.TclError:
             pass
         self.winfo_toplevel().focus_set()
+        self._tooltip.cancel()
 
     def _on_property_changed(
         self, widget_id: str, prop_name: str, value,

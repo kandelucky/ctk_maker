@@ -33,6 +33,14 @@ PROP_COL_WIDTH = 170
 ROW_HEIGHT = 28
 PANEL_MIN_WIDTH = 300
 
+# Property tooltip — dark popup shown on label-column hover.
+TOOLTIP_BG = "#2d2d30"
+TOOLTIP_FG = "#cccccc"
+TOOLTIP_WARNING_FG = "#fbbf24"
+TOOLTIP_BORDER = "#3f3f46"
+TOOLTIP_DELAY_MS = 750
+TOOLTIP_WRAPLENGTH = 320
+
 
 # =====================================================================
 # Enum value maps
