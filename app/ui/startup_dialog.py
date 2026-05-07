@@ -38,12 +38,16 @@ LOGO_SIZE = 28
 
 
 class StartupDialog(ctk.CTkToplevel):
-    def __init__(self, parent):
+    def __init__(self, parent, on_ready=None):
         super().__init__(parent)
+        # Hide before the WM maps the window; reveal at the end of
+        # __init__ once geometry has been positioned. Otherwise the
+        # window flashes at the WM-default location and jumps to the
+        # centered position.
+        self.withdraw()
         self.title("CTkMaker")
         self.resizable(False, False)
         self.transient(parent)
-        safe_grab_set(self)
         self.configure(fg_color=BG)
 
         self.result: tuple | None = None
@@ -59,19 +63,32 @@ class StartupDialog(ctk.CTkToplevel):
         self.bind("<Escape>", lambda e: self._on_close())
         self.bind("<Return>", lambda e: self._on_create())
 
+        if on_ready is not None:
+            try:
+                on_ready()
+            except Exception:
+                pass
+        self.deiconify()
+        safe_grab_set(self)
+
     # ------------------------------------------------------------------
     # Layout
     # ------------------------------------------------------------------
     def _center_on_screen(self) -> None:
         # Use the cached work-area helper — no Tk geometry queries,
         # no update_idletasks pump. Falls back to Tk's screen size
-        # only when the Win32 work-area lookup fails.
-        geom = center_geometry(DIALOG_W, DIALOG_H)
+        # only when the Win32 work-area lookup fails. Pass our CTk
+        # window scaling so center_geometry accounts for the scaling
+        # CTk applies to width/height before placement.
+        scale = float(self._get_window_scaling() or 1.0)
+        geom = center_geometry(DIALOG_W, DIALOG_H, scale=scale)
         if geom is None:
             sw = self.winfo_screenwidth()
             sh = self.winfo_screenheight()
-            x = max(0, (sw - DIALOG_W) // 2)
-            y = max(0, (sh - DIALOG_H) // 2)
+            physical_w = int(DIALOG_W * scale)
+            physical_h = int(DIALOG_H * scale)
+            x = max(0, (sw - physical_w) // 2)
+            y = max(0, (sh - physical_h) // 2)
             geom = f"{DIALOG_W}x{DIALOG_H}+{x}+{y}"
         self.geometry(geom)
 

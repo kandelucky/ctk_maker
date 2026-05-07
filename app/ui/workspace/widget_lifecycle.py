@@ -161,6 +161,25 @@ class WidgetLifecycle:
                 continue
             self._apply_fill_default(descriptor, container_node, child)
 
+    def _refresh_derived_on_add(self, descriptor, node) -> None:
+        # Property-change triggers (workspace.core._apply_derived_props)
+        # only fire on edits — load/paste/undo restore widgets directly
+        # from a snapshot, so a stale derived value (e.g. font_size on
+        # a Label saved with font_autofit=true but a hand-edited size)
+        # would render until the user retoggles the trigger. Run
+        # compute_derived once before instantiation so the widget is
+        # built with the up-to-date value. Mutating node.properties
+        # in place (no event, no command) keeps undo history clean.
+        if not hasattr(descriptor, "compute_derived"):
+            return
+        try:
+            derived = descriptor.compute_derived(node.properties)
+        except Exception:
+            return
+        for k, v in (derived or {}).items():
+            if node.properties.get(k) != v:
+                node.properties[k] = v
+
     def _apply_fill_default(self, descriptor, parent_node, node) -> None:
         """Fresh drops of fill-friendly widgets (Button / Label / Entry
         / Frame / …) into a layout container commit ``stretch="fill"``
@@ -194,6 +213,7 @@ class WidgetLifecycle:
         if parent_node is not None:
             self._apply_fill_default(descriptor, parent_node, node)
             self._auto_assign_grid_cell(parent_node, node)
+        self._refresh_derived_on_add(descriptor, node)
         widget, anchor_widget = self._instantiate_widget(
             descriptor, node, master,
         )

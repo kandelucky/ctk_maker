@@ -16,35 +16,12 @@ from typing import Callable
 import customtkinter as ctk
 
 from app.core.logger import log_error
+from app.core.screen import get_dpi_factor
 from app.ui.icons import load_icon
 
 ZOOM_LEVELS = (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0)
 ZOOM_MIN = ZOOM_LEVELS[0]
 ZOOM_MAX = ZOOM_LEVELS[-1]
-
-
-def _detect_dpi_factor() -> float:
-    """System DPI factor used to size canvas-side drawing so it tracks
-    CTk's DPI-aware widget rendering. 1.0 on 96-DPI; 1.25 on 125 %;
-    1.5 on 150 %, etc. Non-Windows falls back to 1.0 since CTk's
-    ScalingTracker only reports an OS factor on Windows.
-    """
-    import sys
-    if sys.platform != "win32":
-        return 1.0
-    try:
-        import ctypes
-        try:
-            ctypes.windll.shcore.SetProcessDpiAwareness(1)
-        except Exception:
-            try:
-                ctypes.windll.user32.SetProcessDPIAware()
-            except Exception:
-                pass
-        dpi = ctypes.windll.user32.GetDpiForSystem()
-        return max(1.0, dpi / 96.0)
-    except Exception:
-        return 1.0
 
 ZOOM_MENU_LABELS = [
     "25%", "50%", "75%", "100%", "125%", "150%", "200%", "300%", "400%",
@@ -80,7 +57,11 @@ class ZoomController:
         # runtime physical size — fixes the "button overflows window"
         # illusion on high-DPI displays where canvas coords are raw
         # physical pixels but CTk widgets render at logical × DPI.
-        self._dpi_factor: float = _detect_dpi_factor()
+        # DPI factor is the OS scaling multiplier (96 DPI → 1.0,
+        # 150 % → 1.5). Read from the central cache in ``screen.py``
+        # — awareness is set in ``main.main()`` before any Tk widget
+        # so the value is stable from process start.
+        self._dpi_factor: float = get_dpi_factor()
         self._menu: ctk.CTkOptionMenu | None = None
         self._menu_var: tk.StringVar | None = None
         self._warning: ctk.CTkLabel | None = None

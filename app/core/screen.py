@@ -1,15 +1,21 @@
-"""Cached primary-monitor screen / work-area info.
+"""DPI factor + cached primary-monitor screen / work-area info.
 
-Computed once on first access and reused — monitor configuration
-rarely changes mid-session, and recomputing per dialog (especially
-via ``update_idletasks`` + Tk geometry queries) adds visible lag to
+The single source of truth for OS display metadata. CTk activates
+DPI awareness itself when ``ctk.CTk`` is instantiated, so we don't
+re-do that — we just read the resulting OS DPI here and let
+``ZoomController`` mirror CTk's widget scaling on the canvas.
+
+DPI factor + screen geometry are cached; monitor configuration
+rarely changes mid-session, and recomputing per dialog (via
+``update_idletasks`` + Tk geometry queries) adds visible lag to
 window opens.
 
-Returns physical-pixel coordinates that match what Tk's ``geometry()``
-expects (the app runs DPI-aware via ``SetProcessDpiAwareness(1)``).
-
-Use ``get_work_area()`` for centering — it excludes the taskbar so
-windows don't overlap it. ``get_screen_size()`` for raw screen pixels.
+``get_dpi_factor()`` returns the OS scaling multiplier
+(1.0 / 1.25 / 1.5 / …). ``get_work_area()`` for centering windows
+that should clear the taskbar; ``get_screen_size()`` for the raw
+monitor pixel rectangle. ``center_geometry(w, h, scale)`` builds
+a Tk geometry string with CTk's W/H scaling factored into the
+centering math.
 """
 from __future__ import annotations
 
@@ -18,6 +24,29 @@ import sys
 _work_area: tuple[int, int, int, int] | None = None
 _screen_size: tuple[int, int] | None = None
 _computed: bool = False
+_dpi_factor: float | None = None
+
+
+def get_dpi_factor() -> float:
+    """OS DPI factor as a multiplier: 96 DPI → 1.0, 125 % → 1.25,
+    150 % → 1.5, etc. Cached after first call. Non-Windows returns
+    1.0 since CTk's ScalingTracker only reports an OS factor on
+    Windows; designer canvas drawing on macOS / Linux falls back to
+    user-zoom only.
+    """
+    global _dpi_factor
+    if _dpi_factor is not None:
+        return _dpi_factor
+    if sys.platform != "win32":
+        _dpi_factor = 1.0
+        return _dpi_factor
+    try:
+        import ctypes
+        dpi = ctypes.windll.user32.GetDpiForSystem()
+        _dpi_factor = max(1.0, dpi / 96.0)
+    except Exception:
+        _dpi_factor = 1.0
+    return _dpi_factor
 
 
 def _compute() -> None:
@@ -68,17 +97,27 @@ def get_screen_size() -> tuple[int, int] | None:
     return _screen_size
 
 
-def center_geometry(w: int, h: int) -> str | None:
+def center_geometry(w: int, h: int, scale: float = 1.0) -> str | None:
     """Compute a Tk geometry string ``"WxH+X+Y"`` that centers a
     window of size ``w × h`` within the work area. Returns None when
     the work area isn't available — caller should use Tk-side info.
+
+    ``scale`` accommodates CTk's ``_apply_geometry_scaling``, which
+    multiplies width/height by the window scaling factor but leaves
+    x/y untouched. So the *physical* window footprint on screen is
+    ``w * scale × h * scale``, while the geometry string we return
+    still carries the logical ``w × h``. Passing ``scale=1.0`` (the
+    default) is correct for raw tk widgets; CTk callers pass
+    ``self._get_window_scaling()`` so the centering math compares
+    physical-against-physical against the work-area pixels we read
+    from Win32.
     """
     rect = get_work_area()
     if rect is None:
         return None
     left, top, right, bottom = rect
-    wa_w = right - left
-    wa_h = bottom - top
-    x = left + max(0, (wa_w - w) // 2)
-    y = top + max(0, (wa_h - h) // 2)
+    physical_w = w * scale
+    physical_h = h * scale
+    x = int(left + max(0, ((right - left) - physical_w) // 2))
+    y = int(top + max(0, ((bottom - top) - physical_h) // 2))
     return f"{w}x{h}+{x}+{y}"

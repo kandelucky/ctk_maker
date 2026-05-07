@@ -50,7 +50,7 @@ The PyPI package at [ctkmaker/](../../ctkmaker/) is a name-reservation stub. Run
 | `fonts.py`, `colors.py` | runtime helpers | Font registration + color utilities. |
 | `alignment.py`, `snap.py` | geometry | Multi-select alignment + snap-guide math. |
 | `platform_compat.py` | OS shims | Win32-specific helpers (work-area query, etc.). |
-| `screen.py` | DPI / monitor | Primary monitor work-area cache. |
+| `screen.py` | DPI / monitor | Cached DPI factor (`get_dpi_factor`), primary monitor work-area + scale-aware `center_geometry`. Single source of truth for OS display metadata. CTk activates DPI awareness itself when `ctk.CTk` is instantiated. |
 | `logger.py` | logging | `log_error` to `~/.ctk_visual_builder/logs/`. |
 
 ### `app/widgets/` — descriptors
