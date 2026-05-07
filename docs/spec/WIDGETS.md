@@ -460,7 +460,7 @@ _(none yet)_
   Multi-line text relative alignment is `justify` (stays in `Text`).
 - **Disabled visuals are manual, not Tk `state`.** `label_enabled=False`
   does NOT pass `state="disabled"` to the inner Tk Label — Windows-Tk
-  paints a native white "wash" over the `image=` in disabled mode,
+  paints a native stipple "wash" over the `image=` in disabled mode,
   which would make icons look broken when no `image_color_disabled`
   is set. Instead, `transform_properties` swaps `text_color` →
   `text_color_disabled` and lets `_build_image` apply
@@ -468,6 +468,19 @@ _(none yet)_
   Side effect: `state` is not set on the inner Tk Label, so
   `disabledforeground` is unused and `text_color_disabled` is read
   directly as the new `text_color` instead.
+  - **Export path mirrors this exactly.** `CTkLabelDescriptor.export_kwarg_overrides`
+    emits the same `text_color` swap, and `code_exporter._image_source`
+    recognises `label_enabled` alongside `button_enabled` to pick
+    `image_color_disabled` for the PIL tint. No `state="disabled"` is
+    emitted, so the exported `.py` shows the same stipple-free disabled
+    appearance the editor renders.
+  - **Cleared colour sentinel.** The colour editor's "cleared" value
+    is `"transparent"` (not `None`), so a cleared `image_color_disabled`
+    appears in `properties` as `"transparent"`. Both the descriptor's
+    `_build_image` and `code_exporter._image_source` normalise it back
+    to "no tint" before falling through the OR chain — without the
+    normalisation, `"transparent"` would short-circuit the OR and end
+    up in `_tint_image`'s hex parser, crashing the export.
 - **Image tint pipeline mirrors CTkButton.** `_build_image`,
   `_tint_image`, `_native_aspect`, `_aspect_cache`, and
   `compute_derived(preserve_aspect)` are 1:1 copies of the Button
