@@ -45,7 +45,7 @@ ANCHOR_CODE_TO_LABEL = {
 ANCHOR_LABEL_TO_CODE = {v: k for k, v in ANCHOR_CODE_TO_LABEL.items()}
 ANCHOR_DROPDOWN_ORDER = list(ANCHOR_CODE_TO_LABEL.values())
 
-COMPOUND_OPTIONS = ["top", "left", "right", "bottom"]
+COMPOUND_OPTIONS = ["top", "left", "right", "bottom", "center"]
 JUSTIFY_OPTIONS = ["left", "center", "right"]
 TAB_BAR_ALIGN_OPTIONS = ["left", "center", "right", "stretch"]
 TAB_BAR_POSITION_OPTIONS = ["top", "bottom"]
