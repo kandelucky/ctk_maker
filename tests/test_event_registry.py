@@ -3,6 +3,7 @@ from app.widgets.event_registry import (
     EventEntry,
     event_by_key,
     events_for,
+    events_partitioned,
 )
 
 
@@ -18,7 +19,6 @@ def test_events_for_button_has_single_command_entry():
 
 
 def test_events_for_unknown_widget_returns_empty_list():
-    assert events_for("CTkLabel") == []
     assert events_for("CompletelyMadeUpWidget") == []
 
 
@@ -67,3 +67,68 @@ def test_event_keys_are_unique_within_each_widget():
         assert len(keys) == len(set(keys)), (
             f"duplicate event key in {widget_type}: {keys}"
         )
+
+
+def test_event_entry_advanced_defaults_to_false():
+    entry = EventEntry(
+        "command", "on click", "click", "(self)", "command",
+    )
+
+    assert entry.advanced is False
+
+
+def test_ctk_label_split_into_five_default_and_eleven_advanced():
+    # CTkLabel is the first widget to use the advanced grouping —
+    # five default events stay on the flat list and eleven sit in
+    # the collapsible Advanced sub-section. Locking the split here
+    # so a future registry edit can't silently re-shuffle the
+    # default surface without an explicit test update.
+    default, advanced = events_partitioned("CTkLabel")
+    default_keys = {e.key for e in default}
+    advanced_keys = {e.key for e in advanced}
+
+    assert default_keys == {
+        "bind:<Button-1>",
+        "bind:<Double-Button-1>",
+        "bind:<Enter>",
+        "bind:<Leave>",
+        "bind:<MouseWheel>",
+    }
+    assert advanced_keys == {
+        "bind:<Button-2>",
+        "bind:<Button-3>",
+        "bind:<ButtonRelease-1>",
+        "bind:<Motion>",
+        "bind:<Configure>",
+        "bind:<Map>",
+        "bind:<Unmap>",
+        "bind:<FocusIn>",
+        "bind:<FocusOut>",
+        "bind:<KeyPress>",
+        "bind:<KeyRelease>",
+    }
+
+
+def test_events_partitioned_preserves_registration_order():
+    default, advanced = events_partitioned("CTkLabel")
+    full_order = [e.key for e in events_for("CTkLabel")]
+
+    # Each partition keeps its entries in the order they appear
+    # in EVENT_REGISTRY — callers rely on this for the cascade /
+    # panel rendering to match the source file.
+    assert [e.key for e in default] == [k for k in full_order if k in {e.key for e in default}]
+    assert [e.key for e in advanced] == [k for k in full_order if k in {e.key for e in advanced}]
+
+
+def test_events_partitioned_for_widget_without_advanced_events():
+    default, advanced = events_partitioned("CTkButton")
+
+    assert len(default) == 1
+    assert advanced == []
+
+
+def test_events_partitioned_unknown_widget_returns_two_empty_lists():
+    default, advanced = events_partitioned("CompletelyMadeUpWidget")
+
+    assert default == []
+    assert advanced == []

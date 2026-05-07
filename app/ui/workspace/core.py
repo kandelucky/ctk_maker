@@ -2103,38 +2103,53 @@ class Workspace(ctk.CTkFrame):
           row per bound method (click → jump to editor) followed by
           a ``+ Add another <event label> action`` row that appends
           a new method (Decision #10 multi-method).
+
+        Advanced events (``EventEntry.advanced=True``) render under a
+        nested ``Advanced ▸`` submenu instead of the top-level list,
+        so widgets with many bind-style events (CTkLabel) keep the
+        default surface short.
         """
-        from app.widgets.event_registry import events_for
+        from app.widgets.event_registry import events_partitioned
         if node is None:
             return None
-        events = events_for(node.widget_type)
-        if not events:
+        default_events, advanced_events = events_partitioned(node.widget_type)
+        if not default_events and not advanced_events:
             return None
         sub = tk.Menu(self.winfo_toplevel(), tearoff=0)
-        first_event = True
-        for entry in events:
-            methods = list(node.handlers.get(entry.key, []) or [])
-            if not first_event:
-                sub.add_separator()
-            first_event = False
-            if methods:
-                for idx, method in enumerate(methods):
-                    sub.add_command(
-                        label=f"{entry.label}  —  {method}",
-                        command=lambda nid=node.id, m=method:
-                            self._jump_to_handler_method(nid, m),
+
+        def _render_into(menu: tk.Menu, entries) -> None:
+            first = True
+            for entry in entries:
+                methods = list(node.handlers.get(entry.key, []) or [])
+                if not first:
+                    menu.add_separator()
+                first = False
+                if methods:
+                    for method in methods:
+                        menu.add_command(
+                            label=f"{entry.label}  —  {method}",
+                            command=lambda nid=node.id, m=method:
+                                self._jump_to_handler_method(nid, m),
+                        )
+                    menu.add_command(
+                        label=f"+  Add another {entry.label.lower()} action",
+                        command=lambda nid=node.id, key=entry.key:
+                            self._attach_event_handler(nid, key),
                     )
-                sub.add_command(
-                    label=f"+  Add another {entry.label.lower()} action",
-                    command=lambda nid=node.id, key=entry.key:
-                        self._attach_event_handler(nid, key),
-                )
-            else:
-                sub.add_command(
-                    label=f"+  {entry.label}",
-                    command=lambda nid=node.id, key=entry.key:
-                        self._attach_event_handler(nid, key),
-                )
+                else:
+                    menu.add_command(
+                        label=f"+  {entry.label}",
+                        command=lambda nid=node.id, key=entry.key:
+                            self._attach_event_handler(nid, key),
+                    )
+
+        _render_into(sub, default_events)
+        if advanced_events:
+            adv = tk.Menu(sub, tearoff=0)
+            _render_into(adv, advanced_events)
+            if default_events:
+                sub.add_separator()
+            sub.add_cascade(label="Advanced", menu=adv)
         return sub
 
     def _attach_event_handler(self, widget_id: str, event_key: str) -> None:

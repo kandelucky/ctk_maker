@@ -16,6 +16,11 @@ Properties panel "Handlers" group. Each ``EventEntry`` pairs:
 - ``wiring_kind`` — ``"command"`` (constructor kwarg) vs ``"bind"``
   (post-construction ``widget.bind(seq, fn)`` call). Read by Part 3's
   exporter + runtime wiring.
+- ``advanced`` — when True, the entry renders inside a collapsible
+  "Advanced" sub-section instead of the flat default list. Used to
+  shorten the surface for widgets with many bind events (CTkLabel)
+  by hiding rare / high-frequency / takefocus-gated events behind
+  one extra click. Default False.
 
 Adding a new widget's events: extend ``EVENT_REGISTRY`` here and the
 matching wiring in (Part 3) ``app/widgets/event_wirings.py``.
@@ -37,6 +42,14 @@ class EventEntry:
     # e.g. "fires at 60+ Hz" or "requires takefocus=True". Empty for
     # events that have no special precondition or perf concern.
     warning: str = ""
+    # When True, the event renders inside an "Advanced" sub-section
+    # (collapsible group in the Properties panel + nested submenu in
+    # the right-click cascade) instead of the flat default list.
+    # Reserved for events that are rarely needed, fire at high
+    # frequency, or carry a precondition the average user would not
+    # expect — keeps the default surface short while leaving the
+    # full registry one click away.
+    advanced: bool = False
 
 
 _COMMAND = "command"
@@ -62,15 +75,15 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
         ),
         EventEntry(
             "bind:<Button-2>", "on middle click", "middle_click",
-            "(self, event=None)", _BIND,
+            "(self, event=None)", _BIND, advanced=True,
         ),
         EventEntry(
             "bind:<Button-3>", "on right click", "right_click",
-            "(self, event=None)", _BIND,
+            "(self, event=None)", _BIND, advanced=True,
         ),
         EventEntry(
             "bind:<ButtonRelease-1>", "on mouse release", "mouse_release",
-            "(self, event=None)", _BIND,
+            "(self, event=None)", _BIND, advanced=True,
         ),
         # ----- Mouse motion / wheel -----
         EventEntry(
@@ -86,6 +99,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
             "(self, event=None)", _BIND,
             warning="Fires at 60+ Hz while the cursor is inside — "
                     "keep the handler cheap.",
+            advanced=True,
         ),
         EventEntry(
             "bind:<MouseWheel>", "on mouse wheel", "mouse_wheel",
@@ -97,14 +111,15 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
             "(self, event=None)", _BIND,
             warning="Fires repeatedly during a window resize — "
                     "keep the handler cheap.",
+            advanced=True,
         ),
         EventEntry(
             "bind:<Map>", "on shown", "shown",
-            "(self, event=None)", _BIND,
+            "(self, event=None)", _BIND, advanced=True,
         ),
         EventEntry(
             "bind:<Unmap>", "on hidden", "hidden",
-            "(self, event=None)", _BIND,
+            "(self, event=None)", _BIND, advanced=True,
         ),
         # ----- Focus / keyboard (require takefocus=True) -----
         EventEntry(
@@ -112,24 +127,28 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
             "(self, event=None)", _BIND,
             warning="Requires takefocus=True; the Label cannot "
                     "receive focus otherwise.",
+            advanced=True,
         ),
         EventEntry(
             "bind:<FocusOut>", "on focus out", "focus_out",
             "(self, event=None)", _BIND,
             warning="Requires takefocus=True; the Label cannot "
                     "receive focus otherwise.",
+            advanced=True,
         ),
         EventEntry(
             "bind:<KeyPress>", "on key press", "key_press",
             "(self, event=None)", _BIND,
             warning="Requires takefocus=True; key events are "
                     "delivered only to the focused widget.",
+            advanced=True,
         ),
         EventEntry(
             "bind:<KeyRelease>", "on key release", "key_release",
             "(self, event=None)", _BIND,
             warning="Requires takefocus=True; key events are "
                     "delivered only to the focused widget.",
+            advanced=True,
         ),
     ],
     "CTkSwitch": [
@@ -198,6 +217,21 @@ def events_for(widget_type: str) -> list[EventEntry]:
     to decide whether to render the cascade at all.
     """
     return EVENT_REGISTRY.get(widget_type, [])
+
+
+def events_partitioned(
+    widget_type: str,
+) -> tuple[list[EventEntry], list[EventEntry]]:
+    """Split ``events_for(widget_type)`` into ``(default, advanced)``
+    in registration order. Callers that render the cascade / Properties
+    panel use this to draw the flat default block + the collapsible
+    "Advanced" sub-section without re-implementing the partition.
+    """
+    default_entries: list[EventEntry] = []
+    advanced_entries: list[EventEntry] = []
+    for entry in events_for(widget_type):
+        (advanced_entries if entry.advanced else default_entries).append(entry)
+    return default_entries, advanced_entries
 
 
 def event_by_key(widget_type: str, key: str) -> EventEntry | None:

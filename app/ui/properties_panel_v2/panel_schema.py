@@ -497,9 +497,9 @@ class SchemaMixin:
         than to the trailing layout / state knobs, so this placement
         matches the order the user reads the panel.
         """
-        from app.widgets.event_registry import events_for
-        events = events_for(node.widget_type)
-        if not events:
+        from app.widgets.event_registry import events_partitioned
+        default_events, advanced_events = events_partitioned(node.widget_type)
+        if not default_events and not advanced_events:
             return
         # Resolve docstrings once per panel rebuild so each method
         # row can show a human description when one is available.
@@ -525,68 +525,46 @@ class SchemaMixin:
         meta = self._event_row_meta
         meta[group_iid] = ("group", "", None)
         widget_id = node.id
-        for ev_idx, entry in enumerate(events):
-            methods = list(node.handlers.get(entry.key, []) or [])
-            header_iid = f"events:e:{ev_idx}"
-            label = entry.label[:1].upper() + entry.label[1:]
-            if methods:
-                preview = (
-                    f"({len(methods)} action"
-                    f"{'s' if len(methods) != 1 else ''})"
-                )
-            else:
-                preview = "no action"
-            self.tree.insert(
-                group_iid, "end", iid=header_iid,
-                text=label, values=(preview,), open=True,
-                tags=("group",),
-            )
-            meta[header_iid] = ("header", entry.key, None)
-            self._attach_event_add_button(
-                header_iid, widget_id, entry.key,
-            )
-            for m_idx, method in enumerate(methods):
-                method_iid = f"events:m:{ev_idx}:{m_idx}"
-                # Docstring (when the user wrote one) reads as the
-                # primary label. Otherwise we surface ``Action N`` —
-                # the auto-generated ``on_button_click_3`` method
-                # name carries no useful information for someone
-                # browsing the panel and reads as visual noise. The
-                # bare method name still lives on disk; the user
-                # sees it in the editor when they jump there.
-                doc_text = docs.get(method)
-                if doc_text:
-                    row_label = doc_text
-                else:
-                    row_label = f"Action {m_idx + 1}"
-                missing = (
-                    scanned_existing
-                    and method not in (existing_methods or set())
-                )
-                # ``❌`` glyph + red row tag for orphan bindings —
-                # method name is recorded on the model but the
-                # behavior file's class doesn't define it. Caught
-                # here so the user spots the break in the panel
-                # before F5 surfaces it as an AttributeError.
-                if missing:
-                    row_label = f"❌ {row_label}"
-                    value_text = f"{method} (missing in file)"
-                    row_tags: tuple[str, ...] = ("missing_method",)
-                else:
-                    value_text = method
-                    row_tags = ()
-                # Method name in the value column as quiet metadata —
-                # useful when the user can't remember which action
-                # is which, but stays out of the primary label.
+        # Advanced sub-group is created lazily so widgets without any
+        # advanced events don't show an empty section. Default open=
+        # state: closed unless the user has already bound a method to
+        # one of the advanced events — in that case auto-expand so the
+        # binding stays visible without an extra click.
+        advanced_iid = "events:advanced"
+        advanced_has_bindings = any(
+            node.handlers.get(entry.key) for entry in advanced_events
+        )
+        advanced_inserted = False
+
+        def _ensure_advanced_group() -> str:
+            nonlocal advanced_inserted
+            if not advanced_inserted:
                 self.tree.insert(
-                    header_iid, "end", iid=method_iid,
-                    text=row_label, values=(value_text,),
-                    tags=row_tags,
+                    group_iid, "end", iid=advanced_iid,
+                    text="Advanced", values=("",),
+                    open=advanced_has_bindings,
+                    tags=("group",),
                 )
-                meta[method_iid] = ("method", entry.key, m_idx)
-                self._attach_event_unbind_button(
-                    method_iid, widget_id, entry.key, m_idx, method,
-                )
+                meta[advanced_iid] = ("group", "", None)
+                advanced_inserted = True
+            return advanced_iid
+
+        # Render in two passes so the Advanced sub-group always lands
+        # at the bottom of the Events group regardless of registration
+        # order. ``ev_idx`` keeps a single counter across both passes
+        # so iids remain unique for the meta lookup.
+        ev_idx = 0
+        for entry in default_events:
+            ev_idx = self._render_event_row(
+                ev_idx, entry, group_iid, node, docs,
+                existing_methods, scanned_existing, widget_id, meta,
+            )
+        for entry in advanced_events:
+            parent_iid = _ensure_advanced_group()
+            ev_idx = self._render_event_row(
+                ev_idx, entry, parent_iid, node, docs,
+                existing_methods, scanned_existing, widget_id, meta,
+            )
 
         # Hoist the Events group up to live right after the LAST
         # group whose name contains "Color" (CTkButton uses
@@ -603,6 +581,80 @@ class SchemaMixin:
             return
         anchor_index = self.tree.index(anchor_iid)
         self.tree.move(group_iid, "", anchor_index + 1)
+
+    def _render_event_row(
+        self, ev_idx: int, entry, parent_iid: str, node, docs: dict,
+        existing_methods, scanned_existing: bool, widget_id: str, meta: dict,
+    ) -> int:
+        """Insert one event header + its bound-method rows under
+        ``parent_iid``. Shared by ``_populate_events_group`` for both
+        the default block (parent = ``events:group``) and the advanced
+        sub-section (parent = ``events:advanced``). Returns the next
+        free ``ev_idx`` so the caller can keep iids unique across
+        both passes.
+        """
+        methods = list(node.handlers.get(entry.key, []) or [])
+        header_iid = f"events:e:{ev_idx}"
+        label = entry.label[:1].upper() + entry.label[1:]
+        if methods:
+            preview = (
+                f"({len(methods)} action"
+                f"{'s' if len(methods) != 1 else ''})"
+            )
+        else:
+            preview = "no action"
+        self.tree.insert(
+            parent_iid, "end", iid=header_iid,
+            text=label, values=(preview,), open=True,
+            tags=("group",),
+        )
+        meta[header_iid] = ("header", entry.key, None)
+        self._attach_event_add_button(
+            header_iid, widget_id, entry.key,
+        )
+        for m_idx, method in enumerate(methods):
+            method_iid = f"events:m:{ev_idx}:{m_idx}"
+            # Docstring (when the user wrote one) reads as the
+            # primary label. Otherwise we surface ``Action N`` —
+            # the auto-generated ``on_button_click_3`` method
+            # name carries no useful information for someone
+            # browsing the panel and reads as visual noise. The
+            # bare method name still lives on disk; the user
+            # sees it in the editor when they jump there.
+            doc_text = docs.get(method)
+            if doc_text:
+                row_label = doc_text
+            else:
+                row_label = f"Action {m_idx + 1}"
+            missing = (
+                scanned_existing
+                and method not in (existing_methods or set())
+            )
+            # ``❌`` glyph + red row tag for orphan bindings —
+            # method name is recorded on the model but the
+            # behavior file's class doesn't define it. Caught
+            # here so the user spots the break in the panel
+            # before F5 surfaces it as an AttributeError.
+            if missing:
+                row_label = f"❌ {row_label}"
+                value_text = f"{method} (missing in file)"
+                row_tags: tuple[str, ...] = ("missing_method",)
+            else:
+                value_text = method
+                row_tags = ()
+            # Method name in the value column as quiet metadata —
+            # useful when the user can't remember which action
+            # is which, but stays out of the primary label.
+            self.tree.insert(
+                header_iid, "end", iid=method_iid,
+                text=row_label, values=(value_text,),
+                tags=row_tags,
+            )
+            meta[method_iid] = ("method", entry.key, m_idx)
+            self._attach_event_unbind_button(
+                method_iid, widget_id, entry.key, m_idx, method,
+            )
+        return ev_idx + 1
 
     def _lookup_existing_method_names(self, node) -> set[str] | None:
         """Phase 3 — return the set of method names defined on the

@@ -476,6 +476,16 @@ _(none yet)_
   onto both inner canvas and inner Tk Label so the rounded-corner hit
   area is also clickable. `<Motion>` and `<Configure>` carry warnings
   on their `EventEntry` for high-frequency event firing.
+- **Default vs Advanced split.** Of the 16 events, 5 sit on the flat
+  default list — `<Button-1>`, `<Double-Button-1>`, `<Enter>`,
+  `<Leave>`, `<MouseWheel>`. The remaining 11 carry `advanced=True`
+  on their `EventEntry` and render inside a collapsible "Advanced"
+  sub-section in the right-click cascade and the Properties panel
+  Events group: middle / right click, mouse release, motion, the
+  three lifecycle events, and the four `takefocus`-gated focus / key
+  events. Properties panel auto-expands the Advanced sub-section
+  when at least one of those events already has a binding so the
+  user doesn't lose track of an existing handler.
 - **`padx` / `pady` and italic clipping.** These map onto the inner
   Tk Label as `padx=`, `pady=`. Defaults are `0` — clean / flush
   rendering. Italic / script fonts under-count the slant tail in

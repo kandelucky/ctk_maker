@@ -299,7 +299,16 @@ class EventEntry:
     warning: str = ""  # optional caveat shown alongside the event in
                        # cascades / docs — e.g. "fires at 60+ Hz" or
                        # "requires takefocus=True". Default empty.
+    advanced: bool = False  # when True, the entry renders inside a
+                            # collapsible "Advanced" sub-section in
+                            # the right-click cascade and Properties
+                            # panel instead of the flat default list.
+                            # Used to keep the surface short for
+                            # widgets with many bind events
+                            # (CTkLabel: 5 default + 11 advanced).
 ```
+
+`events_partitioned(widget_type)` returns `(default, advanced)` in registration order — the cascade builder ([app/ui/workspace/core.py](../../app/ui/workspace/core.py)) and the Properties panel ([app/ui/properties_panel_v2/panel_schema.py](../../app/ui/properties_panel_v2/panel_schema.py)) both call it so they stay in sync without re-implementing the partition.
 
 ### Existing entries — [event_registry.py:41](../../app/widgets/event_registry.py#L41)
 

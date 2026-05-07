@@ -129,7 +129,7 @@ Bind a method to a widget event from the Properties panel **Events** group:
 - **`command`** — click / change events: Button, Switch, CheckBox, RadioButton, Slider, ComboBox, OptionMenu, SegmentedButton.
 - **`bind:<sequence>`** — Tk bind events:
   - **Entry / Textbox** — `<Return>`, `<KeyRelease>`, `<FocusOut>`.
-  - **Label** — 16 events: mouse buttons (`<Button-1>` / `<Double-Button-1>` / `<Button-2>` / `<Button-3>` / `<ButtonRelease-1>`), motion / wheel (`<Enter>` / `<Leave>` / `<Motion>` / `<MouseWheel>`), lifecycle (`<Configure>` / `<Map>` / `<Unmap>`), focus / keyboard (`<FocusIn>` / `<FocusOut>` / `<KeyPress>` / `<KeyRelease>` — require `takefocus=True`). CTkLabel routes binds onto both inner canvas and inner Tk Label so the rounded-corner area is also clickable. `<Motion>` and `<Configure>` fire at 60+ Hz — keep handlers cheap.
+  - **Label** — 16 events split into 5 default + 11 advanced. Default (flat list): `<Button-1>` / `<Double-Button-1>` / `<Enter>` / `<Leave>` / `<MouseWheel>`. Advanced (collapsible "Advanced" sub-section in cascade + panel): `<Button-2>` / `<Button-3>` / `<ButtonRelease-1>` / `<Motion>` / `<Configure>` / `<Map>` / `<Unmap>` / `<FocusIn>` / `<FocusOut>` / `<KeyPress>` / `<KeyRelease>`. Focus / key events require `takefocus=True`. CTkLabel routes binds onto both inner canvas and inner Tk Label so the rounded-corner area is also clickable. `<Motion>` and `<Configure>` fire at 60+ Hz — keep handlers cheap.
 
 Methods live in a per-window behavior file at `<project>/assets/scripts/<page>/<window>.py`:
 
