@@ -1402,27 +1402,19 @@ class ObjectReferencesPanel(ctk.CTkFrame):
         bar = tk.Frame(self, bg=TOOLBAR_BG, height=54, highlightthickness=0)
         bar.pack(fill="x")
         bar.pack_propagate(False)
-        # ``+ Add Global`` lets the user declare a Window / Dialog
-        # reference that sits at project scope. Locals stay opt-in
-        # via the Properties Panel toggle — no Add button needed for
-        # them here since the toggle flow is the discoverable path.
         self._add_global_btn = ctk.CTkButton(
-            bar, text="+ Add Global", width=110, height=30,
-            corner_radius=3, font=ctk.CTkFont(size=11),
+            bar, text="+ Add Window", width=110, height=30,
+            corner_radius=3, font=("Segoe UI", 11),
             fg_color="#0e8a7d", hover_color="#149a8c",
             command=self._on_add_global,
         )
         self._add_global_btn.pack(side="left", padx=(8, 6), pady=10)
         ctk.CTkLabel(
             bar,
-            text=(
-                "Window / Dialog refs are global. Inner widgets "
-                "stay local — toggle from a widget panel."
-            ),
+            text="Window / Dialog refs only. Toggle locals via widget panel.",
             text_color="#9aa4b2",
-            font=ctk.CTkFont(size=10),
+            font=("Segoe UI", 10),
             anchor="w",
-            wraplength=320,
             justify="left",
         ).pack(side="left", padx=(2, 10), pady=8, fill="x", expand=True)
 
@@ -1475,12 +1467,19 @@ class ObjectReferencesPanel(ctk.CTkFrame):
             foreground=TREE_FG,
             rowheight=TREE_ROW_HEIGHT,
             borderwidth=0,
-            font=derive_ui_font(size=TREE_FONT_SIZE),
+            font=("Segoe UI", TREE_FONT_SIZE),
         )
         style.map(
             "ObjectRefs.Treeview",
             background=[("selected", TREE_SELECTED_BG)],
             foreground=[("selected", "#ffffff")],
+        )
+        style.configure(
+            "ObjectRefs.Treeview.Heading",
+            background=TREE_HEADING_BG,
+            foreground=TREE_HEADING_FG,
+            font=("Segoe UI", TREE_FONT_SIZE, "bold"),
+            relief="flat",
         )
         self.tree = ttk.Treeview(
             wrap,
@@ -1498,7 +1497,7 @@ class ObjectReferencesPanel(ctk.CTkFrame):
         self.tree.tag_configure("empty", foreground=EMPTY_FG)
         self.tree.tag_configure(
             "section", foreground="#9aa4b2",
-            font=derive_ui_font(size=TREE_FONT_SIZE, weight="bold"),
+            font=("Segoe UI", TREE_FONT_SIZE, "bold"),
         )
         self.tree.bind("<Button-3>", self._on_right_click)
         self.tree.bind("<Double-Button-1>", self._on_double_click)
