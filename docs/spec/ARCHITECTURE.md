@@ -66,7 +66,7 @@ The PyPI package at [ctkmaker/](../../ctkmaker/) is a name-reservation stub. Run
 | **Properties** | [properties_panel/](../../app/ui/properties_panel/) (`panel.py`, `panel_commit.py`, `panel_schema.py`, `editors/*.py`, `overlays.py`, `drag_scrub.py`, `type_icons.py`, `format_utils.py`, `constants.py`, `property_help.py`, `tooltip.py`) | ttk.Treeview-based inspector with overlay editor widgets + label-column hover tooltips. |
 | **Floating panels** | `variables_window.py`, `object_tree_window.py`, `history_window.py`, `components_panel.py` | F11 / F8 / F10 docked panels. |
 | **Dialogs** | `startup_dialog.py`, `splash.py`, `export_dialog.py`, `new_project_form.py`, `font_picker_dialog.py`, `image_picker_dialog.py`, `lucide_icon_picker_dialog.py`, `bug_reporter.py`, `crash_dialog.py`, `handler_delete_dialogs.py`, 9× `component_*_dialog.py` | Modal flows. |
-| **Helpers** | `dialogs.py`, `dialog_utils.py`, `icons.py`, `dark_titlebar.py` | Shared dialog scaffolding (`safe_grab_set`, `prepare_dialog`/`reveal_dialog` alpha-hide pair) + icon loader + Win32 dark titlebar. |
+| **Helpers** | `dialogs.py`, `dialog_utils.py`, `icons.py`, `dark_titlebar.py`, `system_fonts.py` | Shared dialog scaffolding (`safe_grab_set`, `prepare_dialog`/`reveal_dialog` alpha-hide pair) + icon loader + Win32 dark titlebar + `ui_font` / `derive_ui_font` / `derive_mono_font` for cross-platform font kwargs (raw tk + ttk). |
 
 ### `app/io/` — persistence + export
 
