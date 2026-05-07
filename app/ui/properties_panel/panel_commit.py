@@ -159,6 +159,7 @@ class CommitMixin:
     # Click routing
     # ------------------------------------------------------------------
     def _on_single_click(self, event) -> None:
+        self._tooltip.cancel()
         region = self.tree.identify_region(event.x, event.y)
         if region == "nothing":
             self.tree.selection_remove(*self.tree.selection())
