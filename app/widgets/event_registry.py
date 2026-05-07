@@ -33,6 +33,10 @@ class EventEntry:
     verb: str
     signature: str
     wiring_kind: str
+    # Free-form caveat shown alongside the event in cascades / docs —
+    # e.g. "fires at 60+ Hz" or "requires takefocus=True". Empty for
+    # events that have no special precondition or perf concern.
+    warning: str = ""
 
 
 _COMMAND = "command"
@@ -47,6 +51,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
         # is post-construction `.bind()`, which CTkLabel routes onto
         # both the inner canvas and inner Tk Label so the hit-area
         # covers the rounded corners as well as the text glyphs.
+        # ----- Mouse buttons -----
         EventEntry(
             "bind:<Button-1>", "on click", "click",
             "(self, event=None)", _BIND,
@@ -56,9 +61,18 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
             "(self, event=None)", _BIND,
         ),
         EventEntry(
+            "bind:<Button-2>", "on middle click", "middle_click",
+            "(self, event=None)", _BIND,
+        ),
+        EventEntry(
             "bind:<Button-3>", "on right click", "right_click",
             "(self, event=None)", _BIND,
         ),
+        EventEntry(
+            "bind:<ButtonRelease-1>", "on mouse release", "mouse_release",
+            "(self, event=None)", _BIND,
+        ),
+        # ----- Mouse motion / wheel -----
         EventEntry(
             "bind:<Enter>", "on mouse enter", "mouse_enter",
             "(self, event=None)", _BIND,
@@ -66,6 +80,56 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
         EventEntry(
             "bind:<Leave>", "on mouse leave", "mouse_leave",
             "(self, event=None)", _BIND,
+        ),
+        EventEntry(
+            "bind:<Motion>", "on mouse move", "mouse_move",
+            "(self, event=None)", _BIND,
+            warning="Fires at 60+ Hz while the cursor is inside — "
+                    "keep the handler cheap.",
+        ),
+        EventEntry(
+            "bind:<MouseWheel>", "on mouse wheel", "mouse_wheel",
+            "(self, event=None)", _BIND,
+        ),
+        # ----- Lifecycle / geometry -----
+        EventEntry(
+            "bind:<Configure>", "on resize", "resize",
+            "(self, event=None)", _BIND,
+            warning="Fires repeatedly during a window resize — "
+                    "keep the handler cheap.",
+        ),
+        EventEntry(
+            "bind:<Map>", "on shown", "shown",
+            "(self, event=None)", _BIND,
+        ),
+        EventEntry(
+            "bind:<Unmap>", "on hidden", "hidden",
+            "(self, event=None)", _BIND,
+        ),
+        # ----- Focus / keyboard (require takefocus=True) -----
+        EventEntry(
+            "bind:<FocusIn>", "on focus in", "focus_in",
+            "(self, event=None)", _BIND,
+            warning="Requires takefocus=True; the Label cannot "
+                    "receive focus otherwise.",
+        ),
+        EventEntry(
+            "bind:<FocusOut>", "on focus out", "focus_out",
+            "(self, event=None)", _BIND,
+            warning="Requires takefocus=True; the Label cannot "
+                    "receive focus otherwise.",
+        ),
+        EventEntry(
+            "bind:<KeyPress>", "on key press", "key_press",
+            "(self, event=None)", _BIND,
+            warning="Requires takefocus=True; key events are "
+                    "delivered only to the focused widget.",
+        ),
+        EventEntry(
+            "bind:<KeyRelease>", "on key release", "key_release",
+            "(self, event=None)", _BIND,
+            warning="Requires takefocus=True; key events are "
+                    "delivered only to the focused widget.",
         ),
     ],
     "CTkSwitch": [

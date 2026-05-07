@@ -30,6 +30,7 @@ _EDITORS: dict[str, Editor] = {
     "number": NumberEditor(),
     "anchor": _ENUM,
     "compound": _ENUM,
+    "cursor": _ENUM,
     "justify": _ENUM,
     "orientation": _ENUM,
     "grid_style": _ENUM,

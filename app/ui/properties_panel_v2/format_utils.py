@@ -19,6 +19,7 @@ from .constants import (
     ANCHOR_CODE_TO_LABEL,
     ANCHOR_DROPDOWN_ORDER,
     COMPOUND_OPTIONS,
+    CURSOR_OPTIONS,
     JUSTIFY_OPTIONS,
     ORIENTATION_OPTIONS,
     TAB_BAR_ALIGN_OPTIONS,
@@ -51,8 +52,12 @@ def format_value(ptype: str, value, prop: dict) -> str:
         return ANCHOR_CODE_TO_LABEL.get(str(value), str(value or ""))
     if ptype in (
         "compound", "justify", "orientation", "grid_style",
-        "tab_bar_align", "tab_bar_position",
+        "tab_bar_align", "tab_bar_position", "cursor",
     ):
+        # Empty cursor string maps to "(default)" so the cell isn't
+        # blank when the user picks "inherit" — keeps the row legible.
+        if ptype == "cursor" and value == "":
+            return "(default)"
         return str(value) if value is not None else ""
     if ptype == "layout_type":
         # layout_type stores the internal key (``place`` / ``vbox`` /
@@ -114,6 +119,8 @@ def enum_options_for(ptype: str):
         return ANCHOR_DROPDOWN_ORDER
     if ptype == "compound":
         return COMPOUND_OPTIONS
+    if ptype == "cursor":
+        return CURSOR_OPTIONS
     if ptype == "justify":
         return JUSTIFY_OPTIONS
     if ptype == "tab_bar_align":

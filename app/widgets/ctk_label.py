@@ -8,8 +8,8 @@ Groups shown in the Properties panel, in order:
 
     Geometry        — x/y, width/height
     Rectangle       — corner radius
-    Alignment       — content anchor (text + icon as a block)
-    State           — enabled flag
+    Alignment       — content anchor + inner padding
+    Interaction     — enabled flag, cursor, takefocus
     Main Colors     — background
     Text            — label, font style, line align, wraplength, text colors
     Icon            — image picker, size, tint, compound, preserve aspect
@@ -33,8 +33,16 @@ class CTkLabelDescriptor(WidgetDescriptor):
         "height": 28,
         # Rectangle
         "corner_radius": 0,
-        # State
+        # Alignment — inner Tk Label padding (advances the text +
+        # image block away from the widget edges). Note: italic /
+        # script fonts may clip their slant tail at padx=0; bump
+        # padx ≥ 4 to reserve room.
+        "padx": 0,
+        "pady": 0,
+        # Interaction
         "label_enabled": True,
+        "cursor": "",
+        "takefocus": False,
         # Main colors
         "fg_color": "transparent",
         "bg_color": "transparent",
@@ -90,13 +98,36 @@ class CTkLabelDescriptor(WidgetDescriptor):
         # the widget — not text-only — so it lives in its own group.
         {"name": "anchor", "type": "anchor", "label": "",
          "group": "Alignment", "row_label": "Anchor"},
+        {"name": "padx", "type": "number", "label": "X",
+         "group": "Alignment", "subgroup": "Padding",
+         "pair": "pad", "row_label": "Padding",
+         "min": 0, "max": 50},
+        {"name": "pady", "type": "number", "label": "Y",
+         "group": "Alignment", "subgroup": "Padding",
+         "pair": "pad",
+         "min": 0, "max": 50},
 
-        # --- State -------------------------------------------------------
+        # --- Interaction -------------------------------------------------
         {"name": "label_enabled", "type": "boolean", "label": "",
-         "group": "State", "row_label": "Enabled"},
+         "group": "Interaction", "row_label": "Enabled"},
+        {"name": "cursor", "type": "cursor", "label": "",
+         "group": "Interaction", "row_label": "Cursor"},
+        {"name": "takefocus", "type": "boolean", "label": "",
+         "group": "Interaction", "row_label": "Take Focus"},
 
         # --- Main Colors -------------------------------------------------
+        # CTk semantics: `fg_color` = the label's filled body (the
+        # "Foreground" of the widget on its parent), `bg_color` = the
+        # parent-derived antialiasing layer behind the rounded corners
+        # (the "Background"). Default both to transparent — fg picks up
+        # nothing, bg auto-derives from parent. ✕ on either reverts to
+        # transparent. Bumping bg_color away from transparent is rare:
+        # only useful when the parent is a gradient / image where CTk's
+        # auto-detect can't read a single solid color.
         {"name": "fg_color", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Foreground",
+         "clearable": True, "clear_value": "transparent"},
+        {"name": "bg_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Background",
          "clearable": True, "clear_value": "transparent"},
 
@@ -420,37 +451,10 @@ class CTkLabelDescriptor(WidgetDescriptor):
         tinted.putalpha(alpha)
         return tinted
 
-    # Horizontal padding added to the inner tk.Label to absorb the
-    # slant overhang of italic / script fonts. Tk measures text via
-    # glyph advance widths, which under-counts the slant tail —
-    # without padding, the last character clips at the label's
-    # right edge. Tiny enough to be invisible on upright text.
-    _ITALIC_SAFE_PADX = 4
-
     @classmethod
     def create_widget(cls, master, properties: dict, init_kwargs=None):
         kwargs = cls.transform_properties(properties)
         if init_kwargs:
             kwargs.update(init_kwargs)
         widget = ctk.CTkLabel(master, **kwargs)
-        cls.apply_state(widget, properties)
         return widget
-
-    @classmethod
-    def apply_state(cls, widget, properties: dict) -> None:
-        inner = getattr(widget, "_label", None)
-        if inner is None:
-            return
-        try:
-            inner.configure(padx=cls._ITALIC_SAFE_PADX)
-        except Exception:
-            log_error("CTkLabelDescriptor.apply_state padx")
-
-    @classmethod
-    def export_state(cls, var_name: str, properties: dict) -> list[str]:
-        # Mirror the builder-side italic-clip workaround so exported
-        # apps don't clip the last glyph of slanted / script fonts.
-        return [
-            f"{var_name}._label.configure("
-            f"padx={cls._ITALIC_SAFE_PADX})",
-        ]
