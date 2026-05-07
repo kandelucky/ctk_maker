@@ -3,14 +3,15 @@
 A row of mutually-exclusive buttons, like a Mac-style segmented
 control or a tab bar. The "selected" segment is highlighted.
 
-Groups shown in the Properties panel, in order:
+Groups shown in the Properties panel, in order
+(Content → Layout → Visual → Behavior):
 
+    Values             — segments (one per line) + initial selection
+    Text               — font + style, text colors
     Geometry           — x/y, width/height
     Rectangle          — corner radius + optional border
-    Values             — segments (one per line) + initial selection
-    Button Interaction — interactable toggle
     Main Colors        — outer bg + selected / unselected / hover tints
-    Text               — font + style, text colors
+    Button Interaction — interactable toggle
 """
 import customtkinter as ctk
 
@@ -56,6 +57,38 @@ class CTkSegmentedButtonDescriptor(WidgetDescriptor):
     }
 
     property_schema = [
+        # --- Values ------------------------------------------------------
+        # Custom editor: the value cell + ✎ button both open a +/-
+        # table dialog instead of the generic multiline text editor.
+        {"name": "values", "type": "segment_values", "label": "",
+         "group": "Values", "row_label": "Values"},
+        # Dynamic dropdown — options come from the current ``values``
+        # list, not a hardcoded enum. Stored as the segment text
+        # (same shape the old multiline editor produced).
+        {"name": "initial_value", "type": "segment_initial", "label": "",
+         "group": "Values", "row_label": "Initial Value"},
+
+        # --- Text --------------------------------------------------------
+        {"name": "font_family", "type": "font", "label": "",
+         "group": "Text", "row_label": "Font"},
+
+        {"name": "font_size", "type": "number", "label": "",
+         "group": "Text", "row_label": "Size", "min": 6, "max": 96},
+
+        {"name": "font_bold", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Bold"},
+        {"name": "font_italic", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Italic"},
+        {"name": "font_underline", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Underline"},
+        {"name": "font_overstrike", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Strike"},
+
+        {"name": "text_color", "type": "color", "label": "",
+         "group": "Text", "row_label": "Normal Text Color"},
+        {"name": "text_color_disabled", "type": "color", "label": "",
+         "group": "Text", "row_label": "Disabled Text Color"},
+
         # --- Geometry ----------------------------------------------------
         {"name": "x", "type": "number", "label": "X",
          "group": "Geometry", "pair": "pos", "row_label": "Position"},
@@ -84,21 +117,6 @@ class CTkSegmentedButtonDescriptor(WidgetDescriptor):
          "row_label": "Thickness", "min": 1, "max": 20,
          "disabled_when": lambda p: not p.get("border_enabled")},
 
-        # --- Values ------------------------------------------------------
-        # Custom editor: the value cell + ✎ button both open a +/-
-        # table dialog instead of the generic multiline text editor.
-        {"name": "values", "type": "segment_values", "label": "",
-         "group": "Values", "row_label": "Values"},
-        # Dynamic dropdown — options come from the current ``values``
-        # list, not a hardcoded enum. Stored as the segment text
-        # (same shape the old multiline editor produced).
-        {"name": "initial_value", "type": "segment_initial", "label": "",
-         "group": "Values", "row_label": "Initial Value"},
-
-        # --- Button Interaction ------------------------------------------
-        {"name": "button_enabled", "type": "boolean", "label": "",
-         "group": "Button Interaction", "row_label": "Interactable"},
-
         # --- Main Colors -------------------------------------------------
         {"name": "fg_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Outer Background"},
@@ -111,26 +129,9 @@ class CTkSegmentedButtonDescriptor(WidgetDescriptor):
         {"name": "unselected_hover_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Unselected Hover"},
 
-        # --- Text --------------------------------------------------------
-        {"name": "font_family", "type": "font", "label": "",
-         "group": "Text", "row_label": "Font"},
-
-        {"name": "font_size", "type": "number", "label": "",
-         "group": "Text", "row_label": "Size", "min": 6, "max": 96},
-
-        {"name": "font_bold", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Bold"},
-        {"name": "font_italic", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Italic"},
-        {"name": "font_underline", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Underline"},
-        {"name": "font_overstrike", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Strike"},
-
-        {"name": "text_color", "type": "color", "label": "",
-         "group": "Text", "row_label": "Normal Text Color"},
-        {"name": "text_color_disabled", "type": "color", "label": "",
-         "group": "Text", "row_label": "Disabled Text Color"},
+        # --- Button Interaction ------------------------------------------
+        {"name": "button_enabled", "type": "boolean", "label": "",
+         "group": "Button Interaction", "row_label": "Interactable"},
     ]
 
     _NODE_ONLY_KEYS = {

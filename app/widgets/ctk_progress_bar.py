@@ -4,11 +4,12 @@ A pure decoration bar that shows fractional progress between 0 and 1.
 No interaction — the builder treats it as a static preview of the
 final progress value.
 
-Groups shown in the Properties panel, in order:
+Groups shown in the Properties panel, in order
+(Content → Layout → Visual):
 
+    Progress     — orientation + the initial fill ratio (0–1)
     Geometry     — x/y, width/height
     Rectangle    — corner radius, optional border
-    Progress     — orientation + the initial fill ratio (0–1)
     Main Colors  — track background, progress fill
 """
 import customtkinter as ctk
@@ -42,6 +43,13 @@ class CTkProgressBarDescriptor(WidgetDescriptor):
     }
 
     property_schema = [
+        # --- Progress ----------------------------------------------------
+        {"name": "orientation", "type": "orientation", "label": "",
+         "group": "Progress", "row_label": "Orientation"},
+        {"name": "initial_percent", "type": "number", "label": "",
+         "group": "Progress", "row_label": "Progress %",
+         "min": 0, "max": 100},
+
         # --- Geometry ----------------------------------------------------
         {"name": "x", "type": "number", "label": "X",
          "group": "Geometry", "pair": "pos", "row_label": "Position"},
@@ -78,13 +86,6 @@ class CTkProgressBarDescriptor(WidgetDescriptor):
          "group": "Rectangle", "subgroup": "Border",
          "row_label": "Color",
          "disabled_when": lambda p: not p.get("border_enabled")},
-
-        # --- Progress ----------------------------------------------------
-        {"name": "orientation", "type": "orientation", "label": "",
-         "group": "Progress", "row_label": "Orientation"},
-        {"name": "initial_percent", "type": "number", "label": "",
-         "group": "Progress", "row_label": "Progress %",
-         "min": 0, "max": 100},
 
         # --- Main Colors -------------------------------------------------
         {"name": "fg_color", "type": "color", "label": "",

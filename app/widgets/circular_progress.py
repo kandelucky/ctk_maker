@@ -6,13 +6,14 @@ ring and an optional centered text. The runtime class lives at
 inline its source verbatim into generated `.py` files; the builder
 canvas imports it directly for live rendering.
 
-Groups shown in the Properties panel, in order:
+Groups shown in the Properties panel, in order
+(Content → Layout → Visual):
 
+    Progress     — initial percent (0–100)
+    Text         — optional centered % readout (format, font, color)
     Geometry     — x/y, square width/height
     Ring         — track thickness
-    Progress     — initial percent (0–100)
     Main Colors  — track + progress fill
-    Text         — optional centered % readout (format, font, color)
 """
 from app.widgets.base import WidgetDescriptor
 from app.widgets.runtime.circular_progress import CircularProgress
@@ -67,32 +68,10 @@ class CircularProgressDescriptor(WidgetDescriptor):
     }
 
     property_schema = [
-        # --- Geometry ----------------------------------------------------
-        {"name": "x", "type": "number", "label": "X",
-         "group": "Geometry", "pair": "pos", "row_label": "Position"},
-        {"name": "y", "type": "number", "label": "Y",
-         "group": "Geometry", "pair": "pos"},
-        {"name": "width", "type": "number", "label": "W",
-         "group": "Geometry", "pair": "size", "row_label": "Size",
-         "min": 40, "max": 1000},
-        {"name": "height", "type": "number", "label": "H",
-         "group": "Geometry", "pair": "size", "min": 40, "max": 1000},
-
-        # --- Ring --------------------------------------------------------
-        {"name": "thickness", "type": "number", "label": "",
-         "group": "Ring", "row_label": "Thickness",
-         "min": 1, "max": 60},
-
         # --- Progress ----------------------------------------------------
         {"name": "initial_percent", "type": "number", "label": "",
          "group": "Progress", "row_label": "Percent",
          "min": 0, "max": 100},
-
-        # --- Main Colors -------------------------------------------------
-        {"name": "fg_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Track"},
-        {"name": "progress_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Progress"},
 
         # --- Text --------------------------------------------------------
         {"name": "show_text", "type": "boolean", "label": "",
@@ -113,6 +92,28 @@ class CircularProgressDescriptor(WidgetDescriptor):
         {"name": "font_bold", "type": "boolean", "label": "",
          "group": "Text", "row_label": "Bold",
          "disabled_when": lambda p: not p.get("show_text")},
+
+        # --- Geometry ----------------------------------------------------
+        {"name": "x", "type": "number", "label": "X",
+         "group": "Geometry", "pair": "pos", "row_label": "Position"},
+        {"name": "y", "type": "number", "label": "Y",
+         "group": "Geometry", "pair": "pos"},
+        {"name": "width", "type": "number", "label": "W",
+         "group": "Geometry", "pair": "size", "row_label": "Size",
+         "min": 40, "max": 1000},
+        {"name": "height", "type": "number", "label": "H",
+         "group": "Geometry", "pair": "size", "min": 40, "max": 1000},
+
+        # --- Ring --------------------------------------------------------
+        {"name": "thickness", "type": "number", "label": "",
+         "group": "Ring", "row_label": "Thickness",
+         "min": 1, "max": 60},
+
+        # --- Main Colors -------------------------------------------------
+        {"name": "fg_color", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Track"},
+        {"name": "progress_color", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Progress"},
     ]
 
     @classmethod

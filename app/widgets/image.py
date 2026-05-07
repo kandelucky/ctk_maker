@@ -5,11 +5,12 @@ builder composes it from a ``CTkLabel(text="", image=CTkImage(...))``.
 The exporter emits a CTkLabel so the generated code stays on CTk's
 public API.
 
-Groups shown in the Properties panel, in order:
+Groups shown in the Properties panel, in order
+(Content → Layout → Visual):
 
-    Geometry   — x/y, width/height (= image pixel size)
-    Image      — file path, preserve aspect
-    Tint       — optional normal colour overlay (icon-style tint)
+    Image       — file path, preserve aspect
+    Tint        — optional normal colour overlay (icon-style tint)
+    Geometry    — x/y, width/height (= image pixel size)
     Main Colors — background colour (transparent by default)
 """
 from pathlib import Path
@@ -50,20 +51,6 @@ class ImageDescriptor(WidgetDescriptor):
     }
 
     property_schema = [
-        # --- Geometry ----------------------------------------------------
-        {"name": "x", "type": "number", "label": "X",
-         "group": "Geometry", "pair": "pos", "row_label": "Position"},
-        {"name": "y", "type": "number", "label": "Y",
-         "group": "Geometry", "pair": "pos"},
-
-        {"name": "width", "type": "number", "label": "W",
-         "group": "Geometry", "pair": "size", "row_label": "Size",
-         "min": 4, "max": 4000},
-        {"name": "height", "type": "number", "label": "H",
-         "group": "Geometry", "pair": "size",
-         "min": 4, "max": 4000,
-         "disabled_when": lambda p: bool(p.get("preserve_aspect"))},
-
         # --- Image -------------------------------------------------------
         {"name": "image", "type": "image", "label": "",
          "group": "Image", "row_label": "Image"},
@@ -80,6 +67,20 @@ class ImageDescriptor(WidgetDescriptor):
          "group": "Tint", "row_label": "Normal Color",
          "clearable": True, "clear_value": "transparent",
          "disabled_when": lambda p: not p.get("image")},
+
+        # --- Geometry ----------------------------------------------------
+        {"name": "x", "type": "number", "label": "X",
+         "group": "Geometry", "pair": "pos", "row_label": "Position"},
+        {"name": "y", "type": "number", "label": "Y",
+         "group": "Geometry", "pair": "pos"},
+
+        {"name": "width", "type": "number", "label": "W",
+         "group": "Geometry", "pair": "size", "row_label": "Size",
+         "min": 4, "max": 4000},
+        {"name": "height", "type": "number", "label": "H",
+         "group": "Geometry", "pair": "size",
+         "min": 4, "max": 4000,
+         "disabled_when": lambda p: bool(p.get("preserve_aspect"))},
 
         # --- Main Colors -------------------------------------------------
         {"name": "fg_color", "type": "color", "label": "",

@@ -3,13 +3,14 @@
 A labeled checkbox. The checkbox square and the text are rendered
 side by side; CTk composes them automatically.
 
-Groups shown in the Properties panel, in order:
+Groups shown in the Properties panel, in order
+(Content → Layout → Visual → Behavior):
 
-    Geometry          — x/y, widget size
-    Box               — the inner square's size, corner radius, optional border
+    Text               — label, font + style, text colors
+    Geometry           — x/y, widget size
+    Box                — the inner square's size, corner radius, optional border
+    Main Colors        — fill (when checked), hover, check mark
     Button Interaction — interactable toggle, hover effect, initial state
-    Main Colors       — fill (when checked), hover, check mark
-    Text              — label, font + style, text colors
 """
 import customtkinter as ctk
 
@@ -60,6 +61,35 @@ class CTkCheckBoxDescriptor(WidgetDescriptor):
     }
 
     property_schema = [
+        # --- Text --------------------------------------------------------
+        {"name": "text", "type": "multiline", "label": "",
+         "group": "Text", "row_label": "Label"},
+
+        {"name": "font_family", "type": "font", "label": "",
+         "group": "Text", "row_label": "Font"},
+
+        {"name": "font_size", "type": "number", "label": "",
+         "group": "Text", "row_label": "Size", "min": 6, "max": 96},
+
+        {"name": "font_bold", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Bold"},
+        {"name": "font_italic", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Italic"},
+        {"name": "font_underline", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Underline"},
+        {"name": "font_overstrike", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Strike"},
+
+        {"name": "text_color", "type": "color", "label": "",
+         "group": "Text", "row_label": "Normal Text Color"},
+        {"name": "text_color_disabled", "type": "color", "label": "",
+         "group": "Text", "row_label": "Disabled Text Color"},
+        {"name": "text_position", "type": "text_position", "label": "",
+         "group": "Text", "row_label": "Text Position"},
+        {"name": "text_spacing", "type": "number", "label": "",
+         "group": "Text", "row_label": "Text Spacing",
+         "min": 0, "max": 100},
+
         # --- Geometry ----------------------------------------------------
         {"name": "x", "type": "number", "label": "X",
          "group": "Geometry", "pair": "pos", "row_label": "Position"},
@@ -106,14 +136,6 @@ class CTkCheckBoxDescriptor(WidgetDescriptor):
          "row_label": "Color",
          "disabled_when": lambda p: not p.get("border_enabled")},
 
-        # --- Button Interaction ------------------------------------------
-        {"name": "button_enabled", "type": "boolean", "label": "",
-         "group": "Button Interaction", "row_label": "Interactable"},
-        {"name": "hover", "type": "boolean", "label": "",
-         "group": "Button Interaction", "row_label": "Hover Effect"},
-        {"name": "initially_checked", "type": "boolean", "label": "",
-         "group": "Button Interaction", "row_label": "Initially Checked"},
-
         # --- Main Colors -------------------------------------------------
         {"name": "fg_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Fill (Checked)"},
@@ -123,34 +145,13 @@ class CTkCheckBoxDescriptor(WidgetDescriptor):
         {"name": "checkmark_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Check Mark"},
 
-        # --- Text --------------------------------------------------------
-        {"name": "text", "type": "multiline", "label": "",
-         "group": "Text", "row_label": "Label"},
-
-        {"name": "font_family", "type": "font", "label": "",
-         "group": "Text", "row_label": "Font"},
-
-        {"name": "font_size", "type": "number", "label": "",
-         "group": "Text", "row_label": "Size", "min": 6, "max": 96},
-
-        {"name": "font_bold", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Bold"},
-        {"name": "font_italic", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Italic"},
-        {"name": "font_underline", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Underline"},
-        {"name": "font_overstrike", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Strike"},
-
-        {"name": "text_color", "type": "color", "label": "",
-         "group": "Text", "row_label": "Normal Text Color"},
-        {"name": "text_color_disabled", "type": "color", "label": "",
-         "group": "Text", "row_label": "Disabled Text Color"},
-        {"name": "text_position", "type": "text_position", "label": "",
-         "group": "Text", "row_label": "Text Position"},
-        {"name": "text_spacing", "type": "number", "label": "",
-         "group": "Text", "row_label": "Text Spacing",
-         "min": 0, "max": 100},
+        # --- Button Interaction ------------------------------------------
+        {"name": "button_enabled", "type": "boolean", "label": "",
+         "group": "Button Interaction", "row_label": "Interactable"},
+        {"name": "hover", "type": "boolean", "label": "",
+         "group": "Button Interaction", "row_label": "Hover Effect"},
+        {"name": "initially_checked", "type": "boolean", "label": "",
+         "group": "Button Interaction", "row_label": "Initially Checked"},
     ]
 
     _NODE_ONLY_KEYS = {

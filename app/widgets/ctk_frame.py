@@ -3,11 +3,13 @@
 A plain rounded container with optional border. No text, no font, no
 state — the simplest CTk widget.
 
-Groups shown in the Properties panel, in order:
+Groups shown in the Properties panel, in order
+(Layout → Visual → Behavior):
 
     Geometry    — x/y, width/height
     Rectangle   — corner radius, border (thickness + color)
     Main Colors — background
+    Layout      — children geometry manager (vbox / hbox / grid / place)
 """
 import customtkinter as ctk
 

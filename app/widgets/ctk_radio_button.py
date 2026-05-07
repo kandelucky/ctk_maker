@@ -5,13 +5,14 @@ form a group where only one can be selected at a time; in the
 builder preview each radio is standalone and the grouping is
 resolved during code export.
 
-Groups shown in the Properties panel, in order:
+Groups shown in the Properties panel, in order
+(Content → Layout → Visual → Behavior):
 
-    Geometry          — x/y, widget size
-    Dot               — the dot's size, corner radius, border widths
+    Text               — label, font + style, text colors
+    Geometry           — x/y, widget size
+    Dot                — the dot's size, corner radius, border widths
+    Main Colors        — fill (when checked), hover
     Button Interaction — interactable, hover, initial state
-    Main Colors       — fill (when checked), hover
-    Text              — label, font + style, text colors
 """
 import customtkinter as ctk
 
@@ -61,6 +62,35 @@ class CTkRadioButtonDescriptor(WidgetDescriptor):
     }
 
     property_schema = [
+        # --- Text --------------------------------------------------------
+        {"name": "text", "type": "multiline", "label": "",
+         "group": "Text", "row_label": "Label"},
+
+        {"name": "font_family", "type": "font", "label": "",
+         "group": "Text", "row_label": "Font"},
+
+        {"name": "font_size", "type": "number", "label": "",
+         "group": "Text", "row_label": "Size", "min": 6, "max": 96},
+
+        {"name": "font_bold", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Bold"},
+        {"name": "font_italic", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Italic"},
+        {"name": "font_underline", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Underline"},
+        {"name": "font_overstrike", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Strike"},
+
+        {"name": "text_color", "type": "color", "label": "",
+         "group": "Text", "row_label": "Normal Text Color"},
+        {"name": "text_color_disabled", "type": "color", "label": "",
+         "group": "Text", "row_label": "Disabled Text Color"},
+        {"name": "text_position", "type": "text_position", "label": "",
+         "group": "Text", "row_label": "Text Position"},
+        {"name": "text_spacing", "type": "number", "label": "",
+         "group": "Text", "row_label": "Text Spacing",
+         "min": 0, "max": 100},
+
         # --- Geometry ----------------------------------------------------
         {"name": "x", "type": "number", "label": "X",
          "group": "Geometry", "pair": "pos", "row_label": "Position"},
@@ -106,6 +136,13 @@ class CTkRadioButtonDescriptor(WidgetDescriptor):
                  int(p.get("radiobutton_height", 0))) // 2,
          )},
 
+        # --- Main Colors -------------------------------------------------
+        {"name": "fg_color", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Fill (Checked)"},
+        {"name": "hover_color", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Hover",
+         "disabled_when": lambda p: not p.get("hover")},
+
         # --- Button Interaction ------------------------------------------
         {"name": "button_enabled", "type": "boolean", "label": "",
          "group": "Button Interaction", "row_label": "Interactable"},
@@ -115,42 +152,6 @@ class CTkRadioButtonDescriptor(WidgetDescriptor):
          "group": "Button Interaction", "row_label": "Initially Checked"},
         {"name": "group", "type": "multiline", "label": "",
          "group": "Button Interaction", "row_label": "Group"},
-
-        # --- Main Colors -------------------------------------------------
-        {"name": "fg_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Fill (Checked)"},
-        {"name": "hover_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Hover",
-         "disabled_when": lambda p: not p.get("hover")},
-
-        # --- Text --------------------------------------------------------
-        {"name": "text", "type": "multiline", "label": "",
-         "group": "Text", "row_label": "Label"},
-
-        {"name": "font_family", "type": "font", "label": "",
-         "group": "Text", "row_label": "Font"},
-
-        {"name": "font_size", "type": "number", "label": "",
-         "group": "Text", "row_label": "Size", "min": 6, "max": 96},
-
-        {"name": "font_bold", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Bold"},
-        {"name": "font_italic", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Italic"},
-        {"name": "font_underline", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Underline"},
-        {"name": "font_overstrike", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Strike"},
-
-        {"name": "text_color", "type": "color", "label": "",
-         "group": "Text", "row_label": "Normal Text Color"},
-        {"name": "text_color_disabled", "type": "color", "label": "",
-         "group": "Text", "row_label": "Disabled Text Color"},
-        {"name": "text_position", "type": "text_position", "label": "",
-         "group": "Text", "row_label": "Text Position"},
-        {"name": "text_spacing", "type": "number", "label": "",
-         "group": "Text", "row_label": "Text Spacing",
-         "min": 0, "max": 100},
     ]
 
     _NODE_ONLY_KEYS = {

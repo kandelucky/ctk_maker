@@ -5,14 +5,15 @@ A multi-line text editor — CTkEntry's big brother. Inherits from
 `.get(start, end)` follow the Text widget's `"line.col"` index
 conventions.
 
-Groups shown in the Properties panel, in order:
+Groups shown in the Properties panel, in order
+(Content → Layout → Visual → Behavior):
 
+    Content            — initial text + scrollbar toggle
+    Text               — font + style, text color
     Geometry           — x/y, width/height
     Rectangle          — corner radius, optional border, inner padding
-    Content            — initial text + scrollbar toggle
-    Button Interaction — interactable toggle
     Main Colors        — background, scrollbar, scrollbar hover
-    Text               — font + style, text color
+    Button Interaction — interactable toggle
 """
 import customtkinter as ctk
 
@@ -58,6 +59,33 @@ class CTkTextboxDescriptor(WidgetDescriptor):
     }
 
     property_schema = [
+        # --- Content -----------------------------------------------------
+        {"name": "initial_text", "type": "multiline", "label": "",
+         "group": "Content", "row_label": "Initial Text"},
+        {"name": "wrap", "type": "wrap", "label": "",
+         "group": "Content", "row_label": "Wrap"},
+        {"name": "activate_scrollbars", "type": "boolean", "label": "",
+         "group": "Content", "row_label": "Show Scrollbars"},
+
+        # --- Text --------------------------------------------------------
+        {"name": "font_family", "type": "font", "label": "",
+         "group": "Text", "row_label": "Font"},
+
+        {"name": "font_size", "type": "number", "label": "",
+         "group": "Text", "row_label": "Size", "min": 6, "max": 96},
+
+        {"name": "font_bold", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Bold"},
+        {"name": "font_italic", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Italic"},
+        {"name": "font_underline", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Underline"},
+        {"name": "font_overstrike", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Strike"},
+
+        {"name": "text_color", "type": "color", "label": "",
+         "group": "Text", "row_label": "Normal Text Color"},
+
         # --- Geometry ----------------------------------------------------
         {"name": "x", "type": "number", "label": "X",
          "group": "Geometry", "pair": "pos", "row_label": "Position"},
@@ -93,18 +121,6 @@ class CTkTextboxDescriptor(WidgetDescriptor):
          "group": "Rectangle",
          "row_label": "Inner Padding", "min": 0, "max": 50},
 
-        # --- Content -----------------------------------------------------
-        {"name": "initial_text", "type": "multiline", "label": "",
-         "group": "Content", "row_label": "Initial Text"},
-        {"name": "wrap", "type": "wrap", "label": "",
-         "group": "Content", "row_label": "Wrap"},
-        {"name": "activate_scrollbars", "type": "boolean", "label": "",
-         "group": "Content", "row_label": "Show Scrollbars"},
-
-        # --- Button Interaction ------------------------------------------
-        {"name": "button_enabled", "type": "boolean", "label": "",
-         "group": "Button Interaction", "row_label": "Interactable"},
-
         # --- Main Colors -------------------------------------------------
         {"name": "fg_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Background"},
@@ -114,24 +130,9 @@ class CTkTextboxDescriptor(WidgetDescriptor):
          "label": "", "group": "Main Colors",
          "row_label": "Scrollbar Hover"},
 
-        # --- Text --------------------------------------------------------
-        {"name": "font_family", "type": "font", "label": "",
-         "group": "Text", "row_label": "Font"},
-
-        {"name": "font_size", "type": "number", "label": "",
-         "group": "Text", "row_label": "Size", "min": 6, "max": 96},
-
-        {"name": "font_bold", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Bold"},
-        {"name": "font_italic", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Italic"},
-        {"name": "font_underline", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Underline"},
-        {"name": "font_overstrike", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Strike"},
-
-        {"name": "text_color", "type": "color", "label": "",
-         "group": "Text", "row_label": "Normal Text Color"},
+        # --- Button Interaction ------------------------------------------
+        {"name": "button_enabled", "type": "boolean", "label": "",
+         "group": "Button Interaction", "row_label": "Interactable"},
     ]
 
     _NODE_ONLY_KEYS = {

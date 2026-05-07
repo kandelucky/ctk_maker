@@ -3,13 +3,14 @@
 A toggle switch — like CTkCheckBox visually but rendered as an
 iOS-style slider.
 
-Groups shown in the Properties panel, in order:
+Groups shown in the Properties panel, in order
+(Content → Layout → Visual → Behavior):
 
+    Text               — label, font + style, text colors
     Geometry           — x/y, widget size
     Toggle             — the toggle pill's size, corner radius, button length
-    Button Interaction — interactable, hover, initially on
     Main Colors        — track (off / on), knob, knob hover
-    Text               — label, font + style, text colors
+    Button Interaction — interactable, hover, initially on
 """
 import customtkinter as ctk
 
@@ -63,6 +64,35 @@ class CTkSwitchDescriptor(WidgetDescriptor):
     }
 
     property_schema = [
+        # --- Text --------------------------------------------------------
+        {"name": "text", "type": "multiline", "label": "",
+         "group": "Text", "row_label": "Label"},
+
+        {"name": "font_family", "type": "font", "label": "",
+         "group": "Text", "row_label": "Font"},
+
+        {"name": "font_size", "type": "number", "label": "",
+         "group": "Text", "row_label": "Size", "min": 6, "max": 96},
+
+        {"name": "font_bold", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Bold"},
+        {"name": "font_italic", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Italic"},
+        {"name": "font_underline", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Underline"},
+        {"name": "font_overstrike", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Strike"},
+
+        {"name": "text_color", "type": "color", "label": "",
+         "group": "Text", "row_label": "Normal Text Color"},
+        {"name": "text_color_disabled", "type": "color", "label": "",
+         "group": "Text", "row_label": "Disabled Text Color"},
+        {"name": "text_position", "type": "text_position", "label": "",
+         "group": "Text", "row_label": "Text Position"},
+        {"name": "text_spacing", "type": "number", "label": "",
+         "group": "Text", "row_label": "Text Spacing",
+         "min": 0, "max": 100},
+
         # --- Geometry ----------------------------------------------------
         {"name": "x", "type": "number", "label": "X",
          "group": "Geometry", "pair": "pos", "row_label": "Position"},
@@ -96,14 +126,6 @@ class CTkSwitchDescriptor(WidgetDescriptor):
          "row_label": "Button Length", "min": 0,
          "max": lambda p: max(0, int(p.get("switch_width", 36)))},
 
-        # --- Button Interaction ------------------------------------------
-        {"name": "button_enabled", "type": "boolean", "label": "",
-         "group": "Button Interaction", "row_label": "Interactable"},
-        {"name": "hover", "type": "boolean", "label": "",
-         "group": "Button Interaction", "row_label": "Hover Effect"},
-        {"name": "initially_checked", "type": "boolean", "label": "",
-         "group": "Button Interaction", "row_label": "Initially On"},
-
         # --- Main Colors -------------------------------------------------
         {"name": "fg_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Track (Off)"},
@@ -115,34 +137,13 @@ class CTkSwitchDescriptor(WidgetDescriptor):
          "group": "Main Colors", "row_label": "Knob Hover",
          "disabled_when": lambda p: not p.get("hover")},
 
-        # --- Text --------------------------------------------------------
-        {"name": "text", "type": "multiline", "label": "",
-         "group": "Text", "row_label": "Label"},
-
-        {"name": "font_family", "type": "font", "label": "",
-         "group": "Text", "row_label": "Font"},
-
-        {"name": "font_size", "type": "number", "label": "",
-         "group": "Text", "row_label": "Size", "min": 6, "max": 96},
-
-        {"name": "font_bold", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Bold"},
-        {"name": "font_italic", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Italic"},
-        {"name": "font_underline", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Underline"},
-        {"name": "font_overstrike", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Strike"},
-
-        {"name": "text_color", "type": "color", "label": "",
-         "group": "Text", "row_label": "Normal Text Color"},
-        {"name": "text_color_disabled", "type": "color", "label": "",
-         "group": "Text", "row_label": "Disabled Text Color"},
-        {"name": "text_position", "type": "text_position", "label": "",
-         "group": "Text", "row_label": "Text Position"},
-        {"name": "text_spacing", "type": "number", "label": "",
-         "group": "Text", "row_label": "Text Spacing",
-         "min": 0, "max": 100},
+        # --- Button Interaction ------------------------------------------
+        {"name": "button_enabled", "type": "boolean", "label": "",
+         "group": "Button Interaction", "row_label": "Interactable"},
+        {"name": "hover", "type": "boolean", "label": "",
+         "group": "Button Interaction", "row_label": "Hover Effect"},
+        {"name": "initially_checked", "type": "boolean", "label": "",
+         "group": "Button Interaction", "row_label": "Initially On"},
     ]
 
     _NODE_ONLY_KEYS = {

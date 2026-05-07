@@ -214,7 +214,7 @@ The file is created automatically when you create the window. Methods are added 
 ### Attaching a handler
 
 1. Select the widget on the canvas
-2. Properties panel → **Events** group (right after Colors group)
+2. Properties panel → **Events** group (below the Behavior cluster, near the bottom)
 3. Click `[+]` on an event → enter or pick a method name
 4. Open in editor (F7 or double-click) to write the body
 

@@ -75,6 +75,28 @@ class WidgetGroup:
 
 
 CATALOG: tuple[WidgetGroup, ...] = (
+    WidgetGroup("Display", (
+        WidgetEntry("CTkLabel", "Label", "type"),
+        WidgetEntry("Image", "Image", "image"),
+        WidgetEntry("Card", "Card", "circle-stop"),
+    )),
+    WidgetGroup("Controls", (
+        WidgetEntry("CTkButton", "Button", "square-mouse-pointer"),
+        WidgetEntry("CTkEntry", "Entry", "text-cursor-input"),
+        WidgetEntry("CTkTextbox", "Textbox", "file-text"),
+        WidgetEntry("CTkCheckBox", "Check Box", "square-check"),
+        WidgetEntry("CTkSwitch", "Switch", "toggle-left"),
+        WidgetEntry("CTkRadioButton", "Radio Button", "circle-dot"),
+        WidgetEntry("CTkSegmentedButton", "Segmented Button", "panel-left-right-dashed"),
+        WidgetEntry("CTkComboBox", "Combo Box", "chevrons-up-down"),
+        WidgetEntry("CTkOptionMenu", "Option Menu", "menu"),
+        WidgetEntry("CTkSlider", "Slider", "sliders-horizontal"),
+    )),
+    WidgetGroup("Containers", (
+        WidgetEntry("CTkFrame", "Frame", "frame"),
+        WidgetEntry("CTkScrollableFrame", "Scrollable Frame", "scroll-text"),
+        WidgetEntry("CTkTabview", "Tab View", "layout-panel-top"),
+    )),
     WidgetGroup("Layouts", (
         WidgetEntry(
             "CTkFrame", "Vertical Layout", "rows-3",
@@ -107,33 +129,9 @@ CATALOG: tuple[WidgetGroup, ...] = (
             default_name="grid_layout",
         ),
     )),
-    WidgetGroup("Buttons", (
-        WidgetEntry("CTkButton", "Button", "square-mouse-pointer"),
-        WidgetEntry("CTkSegmentedButton", "Segmented Button", "panel-left-right-dashed"),
-    )),
-    WidgetGroup("Display", (
-        WidgetEntry("CTkLabel", "Label", "type"),
-        WidgetEntry("Image", "Image", "image"),
-        WidgetEntry("Card", "Card", "circle-stop"),
+    WidgetGroup("Indicators", (
         WidgetEntry("CTkProgressBar", "Progress Bar", "loader"),
         WidgetEntry("CircularProgress", "Circular Progress", "circle-percent"),
-    )),
-    WidgetGroup("Selection", (
-        WidgetEntry("CTkCheckBox", "Check Box", "square-check"),
-        WidgetEntry("CTkRadioButton", "Radio Button", "circle-dot"),
-        WidgetEntry("CTkSwitch", "Switch", "toggle-left"),
-    )),
-    WidgetGroup("Input", (
-        WidgetEntry("CTkEntry", "Entry", "text-cursor-input"),
-        WidgetEntry("CTkTextbox", "Textbox", "file-text"),
-        WidgetEntry("CTkComboBox", "Combo Box", "chevrons-up-down"),
-        WidgetEntry("CTkOptionMenu", "Option Menu", "menu"),
-        WidgetEntry("CTkSlider", "Slider", "sliders-horizontal"),
-    )),
-    WidgetGroup("Containers", (
-        WidgetEntry("CTkFrame", "Frame", "frame"),
-        WidgetEntry("CTkScrollableFrame", "Scrollable Frame", "scroll-text"),
-        WidgetEntry("CTkTabview", "Tab View", "layout-panel-top"),
     )),
 )
 

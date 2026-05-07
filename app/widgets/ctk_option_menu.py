@@ -3,15 +3,17 @@
 A dropdown picker: the main button shows the current value, clicking
 opens a native menu to pick from a fixed list of strings.
 
-Groups shown in the Properties panel, in order:
+Groups shown in the Properties panel, in order
+(Content → Layout → Visual → Behavior):
 
+    Values             — dropdown items + the initially shown value
+    Text               — font + style, text align, text colors
     Geometry           — x/y, width/height
     Rectangle          — corner radius (no border on this widget)
-    Values             — dropdown items + the initially shown value
-    Button Interaction — interactable toggle + hover effect
     Main Colors        — background, arrow button, arrow hover
     Dropdown Colors    — dropdown background, hover, text
-    Text               — font + style, text align, text colors
+    Dropdown Layout    — popup geometry + border
+    Button Interaction — interactable toggle + hover effect
 """
 import customtkinter as ctk
 
@@ -70,6 +72,36 @@ class CTkOptionMenuDescriptor(WidgetDescriptor):
     }
 
     property_schema = [
+        # --- Values ------------------------------------------------------
+        {"name": "values", "type": "segment_values", "label": "",
+         "group": "Values", "row_label": "Values"},
+        {"name": "initial_value", "type": "segment_initial", "label": "",
+         "group": "Values", "row_label": "Initial Value"},
+
+        # --- Text --------------------------------------------------------
+        {"name": "font_family", "type": "font", "label": "",
+         "group": "Text", "row_label": "Font"},
+
+        {"name": "font_size", "type": "number", "label": "",
+         "group": "Text", "row_label": "Size", "min": 6, "max": 96},
+
+        {"name": "font_bold", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Bold"},
+        {"name": "font_italic", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Italic"},
+        {"name": "font_underline", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Underline"},
+        {"name": "font_overstrike", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Strike"},
+
+        {"name": "text_align", "type": "justify", "label": "",
+         "group": "Text", "row_label": "Text Align"},
+
+        {"name": "text_color", "type": "color", "label": "",
+         "group": "Text", "row_label": "Normal Text Color"},
+        {"name": "text_color_disabled", "type": "color", "label": "",
+         "group": "Text", "row_label": "Disabled Text Color"},
+
         # --- Geometry ----------------------------------------------------
         {"name": "x", "type": "number", "label": "X",
          "group": "Geometry", "pair": "pos", "row_label": "Position"},
@@ -90,18 +122,6 @@ class CTkOptionMenuDescriptor(WidgetDescriptor):
              0,
              min(int(p.get("width", 0)), int(p.get("height", 0))) // 2,
          )},
-
-        # --- Values ------------------------------------------------------
-        {"name": "values", "type": "segment_values", "label": "",
-         "group": "Values", "row_label": "Values"},
-        {"name": "initial_value", "type": "segment_initial", "label": "",
-         "group": "Values", "row_label": "Initial Value"},
-
-        # --- Button Interaction ------------------------------------------
-        {"name": "button_enabled", "type": "boolean", "label": "",
-         "group": "Button Interaction", "row_label": "Interactable"},
-        {"name": "hover", "type": "boolean", "label": "",
-         "group": "Button Interaction", "row_label": "Hover Effect"},
 
         # --- Main Colors -------------------------------------------------
         {"name": "fg_color", "type": "color", "label": "",
@@ -144,29 +164,11 @@ class CTkOptionMenuDescriptor(WidgetDescriptor):
          "row_label": "Color",
          "disabled_when": lambda p: not p.get("dropdown_border_enabled")},
 
-        # --- Text --------------------------------------------------------
-        {"name": "font_family", "type": "font", "label": "",
-         "group": "Text", "row_label": "Font"},
-
-        {"name": "font_size", "type": "number", "label": "",
-         "group": "Text", "row_label": "Size", "min": 6, "max": 96},
-
-        {"name": "font_bold", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Bold"},
-        {"name": "font_italic", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Italic"},
-        {"name": "font_underline", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Underline"},
-        {"name": "font_overstrike", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Strike"},
-
-        {"name": "text_align", "type": "justify", "label": "",
-         "group": "Text", "row_label": "Text Align"},
-
-        {"name": "text_color", "type": "color", "label": "",
-         "group": "Text", "row_label": "Normal Text Color"},
-        {"name": "text_color_disabled", "type": "color", "label": "",
-         "group": "Text", "row_label": "Disabled Text Color"},
+        # --- Button Interaction ------------------------------------------
+        {"name": "button_enabled", "type": "boolean", "label": "",
+         "group": "Button Interaction", "row_label": "Interactable"},
+        {"name": "hover", "type": "boolean", "label": "",
+         "group": "Button Interaction", "row_label": "Hover Effect"},
     ]
 
     _NODE_ONLY_KEYS = {

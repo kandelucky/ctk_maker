@@ -35,7 +35,7 @@ Project → has → Pages → has → Windows → has → Widgets (nested tree)
 
 ## Widgets — quick list
 
-21 palette widgets across 6 groups (Layouts, Buttons, Display, Selection, Input, Containers). See [WIDGETS.md](WIDGETS.md) for full property tables.
+21 palette widgets across 5 groups (Display, Controls, Containers, Layouts, Indicators). See [WIDGETS.md](WIDGETS.md) for full property tables.
 
 | Widget | Use for |
 |---|---|

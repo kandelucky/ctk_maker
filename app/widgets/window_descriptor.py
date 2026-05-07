@@ -27,6 +27,7 @@ class WindowDescriptor(WidgetDescriptor):
     }
 
     property_schema = [
+        # --- Geometry (Layout) -------------------------------------------
         {"name": "width", "type": "number", "label": "W",
          "group": "Geometry", "pair": "size", "row_label": "Size",
          "min": 100, "max": 4000},
@@ -34,6 +35,16 @@ class WindowDescriptor(WidgetDescriptor):
          "group": "Geometry", "pair": "size",
          "min": 100, "max": 4000},
 
+        # --- Main Colors (Visual) ----------------------------------------
+        {"name": "fg_color", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Background",
+         "clearable": True, "clear_value": "transparent"},
+
+        # --- Marker (Visual) ---------------------------------------------
+        {"name": "accent_color", "type": "color", "label": "",
+         "group": "Marker", "row_label": "Color"},
+
+        # --- Behaviour (runtime) -----------------------------------------
         {"name": "resizable_x", "type": "boolean", "label": "",
          "group": "Behaviour", "row_label": "Resizable X"},
         {"name": "resizable_y", "type": "boolean", "label": "",
@@ -41,6 +52,7 @@ class WindowDescriptor(WidgetDescriptor):
         {"name": "frameless", "type": "boolean", "label": "",
          "group": "Behaviour", "row_label": "Frameless"},
 
+        # --- Builder Grid (builder aid) ----------------------------------
         {"name": "grid_style", "type": "grid_style", "label": "",
          "group": "Builder Grid", "row_label": "Style"},
         {"name": "grid_color", "type": "color", "label": "",
@@ -51,17 +63,11 @@ class WindowDescriptor(WidgetDescriptor):
          "min": 4, "max": 200,
          "disabled_when": lambda p: p.get("grid_style") == "none"},
 
+        # --- Snap & Alignment (builder aid) ------------------------------
         {"name": "alignment_lines_enabled", "type": "boolean", "label": "",
          "group": "Snap & Alignment", "row_label": "Alignment Lines"},
         {"name": "snap_enabled", "type": "boolean", "label": "",
          "group": "Snap & Alignment", "row_label": "Snap"},
-
-        {"name": "fg_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Background",
-         "clearable": True, "clear_value": "transparent"},
-
-        {"name": "accent_color", "type": "color", "label": "",
-         "group": "Marker", "row_label": "Color"},
     ]
 
     @classmethod

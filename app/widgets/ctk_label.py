@@ -4,15 +4,16 @@ Declares the full schema the Properties panel uses to render editors
 for a CTkLabel, plus the bridge that converts the builder's property
 dict into the kwargs CTkLabel actually accepts.
 
-Groups shown in the Properties panel, in order:
+Groups shown in the Properties panel, in order
+(Content → Layout → Visual → Behavior):
 
-    Geometry        — x/y, width/height
-    Rectangle       — corner radius
-    Alignment       — content anchor + inner padding
-    Interaction     — enabled flag, cursor, takefocus
-    Main Colors     — background
     Text            — label, font style, line align, wraplength, text colors
     Icon            — image picker, size, tint, compound, preserve aspect
+    Geometry        — x/y, width/height
+    Alignment       — content anchor + inner padding
+    Rectangle       — corner radius
+    Main Colors     — background
+    Interaction     — enabled flag, cursor, takefocus
 """
 import customtkinter as ctk
 
@@ -72,65 +73,6 @@ class CTkLabelDescriptor(WidgetDescriptor):
     }
 
     property_schema = [
-        # --- Geometry ----------------------------------------------------
-        {"name": "x", "type": "number", "label": "X",
-         "group": "Geometry", "pair": "pos", "row_label": "Position"},
-        {"name": "y", "type": "number", "label": "Y",
-         "group": "Geometry", "pair": "pos"},
-
-        {"name": "width", "type": "number", "label": "W",
-         "group": "Geometry", "pair": "size", "row_label": "Size",
-         "min": 20, "max": 2000},
-        {"name": "height", "type": "number", "label": "H",
-         "group": "Geometry", "pair": "size", "min": 10, "max": 2000},
-
-        # --- Rectangle ---------------------------------------------------
-        {"name": "corner_radius", "type": "number", "label": "",
-         "group": "Rectangle",
-         "row_label": "Corner Radius", "min": 0,
-         "max": lambda p: max(
-             0,
-             min(int(p.get("width", 0)), int(p.get("height", 0))) // 2,
-         )},
-
-        # --- Alignment ---------------------------------------------------
-        # `anchor` positions the entire content block (text + icon) within
-        # the widget — not text-only — so it lives in its own group.
-        {"name": "anchor", "type": "anchor", "label": "",
-         "group": "Alignment", "row_label": "Anchor"},
-        {"name": "padx", "type": "number", "label": "X",
-         "group": "Alignment",
-         "pair": "pad", "row_label": "Padding",
-         "min": 0, "max": 50},
-        {"name": "pady", "type": "number", "label": "Y",
-         "group": "Alignment",
-         "pair": "pad",
-         "min": 0, "max": 50},
-
-        # --- Interaction -------------------------------------------------
-        {"name": "label_enabled", "type": "boolean", "label": "",
-         "group": "Interaction", "row_label": "Enabled"},
-        {"name": "cursor", "type": "cursor", "label": "",
-         "group": "Interaction", "row_label": "Cursor"},
-        {"name": "takefocus", "type": "boolean", "label": "",
-         "group": "Interaction", "row_label": "Take Focus"},
-
-        # --- Main Colors -------------------------------------------------
-        # CTk semantics: `fg_color` = the label's filled body (the
-        # "Foreground" of the widget on its parent), `bg_color` = the
-        # parent-derived antialiasing layer behind the rounded corners
-        # (the "Background"). Default both to transparent — fg picks up
-        # nothing, bg auto-derives from parent. ✕ on either reverts to
-        # transparent. Bumping bg_color away from transparent is rare:
-        # only useful when the parent is a gradient / image where CTk's
-        # auto-detect can't read a single solid color.
-        {"name": "fg_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Foreground",
-         "clearable": True, "clear_value": "transparent"},
-        {"name": "bg_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Background",
-         "clearable": True, "clear_value": "transparent"},
-
         # --- Text --------------------------------------------------------
         {"name": "text", "type": "multiline", "label": "",
          "group": "Text", "row_label": "Label"},
@@ -195,6 +137,65 @@ class CTkLabelDescriptor(WidgetDescriptor):
         {"name": "preserve_aspect", "type": "boolean", "label": "",
          "group": "Icon", "row_label": "Preserve Aspect",
          "disabled_when": lambda p: not p.get("image")},
+
+        # --- Geometry ----------------------------------------------------
+        {"name": "x", "type": "number", "label": "X",
+         "group": "Geometry", "pair": "pos", "row_label": "Position"},
+        {"name": "y", "type": "number", "label": "Y",
+         "group": "Geometry", "pair": "pos"},
+
+        {"name": "width", "type": "number", "label": "W",
+         "group": "Geometry", "pair": "size", "row_label": "Size",
+         "min": 20, "max": 2000},
+        {"name": "height", "type": "number", "label": "H",
+         "group": "Geometry", "pair": "size", "min": 10, "max": 2000},
+
+        # --- Alignment ---------------------------------------------------
+        # `anchor` positions the entire content block (text + icon) within
+        # the widget — not text-only — so it lives in its own group.
+        {"name": "anchor", "type": "anchor", "label": "",
+         "group": "Alignment", "row_label": "Anchor"},
+        {"name": "padx", "type": "number", "label": "X",
+         "group": "Alignment",
+         "pair": "pad", "row_label": "Padding",
+         "min": 0, "max": 50},
+        {"name": "pady", "type": "number", "label": "Y",
+         "group": "Alignment",
+         "pair": "pad",
+         "min": 0, "max": 50},
+
+        # --- Rectangle ---------------------------------------------------
+        {"name": "corner_radius", "type": "number", "label": "",
+         "group": "Rectangle",
+         "row_label": "Corner Radius", "min": 0,
+         "max": lambda p: max(
+             0,
+             min(int(p.get("width", 0)), int(p.get("height", 0))) // 2,
+         )},
+
+        # --- Main Colors -------------------------------------------------
+        # CTk semantics: `fg_color` = the label's filled body (the
+        # "Foreground" of the widget on its parent), `bg_color` = the
+        # parent-derived antialiasing layer behind the rounded corners
+        # (the "Background"). Default both to transparent — fg picks up
+        # nothing, bg auto-derives from parent. ✕ on either reverts to
+        # transparent. Bumping bg_color away from transparent is rare:
+        # only useful when the parent is a gradient / image where CTk's
+        # auto-detect can't read a single solid color.
+        {"name": "fg_color", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Foreground",
+         "clearable": True, "clear_value": "transparent"},
+        {"name": "bg_color", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Background",
+         "clearable": True, "clear_value": "transparent"},
+
+        # --- Interaction -------------------------------------------------
+        {"name": "label_enabled", "type": "boolean", "label": "",
+         "group": "Interaction", "row_label": "Enabled"},
+        {"name": "cursor", "type": "cursor", "label": "",
+         "group": "Interaction", "row_label": "Cursor"},
+        {"name": "takefocus", "type": "boolean", "label": "",
+         "group": "Interaction", "row_label": "Take Focus"},
     ]
 
     derived_triggers = {

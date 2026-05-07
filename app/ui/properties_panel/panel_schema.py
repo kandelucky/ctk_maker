@@ -491,11 +491,11 @@ class SchemaMixin:
         so the right-click router can look up ``(kind, event_key,
         index)`` without re-deriving it from the iid string.
 
-        The group inserts at the end of the walk and then re-positions
-        right after the ``Colors`` group when that group exists —
-        events sit conceptually closer to the visual styling rows
-        than to the trailing layout / state knobs, so this placement
-        matches the order the user reads the panel.
+        The group inserts at the end of the schema walk — under the
+        Content-first ordering (Content → Layout → Visual → Behavior),
+        the schema's last group is the widget's Behavior cluster
+        (Interaction / Button Interaction), so Events lands naturally
+        right after Behavior with no manual hoist.
         """
         from app.widgets.event_registry import events_partitioned
         default_events, advanced_events = events_partitioned(node.widget_type)
@@ -565,22 +565,6 @@ class SchemaMixin:
                 ev_idx, entry, parent_iid, node, docs,
                 existing_methods, scanned_existing, widget_id, meta,
             )
-
-        # Hoist the Events group up to live right after the LAST
-        # group whose name contains "Color" (CTkButton uses
-        # "Main Colors", CTkComboBox has "Main Colors" + "Dropdown
-        # Colors", etc. — the events sit conceptually closest to the
-        # final colour batch). When no colour-related group exists,
-        # leave Events at its natural end-of-list position.
-        anchor_iid: str | None = None
-        for child_iid in self.tree.get_children(""):
-            text = self.tree.item(child_iid, "text") or ""
-            if "color" in text.lower():
-                anchor_iid = child_iid
-        if anchor_iid is None:
-            return
-        anchor_index = self.tree.index(anchor_iid)
-        self.tree.move(group_iid, "", anchor_index + 1)
 
     def _render_event_row(
         self, ev_idx: int, entry, parent_iid: str, node, docs: dict,

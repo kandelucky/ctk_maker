@@ -2,14 +2,15 @@
 
 A single-line text input with an optional placeholder hint.
 
-Groups shown in the Properties panel, in order:
+Groups shown in the Properties panel, in order
+(Content → Layout → Visual → Behavior):
 
+    Content            — placeholder + initial text
+    Text               — font + style, text + placeholder colors
     Geometry           — x/y, width/height
     Rectangle          — corner radius, optional border
-    Content            — placeholder + initial text
-    Button Interaction — interactable toggle
     Main Colors        — field background
-    Text               — font + style, text + placeholder colors
+    Button Interaction — interactable toggle
 """
 import tkinter as tk
 
@@ -57,6 +58,38 @@ class CTkEntryDescriptor(WidgetDescriptor):
     }
 
     property_schema = [
+        # --- Content -----------------------------------------------------
+        {"name": "placeholder_text", "type": "multiline", "label": "",
+         "group": "Content", "row_label": "Placeholder"},
+        {"name": "initial_value", "type": "multiline", "label": "",
+         "group": "Content", "row_label": "Initial Text"},
+        {"name": "password", "type": "boolean", "label": "",
+         "group": "Content", "row_label": "Password"},
+
+        # --- Text --------------------------------------------------------
+        {"name": "font_family", "type": "font", "label": "",
+         "group": "Text", "row_label": "Font"},
+
+        {"name": "font_size", "type": "number", "label": "",
+         "group": "Text", "row_label": "Size", "min": 6, "max": 96},
+
+        {"name": "font_bold", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Bold"},
+        {"name": "font_italic", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Italic"},
+        {"name": "font_underline", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Underline"},
+        {"name": "font_overstrike", "type": "boolean", "label": "",
+         "group": "Text", "subgroup": "Style", "row_label": "Strike"},
+
+        {"name": "justify", "type": "justify", "label": "",
+         "group": "Text", "row_label": "Text Align"},
+
+        {"name": "text_color", "type": "color", "label": "",
+         "group": "Text", "row_label": "Normal Text Color"},
+        {"name": "placeholder_text_color", "type": "color", "label": "",
+         "group": "Text", "row_label": "Placeholder Color"},
+
         # --- Geometry ----------------------------------------------------
         {"name": "x", "type": "number", "label": "X",
          "group": "Geometry", "pair": "pos", "row_label": "Position"},
@@ -93,13 +126,9 @@ class CTkEntryDescriptor(WidgetDescriptor):
          "row_label": "Color",
          "disabled_when": lambda p: not p.get("border_enabled")},
 
-        # --- Content -----------------------------------------------------
-        {"name": "placeholder_text", "type": "multiline", "label": "",
-         "group": "Content", "row_label": "Placeholder"},
-        {"name": "initial_value", "type": "multiline", "label": "",
-         "group": "Content", "row_label": "Initial Text"},
-        {"name": "password", "type": "boolean", "label": "",
-         "group": "Content", "row_label": "Password"},
+        # --- Main Colors -------------------------------------------------
+        {"name": "fg_color", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Field Background"},
 
         # --- Button Interaction ------------------------------------------
         {"name": "button_enabled", "type": "boolean", "label": "",
@@ -107,34 +136,6 @@ class CTkEntryDescriptor(WidgetDescriptor):
          "disabled_when": lambda p: bool(p.get("readonly"))},
         {"name": "readonly", "type": "boolean", "label": "",
          "group": "Button Interaction", "row_label": "Read-only"},
-
-        # --- Main Colors -------------------------------------------------
-        {"name": "fg_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Field Background"},
-
-        # --- Text --------------------------------------------------------
-        {"name": "font_family", "type": "font", "label": "",
-         "group": "Text", "row_label": "Font"},
-
-        {"name": "font_size", "type": "number", "label": "",
-         "group": "Text", "row_label": "Size", "min": 6, "max": 96},
-
-        {"name": "font_bold", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Bold"},
-        {"name": "font_italic", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Italic"},
-        {"name": "font_underline", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Underline"},
-        {"name": "font_overstrike", "type": "boolean", "label": "",
-         "group": "Text", "subgroup": "Style", "row_label": "Strike"},
-
-        {"name": "justify", "type": "justify", "label": "",
-         "group": "Text", "row_label": "Text Align"},
-
-        {"name": "text_color", "type": "color", "label": "",
-         "group": "Text", "row_label": "Normal Text Color"},
-        {"name": "placeholder_text_color", "type": "color", "label": "",
-         "group": "Text", "row_label": "Placeholder Color"},
     ]
 
     _NODE_ONLY_KEYS = {

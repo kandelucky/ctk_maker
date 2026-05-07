@@ -5,14 +5,15 @@ for a CTkButton, plus the bridge that converts the builder's
 property dict into the kwargs CTkButton actually accepts
 (`transform_properties`).
 
-Groups shown in the Properties panel, in order:
+Groups shown in the Properties panel, in order
+(Content → Layout → Visual → Behavior):
 
-    Geometry        — x/y, width/height
-    Rectangle       — corner radius, border (thickness + color)
-    State           — disabled flag
-    Main Colors     — background, hover
-    Text            — label, font style, alignment, text colors
-    Icon            — image picker, size, tint, compound, preserve aspect
+    Text                — label, font style, alignment, text colors
+    Icon                — image picker, size, tint, compound, preserve aspect
+    Geometry            — x/y, width/height
+    Rectangle           — corner radius, border (thickness + color)
+    Main Colors         — background, hover
+    Button Interaction  — interactable, hover effect
 """
 import customtkinter as ctk
 
@@ -77,61 +78,6 @@ class CTkButtonDescriptor(WidgetDescriptor):
     }
 
     property_schema = [
-        # --- Geometry ----------------------------------------------------
-        {"name": "x", "type": "number", "label": "X",
-         "group": "Geometry", "pair": "pos", "row_label": "Position"},
-        {"name": "y", "type": "number", "label": "Y",
-         "group": "Geometry", "pair": "pos"},
-
-        {"name": "width", "type": "number", "label": "W",
-         "group": "Geometry", "pair": "size", "row_label": "Size",
-         "min": 20, "max": 2000},
-        {"name": "height", "type": "number", "label": "H",
-         "group": "Geometry", "pair": "size", "min": 20, "max": 2000},
-
-        # --- Rectangle ---------------------------------------------------
-        {"name": "corner_radius", "type": "number", "label": "",
-         "group": "Rectangle",
-         "row_label": "Corner Radius", "min": 0,
-         "max": lambda p: max(
-             0,
-             min(int(p.get("width", 0)), int(p.get("height", 0))) // 2,
-         )},
-        {"name": "border_enabled", "type": "boolean", "label": "",
-         "group": "Rectangle", "subgroup": "Border",
-         "row_label": "Enabled"},
-        {"name": "border_width", "type": "number", "label": "",
-         "group": "Rectangle", "subgroup": "Border",
-         "row_label": "Thickness", "min": 1,
-         "max": lambda p: max(
-             1,
-             min(int(p.get("width", 0)), int(p.get("height", 0))) // 2,
-         ),
-         "disabled_when": lambda p: not p.get("border_enabled")},
-        {"name": "border_color", "type": "color", "label": "",
-         "group": "Rectangle", "subgroup": "Border",
-         "row_label": "Color",
-         "disabled_when": lambda p: not p.get("border_enabled")},
-        {"name": "border_spacing", "type": "number", "label": "",
-         "group": "Rectangle",
-         "row_label": "Inner Padding", "min": 0, "max": 20},
-
-        # --- Button Interaction ------------------------------------------
-        {"name": "button_enabled", "type": "boolean", "label": "",
-         "group": "Button Interaction", "row_label": "Interactable"},
-        {"name": "hover", "type": "boolean", "label": "",
-         "group": "Button Interaction", "row_label": "Hover Effect"},
-
-        # --- Main Colors -------------------------------------------------
-        # Clearable — icon-only buttons usually want a transparent
-        # background that picks up the parent's fill.
-        {"name": "fg_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Background",
-         "clearable": True, "clear_value": "transparent"},
-        {"name": "hover_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Hover Color",
-         "disabled_when": lambda p: not p.get("hover", True)},
-
         # --- Text --------------------------------------------------------
         {"name": "text", "type": "multiline", "label": "",
          "group": "Text", "row_label": "Label"},
@@ -194,6 +140,61 @@ class CTkButtonDescriptor(WidgetDescriptor):
         {"name": "preserve_aspect", "type": "boolean", "label": "",
          "group": "Icon", "row_label": "Preserve Aspect",
          "disabled_when": lambda p: not p.get("image")},
+
+        # --- Geometry ----------------------------------------------------
+        {"name": "x", "type": "number", "label": "X",
+         "group": "Geometry", "pair": "pos", "row_label": "Position"},
+        {"name": "y", "type": "number", "label": "Y",
+         "group": "Geometry", "pair": "pos"},
+
+        {"name": "width", "type": "number", "label": "W",
+         "group": "Geometry", "pair": "size", "row_label": "Size",
+         "min": 20, "max": 2000},
+        {"name": "height", "type": "number", "label": "H",
+         "group": "Geometry", "pair": "size", "min": 20, "max": 2000},
+
+        # --- Rectangle ---------------------------------------------------
+        {"name": "corner_radius", "type": "number", "label": "",
+         "group": "Rectangle",
+         "row_label": "Corner Radius", "min": 0,
+         "max": lambda p: max(
+             0,
+             min(int(p.get("width", 0)), int(p.get("height", 0))) // 2,
+         )},
+        {"name": "border_enabled", "type": "boolean", "label": "",
+         "group": "Rectangle", "subgroup": "Border",
+         "row_label": "Enabled"},
+        {"name": "border_width", "type": "number", "label": "",
+         "group": "Rectangle", "subgroup": "Border",
+         "row_label": "Thickness", "min": 1,
+         "max": lambda p: max(
+             1,
+             min(int(p.get("width", 0)), int(p.get("height", 0))) // 2,
+         ),
+         "disabled_when": lambda p: not p.get("border_enabled")},
+        {"name": "border_color", "type": "color", "label": "",
+         "group": "Rectangle", "subgroup": "Border",
+         "row_label": "Color",
+         "disabled_when": lambda p: not p.get("border_enabled")},
+        {"name": "border_spacing", "type": "number", "label": "",
+         "group": "Rectangle",
+         "row_label": "Inner Padding", "min": 0, "max": 20},
+
+        # --- Main Colors -------------------------------------------------
+        # Clearable — icon-only buttons usually want a transparent
+        # background that picks up the parent's fill.
+        {"name": "fg_color", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Background",
+         "clearable": True, "clear_value": "transparent"},
+        {"name": "hover_color", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Hover Color",
+         "disabled_when": lambda p: not p.get("hover", True)},
+
+        # --- Button Interaction ------------------------------------------
+        {"name": "button_enabled", "type": "boolean", "label": "",
+         "group": "Button Interaction", "row_label": "Interactable"},
+        {"name": "hover", "type": "boolean", "label": "",
+         "group": "Button Interaction", "row_label": "Hover Effect"},
     ]
 
     # Properties whose change should re-run `compute_derived` to update

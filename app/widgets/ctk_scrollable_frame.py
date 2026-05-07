@@ -4,13 +4,14 @@ A scrollable container frame with an optional header label. The
 scroll direction is chosen at construction time (horizontal or
 vertical) — changing it triggers a fresh widget.
 
-Groups shown in the Properties panel, in order:
+Groups shown in the Properties panel, in order
+(Content → Layout → Visual → Behavior):
 
+    Label        — header text, alignment, colors
     Geometry     — x/y, width/height
     Rectangle    — corner radius, optional border
-    Label        — header text, alignment, colors
-    Scrollbar    — orientation (init-only) + track / thumb colors
     Main Colors  — frame background
+    Scrollbar    — orientation (init-only) + track / thumb colors
     Layout       — child spacing (layout_type is hidden, orientation-driven)
 """
 import customtkinter as ctk
@@ -64,6 +65,18 @@ class CTkScrollableFrameDescriptor(WidgetDescriptor):
     }
 
     property_schema = [
+        # --- Label -------------------------------------------------------
+        {"name": "label_text", "type": "multiline", "label": "",
+         "group": "Label", "row_label": "Label Text"},
+        {"name": "label_text_align", "type": "justify", "label": "",
+         "group": "Label", "row_label": "Label Align"},
+        {"name": "font_family", "type": "font", "label": "",
+         "group": "Label", "row_label": "Label Font"},
+        {"name": "label_fg_color", "type": "color", "label": "",
+         "group": "Label", "row_label": "Label Background"},
+        {"name": "label_text_color", "type": "color", "label": "",
+         "group": "Label", "row_label": "Label Text Color"},
+
         # --- Geometry ----------------------------------------------------
         {"name": "x", "type": "number", "label": "X",
          "group": "Geometry", "pair": "pos", "row_label": "Position"},
@@ -96,17 +109,9 @@ class CTkScrollableFrameDescriptor(WidgetDescriptor):
          "row_label": "Color",
          "disabled_when": lambda p: not p.get("border_enabled")},
 
-        # --- Label -------------------------------------------------------
-        {"name": "label_text", "type": "multiline", "label": "",
-         "group": "Label", "row_label": "Label Text"},
-        {"name": "label_text_align", "type": "justify", "label": "",
-         "group": "Label", "row_label": "Label Align"},
-        {"name": "font_family", "type": "font", "label": "",
-         "group": "Label", "row_label": "Label Font"},
-        {"name": "label_fg_color", "type": "color", "label": "",
-         "group": "Label", "row_label": "Label Background"},
-        {"name": "label_text_color", "type": "color", "label": "",
-         "group": "Label", "row_label": "Label Text Color"},
+        # --- Main Colors -------------------------------------------------
+        {"name": "fg_color", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Frame Background"},
 
         # --- Scrollbar ---------------------------------------------------
         {"name": "orientation", "type": "orientation", "label": "",
@@ -118,10 +123,6 @@ class CTkScrollableFrameDescriptor(WidgetDescriptor):
          "group": "Scrollbar", "row_label": "Thumb"},
         {"name": "scrollbar_button_hover_color", "type": "color", "label": "",
          "group": "Scrollbar", "row_label": "Thumb Hover"},
-
-        # --- Main Colors -------------------------------------------------
-        {"name": "fg_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Frame Background"},
 
         # --- Layout ------------------------------------------------------
         # ``layout_type`` itself is not exposed — orientation drives it

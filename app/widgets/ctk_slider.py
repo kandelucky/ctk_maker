@@ -8,16 +8,17 @@ it in the Inspector destroys + recreates the widget via
 width ↔ height so a 200×16 horizontal slider becomes a 16×200
 vertical one).
 
-Groups shown in the Properties panel, in order:
+Groups shown in the Properties panel, in order
+(Content → Layout → Visual → Behavior):
 
+    Value Range        — min, max, number of steps, initial value
     Geometry           — x/y, width/height
+    Orientation        — horizontal / vertical
     Rectangle          — track corner radius, button corner radius,
                          button length (pill-shaped when > 0),
                          optional border
-    Value Range        — min, max, number of steps, initial value
-    Orientation        — horizontal / vertical
-    Button Interaction — interactable + hover effect
     Main Colors        — track, progress, button, button hover
+    Button Interaction — interactable + hover effect
 """
 import customtkinter as ctk
 
@@ -61,6 +62,17 @@ class CTkSliderDescriptor(WidgetDescriptor):
     }
 
     property_schema = [
+        # --- Value Range -------------------------------------------------
+        {"name": "from_", "type": "number", "label": "",
+         "group": "Value Range", "row_label": "Min"},
+        {"name": "to", "type": "number", "label": "",
+         "group": "Value Range", "row_label": "Max"},
+        {"name": "number_of_steps", "type": "number", "label": "",
+         "group": "Value Range", "row_label": "Steps",
+         "min": 0, "max": 1000},
+        {"name": "initial_value", "type": "number", "label": "",
+         "group": "Value Range", "row_label": "Initial Value"},
+
         # --- Geometry ----------------------------------------------------
         {"name": "x", "type": "number", "label": "X",
          "group": "Geometry", "pair": "pos", "row_label": "Position"},
@@ -81,6 +93,10 @@ class CTkSliderDescriptor(WidgetDescriptor):
          "group": "Geometry", "pair": "size",
          "min": lambda p: 8 if p.get("orientation") == "horizontal" else 20,
          "max": 2000},
+
+        # --- Orientation -------------------------------------------------
+        {"name": "orientation", "type": "orientation", "label": "",
+         "group": "Orientation", "row_label": "Orientation"},
 
         # --- Rectangle ---------------------------------------------------
         {"name": "corner_radius", "type": "number", "label": "",
@@ -115,27 +131,6 @@ class CTkSliderDescriptor(WidgetDescriptor):
          "row_label": "Color",
          "disabled_when": lambda p: not p.get("border_enabled")},
 
-        # --- Value Range -------------------------------------------------
-        {"name": "from_", "type": "number", "label": "",
-         "group": "Value Range", "row_label": "Min"},
-        {"name": "to", "type": "number", "label": "",
-         "group": "Value Range", "row_label": "Max"},
-        {"name": "number_of_steps", "type": "number", "label": "",
-         "group": "Value Range", "row_label": "Steps",
-         "min": 0, "max": 1000},
-        {"name": "initial_value", "type": "number", "label": "",
-         "group": "Value Range", "row_label": "Initial Value"},
-
-        # --- Orientation -------------------------------------------------
-        {"name": "orientation", "type": "orientation", "label": "",
-         "group": "Orientation", "row_label": "Orientation"},
-
-        # --- Button Interaction ------------------------------------------
-        {"name": "button_enabled", "type": "boolean", "label": "",
-         "group": "Button Interaction", "row_label": "Interactable"},
-        {"name": "hover", "type": "boolean", "label": "",
-         "group": "Button Interaction", "row_label": "Hover Effect"},
-
         # --- Main Colors -------------------------------------------------
         {"name": "fg_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Track"},
@@ -146,6 +141,12 @@ class CTkSliderDescriptor(WidgetDescriptor):
         {"name": "button_hover_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Button Hover",
          "disabled_when": lambda p: not p.get("hover")},
+
+        # --- Button Interaction ------------------------------------------
+        {"name": "button_enabled", "type": "boolean", "label": "",
+         "group": "Button Interaction", "row_label": "Interactable"},
+        {"name": "hover", "type": "boolean", "label": "",
+         "group": "Button Interaction", "row_label": "Hover Effect"},
     ]
 
     _NODE_ONLY_KEYS = {

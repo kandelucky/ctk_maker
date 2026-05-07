@@ -3,14 +3,15 @@
 A tabbed container with a segmented-button-style tab bar across the
 top. Each tab holds an inner CTkFrame for content.
 
-Groups shown in the Properties panel, in order:
+Groups shown in the Properties panel, in order
+(Content → Layout → Visual → Behavior):
 
+    Tabs               — tab names (multiline, one per line)
+    Text               — tab button font + text colors
     Geometry           — x/y, width/height
     Rectangle          — corner radius + optional border
-    Tabs               — tab names (multiline, one per line)
-    Button Interaction — interactable toggle
     Main Colors        — frame background + segmented button colors
-    Text               — tab button text colors
+    Button Interaction — interactable toggle
 
 Nesting children into specific tabs is NOT supported yet — the
 builder renders the widget as a preview of the final tab bar + empty
@@ -70,6 +71,24 @@ class CTkTabviewDescriptor(WidgetDescriptor):
     }
 
     property_schema = [
+        # --- Tabs --------------------------------------------------------
+        {"name": "tab_names", "type": "segment_values", "label": "",
+         "group": "Tabs", "row_label": "Tab Names"},
+        {"name": "initial_tab", "type": "segment_initial", "label": "",
+         "group": "Tabs", "row_label": "Initial Tab"},
+        {"name": "tab_position", "type": "tab_bar_position", "label": "",
+         "group": "Tabs", "row_label": "Tab Bar Position"},
+        {"name": "tab_anchor", "type": "tab_bar_align", "label": "",
+         "group": "Tabs", "row_label": "Tab Bar Align"},
+
+        # --- Text --------------------------------------------------------
+        {"name": "font_family", "type": "font", "label": "",
+         "group": "Text", "row_label": "Tab Font"},
+        {"name": "text_color", "type": "color", "label": "",
+         "group": "Text", "row_label": "Normal Text Color"},
+        {"name": "text_color_disabled", "type": "color", "label": "",
+         "group": "Text", "row_label": "Disabled Text Color"},
+
         # --- Geometry ----------------------------------------------------
         {"name": "x", "type": "number", "label": "X",
          "group": "Geometry", "pair": "pos", "row_label": "Position"},
@@ -102,20 +121,6 @@ class CTkTabviewDescriptor(WidgetDescriptor):
          "row_label": "Color",
          "disabled_when": lambda p: not p.get("border_enabled")},
 
-        # --- Tabs --------------------------------------------------------
-        {"name": "tab_names", "type": "segment_values", "label": "",
-         "group": "Tabs", "row_label": "Tab Names"},
-        {"name": "initial_tab", "type": "segment_initial", "label": "",
-         "group": "Tabs", "row_label": "Initial Tab"},
-        {"name": "tab_position", "type": "tab_bar_position", "label": "",
-         "group": "Tabs", "row_label": "Tab Bar Position"},
-        {"name": "tab_anchor", "type": "tab_bar_align", "label": "",
-         "group": "Tabs", "row_label": "Tab Bar Align"},
-
-        # --- Button Interaction ------------------------------------------
-        {"name": "button_enabled", "type": "boolean", "label": "",
-         "group": "Button Interaction", "row_label": "Interactable"},
-
         # --- Main Colors -------------------------------------------------
         {"name": "fg_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Frame Background"},
@@ -134,13 +139,9 @@ class CTkTabviewDescriptor(WidgetDescriptor):
          "label": "", "group": "Main Colors",
          "row_label": "Tab Unselected Hover"},
 
-        # --- Text --------------------------------------------------------
-        {"name": "font_family", "type": "font", "label": "",
-         "group": "Text", "row_label": "Tab Font"},
-        {"name": "text_color", "type": "color", "label": "",
-         "group": "Text", "row_label": "Normal Text Color"},
-        {"name": "text_color_disabled", "type": "color", "label": "",
-         "group": "Text", "row_label": "Disabled Text Color"},
+        # --- Button Interaction ------------------------------------------
+        {"name": "button_enabled", "type": "boolean", "label": "",
+         "group": "Button Interaction", "row_label": "Interactable"},
     ]
 
     _NODE_ONLY_KEYS = {
