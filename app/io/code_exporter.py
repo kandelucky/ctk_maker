@@ -1451,7 +1451,18 @@ def _generate_code_inner(
                 break
 
     lines.append('if __name__ == "__main__":')
+    lines.append(f"{INDENT}import sys")
     lines.append(f'{INDENT}ctk.set_appearance_mode("{DEFAULT_APPEARANCE_MODE}")')
+    # CTk ships only Roboto-Regular + Roboto-Medium (no Bold face), so
+    # CTkFont(weight="bold") silently falls back to synthetic bold —
+    # barely visible at large sizes. Mirror the editor's main.py patch
+    # so the exported app uses Segoe UI on Windows where a real bold
+    # face exists.
+    lines.append(f'{INDENT}if sys.platform == "win32":')
+    lines.append(
+        f'{INDENT}{INDENT}'
+        'ctk.ThemeManager.theme["CTkFont"]["family"] = "Segoe UI"'
+    )
 
     if preview_match is not None:
         preview_doc, preview_cls = preview_match
