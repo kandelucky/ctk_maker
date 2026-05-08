@@ -165,6 +165,19 @@ These are intentionally large. Every one has a multi-paragraph module-level docs
 
 `MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk)` and `PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame)` — the largest UI classes are composed across files via mixins. Look for the matching `*_mixin.py` / `_main_window_host.py` files when reading the main class.
 
+## Runtime widget overrides
+
+[`app/widgets/runtime/`](../../app/widgets/runtime/) — pure-Python subclasses of CTk widgets that work around CTk / Tk behaviors not reachable from the schema. Each module is standalone (no CTkMaker imports) so [`code_exporter`](../../app/io/code_exporter.py) inlines its source verbatim into generated `.py` files; the same fix applies to preview and exported scripts.
+
+| Override | Fixes |
+|---|---|
+| [`CircleLabel._create_grid`](../../app/widgets/runtime/circle_label.py) | CTkLabel pads inner text by `min(corner_radius, height/2)` — full-circle / pill labels would squeeze the text. Override zeros corner_radius during grid layout only; the rounded shape draw still uses the real value. |
+| [`CircleLabel.__init__`](../../app/widgets/runtime/circle_label.py) | Inner `CTkCanvas` defaults `takefocus=""`; Tk's heuristic admits it via Canvas's class-level key bindings, so `takefocus=True` labels need 2 Tab presses per move. Override sets `_canvas.configure(takefocus=0)` so only the inner `tk.Label` is in the cycle. |
+| [`CircleButton._create_grid`](../../app/widgets/runtime/circle_button.py) | Same corner_radius padding workaround as `CircleLabel`. The takefocus quirk likely applies here too but is not yet patched. |
+| [`CircularProgress`](../../app/widgets/runtime/circular_progress.py) | Custom ring-style progress widget — not present in `customtkinter`. |
+
+The `Image` widget uses raw `ctk.CTkLabel` (no override), so the takefocus quirk reappears there if the user enables it.
+
 ## Conventions
 
 - **Identifiers:** UUID strings for `WidgetNode.id`, `Document.id`, `VariableEntry.id`, `ObjectReferenceEntry.id`. Stable across save/load.
