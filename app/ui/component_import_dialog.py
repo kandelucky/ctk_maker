@@ -21,7 +21,8 @@ import customtkinter as ctk
 from app.core.component_paths import COMPONENT_EXT, component_display_stem
 from app.core.logger import log_error
 from app.io.component_io import load_metadata, load_payload
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui.dialog_utils import safe_grab_set
+from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
 _ROOT_LABEL = "(root)"
@@ -64,37 +65,58 @@ def _unique_name(target_dir: Path, base_stem: str) -> str:
         n += 1
 
 
-class ComponentImportDialog(ctk.CTkToplevel):
+class ComponentImportDialog(ManagedToplevel):
+    window_title = "Import component"
+    default_size = (400, 320)
+    min_size = (380, 300)
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
+
     def __init__(
         self,
         parent,
         source_path: Path,
         components_dir: Path,
     ):
-        super().__init__(parent)
-        prepare_dialog(self)
-        self.title("Import component")
-        self.resizable(False, False)
-        self.transient(parent)
-        safe_grab_set(self)
-
         self.result: bool = False
         self._source_path = source_path
         self._components_dir = components_dir
-
         self._payload = load_payload(source_path)
-        meta = load_metadata(source_path) or {}
+        self._meta = load_metadata(source_path) or {}
         try:
-            file_bytes = source_path.stat().st_size
+            self._file_bytes = source_path.stat().st_size
         except OSError:
-            file_bytes = 0
-        self._meta = meta
+            self._file_bytes = 0
+        self._folder_var = tk.StringVar(master=parent, value=_ROOT_LABEL)
+        self._folders = [_ROOT_LABEL] + _list_folders(components_dir)
+        super().__init__(parent)
 
-        body = ctk.CTkFrame(self, fg_color="transparent")
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+            w, h = self.default_size
+            return (
+                max(0, px + (pw - w) // 2),
+                max(0, py + (ph - h) // 2),
+            )
+        except tk.TclError:
+            return (100, 100)
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        meta = self._meta
+
+        body = ctk.CTkFrame(container, fg_color="transparent")
         body.pack(padx=20, pady=(18, 6), fill="x")
 
         ctk.CTkLabel(
-            body, text=meta.get("name") or component_display_stem(source_path),
+            body,
+            text=meta.get("name") or component_display_stem(self._source_path),
             font=ui_font(14, "bold"),
             text_color="#e6e6e6", anchor="w",
         ).grid(row=0, column=0, sticky="w")
@@ -103,7 +125,7 @@ class ComponentImportDialog(ctk.CTkToplevel):
         date_part = _format_date(meta.get("created_at", ""))
         info_parts = [
             f"{meta.get('view_w', 0)} × {meta.get('view_h', 0)}",
-            _format_size(file_bytes),
+            _format_size(self._file_bytes),
         ]
         if author:
             info_parts.append(f"by {author}")
@@ -126,15 +148,13 @@ class ComponentImportDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             body, text="Import to", font=ui_font(10),
         ).grid(row=3, column=0, sticky="w", pady=(0, 4))
-        folders = [_ROOT_LABEL] + _list_folders(components_dir)
-        self._folder_var = tk.StringVar(value=_ROOT_LABEL)
         ctk.CTkOptionMenu(
-            body, values=folders, variable=self._folder_var, width=320,
+            body, values=self._folders, variable=self._folder_var, width=320,
         ).grid(row=4, column=0, sticky="ew", pady=(0, 12))
 
         body.grid_columnconfigure(0, weight=1)
 
-        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer = ctk.CTkFrame(container, fg_color="transparent")
         footer.pack(fill="x", padx=20, pady=(4, 16))
         ctk.CTkButton(
             footer, text="Import", width=120, height=32,
@@ -146,10 +166,7 @@ class ComponentImportDialog(ctk.CTkToplevel):
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_cancel,
         ).pack(side="right", padx=(0, 8))
-
-        self.bind("<Escape>", lambda _e: self._on_cancel())
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-        self.after(100, self._center_on_parent)
+        return container
 
     def _on_preview(self) -> None:
         if self._payload is None:
@@ -280,21 +297,3 @@ class ComponentImportDialog(ctk.CTkToplevel):
     def _on_cancel(self) -> None:
         self.result = False
         self.destroy()
-
-    def _center_on_parent(self) -> None:
-        self.update_idletasks()
-        parent = self.master
-        try:
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-        except tk.TclError:
-            reveal_dialog(self)
-            return
-        w = self.winfo_width()
-        h = self.winfo_height()
-        x = px + (pw - w) // 2
-        y = py + (ph - h) // 2
-        self.geometry(f"+{max(0, x)}+{max(0, y)}")
-        reveal_dialog(self)
