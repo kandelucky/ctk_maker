@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Callable
 
 import customtkinter as ctk
 
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog
+from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
 if TYPE_CHECKING:
@@ -159,8 +159,14 @@ class HistoryPanel(ctk.CTkFrame):
         self._bus_subs = []
 
 
-class HistoryWindow(ctk.CTkToplevel):
+class HistoryWindow(ManagedToplevel):
     """Floating window wrapper around ``HistoryPanel`` (opened by F9)."""
+
+    window_key = "history"
+    window_title = "History"
+    default_size = (DIALOG_W, DIALOG_H)
+    min_size = (220, 200)
+    fg_color = BG
 
     def __init__(
         self,
@@ -168,45 +174,19 @@ class HistoryWindow(ctk.CTkToplevel):
         project: "Project",
         on_close: Callable[[], None] | None = None,
     ):
+        self.project = project
         super().__init__(parent)
-        prepare_dialog(self)
-        self.title("History")
-        self.configure(fg_color=BG)
-        self.geometry(f"{DIALOG_W}x{DIALOG_H}")
-        self.minsize(220, 200)
-        try:
-            self.transient(parent)
-        except tk.TclError:
-            pass
+        self.set_on_close(on_close)
 
-        self._on_close_callback = on_close
-        self.panel = HistoryPanel(self, project)
-        self.panel.pack(fill="both", expand=True, padx=6, pady=6)
-        self._place_relative_to(parent)
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
-        reveal_dialog(self)
+    def build_content(self) -> ctk.CTkFrame:
+        return HistoryPanel(self, self.project)
 
-    def _place_relative_to(self, parent) -> None:
+    def default_offset(self, parent) -> tuple[int, int]:
         try:
             parent.update_idletasks()
             px = parent.winfo_rootx()
             py = parent.winfo_rooty()
             pw = parent.winfo_width()
-            x = px + pw - DIALOG_W - 30
-            y = py + 340
-            self.geometry(f"{DIALOG_W}x{DIALOG_H}+{x}+{y}")
+            return (px + pw - self.default_size[0] - 30, py + 340)
         except tk.TclError:
-            pass
-
-    def _on_close(self) -> None:
-        if self._on_close_callback is not None:
-            try:
-                self._on_close_callback()
-            except Exception:
-                pass
-        self.destroy()
-
-    def destroy(self) -> None:
-        if hasattr(self, "panel"):
-            self.panel._unsubscribe_bus()
-        super().destroy()
+            return (100, 100)

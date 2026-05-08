@@ -25,6 +25,7 @@ import tkinter as tk
 
 from app.core.platform_compat import MOD_KEY
 from app.ui._main_window_host import _MainWindowHost
+from app.ui.dev_test_windows import DEV_TEST_WINDOW_CLASSES
 
 
 class ShortcutsMixin(_MainWindowHost):
@@ -142,9 +143,24 @@ class ShortcutsMixin(_MainWindowHost):
         self.bind(f"<{MOD_KEY}-w>", lambda e: self._on_close_project())
         self.bind("<F7>", lambda e: self._on_f7_edit_behavior_file())
         self.bind("<F8>", lambda e: self._on_f8_object_tree())
-        self.bind("<F9>", lambda e: self._on_f9_history_window())
-        self.bind("<F10>", lambda e: self._on_f10_project_window())
-        self.bind("<F11>", lambda e: self._on_f11_variables_window())
+        # bind_all so toggling these floating windows still works when
+        # the floating window itself has keyboard focus (which it does
+        # right after open — ManagedToplevel calls focus_set so Escape
+        # works without a click first).
+        self.bind_all("<F9>", lambda e: self._on_f9_history_window())
+        self.bind_all("<F10>", lambda e: self._on_f10_project_window())
+        self.bind_all("<F11>", lambda e: self._on_f11_variables_window())
+        # On Windows, holding Shift with a digit shifts the keysym
+        # ("1" → "exclam" on US, etc.). Bind both the bare digit and
+        # the US-shifted symbol so the chord fires regardless of which
+        # one Tk reports for the active layout.
+        shifted = {1: "exclam", 2: "at", 3: "numbersign", 4: "dollar"}
+        for idx in range(len(DEV_TEST_WINDOW_CLASSES)):
+            digit = idx + 1
+            handler = lambda e, i=idx: self._on_toggle_dev_test_window(i)
+            self.bind(f"<Control-Shift-Alt-Key-{digit}>", handler)
+            if digit in shifted:
+                self.bind(f"<Control-Shift-Alt-{shifted[digit]}>", handler)
         self.bind(f"<{MOD_KEY}-q>", lambda e: self._on_quit())
         self.bind(f"<{MOD_KEY}-comma>", lambda e: self._on_open_preferences())
         # bind_all so undo/redo works when the Object Tree toplevel
@@ -271,4 +287,23 @@ class ShortcutsMixin(_MainWindowHost):
 
     def _on_docs_shortcut(self, _event=None) -> str | None:
         self._on_widget_docs()
+        return "break"
+
+    def _on_toggle_dev_test_window(self, idx: int) -> str:
+        windows = getattr(self, "_dev_test_windows", None)
+        if windows is None:
+            windows = [None] * len(DEV_TEST_WINDOW_CLASSES)
+            self._dev_test_windows = windows
+        existing = windows[idx]
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.destroy()
+                    windows[idx] = None
+                    return "break"
+            except tk.TclError:
+                pass
+            windows[idx] = None
+        cls = DEV_TEST_WINDOW_CLASSES[idx]
+        windows[idx] = cls(self)
         return "break"
