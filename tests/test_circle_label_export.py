@@ -151,3 +151,20 @@ def test_circle_label_helper_returns_class_source():
     # class header + the override method must both be present.
     assert "class CircleLabel(ctk.CTkLabel):" in joined
     assert "def _create_grid(self):" in joined
+
+
+def test_circle_label_helper_includes_unified_event_router():
+    """v1.21.0 unified event routing layer — bind/configure overrides
+    plus the internal helpers must inline alongside the corner-radius
+    fix. Catches accidental method renames and ``inspect.getsource``
+    regressions that would silently strip the router from exports.
+    """
+    joined = "\n".join(_circle_label_class_lines())
+    # Public overrides
+    assert "def bind(self" in joined
+    assert "def configure(self" in joined
+    # Internal dispatch helpers
+    assert "def _on_internal_enter" in joined
+    assert "def _check_truly_left" in joined
+    assert "def _bind_outer_only" in joined
+    assert "def _dedup_dual_bind" in joined
