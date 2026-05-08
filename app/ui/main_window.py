@@ -7,6 +7,7 @@ import threading
 import tkinter as tk
 import tkinter.font as tkfont
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox
 from typing import Any
@@ -2261,6 +2262,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 self,
                 on_close=self._on_console_window_closed,
                 on_clear=self._on_console_clear,
+                on_stop=self._on_console_stop,
             )
             if self._console_buffer:
                 self._console_window.replay(self._console_buffer)
@@ -2282,14 +2284,45 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         # everything they just cleared.
         self._console_buffer.clear()
 
+    def _on_console_stop(self) -> None:
+        """User pressed Stop in the Console window. Terminate every
+        alive preview subprocess (main + per-dialog). Reader threads
+        notice EOF on the closed pipes and exit on their own.
+        """
+        procs: list[subprocess.Popen] = []
+        if self._main_preview_proc is not None:
+            procs.append(self._main_preview_proc)
+        procs.extend(self._dialog_preview_procs.values())
+        stopped = 0
+        for proc in procs:
+            if proc.poll() is None:
+                try:
+                    proc.terminate()
+                    stopped += 1
+                except OSError:
+                    pass
+        if stopped:
+            self._console_queue.put((
+                "separator",
+                f"─── stop requested ({stopped} preview"
+                f"{'s' if stopped != 1 else ''}) ───",
+            ))
+
     def _attach_console_capture(self, proc: subprocess.Popen) -> None:
         """Spawn reader threads for ``proc.stdout`` / ``proc.stderr`` if
         the preview was launched in inapp mode (the only mode where
         ``Popen`` exposes pipes). Threads are daemons — they die with
         the app and end naturally on EOF when the preview exits.
+
+        Pushes a ``separator`` line into the queue first so the buffer
+        and live window both show a visual divider between successive
+        preview runs (the buffer is shared across runs and would
+        otherwise blur them together).
         """
         if proc.stdout is None and proc.stderr is None:
             return  # not inapp mode (devnull or new-console path)
+        ts = datetime.now().strftime("%H:%M:%S")
+        self._console_queue.put(("separator", f"─── preview started {ts} ───"))
         for stream_name, fp in (("stdout", proc.stdout), ("stderr", proc.stderr)):
             if fp is None:
                 continue

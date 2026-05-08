@@ -32,6 +32,16 @@ MAX_TEXT_LINES = 5000
 TRIM_LINES = 500
 
 
+def _stream_tag(stream: str) -> str:
+    """Map a buffer stream value to the ``tk.Text`` tag used to render
+    it. ``stdout`` is the default (no special tag); ``stderr`` and
+    ``separator`` get their own colours.
+    """
+    if stream in ("stderr", "separator"):
+        return stream
+    return "stdout"
+
+
 class ConsoleWindow(ManagedToplevel):
     """Floating preview-console window — toolbar + read-only log text."""
 
@@ -48,9 +58,12 @@ class ConsoleWindow(ManagedToplevel):
         parent,
         on_close: Optional[Callable[[], None]] = None,
         on_clear: Optional[Callable[[], None]] = None,
+        on_stop: Optional[Callable[[], None]] = None,
     ):
         self._on_clear = on_clear
+        self._on_stop = on_stop
         self._text: Optional[tk.Text] = None
+        self._context_menu: Optional[tk.Menu] = None
         super().__init__(parent)
         self.set_on_close(on_close)
 
@@ -62,6 +75,12 @@ class ConsoleWindow(ManagedToplevel):
         style.pack_toolbar_button(
             style.secondary_button(bar, "Clear", command=self._handle_clear),
             first=True,
+        )
+        style.pack_toolbar_button(
+            style.secondary_button(bar, "Copy", command=self._handle_copy),
+        )
+        style.pack_toolbar_button(
+            style.danger_button(bar, "Stop", command=self._handle_stop),
         )
 
         wrap = tk.Frame(frame, bg=style.BG, highlightthickness=0)
@@ -80,7 +99,13 @@ class ConsoleWindow(ManagedToplevel):
             state="disabled",
         )
         self._text.tag_configure("stderr", foreground=CONSOLE_STDERR_FG)
+        self._text.tag_configure("separator", foreground=style.EMPTY_FG)
         self._text.pack(side="left", fill="both", expand=True)
+        # Right-click anywhere in the textbox pops the context menu —
+        # Copy / Select all / Clear. Same actions as the toolbar, but
+        # closer to the cursor when user is reading a long traceback.
+        self._build_context_menu()
+        self._text.bind("<Button-3>", self._show_context_menu, add="+")
 
         sb = style.styled_scrollbar(wrap, command=self._text.yview)
         self._text.configure(yscrollcommand=sb.set)
@@ -97,7 +122,7 @@ class ConsoleWindow(ManagedToplevel):
         try:
             at_bottom = self._text.yview()[1] >= 0.999
             self._text.configure(state="normal")
-            tag = "stderr" if stream == "stderr" else "stdout"
+            tag = _stream_tag(stream)
             self._text.insert("end", line + "\n", (tag,))
             self._trim_if_needed()
             self._text.configure(state="disabled")
@@ -115,7 +140,7 @@ class ConsoleWindow(ManagedToplevel):
         try:
             self._text.configure(state="normal")
             for stream, line in lines:
-                tag = "stderr" if stream == "stderr" else "stdout"
+                tag = _stream_tag(stream)
                 self._text.insert("end", line + "\n", (tag,))
             self._trim_if_needed()
             self._text.configure(state="disabled")
@@ -141,6 +166,72 @@ class ConsoleWindow(ManagedToplevel):
             try:
                 self._on_clear()
             except Exception:
+                pass
+
+    def _handle_copy(self) -> None:
+        """Copy the current selection if any, else the whole buffer."""
+        if self._text is None:
+            return
+        try:
+            text = self._text.get("sel.first", "sel.last")
+        except tk.TclError:
+            text = self._text.get("1.0", "end-1c")
+        if not text:
+            return
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(text)
+        except tk.TclError:
+            pass
+
+    def _handle_select_all(self) -> None:
+        if self._text is None:
+            return
+        try:
+            self._text.tag_remove("sel", "1.0", "end")
+            self._text.tag_add("sel", "1.0", "end-1c")
+            self._text.mark_set("insert", "1.0")
+            self._text.focus_set()
+        except tk.TclError:
+            pass
+
+    def _handle_stop(self) -> None:
+        if self._on_stop is None:
+            return
+        try:
+            self._on_stop()
+        except Exception:
+            pass
+
+    def _build_context_menu(self) -> None:
+        """Lazy-build the right-click context menu mirroring the toolbar
+        actions. Styled to match the menubar palette directly so this
+        module stays a single-import-away from ``style.py`` (no pull
+        on ``main_menu.menu_style`` and its host-class deps).
+        """
+        menu = tk.Menu(
+            self, tearoff=0,
+            bg=style.HEADER_BG, fg=style.TREE_FG,
+            activebackground=style.TREE_SELECTED_BG,
+            activeforeground="#ffffff",
+            bd=0, borderwidth=0, activeborderwidth=0, relief="flat",
+            font=("Segoe UI", 10),
+        )
+        menu.add_command(label="Copy", command=self._handle_copy)
+        menu.add_command(label="Select all", command=self._handle_select_all)
+        menu.add_separator()
+        menu.add_command(label="Clear", command=self._handle_clear)
+        self._context_menu = menu
+
+    def _show_context_menu(self, event) -> None:
+        if self._context_menu is None:
+            return
+        try:
+            self._context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            try:
+                self._context_menu.grab_release()
+            except tk.TclError:
                 pass
 
     def _trim_if_needed(self) -> None:
