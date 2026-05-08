@@ -76,26 +76,6 @@ except _ctkmaker_tk.TclError:
     _ctkmaker_orig_title = ""
 {target}.title("\U0001F7E0 PREVIEW — " + (_ctkmaker_orig_title or "CTkMaker"))
 
-# Keep the preview window — and any Toplevels the user opens from
-# inside it — on top of other apps. Without this, clicking the
-# parent CTkMaker's Console window pulls focus away and the preview
-# slips behind. The class-level ``Toplevel.__init__`` monkey-patch
-# defers the ``-topmost`` set to ``after_idle`` so it lands AFTER
-# the original init (and any CTkToplevel post-init steps) completes.
-try:
-    {target}.attributes("-topmost", True)
-except _ctkmaker_tk.TclError:
-    pass
-
-_ctkmaker_orig_toplevel_init = _ctkmaker_tk.Toplevel.__init__
-def _ctkmaker_topmost_toplevel_init(self, *args, **kwargs):
-    _ctkmaker_orig_toplevel_init(self, *args, **kwargs)
-    try:
-        self.after_idle(lambda: self.attributes("-topmost", True))
-    except _ctkmaker_tk.TclError:
-        pass
-_ctkmaker_tk.Toplevel.__init__ = _ctkmaker_topmost_toplevel_init
-
 _CTKMAKER_RING_THICKNESS = 2
 _ctkmaker_ring = []           # [(frame, place_kwargs), ...] — kept so we
                               # can place_forget/place back during capture
@@ -150,6 +130,17 @@ _ctkmaker_floater.overrideredirect(True)
 _ctkmaker_floater.attributes("-topmost", True)
 _ctkmaker_floater.configure(bg="#1f1f1f", highlightthickness=1,
                             highlightbackground="#3a3a3a")
+
+# Mutable single-element list holding the Toplevel the floater is
+# currently anchored to. Starts as the launch target ({target}) and
+# is updated on every <FocusIn> below — so opening a child dialog
+# from the running preview makes the floater hop onto it. The set
+# remembers which Toplevels we've already wired <Configure> for, so
+# focus-in doesn't double-bind on each visit.
+_ctkmaker_active_target = [{target}]
+_ctkmaker_tracked_targets = set()
+_ctkmaker_tracked_targets.add({target})
+
 _ctkmaker_inner = _ctkmaker_tk.Frame(_ctkmaker_floater, bg="#1f1f1f",
                                      bd=0, highlightthickness=0)
 _ctkmaker_inner.pack()
@@ -178,12 +169,13 @@ if _ctkmaker_os.environ.get("CTKMAKER_PREVIEW_CONSOLE_MODE") == "inapp":
     _ctkmaker_btn_console.pack(side="left", padx=(1, 0))
 
 def _ctkmaker_toast(message):
-    """Self-destroying Toplevel — bottom-centre of the target, 1500ms
-    lifetime. Soft user feedback after Save / Copy actions so the
-    user doesn't have to glance at the console.
+    """Self-destroying Toplevel — bottom-centre of the active target,
+    1500ms lifetime. Soft user feedback after Save / Copy actions so
+    the user doesn't have to glance at the console.
     """
     try:
-        toast = _ctkmaker_tk.Toplevel({target})
+        target = _ctkmaker_active_target[0]
+        toast = _ctkmaker_tk.Toplevel(target)
         toast.overrideredirect(True)
         toast.attributes("-topmost", True)
         toast.configure(bg="#2d2d30", highlightthickness=1,
@@ -198,15 +190,15 @@ def _ctkmaker_toast(message):
         toast.update_idletasks()
         tw = toast.winfo_reqwidth()
         th = toast.winfo_reqheight()
-        x = {target}.winfo_rootx() + ({target}.winfo_width() - tw) // 2
-        y = {target}.winfo_rooty() + {target}.winfo_height() - th - 24
+        x = target.winfo_rootx() + (target.winfo_width() - tw) // 2
+        y = target.winfo_rooty() + target.winfo_height() - th - 24
         toast.geometry(f"+{{x}}+{{y}}")
         toast.after(1500, toast.destroy)
     except _ctkmaker_tk.TclError:
         pass
 
 def _ctkmaker_capture():
-    """Grab the target's client area as a PIL Image. Hides the
+    """Grab the active target's client area as a PIL Image. Hides the
     floater + orange ring during the brief grab so neither bleeds
     into the saved PNG. Returns None on failure so callers degrade
     gracefully.
@@ -216,14 +208,15 @@ def _ctkmaker_capture():
     except ImportError:
         print("Pillow not installed — cannot capture screen.")
         return None
+    target = _ctkmaker_active_target[0]
     _ctkmaker_floater.withdraw()
     _ctkmaker_hide_ring()
-    {target}.update_idletasks()
-    {target}.update()
-    x = {target}.winfo_rootx()
-    y = {target}.winfo_rooty()
-    w = {target}.winfo_width()
-    h = {target}.winfo_height()
+    target.update_idletasks()
+    target.update()
+    x = target.winfo_rootx()
+    y = target.winfo_rooty()
+    w = target.winfo_width()
+    h = target.winfo_height()
     try:
         return ImageGrab.grab(bbox=(x, y, x + w, y + h), all_screens=True)
     finally:
@@ -236,7 +229,7 @@ def _ctkmaker_screenshot_save(_event=None):
         return
     from tkinter import filedialog
     path = filedialog.asksaveasfilename(
-        parent={target}, defaultextension=".png",
+        parent=_ctkmaker_active_target[0], defaultextension=".png",
         filetypes=[("PNG image", "*.png")],
         initialfile="preview.png",
     )
@@ -327,11 +320,12 @@ def _ctkmaker_release_factory(action):
     def _release(_e):
         if _ctkmaker_was_dragged[0]:
             try:
+                target = _ctkmaker_active_target[0]
                 _ctkmaker_user_offset[0] = (
-                    _ctkmaker_floater.winfo_rootx() - {target}.winfo_rootx()
+                    _ctkmaker_floater.winfo_rootx() - target.winfo_rootx()
                 )
                 _ctkmaker_user_offset[1] = (
-                    _ctkmaker_floater.winfo_rooty() - {target}.winfo_rooty()
+                    _ctkmaker_floater.winfo_rooty() - target.winfo_rooty()
                 )
             except _ctkmaker_tk.TclError:
                 pass
@@ -359,20 +353,49 @@ def _ctkmaker_position_floater(_event=None):
     try:
         if not _ctkmaker_floater.winfo_exists():
             return
-        {target}.update_idletasks()
+        target = _ctkmaker_active_target[0]
+        if not target.winfo_exists():
+            target = {target}
+            _ctkmaker_active_target[0] = target
+        target.update_idletasks()
         if _ctkmaker_user_offset[0] is not None:
-            x = {target}.winfo_rootx() + _ctkmaker_user_offset[0]
-            y = {target}.winfo_rooty() + _ctkmaker_user_offset[1]
+            x = target.winfo_rootx() + _ctkmaker_user_offset[0]
+            y = target.winfo_rooty() + _ctkmaker_user_offset[1]
         else:
             bw = _ctkmaker_floater.winfo_reqwidth()
-            x = {target}.winfo_rootx() + {target}.winfo_width() - bw - 12
-            y = {target}.winfo_rooty() + 8
+            x = target.winfo_rootx() + target.winfo_width() - bw - 12
+            y = target.winfo_rooty() + 8
         _ctkmaker_floater.geometry(f"+{{x}}+{{y}}")
     except _ctkmaker_tk.TclError:
         pass
 
 {target}.bind("<Configure>", _ctkmaker_position_floater, add="+")
 {target}.after(120, _ctkmaker_position_floater)
+
+# Whenever any widget gains keyboard focus, switch the floater's
+# active target to its enclosing Toplevel. New Toplevels also get a
+# <Configure> bind on first visit so resizing/moving the dialog
+# re-positions the floater. Skipping the floater itself keeps clicks
+# on its own buttons from re-anchoring it onto itself.
+def _ctkmaker_on_focus_in(_e):
+    try:
+        top = _e.widget.winfo_toplevel()
+    except _ctkmaker_tk.TclError:
+        return
+    if top is _ctkmaker_floater:
+        return
+    if top is _ctkmaker_active_target[0]:
+        return
+    _ctkmaker_active_target[0] = top
+    if top not in _ctkmaker_tracked_targets:
+        _ctkmaker_tracked_targets.add(top)
+        try:
+            top.bind("<Configure>", _ctkmaker_position_floater, add="+")
+        except _ctkmaker_tk.TclError:
+            pass
+    _ctkmaker_position_floater()
+
+{target}.bind_all("<FocusIn>", _ctkmaker_on_focus_in, add="+")
 
 def _ctkmaker_close_floater(_event=None):
     try:

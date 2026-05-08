@@ -346,9 +346,14 @@ class MenuMixin(_MainWindowHost):
         view_menu.add_separator()
         view_menu.add_checkbutton(
             label="Console",
-            variable=self._console_var,
-            command=self._on_toggle_console_window,
+            variable=self._console_dock_var,
+            command=self._on_toggle_console_dock,
             accelerator="F12",
+        )
+        view_menu.add_checkbutton(
+            label="Console (floating)",
+            variable=self._console_window_var,
+            command=self._on_toggle_console_window,
         )
         menubar.add_cascade(label="View", menu=view_menu)
 

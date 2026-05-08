@@ -17,7 +17,7 @@ from pathlib import Path
 import customtkinter as ctk
 
 from app.core.component_paths import COMPONENT_EXT
-from app.ui.managed_window import ManagedToplevel
+from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 from app.ui.system_fonts import ui_font
 
 _FORBIDDEN = set('\\/:*?"<>|')
@@ -41,14 +41,7 @@ def _list_folders(root: Path) -> list[str]:
     return out
 
 
-class ComponentSaveDialog(ManagedToplevel):
-    window_title = "Save as component"
-    default_size = (380, 320)
-    min_size = (360, 280)
-    panel_padding = (0, 0)
-    modal = True
-    window_resizable = (False, False)
-
+class ComponentSaveDialog(ctk.CTkToplevel):
     def __init__(
         self,
         parent,
@@ -59,74 +52,48 @@ class ComponentSaveDialog(ManagedToplevel):
         bundled_asset_bytes: int = 0,
         initial_folder: str = "",
     ):
+        super().__init__(parent)
+        prepare_dialog(self)
+        self.title("Save as component")
+        self.resizable(False, False)
+        self.transient(parent)
+        safe_grab_set(self)
+
         self.result: tuple[str, Path] | None = None
         self._root_dir = components_dir
         self._root_dir.mkdir(parents=True, exist_ok=True)
-        self._name_var = tk.StringVar(master=parent, value=default_name)
-        folders = [_ROOT_LABEL] + _list_folders(self._root_dir)
-        self._folders = folders
-        self._folder_var = tk.StringVar(
-            master=parent,
-            value=initial_folder if initial_folder in folders else _ROOT_LABEL,
-        )
-        self._bundled_var_count = bundled_var_count
-        self._bundled_asset_count = bundled_asset_count
-        self._bundled_asset_bytes = bundled_asset_bytes
-        super().__init__(parent)
-        self.bind("<Return>", lambda _e: self._on_ok())
-        self.after(80, self._focus_name_entry)
 
-    def default_offset(self, parent) -> tuple[int, int]:
-        try:
-            parent.update_idletasks()
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-            w, h = self.default_size
-            return (
-                max(0, px + (pw - w) // 2),
-                max(0, py + (ph - h) // 2),
-            )
-        except tk.TclError:
-            return (100, 100)
-
-    def _focus_name_entry(self) -> None:
-        try:
-            self._name_entry.focus_set()
-            self._name_entry.select_range(0, tk.END)
-        except tk.TclError:
-            pass
-
-    def build_content(self) -> ctk.CTkFrame:
-        container = ctk.CTkFrame(self, fg_color="transparent")
-
-        body = ctk.CTkFrame(container, fg_color="transparent")
+        body = ctk.CTkFrame(self, fg_color="transparent")
         body.pack(padx=20, pady=(18, 10), fill="x")
 
         ctk.CTkLabel(body, text="Name").grid(
             row=0, column=0, sticky="w", pady=(0, 4),
         )
-        self._name_entry = ctk.CTkEntry(
+        self._name_var = tk.StringVar(value=default_name)
+        name_entry = ctk.CTkEntry(
             body, textvariable=self._name_var, width=260,
         )
-        self._name_entry.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        name_entry.grid(row=1, column=0, sticky="ew", pady=(0, 10))
 
         ctk.CTkLabel(body, text="Folder").grid(
             row=2, column=0, sticky="w", pady=(0, 4),
         )
+        folders = [_ROOT_LABEL] + _list_folders(self._root_dir)
+        self._folder_var = tk.StringVar(
+            value=initial_folder if initial_folder in folders else _ROOT_LABEL,
+        )
         ctk.CTkOptionMenu(
-            body, values=self._folders, variable=self._folder_var, width=260,
+            body, values=folders, variable=self._folder_var, width=260,
         ).grid(row=3, column=0, sticky="ew", pady=(0, 10))
 
         body.grid_columnconfigure(0, weight=1)
 
-        if self._bundled_var_count > 0:
+        if bundled_var_count > 0:
             warn = ctk.CTkLabel(
-                container,
+                self,
                 text=(
-                    f"⚠ {self._bundled_var_count} variable(s) will be "
-                    "saved with component."
+                    f"⚠ {bundled_var_count} variable(s) will be saved "
+                    "with component."
                 ),
                 text_color="#cc7e1f",
                 font=ui_font(10),
@@ -135,7 +102,7 @@ class ComponentSaveDialog(ManagedToplevel):
             )
             warn.pack(padx=20, pady=(0, 2), anchor="w")
             hint = ctk.CTkLabel(
-                container,
+                self,
                 text=(
                     "Global bindings become local in the target window."
                 ),
@@ -146,15 +113,15 @@ class ComponentSaveDialog(ManagedToplevel):
             )
             hint.pack(padx=20, pady=(0, 8), anchor="w")
 
-        if self._bundled_asset_count > 0:
-            kb = self._bundled_asset_bytes / 1024
+        if bundled_asset_count > 0:
+            kb = bundled_asset_bytes / 1024
             size_str = (
                 f"{kb:.0f} KB" if kb < 1024 else f"{kb / 1024:.1f} MB"
             )
             ctk.CTkLabel(
-                container,
+                self,
                 text=(
-                    f"📎 {self._bundled_asset_count} asset(s) bundled "
+                    f"📎 {bundled_asset_count} asset(s) bundled "
                     f"({size_str})."
                 ),
                 text_color="#7ea4c7",
@@ -162,7 +129,7 @@ class ComponentSaveDialog(ManagedToplevel):
                 wraplength=320, justify="left",
             ).pack(padx=20, pady=(0, 8), anchor="w")
 
-        footer = ctk.CTkFrame(container, fg_color="transparent")
+        footer = ctk.CTkFrame(self, fg_color="transparent")
         footer.pack(fill="x", padx=20, pady=(4, 16))
         ctk.CTkButton(
             footer, text="Save", width=120, height=32,
@@ -174,7 +141,14 @@ class ComponentSaveDialog(ManagedToplevel):
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_cancel,
         ).pack(side="right", padx=(0, 8))
-        return container
+
+        self.bind("<Return>", lambda _e: self._on_ok())
+        self.bind("<Escape>", lambda _e: self._on_cancel())
+        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
+
+        name_entry.focus_set()
+        name_entry.select_range(0, tk.END)
+        self.after(100, self._center_on_parent)
 
     def _on_ok(self) -> None:
         from tkinter import messagebox
@@ -209,3 +183,21 @@ class ComponentSaveDialog(ManagedToplevel):
     def _on_cancel(self) -> None:
         self.result = None
         self.destroy()
+
+    def _center_on_parent(self) -> None:
+        self.update_idletasks()
+        parent = self.master
+        try:
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+        except tk.TclError:
+            reveal_dialog(self)
+            return
+        w = self.winfo_width()
+        h = self.winfo_height()
+        x = px + (pw - w) // 2
+        y = py + (ph - h) // 2
+        self.geometry(f"+{max(0, x)}+{max(0, y)}")
+        reveal_dialog(self)

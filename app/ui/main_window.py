@@ -28,7 +28,7 @@ from app.core.settings import load_settings, save_setting
 from app.io.code_exporter import export_project
 from app.io.project_loader import ProjectLoadError, load_project
 from app.io.project_saver import save_project
-from app.ui.console_window import ConsoleWindow
+from app.ui.console_window import ConsolePanel, ConsoleWindow
 from app.ui.dialogs import NewProjectSizeDialog, prompt_open_project_folder
 from app.ui.history_window import HistoryPanel, HistoryWindow
 from app.ui.variables_window import VariablesWindow
@@ -517,14 +517,25 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         self._variables_window: VariablesWindow | None = None
         self._variables_var = tk.BooleanVar(value=False)
         # In-app preview console: buffer survives close/reopen so the
-        # window can be opened mid-run and replay everything captured
+        # console can be opened mid-run and replay everything captured
         # so far. Reader threads (one per preview's stdout/stderr pipe)
         # push (stream, line) tuples into the queue; the main-thread
-        # poller drains the queue, stamps an HH:MM:SS timestamp, and
-        # appends a (stream, ts, line) entry to the buffer (and to the
-        # live window when one exists).
+        # poller drains the queue, stamps an HH:MM:SS.cc timestamp, and
+        # appends a (stream, ts, line) entry to the buffer plus every
+        # live console form.
+        #
+        # Two coordinated forms:
+        # - ``_console_panel`` — docked at the bottom of paned_outer
+        #   (View → Console / F12). Default home for the log.
+        # - ``_console_window`` — floating ManagedToplevel (View →
+        #   Console (floating), no shortcut). Pop-out for users who
+        #   want the log on a second monitor.
+        # Both can be open simultaneously and stay in sync because the
+        # poller fans out append_line to both.
+        self._console_panel: ConsolePanel | None = None
+        self._console_dock_var = tk.BooleanVar(value=False)
         self._console_window: ConsoleWindow | None = None
-        self._console_var = tk.BooleanVar(value=False)
+        self._console_window_var = tk.BooleanVar(value=False)
         self._console_buffer: list[tuple[str, str, str]] = []
         self._console_queue: queue.Queue[tuple[str, str]] = queue.Queue()
         self._console_poller_id: str | None = None
@@ -555,8 +566,23 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         )
         self.toolbar.pack(side="top", fill="x")
 
-        self.paned = tk.PanedWindow(
+        # Vertical outer pane: existing horizontal split on top, the
+        # docked Console panel on the bottom. The Console pane is
+        # added/removed lazily by ``_on_toggle_console_dock`` so the
+        # bottom area collapses fully when the console is hidden.
+        self.paned_outer = tk.PanedWindow(
             self,
+            orient=tk.VERTICAL,
+            sashwidth=5,
+            sashrelief=tk.FLAT,
+            bg="#1e1e1e",
+            borderwidth=0,
+            showhandle=False,
+        )
+        self.paned_outer.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+
+        self.paned = tk.PanedWindow(
+            self.paned_outer,
             orient=tk.HORIZONTAL,
             sashwidth=5,
             sashrelief=tk.FLAT,
@@ -564,7 +590,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             borderwidth=0,
             showhandle=False,
         )
-        self.paned.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        self.paned_outer.add(self.paned, stretch="always", minsize=200)
 
         self.palette = Palette(
             self.paned, self.project,
@@ -822,6 +848,12 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         # against an empty queue) so it's safe to leave running even
         # when the console mode is off.
         self._console_poller_id = self.after(50, self._drain_console_queue)
+
+        # Restore the docked-console open state from settings. Defer
+        # via ``after_idle`` so the rest of the layout has settled (the
+        # bottom pane add resizes ``paned_outer`` and would fight the
+        # initial geometry otherwise).
+        self.after_idle(self._restore_console_dock_state)
 
         self.after(120, self._show_startup_dialog)
 
@@ -2257,8 +2289,72 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
     # ------------------------------------------------------------------
     # In-app preview console
 
+    def _on_toggle_console_dock(self) -> None:
+        """Add or remove the bottom-docked ConsolePanel from
+        ``paned_outer``. Each show recreates the panel and replays the
+        current buffer; each hide destroys it. The buffer itself
+        outlives both — same lifecycle as the floating window. State
+        is persisted to settings so the docked panel reappears in the
+        same position on the next launch.
+        """
+        want_open = bool(self._console_dock_var.get())
+        alive = (
+            self._console_panel is not None
+            and self._console_panel.winfo_exists()
+        )
+        if want_open and not alive:
+            self._console_panel = ConsolePanel(
+                self.paned_outer,
+                on_clear=self._on_console_clear,
+                on_stop=self._on_console_stop,
+                on_close=self._on_console_dock_close,
+            )
+            self.paned_outer.add(
+                self._console_panel,
+                stretch="never", minsize=80, height=200,
+            )
+            if self._console_buffer:
+                self._console_panel.replay(self._console_buffer)
+        elif not want_open and alive:
+            if self._console_panel is not None:
+                try:
+                    self.paned_outer.forget(self._console_panel)
+                except tk.TclError:
+                    pass
+                try:
+                    self._console_panel.destroy()
+                except tk.TclError:
+                    pass
+            self._console_panel = None
+        save_setting("console_dock_open", want_open)
+
+    def _on_console_dock_close(self) -> None:
+        """Wired to the docked panel's ``×`` toolbar button. Same end
+        state as F12 / View → Console: var off + panel destroyed +
+        setting saved."""
+        self._console_dock_var.set(False)
+        self._on_toggle_console_dock()
+
+    def _restore_console_dock_state(self) -> None:
+        """Re-open the docked Console panel on launch when the user
+        had it open at last shutdown. Toggle-time persistence in
+        ``_on_toggle_console_dock`` writes the boolean; this reads it
+        back at startup. Floating window state is intentionally not
+        persisted — it's a pop-out, not a default surface.
+        """
+        try:
+            if bool(load_settings().get("console_dock_open", False)):
+                self._console_dock_var.set(True)
+                self._on_toggle_console_dock()
+        except Exception:
+            pass
+
+    def _on_f12_console_dock(self) -> None:
+        self._console_dock_var.set(not self._console_dock_var.get())
+        self._on_toggle_console_dock()
+
     def _on_toggle_console_window(self) -> None:
-        want_open = bool(self._console_var.get())
+        want_open = bool(self._console_window_var.get())
         alive = (
             self._console_window is not None
             and self._console_window.winfo_exists()
@@ -2282,17 +2378,22 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
 
     def _on_console_window_closed(self) -> None:
         self._console_window = None
-        self._console_var.set(False)
-
-    def _on_f12_console_window(self) -> None:
-        self._console_var.set(not self._console_var.get())
-        self._on_toggle_console_window()
+        self._console_window_var.set(False)
 
     def _on_console_clear(self) -> None:
-        # User pressed Clear inside the console window — also drop the
-        # main-window-side buffer so a later reopen doesn't replay
-        # everything they just cleared.
+        # User pressed Clear inside one of the console forms — also
+        # drop the main-window-side buffer so a later reopen doesn't
+        # replay everything they just cleared, and clear the OTHER
+        # form so the two views stay in sync (otherwise clearing the
+        # docked panel would leave the floating window with stale
+        # output, or vice versa).
         self._console_buffer.clear()
+        for console in (self._console_panel, self._console_window):
+            if console is not None:
+                try:
+                    console.clear()
+                except tk.TclError:
+                    pass
 
     def _on_console_stop(self) -> None:
         """User pressed Stop in the Console window. Terminate every
@@ -2360,9 +2461,21 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 # the Console window open, and drop the marker so it
                 # never lands in the visible buffer.
                 if stream == "stdout" and line == "__CTKMAKER_OPEN_CONSOLE__":
-                    if not bool(self._console_var.get()):
-                        self._console_var.set(True)
-                        self._on_toggle_console_window()
+                    # Pop the docked panel by default — that's the
+                    # user-visible "Console" entry. If they already
+                    # have docked OR floating open, the click is a
+                    # no-op (the log is already on screen).
+                    dock_alive = (
+                        self._console_panel is not None
+                        and self._console_panel.winfo_exists()
+                    )
+                    win_alive = (
+                        self._console_window is not None
+                        and self._console_window.winfo_exists()
+                    )
+                    if not dock_alive and not win_alive:
+                        self._console_dock_var.set(True)
+                        self._on_toggle_console_dock()
                     drained += 1
                     continue
                 # ``%f`` is 6-digit microseconds; trimming the last 4
@@ -2376,11 +2489,12 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 # with chatty print() doesn't eat unbounded memory.
                 if len(self._console_buffer) > 5000:
                     del self._console_buffer[:500]
-                if self._console_window is not None:
-                    try:
-                        self._console_window.append_line(*entry)
-                    except tk.TclError:
-                        pass
+                for console in (self._console_panel, self._console_window):
+                    if console is not None:
+                        try:
+                            console.append_line(*entry)
+                        except tk.TclError:
+                            pass
                 drained += 1
         except queue.Empty:
             pass
