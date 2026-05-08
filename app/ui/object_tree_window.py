@@ -36,6 +36,7 @@ from app.ui.icons import load_icon, load_tk_icon
 from app.widgets.layout_schema import normalise_layout_type
 from app.widgets.registry import all_descriptors, get_descriptor
 from app.core.platform_compat import MOD_KEY, MOD_LABEL_PLUS
+from app.ui.workspace.controls import TOOL_EDIT
 
 if TYPE_CHECKING:
     from app.core.project import Project
@@ -46,6 +47,7 @@ PANEL_BG = "#252526"
 TREE_BG = "#1e1e1e"
 TREE_FG = "#cccccc"
 TREE_SELECTED_BG = "#094771"
+TREE_SELECTED_BG_INACTIVE = "#37373d"
 TREE_HEADING_BG = "#2d2d30"
 TREE_HEADING_FG = "#cccccc"
 DROP_TARGET_BG = "#0c5a8c"
@@ -125,10 +127,16 @@ class ObjectTreePanel(ctk.CTkFrame):
         self,
         parent,
         project: "Project",
+        tool_setter: Callable[[str], None] | None = None,
     ):
         super().__init__(parent, fg_color=BG, corner_radius=0)
 
         self.project = project
+        self._tool_setter = tool_setter
+        # Set by `<KeyPress>` on tree-nav keys (Up/Down/Home/End/PgUp/
+        # PgDn) so `_on_tree_select` can tell keyboard-driven selection
+        # apart from mouse clicks and switch the editor to Edit tool.
+        self._kb_nav_select = False
         self._syncing = False  # guard against selection feedback loops
 
         self._filter_var = tk.StringVar(value=FILTER_ALL_LABEL)
@@ -219,6 +227,12 @@ class ObjectTreePanel(ctk.CTkFrame):
         self.tree.bind(
             "<Escape>", lambda _e: self.project.select_widget(None),
         )
+        # Mark keyboard-driven nav so `_on_tree_select` can switch the
+        # editor to Edit tool when selection moves via arrows etc.
+        # Widget-level binding fires before the ttk class binding that
+        # actually moves the selection — we just set a flag and let the
+        # class binding run normally.
+        self.tree.bind("<KeyPress>", self._on_tree_keypress, add="+")
         # Copy / paste — widget-level bindings on the tree so the
         # shortcut only fires when the tree has keyboard focus (typing
         # into the search entry still does plain text copy/paste).
@@ -286,13 +300,19 @@ class ObjectTreePanel(ctk.CTkFrame):
                 )
                 if elm[:2] != ("!disabled", "!selected")
             ]
+        # Focus-aware selection: focused tree gets the bright blue
+        # ("you're driving the tree now"); unfocused tree gets a muted
+        # gray ("this is just mirroring the canvas selection").
+        # More-specific state specs must come first in style.map.
         style.map(
             "ObjectTree.Treeview",
             background=_fixed_map("background") + [
-                ("selected", TREE_SELECTED_BG),
+                ("selected", "focus", TREE_SELECTED_BG),
+                ("selected", "!focus", TREE_SELECTED_BG_INACTIVE),
             ],
             foreground=_fixed_map("foreground") + [
-                ("selected", "#ffffff"),
+                ("selected", "focus", "#ffffff"),
+                ("selected", "!focus", TREE_FG),
             ],
         )
         style.configure(
@@ -1136,6 +1156,12 @@ class ObjectTreePanel(ctk.CTkFrame):
     # ------------------------------------------------------------------
     # Tree interactions
     # ------------------------------------------------------------------
+    _NAV_KEYSYMS = frozenset({"Up", "Down", "Home", "End", "Prior", "Next"})
+
+    def _on_tree_keypress(self, event) -> None:
+        if event.keysym in self._NAV_KEYSYMS:
+            self._kb_nav_select = True
+
     def _on_tree_select(self, _event=None) -> None:
         if self._syncing:
             return
@@ -1191,6 +1217,25 @@ class ObjectTreePanel(ctk.CTkFrame):
                 self.project.set_multi_selection(ids, primary_id)
         finally:
             self._syncing = False
+        # The properties panel's `_on_selection` (fired synchronously
+        # from `select_widget` above) yanked focus to the toplevel so
+        # canvas-side arrow nudges work after a canvas click. Selection
+        # came from the tree though — pull focus back so Up/Down keep
+        # navigating tree rows.
+        try:
+            self.tree.focus_set()
+        except tk.TclError:
+            pass
+        # Keyboard-driven nav → force Edit tool so the newly selected
+        # widget is ready to drag / resize / edit on the canvas without
+        # the user having to switch tools manually.
+        if self._kb_nav_select:
+            self._kb_nav_select = False
+            if self._tool_setter is not None:
+                try:
+                    self._tool_setter(TOOL_EDIT)
+                except Exception:
+                    pass
 
     # ------------------------------------------------------------------
     # Drag-to-reparent and drag-to-reorder
@@ -2193,6 +2238,7 @@ class ObjectTreeWindow(ctk.CTkToplevel):
         parent,
         project: "Project",
         on_close: Callable[[], None] | None = None,
+        tool_setter: Callable[[str], None] | None = None,
     ):
         super().__init__(parent)
         prepare_dialog(self)
@@ -2206,7 +2252,7 @@ class ObjectTreeWindow(ctk.CTkToplevel):
             pass
 
         self._on_close_callback = on_close
-        self.panel = ObjectTreePanel(self, project)
+        self.panel = ObjectTreePanel(self, project, tool_setter=tool_setter)
         self.panel.pack(fill="both", expand=True)
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)

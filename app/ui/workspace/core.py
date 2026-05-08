@@ -16,7 +16,7 @@ Coordinate systems:
 """
 
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 
 import customtkinter as ctk
 
@@ -615,6 +615,10 @@ class Workspace(ctk.CTkFrame):
 
     def _on_arrow(self, dx: int, dy: int, fast: bool) -> str | None:
         if self._input_focused():
+            return None
+        # Tree has its own Up/Down navigation — don't fight it by also
+        # nudging the selected widget on the canvas.
+        if isinstance(self.focus_get(), ttk.Treeview):
             return None
         ids = set(getattr(self.project, "selected_ids", set()) or set())
         if not ids and self.project.selected_id is not None:

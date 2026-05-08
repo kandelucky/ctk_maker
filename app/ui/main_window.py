@@ -501,7 +501,10 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         _content = tk.Frame(_top_wrap, bg="#1e1e1e")
         _content.pack(fill="both", expand=True)
 
-        self.object_tree = ObjectTreePanel(_content, self.project)
+        self.object_tree = ObjectTreePanel(
+            _content, self.project,
+            tool_setter=lambda t: self.workspace.controls.set_tool(t),
+        )
         self._docked_history = HistoryPanel(_content, self.project)
         self.object_tree.pack(fill="both", expand=True)
 
@@ -2011,6 +2014,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             self._object_tree_window = ObjectTreeWindow(
                 self, self.project,
                 on_close=self._on_object_tree_closed,
+                tool_setter=lambda t: self.workspace.controls.set_tool(t),
             )
         elif not want_open and alive:
             if self._object_tree_window is not None:
