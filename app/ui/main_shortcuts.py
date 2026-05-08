@@ -135,18 +135,21 @@ class ShortcutsMixin(_MainWindowHost):
     # Bind setup — called once from MainWindow.__init__
     # ------------------------------------------------------------------
     def _bind_shortcuts(self) -> None:
-        self.bind(f"<{MOD_KEY}-n>", lambda e: self._on_new())
-        self.bind(f"<{MOD_KEY}-o>", lambda e: self._on_open())
-        self.bind(f"<{MOD_KEY}-s>", lambda e: self._on_save())
-        self.bind(f"<{MOD_KEY}-Shift-S>", lambda e: self._on_save_as())
-        self.bind(f"<{MOD_KEY}-r>", lambda e: self._on_preview())
-        self.bind(f"<{MOD_KEY}-w>", lambda e: self._on_close_project())
-        self.bind("<F7>", lambda e: self._on_f7_edit_behavior_file())
-        self.bind("<F8>", lambda e: self._on_f8_object_tree())
-        # bind_all so toggling these floating windows still works when
-        # the floating window itself has keyboard focus (which it does
-        # right after open — ManagedToplevel calls focus_set so Escape
-        # works without a click first).
+        # bind_all on every app-global accelerator so they fire when
+        # keyboard focus is inside any floating window (Console,
+        # Object Tree, Variables, etc.). self.bind alone only matches
+        # MainWindow's bindtag chain — once a Toplevel grabs focus,
+        # plain self.bind never fires. Canvas/tree-context shortcuts
+        # (Ctrl+D/I/M/G, Ctrl+C/V/X fallbacks) stay self.bind on
+        # purpose — they only make sense in MainWindow context.
+        self.bind_all(f"<{MOD_KEY}-n>", lambda e: self._on_new())
+        self.bind_all(f"<{MOD_KEY}-o>", lambda e: self._on_open())
+        self.bind_all(f"<{MOD_KEY}-s>", lambda e: self._on_save())
+        self.bind_all(f"<{MOD_KEY}-Shift-S>", lambda e: self._on_save_as())
+        self.bind_all(f"<{MOD_KEY}-r>", lambda e: self._on_preview())
+        self.bind_all(f"<{MOD_KEY}-w>", lambda e: self._on_close_project())
+        self.bind_all("<F7>", lambda e: self._on_f7_edit_behavior_file())
+        self.bind_all("<F8>", lambda e: self._on_f8_object_tree())
         self.bind_all("<F9>", lambda e: self._on_f9_history_window())
         self.bind_all("<F10>", lambda e: self._on_f10_project_window())
         self.bind_all("<F11>", lambda e: self._on_f11_variables_window())
@@ -157,10 +160,10 @@ class ShortcutsMixin(_MainWindowHost):
         dev_test_keys = ("h", "j", "k", "l")
         for idx, key in enumerate(dev_test_keys):
             handler = lambda e, i=idx: self._on_toggle_dev_test_window(i)
-            self.bind(f"<Control-Alt-Key-{key}>", handler)
-            self.bind(f"<Control-Alt-Key-{key.upper()}>", handler)
-        self.bind(f"<{MOD_KEY}-q>", lambda e: self._on_quit())
-        self.bind(f"<{MOD_KEY}-comma>", lambda e: self._on_open_preferences())
+            self.bind_all(f"<Control-Alt-Key-{key}>", handler)
+            self.bind_all(f"<Control-Alt-Key-{key.upper()}>", handler)
+        self.bind_all(f"<{MOD_KEY}-q>", lambda e: self._on_quit())
+        self.bind_all(f"<{MOD_KEY}-comma>", lambda e: self._on_open_preferences())
         # bind_all so undo/redo works when the Object Tree toplevel
         # has focus too — regular `self.bind` only fires for the
         # main window's widget tree.
@@ -200,8 +203,8 @@ class ShortcutsMixin(_MainWindowHost):
         self.bind(f"<{MOD_KEY}-i>", lambda e: self._on_menu_rename())
         self.bind(f"<{MOD_KEY}-I>", lambda e: self._on_menu_rename())
         self.bind(f"<{MOD_KEY}-Shift-I>", lambda e: self._on_docs_shortcut())
-        self.bind(f"<{MOD_KEY}-p>", lambda e: self._on_preview_active())
-        self.bind(f"<{MOD_KEY}-P>", lambda e: self._on_preview_active())
+        self.bind_all(f"<{MOD_KEY}-p>", lambda e: self._on_preview_active())
+        self.bind_all(f"<{MOD_KEY}-P>", lambda e: self._on_preview_active())
         self.bind(f"<{MOD_KEY}-m>", lambda e: self._on_add_dialog())
         self.bind(f"<{MOD_KEY}-M>", lambda e: self._on_add_dialog())
         self.bind(f"<{MOD_KEY}-g>", lambda e: self._on_group_shortcut())
