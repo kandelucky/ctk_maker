@@ -69,6 +69,11 @@ KEY_GRID_SPACING = "grid_spacing"
 KEY_EDITOR_COMMAND = "editor_command"
 KEY_PREVIEW_FLOATER = "preview_show_floater"
 KEY_PREVIEW_CONSOLE = "preview_show_console"
+KEY_PREVIEW_CONSOLE_MODE = "preview_console_mode"
+
+CONSOLE_MODE_OFF = "off"
+CONSOLE_MODE_WINDOWS = "windows"
+CONSOLE_MODE_INAPP = "inapp"
 
 # Editor presets — labelled command templates for common Windows
 # editors. ``{file}`` and ``{line}`` are substituted by
@@ -685,12 +690,12 @@ class SettingsDialog(tk.Toplevel):
         tab = self._tab_frame(parent)
         self._section_label(tab, "F5 preview window").pack(anchor="w")
 
-        # Defaults preserve existing behavior — both on.
+        # Defaults preserve existing behavior.
         self._preview_floater_var = tk.BooleanVar(
             value=bool(self._initial.get(KEY_PREVIEW_FLOATER, True)),
         )
-        self._preview_console_var = tk.BooleanVar(
-            value=bool(self._initial.get(KEY_PREVIEW_CONSOLE, True)),
+        self._preview_console_mode_var = tk.StringVar(
+            value=self._resolve_initial_console_mode(),
         )
 
         cb_row = tk.Frame(tab, bg=BG)
@@ -703,28 +708,45 @@ class SettingsDialog(tk.Toplevel):
             fg_color="#0e639c", hover_color="#1177bb",
         ).pack(anchor="w")
 
-        cb_row2 = tk.Frame(tab, bg=BG)
-        cb_row2.pack(fill="x", pady=(8, 4))
-        ctk.CTkCheckBox(
-            cb_row2, text="Show preview console (Windows console window for print + tracebacks)",
-            variable=self._preview_console_var,
-            checkbox_width=16, checkbox_height=16,
-            font=ui_font(11),
-            fg_color="#0e639c", hover_color="#1177bb",
-        ).pack(anchor="w")
+        self._section_label(tab, "Console").pack(anchor="w", pady=(14, 0))
+        for value, label in (
+            (CONSOLE_MODE_OFF, "Off (preview output discarded)"),
+            (CONSOLE_MODE_WINDOWS, "Windows console (separate cmd window)"),
+            (CONSOLE_MODE_INAPP, "In-app console (View → Console)"),
+        ):
+            row = tk.Frame(tab, bg=BG)
+            row.pack(fill="x", pady=(4, 0))
+            ctk.CTkRadioButton(
+                row, text=label,
+                variable=self._preview_console_mode_var, value=value,
+                radiobutton_width=16, radiobutton_height=16,
+                font=ui_font(11),
+                fg_color="#0e639c", hover_color="#1177bb",
+            ).pack(anchor="w")
 
         self._hint(
             tab,
-            "Both options apply to the next F5 preview launch — close "
-            "and re-open any active preview to see the change. The "
+            "Settings apply to the next preview launch — close and "
+            "re-open any active preview to see the change. The "
             "preview-tools toggle controls the visible PREVIEW marker "
             "(orange edge ring, title prefix) and the floating "
-            "Save / Copy buttons. The console toggle suppresses the "
-            "separate Windows console window — turn it off if you "
-            "don't want preview output to appear; turn it on to see "
-            "behavior-file print() output and crash tracebacks.",
+            "Save / Copy buttons. The console choice picks where "
+            "behavior-file print() output and crash tracebacks land: "
+            "nowhere, in a separate Windows console window, or in the "
+            "in-app Console window opened from the View menu.",
         ).pack(anchor="w", pady=(10, 0))
         return tab
+
+    def _resolve_initial_console_mode(self) -> str:
+        """Pick the radio's initial value from settings, migrating the
+        legacy boolean ``preview_show_console`` when the new mode key
+        hasn't been written yet.
+        """
+        raw = self._initial.get(KEY_PREVIEW_CONSOLE_MODE)
+        if raw in (CONSOLE_MODE_OFF, CONSOLE_MODE_WINDOWS, CONSOLE_MODE_INAPP):
+            return raw
+        legacy = bool(self._initial.get(KEY_PREVIEW_CONSOLE, True))
+        return CONSOLE_MODE_WINDOWS if legacy else CONSOLE_MODE_OFF
 
     # ----- Autosave tab -----
 
@@ -871,7 +893,14 @@ class SettingsDialog(tk.Toplevel):
             self._editor_cmd_var.get().strip(),
         )
         save_setting(KEY_PREVIEW_FLOATER, bool(self._preview_floater_var.get()))
-        save_setting(KEY_PREVIEW_CONSOLE, bool(self._preview_console_var.get()))
+        mode = self._preview_console_mode_var.get()
+        if mode not in (CONSOLE_MODE_OFF, CONSOLE_MODE_WINDOWS, CONSOLE_MODE_INAPP):
+            mode = CONSOLE_MODE_OFF
+        save_setting(KEY_PREVIEW_CONSOLE_MODE, mode)
+        # Keep the legacy boolean in sync so any external reader (or a
+        # rollback) sees a consistent value: True iff the Windows-cmd
+        # mode is selected.
+        save_setting(KEY_PREVIEW_CONSOLE, mode == CONSOLE_MODE_WINDOWS)
         if callable(self._on_workspace_changed):
             try:
                 self._on_workspace_changed()

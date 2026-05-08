@@ -1,7 +1,9 @@
 import os
+import queue
 import subprocess
 import sys
 import tempfile
+import threading
 import tkinter as tk
 import tkinter.font as tkfont
 import webbrowser
@@ -25,6 +27,7 @@ from app.core.settings import load_settings, save_setting
 from app.io.code_exporter import export_project
 from app.io.project_loader import ProjectLoadError, load_project
 from app.io.project_saver import save_project
+from app.ui.console_window import ConsoleWindow
 from app.ui.dialogs import NewProjectSizeDialog, prompt_open_project_folder
 from app.ui.history_window import HistoryPanel, HistoryWindow
 from app.ui.variables_window import VariablesWindow
@@ -43,18 +46,48 @@ from app.core.platform_compat import IS_WINDOWS, MOD_KEY
 PROJECT_FILE_TYPES = [("CTkMaker project", "*.ctkproj"), ("All files", "*.*")]
 
 
-def _preview_show_console() -> bool:
-    """Read Settings → Preview → "Show preview console" (default True).
-    Surfaced as a helper so both ``_preview_console_flags`` and the
-    runner-vs-bare launch decision read the same value."""
-    if sys.platform != "win32":
-        return False
+_CONSOLE_MODE_VALUES = ("off", "windows", "inapp")
+
+
+def _preview_console_mode() -> str:
+    """Resolve the preview-console mode from settings.
+
+    Three values: ``"off"`` (no console at all, output discarded),
+    ``"windows"`` (separate Windows ``cmd`` window — legacy default
+    on Windows), ``"inapp"`` (capture stdout/stderr and stream into
+    the in-app ``ConsoleWindow``).
+
+    Migrates the legacy ``preview_show_console`` boolean: if the new
+    ``preview_console_mode`` key is unset, ``True`` → ``"windows"``
+    (the historical default), ``False`` → ``"off"``. Non-Windows
+    platforms can never resolve to ``"windows"`` (no ``cmd``); they
+    fall through to ``"off"`` for that legacy value.
+    """
     try:
         from app.core.settings import load_settings
-        from app.ui.settings_dialog import KEY_PREVIEW_CONSOLE
-        return bool(load_settings().get(KEY_PREVIEW_CONSOLE, True))
+        from app.ui.settings_dialog import (
+            KEY_PREVIEW_CONSOLE, KEY_PREVIEW_CONSOLE_MODE,
+        )
     except ImportError:
-        return True
+        return "windows" if sys.platform == "win32" else "off"
+    s = load_settings()
+    mode = s.get(KEY_PREVIEW_CONSOLE_MODE)
+    if mode in _CONSOLE_MODE_VALUES:
+        if mode == "windows" and sys.platform != "win32":
+            return "off"
+        return mode
+    legacy = bool(s.get(KEY_PREVIEW_CONSOLE, True))
+    if legacy and sys.platform == "win32":
+        return "windows"
+    return "off"
+
+
+def _preview_show_console() -> bool:
+    """Backward-compatible shim: ``True`` only when mode is the legacy
+    Windows-cmd console. Kept so any out-of-tree caller / future
+    reference still works after the mode rewrite.
+    """
+    return _preview_console_mode() == "windows"
 
 
 def _preview_show_floater() -> bool:
@@ -69,29 +102,63 @@ def _preview_show_floater() -> bool:
         return True
 
 
-def _preview_console_flags() -> dict:
+def _console_reader(
+    stream_name: str,
+    fp,
+    q: "queue.Queue[tuple[str, str]]",
+) -> None:
+    """Reader thread for one preview pipe. Pushes ``(stream_name,
+    line)`` tuples into ``q`` until EOF, then closes the pipe.
+
+    Daemon thread — never join; dies with the process. ``readline()``
+    blocks until the child writes a newline (or the pipe closes), so
+    no busy loop. Trailing ``\\n`` is stripped because the textbox
+    appends its own.
+    """
+    try:
+        for line in iter(fp.readline, ""):
+            q.put((stream_name, line.rstrip("\r\n")))
+    except (OSError, ValueError):
+        pass
+    finally:
+        try:
+            fp.close()
+        except Exception:
+            pass
+
+
+def _preview_console_flags(mode: str | None = None) -> dict:
     """Subprocess kwargs controlling the preview process's console
     visibility. Windows-only — other platforms inherit launching
     terminal stdio.
 
-    - Console ON  → ``CREATE_NEW_CONSOLE`` (0x00000010) so behavior
-      ``print()`` and crash tracebacks land in a visible window.
-    - Console OFF → ``CREATE_NO_WINDOW`` (0x08000000) so no console
-      pops at all (preview runs silent — output is discarded).
+    - ``"windows"`` → ``CREATE_NEW_CONSOLE`` (0x00000010) so behavior
+      ``print()`` and crash tracebacks land in a visible cmd window.
+    - ``"off"`` / ``"inapp"`` → ``CREATE_NO_WINDOW`` (0x08000000) so
+      no extra cmd window pops; in ``inapp`` mode stdout/stderr are
+      piped into the in-app console instead.
     """
     if sys.platform != "win32":
         return {}
-    return {"creationflags": 0x00000010 if _preview_show_console() else 0x08000000}
+    if mode is None:
+        mode = _preview_console_mode()
+    return {"creationflags": 0x00000010 if mode == "windows" else 0x08000000}
 
 
 def _spawn_preview(tmp_dir: Path, tmp_path: Path, cwd: str) -> subprocess.Popen:
-    """Launch the preview subprocess. When the console is on, route
-    through ``preview_runner.py`` so a crashing preview pauses on
-    "Press Enter" before its console disappears. When the console
-    is off, skip the runner — pause-on-error has nothing to display
-    against a hidden console — and spawn the preview directly with
-    ``CREATE_NO_WINDOW`` + ``DEVNULL`` stdio so output is silently
-    discarded.
+    """Launch the preview subprocess in the mode the user picked.
+
+    - ``"windows"``: route through ``preview_runner.py`` so a crashing
+      preview pauses on "Press Enter" before its console disappears.
+    - ``"inapp"``: pipe stdout/stderr back to the parent so
+      ``MainWindow`` reader threads can stream them into the in-app
+      console. ``-u`` + ``PYTHONUNBUFFERED=1`` defeat block-buffering
+      on the redirected pipe so ``print()`` lines arrive immediately
+      instead of waiting for a ~4KB buffer to fill or the process to
+      exit. No ``cmd`` window pops (``CREATE_NO_WINDOW``).
+    - ``"off"``: skip the runner (pause-on-error has nothing to display
+      against hidden stdio) and spawn the preview directly with
+      ``DEVNULL`` so output is silently discarded.
 
     The injected preview tools include ``print()`` calls with non-ASCII
     characters (em-dash, arrow). When stdout is redirected to DEVNULL,
@@ -103,19 +170,33 @@ def _spawn_preview(tmp_dir: Path, tmp_path: Path, cwd: str) -> subprocess.Popen:
     py = _preview_python_executable()
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
-    if _preview_show_console():
+    mode = _preview_console_mode()
+    if mode == "windows":
         runner_path = _write_preview_runner(tmp_dir)
         return subprocess.Popen(
             [py, str(runner_path)], cwd=cwd,
             env=env,
-            **_preview_console_flags(),
+            **_preview_console_flags(mode),
+        )
+    if mode == "inapp":
+        env["PYTHONUNBUFFERED"] = "1"
+        return subprocess.Popen(
+            [py, "-u", str(tmp_path)], cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+            env=env,
+            **_preview_console_flags(mode),
         )
     return subprocess.Popen(
         [py, str(tmp_path)], cwd=cwd,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         env=env,
-        **_preview_console_flags(),
+        **_preview_console_flags(mode),
     )
 
 
@@ -429,6 +510,17 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         self._project_var = tk.BooleanVar(value=False)
         self._variables_window: VariablesWindow | None = None
         self._variables_var = tk.BooleanVar(value=False)
+        # In-app preview console: buffer survives close/reopen so the
+        # window can be opened mid-run and replay everything captured
+        # so far. Reader threads (one per preview's stdout/stderr pipe)
+        # push (stream, line) tuples into the queue; the main-thread
+        # poller drains the queue, appends to the buffer, and forwards
+        # to the live window if one exists.
+        self._console_window: ConsoleWindow | None = None
+        self._console_var = tk.BooleanVar(value=False)
+        self._console_buffer: list[tuple[str, str]] = []
+        self._console_queue: queue.Queue[tuple[str, str]] = queue.Queue()
+        self._console_poller_id: str | None = None
 
         settings = load_settings()
         initial_mode = settings.get("appearance_mode", "Dark")
@@ -718,6 +810,11 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             ),
         )
         self._autosave.start()
+
+        # Start the in-app console queue poller — idle-cheap (50 ms tick
+        # against an empty queue) so it's safe to leave running even
+        # when the console mode is off.
+        self._console_poller_id = self.after(50, self._drain_console_queue)
 
         self.after(120, self._show_startup_dialog)
 
@@ -1891,6 +1988,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             messagebox.showerror("Preview failed", "Could not launch Python.", parent=self)
             return
         self._main_preview_proc = proc
+        self._attach_console_capture(proc)
 
     def _on_preview_dialog(self, doc_id: str | None = None) -> None:
         """Launch a dialog-only preview — the chrome ▶ button on every
@@ -1946,6 +2044,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             )
             return
         self._dialog_preview_procs[doc_id] = proc
+        self._attach_console_capture(proc)
 
     def _on_appearance_change(self) -> None:
         mode = self._appearance_var.get()
@@ -2147,6 +2246,89 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
     def _on_f10_project_window(self) -> None:
         self._project_var.set(not self._project_var.get())
         self._on_toggle_project_window()
+
+    # ------------------------------------------------------------------
+    # In-app preview console
+
+    def _on_toggle_console_window(self) -> None:
+        want_open = bool(self._console_var.get())
+        alive = (
+            self._console_window is not None
+            and self._console_window.winfo_exists()
+        )
+        if want_open and not alive:
+            self._console_window = ConsoleWindow(
+                self,
+                on_close=self._on_console_window_closed,
+                on_clear=self._on_console_clear,
+            )
+            if self._console_buffer:
+                self._console_window.replay(self._console_buffer)
+        elif not want_open and alive:
+            if self._console_window is not None:
+                try:
+                    self._console_window.destroy()
+                except tk.TclError:
+                    pass
+            self._console_window = None
+
+    def _on_console_window_closed(self) -> None:
+        self._console_window = None
+        self._console_var.set(False)
+
+    def _on_console_clear(self) -> None:
+        # User pressed Clear inside the console window — also drop the
+        # main-window-side buffer so a later reopen doesn't replay
+        # everything they just cleared.
+        self._console_buffer.clear()
+
+    def _attach_console_capture(self, proc: subprocess.Popen) -> None:
+        """Spawn reader threads for ``proc.stdout`` / ``proc.stderr`` if
+        the preview was launched in inapp mode (the only mode where
+        ``Popen`` exposes pipes). Threads are daemons — they die with
+        the app and end naturally on EOF when the preview exits.
+        """
+        if proc.stdout is None and proc.stderr is None:
+            return  # not inapp mode (devnull or new-console path)
+        for stream_name, fp in (("stdout", proc.stdout), ("stderr", proc.stderr)):
+            if fp is None:
+                continue
+            t = threading.Thread(
+                target=_console_reader,
+                args=(stream_name, fp, self._console_queue),
+                daemon=True,
+            )
+            t.start()
+
+    def _drain_console_queue(self) -> None:
+        """Main-thread poller: pull (stream, line) tuples out of the
+        thread-safe queue, append them to the persistent buffer, and
+        forward to the live console window if one is open. Capped at
+        200 lines per tick so a flood doesn't stall the Tk event loop.
+        """
+        drained = 0
+        try:
+            while drained < 200:
+                stream, line = self._console_queue.get_nowait()
+                self._console_buffer.append((stream, line))
+                # Cap the persistent buffer so a long-running preview
+                # with chatty print() doesn't eat unbounded memory.
+                if len(self._console_buffer) > 5000:
+                    del self._console_buffer[:500]
+                if self._console_window is not None:
+                    try:
+                        self._console_window.append_line(stream, line)
+                    except tk.TclError:
+                        pass
+                drained += 1
+        except queue.Empty:
+            pass
+        try:
+            self._console_poller_id = self.after(
+                50, self._drain_console_queue,
+            )
+        except tk.TclError:
+            self._console_poller_id = None
 
     def _on_run_script(self) -> None:
         """Pick any local .py file and run it as a subprocess. Useful
