@@ -13,28 +13,50 @@ import tkinter as tk
 
 import customtkinter as ctk
 
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
 
-class ComponentWindowInsertDialog(ctk.CTkToplevel):
+class ComponentWindowInsertDialog(ManagedToplevel):
+    window_title = "Insert Window component"
+    default_size = (440, 280)
+    min_size = (420, 260)
+    fg_color = "#1a1a1a"
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
+
     def __init__(
         self,
         parent,
         component_name: str,
         target_doc_name: str,
     ):
-        super().__init__(parent)
-        prepare_dialog(self)
-        self.title("Insert Window component")
-        self.resizable(False, False)
-        self.transient(parent)
-        safe_grab_set(self)
-        self.configure(fg_color="#1a1a1a")
-
+        self._component_name = component_name
+        self._target_doc_name = target_doc_name
         self.result: bool = False
+        super().__init__(parent)
+        self.bind("<Return>", lambda _e: self._on_insert())
 
-        body = ctk.CTkFrame(self, fg_color="transparent")
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+            w, h = self.default_size
+            return (
+                max(0, px + (pw - w) // 2),
+                max(0, py + (ph - h) // 2),
+            )
+        except tk.TclError:
+            return (100, 100)
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+
+        body = ctk.CTkFrame(container, fg_color="transparent")
         body.pack(padx=22, pady=(20, 8), fill="x")
 
         ctk.CTkLabel(
@@ -45,7 +67,7 @@ class ComponentWindowInsertDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             body,
             text=(
-                f"\"{component_name}\" is a Window component."
+                f"\"{self._component_name}\" is a Window component."
             ),
             font=ui_font(10),
             text_color="#bdbdbd", anchor="w",
@@ -58,7 +80,7 @@ class ComponentWindowInsertDialog(ctk.CTkToplevel):
             info,
             text=(
                 "• A new Toplevel will be added to this project.\n"
-                f"• Default name: {target_doc_name}\n"
+                f"• Default name: {self._target_doc_name}\n"
                 "• You can rename it from the Forms tab."
             ),
             font=ui_font(10),
@@ -66,7 +88,7 @@ class ComponentWindowInsertDialog(ctk.CTkToplevel):
             justify="left", anchor="w", wraplength=380,
         ).pack(anchor="w", padx=12, pady=10)
 
-        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer = ctk.CTkFrame(container, fg_color="transparent")
         footer.pack(fill="x", padx=22, pady=(10, 16))
         ctk.CTkButton(
             footer, text="Insert", width=120, height=32,
@@ -78,11 +100,7 @@ class ComponentWindowInsertDialog(ctk.CTkToplevel):
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_cancel,
         ).pack(side="right", padx=(0, 8))
-
-        self.bind("<Escape>", lambda _e: self._on_cancel())
-        self.bind("<Return>", lambda _e: self._on_insert())
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-        self.after(100, self._center_on_parent)
+        return container
 
     def _on_insert(self) -> None:
         self.result = True
@@ -91,21 +109,3 @@ class ComponentWindowInsertDialog(ctk.CTkToplevel):
     def _on_cancel(self) -> None:
         self.result = False
         self.destroy()
-
-    def _center_on_parent(self) -> None:
-        self.update_idletasks()
-        parent = self.master
-        try:
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-        except tk.TclError:
-            reveal_dialog(self)
-            return
-        w = self.winfo_width()
-        h = self.winfo_height()
-        x = px + (pw - w) // 2
-        y = py + (ph - h) // 2
-        self.geometry(f"+{max(0, x)}+{max(0, y)}")
-        reveal_dialog(self)
