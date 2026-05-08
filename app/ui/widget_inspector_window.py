@@ -28,7 +28,7 @@ from tkinter import ttk
 
 import customtkinter as ctk
 
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog
+from app.ui.managed_window import ManagedToplevel
 from app.ui.palette import CATALOG
 from app.widgets.registry import get_descriptor
 from app.ui.system_fonts import ui_font
@@ -213,25 +213,15 @@ def _renamed_to(descriptor, ctk_kwarg: str) -> tuple[str, ...]:
     return RENAMED_KWARGS.get((type_name, ctk_kwarg), ())
 
 
-class WidgetInspectorWindow(ctk.CTkToplevel):
+class WidgetInspectorWindow(ManagedToplevel):
+    window_key = "widget_inspector"
+    window_title = "Inspect CTk Widget"
+    default_size = (760, 560)
+    min_size = (560, 380)
+    fg_color = WINDOW_BG
+    panel_padding = (0, 0)
+
     def __init__(self, master):
-        super().__init__(master)
-        prepare_dialog(self)
-        self.title("Inspect CTk Widget")
-        self.geometry("760x560")
-        self.minsize(560, 380)
-        self.configure(fg_color=WINDOW_BG)
-
-        # CTkToplevel on Windows ships behind the parent window by
-        # default — ``transient`` keeps it on top of the builder, plus
-        # one explicit ``lift()`` after the window has rendered ensures
-        # focus actually lands here on first open.
-        try:
-            self.transient(master)
-        except tk.TclError:
-            pass
-        self.after(50, self._raise_self)
-
         # Pull every palette entry — Vertical / Horizontal / Grid
         # Layout share the CTkFrame descriptor but each carries its
         # own preset_overrides, so they show up as distinct rows with
@@ -250,36 +240,32 @@ class WidgetInspectorWindow(ctk.CTkToplevel):
         # in case a duplicate ever sneaks into the catalog.
         seen: set[str] = set()
         self._entries: list[tuple[object, dict]] = []
-        labels: list[str] = []
+        self._labels: list[str] = []
         for label, descriptor, preset in entries:
             if label in seen:
                 continue
             seen.add(label)
-            labels.append(label)
+            self._labels.append(label)
             self._entries.append((descriptor, preset))
-        self._label_to_index = {lbl: i for i, lbl in enumerate(labels)}
+        self._label_to_index = {lbl: i for i, lbl in enumerate(self._labels)}
 
-        self._build_chrome(labels)
-        self._build_table()
+        super().__init__(master)
 
-        if labels:
-            self._dropdown.set(labels[0])
-            self._on_widget_change(labels[0])
+        if self._labels:
+            self._dropdown.set(self._labels[0])
+            self._on_widget_change(self._labels[0])
 
-        reveal_dialog(self)
-
-    def _raise_self(self) -> None:
-        try:
-            self.lift()
-            self.focus_set()
-        except tk.TclError:
-            pass
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color=WINDOW_BG, corner_radius=0)
+        self._build_chrome(container, self._labels)
+        self._build_table(container)
+        return container
 
     # ------------------------------------------------------------------
     # Chrome
     # ------------------------------------------------------------------
-    def _build_chrome(self, labels: list[str]) -> None:
-        bar = ctk.CTkFrame(self, fg_color=HEADER_BG, corner_radius=0)
+    def _build_chrome(self, parent, labels: list[str]) -> None:
+        bar = ctk.CTkFrame(parent, fg_color=HEADER_BG, corner_radius=0)
         bar.pack(fill="x")
 
         ctk.CTkLabel(
@@ -305,8 +291,8 @@ class WidgetInspectorWindow(ctk.CTkToplevel):
         )
         legend.pack(side="right", padx=12)
 
-    def _build_table(self) -> None:
-        wrap = ctk.CTkFrame(self, fg_color=WINDOW_BG, corner_radius=0)
+    def _build_table(self, parent) -> None:
+        wrap = ctk.CTkFrame(parent, fg_color=WINDOW_BG, corner_radius=0)
         wrap.pack(fill="both", expand=True, padx=8, pady=(4, 8))
 
         # ttk.Treeview gives us a real, scrollable, multi-column grid
@@ -371,7 +357,7 @@ class WidgetInspectorWindow(ctk.CTkToplevel):
         # Status footer — surfaced summary counts so you can see at a
         # glance how complete coverage is for the chosen widget.
         self._status_lbl = ctk.CTkLabel(
-            self, text="", text_color=DIM_FG,
+            parent, text="", text_color=DIM_FG,
             font=ui_font(10), anchor="w",
         )
         self._status_lbl.pack(fill="x", padx=12, pady=(0, 8))
