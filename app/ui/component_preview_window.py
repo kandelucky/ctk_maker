@@ -30,25 +30,31 @@ from app.core.variables import is_var_token, parse_var_token
 from app.io.component_assets import (
     extract_assets_to_folder, rewrite_bundle_tokens_to_paths,
 )
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog
+from app.ui.managed_window import ManagedToplevel
 from app.widgets.registry import get_descriptor
 
 if TYPE_CHECKING:
     pass
 
 
-class ComponentPreviewWindow(ctk.CTkToplevel):
-    def __init__(self, parent, payload: dict, component_path: Path | None = None):
-        super().__init__(parent)
-        prepare_dialog(self)
+class ComponentPreviewWindow(ManagedToplevel):
+    # Geometry is bbox-driven per component, so don't persist it
+    # across opens — that would clip larger components after a small
+    # one was previewed first.
+    window_key = ""
+    min_size = (220, 160)
+    panel_padding = (8, 8)
+
+    def __init__(
+        self, parent, payload: dict, component_path: Path | None = None,
+    ):
         name = payload.get("name") or "(component)"
-        self.title(f"{name} — Preview")
-        self.transient(parent)
+        self.window_title = f"{name} — Preview"
 
         # Bundle tokens point at archive-relative names that don't
         # resolve on disk, so for previews we extract to a temp dir
         # and rewrite the tokens in a copy of the node tree. The temp
-        # dir is cleaned up when the preview window closes.
+        # dir is cleaned up when the preview window closes (on_close).
         self._temp_assets_dir: Path | None = None
         if component_path is not None:
             try:
@@ -64,23 +70,22 @@ class ComponentPreviewWindow(ctk.CTkToplevel):
                     shutil.rmtree(tmp, ignore_errors=True)
             except (OSError, zipfile.BadZipFile):
                 log_error(f"preview asset extract {component_path}")
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         # Map var-uuid → default literal so var-tokens in properties
         # render as plain values inside the preview.
-        var_defaults: dict[str, str] = {
+        self._var_defaults: dict[str, str] = {
             v.get("id", ""): str(v.get("default", "") or "")
             for v in payload.get("variables", [])
         }
 
-        nodes = payload.get("nodes", [])
         # Compute the actual bounding box of root nodes so the preview
         # surface can be sized to fit + every root gets shifted so the
         # bbox top-left lands at (margin, margin) inside the surface.
         # The saved ``view_size`` is just (max_x, max_y) and ignores
         # the leftmost / topmost offset, which made widgets that were
         # placed deep into a canvas render off-screen here.
-        min_x, min_y, max_x, max_y = self._bbox(nodes)
+        self._nodes = payload.get("nodes", [])
+        min_x, min_y, max_x, max_y = self._bbox(self._nodes)
         bbox_w = max(max_x - min_x, 100)
         bbox_h = max(max_y - min_y, 60)
         margin = 28
@@ -88,30 +93,45 @@ class ComponentPreviewWindow(ctk.CTkToplevel):
         # for that on top of the surface margin so the bottom widget
         # row isn't clipped behind the window edge.
         title_chrome = 32
-        self.geometry(
-            f"{bbox_w + margin * 2}x{bbox_h + margin * 2 + title_chrome}"
+        self._surface_size = (bbox_w + margin * 2, bbox_h + margin * 2)
+        self.default_size = (
+            self._surface_size[0],
+            self._surface_size[1] + title_chrome,
         )
-        self.minsize(220, 160)
+        self._render_offset = (margin - min_x, margin - min_y)
 
+        super().__init__(parent)
+
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+            w, h = self.default_size
+            return (
+                max(0, px + (pw - w) // 2),
+                max(0, py + (ph - h) // 2),
+            )
+        except tk.TclError:
+            return (100, 100)
+
+    def build_content(self) -> ctk.CTkFrame:
+        sw, sh = self._surface_size
         surface = ctk.CTkFrame(
             self, fg_color="#1e1e1e", corner_radius=0,
-            width=bbox_w + margin * 2, height=bbox_h + margin * 2,
+            width=sw, height=sh,
         )
-        surface.pack(fill="both", expand=True, padx=8, pady=8)
         surface.pack_propagate(False)
+        for raw in self._nodes:
+            self._render(surface, raw, self._var_defaults, self._render_offset)
+        return surface
 
-        offset = (margin - min_x, margin - min_y)
-        for raw in nodes:
-            self._render(surface, raw, var_defaults, offset)
-
-        self.bind("<Escape>", lambda _e: self._on_close())
-        self.after(100, self._center_on_parent)
-
-    def _on_close(self) -> None:
+    def on_close(self) -> None:
         if self._temp_assets_dir is not None:
             shutil.rmtree(self._temp_assets_dir, ignore_errors=True)
             self._temp_assets_dir = None
-        self.destroy()
 
     @staticmethod
     def _bbox(nodes: list[dict]) -> tuple[int, int, int, int]:
@@ -198,21 +218,3 @@ class ComponentPreviewWindow(ctk.CTkToplevel):
                 continue
             cleaned[key] = value
         return cleaned
-
-    def _center_on_parent(self) -> None:
-        self.update_idletasks()
-        parent = self.master
-        try:
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-        except tk.TclError:
-            reveal_dialog(self)
-            return
-        w = self.winfo_width()
-        h = self.winfo_height()
-        x = px + (pw - w) // 2
-        y = py + (ph - h) // 2
-        self.geometry(f"+{max(0, x)}+{max(0, y)}")
-        reveal_dialog(self)
