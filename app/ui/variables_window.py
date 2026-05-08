@@ -29,6 +29,8 @@ from app.core.commands import (
     DeleteVariableCommand,
     RenameVariableCommand,
 )
+from app.ui import style
+from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 from app.core.variables import (
     COLOR_DEFAULT,
@@ -45,21 +47,26 @@ from app.ui.system_fonts import derive_ui_font
 if TYPE_CHECKING:
     from app.core.project import Project
 
-BG = "#1e1e1e"
-PANEL_BG = "#252526"
-TOOLBAR_BG = "#2a2a2a"
-TREE_BG = "#1e1e1e"
-TREE_FG = "#cccccc"
-TREE_SELECTED_BG = "#094771"
-TREE_HEADING_BG = "#2d2d30"
-TREE_HEADING_FG = "#cccccc"
-EMPTY_FG = "#666666"
-BORDER = "#3a3a3a"
+# Color / spacing tokens are sourced from app.ui.style — local aliases
+# kept so the rest of this file stays terse. Modal dialogs in this
+# module (VariableEditDialog, ReparentVariablesDialog,
+# AddGlobalReferenceDialog) still wire their colours inline; bulk
+# migration there is Phase C.
+BG = style.BG
+PANEL_BG = style.PANEL_BG
+TOOLBAR_BG = style.TOOLBAR_BG
+TREE_BG = style.TREE_BG
+TREE_FG = style.TREE_FG
+TREE_SELECTED_BG = style.TREE_SELECTED_BG
+TREE_HEADING_BG = style.TREE_HEADING_BG
+TREE_HEADING_FG = style.TREE_HEADING_FG
+EMPTY_FG = style.EMPTY_FG
+BORDER = style.BORDER
 
 DIALOG_W = 420
 DIALOG_H = 360
-TREE_ROW_HEIGHT = 22
-TREE_FONT_SIZE = 10
+TREE_ROW_HEIGHT = style.TREE_ROW_HEIGHT
+TREE_FONT_SIZE = style.TREE_FONT_SIZE
 
 EMPTY_TEXT_GLOBAL = "No global variables yet — click + Add to create one"
 EMPTY_TEXT_LOCAL = "No local variables for this document — click + Add"
@@ -174,82 +181,40 @@ class VariablesPanel(ctk.CTkFrame):
     # Build
     # ------------------------------------------------------------------
     def _build_toolbar(self) -> None:
-        # 30px buttons + 10/10 vertical padding inside a 54px bar
-        # leaves 2px slack on each side so rounded corners never
-        # clip on integer-DPI scalings.
-        bar = tk.Frame(self, bg=TOOLBAR_BG, height=54, highlightthickness=0)
+        bar = style.make_toolbar(self)
         bar.pack(fill="x")
-        bar.pack_propagate(False)
 
+        self._add_btn = style.primary_button(
+            bar, "+ Add", command=self._on_add, width=70,
+        )
         # Local panels colour the + Add button with a darkened local
         # accent so the Add affordance reads as "local-scoped" without
-        # being as bright as the chrome icon's orange — large flat
-        # surfaces look brighter than small icons at the same hex.
+        # being as bright as the chrome icon's orange.
         if self.scope == "local":
-            add_fg = "#8a541a"
-            add_hover = "#a0651e"
-        else:
-            add_fg = "#0e639c"
-            add_hover = "#1177bb"
-        self._add_btn = ctk.CTkButton(
-            bar, text="+ Add", width=70, height=30,
-            corner_radius=3, font=ui_font(11),
-            fg_color=add_fg, hover_color=add_hover,
-            command=self._on_add,
-        )
-        self._add_btn.pack(side="left", padx=(8, 4), pady=10)
+            self._add_btn.configure(fg_color="#8a541a", hover_color="#a0651e")
+        style.pack_toolbar_button(self._add_btn, first=True)
 
-        self._edit_btn = ctk.CTkButton(
-            bar, text="Edit", width=60, height=30,
-            corner_radius=3, font=ui_font(11),
-            fg_color="#3c3c3c", hover_color="#4a4a4a",
-            command=self._on_edit,
+        self._edit_btn = style.secondary_button(
+            bar, "Edit", command=self._on_edit, width=60,
         )
-        self._edit_btn.pack(side="left", padx=(0, 4), pady=10)
+        style.pack_toolbar_button(self._edit_btn)
 
-        self._dup_btn = ctk.CTkButton(
-            bar, text="Duplicate", width=78, height=30,
-            corner_radius=3, font=ui_font(11),
-            fg_color="#3c3c3c", hover_color="#4a4a4a",
-            command=self._on_duplicate,
+        self._dup_btn = style.secondary_button(
+            bar, "Duplicate", command=self._on_duplicate, width=78,
         )
-        self._dup_btn.pack(side="left", padx=(0, 4), pady=10)
+        style.pack_toolbar_button(self._dup_btn)
 
-        self._del_btn = ctk.CTkButton(
-            bar, text="Delete", width=64, height=30,
-            corner_radius=3, font=ui_font(11),
-            fg_color="#3c3c3c", hover_color="#4a4a4a",
-            command=self._on_delete,
+        self._del_btn = style.secondary_button(
+            bar, "Delete", command=self._on_delete, width=64,
         )
-        self._del_btn.pack(side="left", padx=(0, 4), pady=10)
+        style.pack_toolbar_button(self._del_btn)
 
     def _build_tree(self) -> None:
         wrap = tk.Frame(self, bg=BG, highlightthickness=0)
         wrap.pack(fill="both", expand=True)
 
-        style = ttk.Style(self)
         style_name = "Variables.Treeview"
-        style.configure(
-            style_name,
-            background=TREE_BG,
-            fieldbackground=TREE_BG,
-            foreground=TREE_FG,
-            rowheight=TREE_ROW_HEIGHT,
-            borderwidth=0,
-            font=ui_font(TREE_FONT_SIZE),
-        )
-        style.map(
-            style_name,
-            background=[("selected", TREE_SELECTED_BG)],
-            foreground=[("selected", "#ffffff")],
-        )
-        style.configure(
-            f"{style_name}.Heading",
-            background=TREE_HEADING_BG,
-            foreground=TREE_HEADING_FG,
-            font=ui_font(TREE_FONT_SIZE, "bold"),
-            relief="flat",
-        )
+        style.apply_tree_style(self, style_name)
 
         # ``show="tree headings"`` keeps the #0 column visible so we
         # can hang a small colour swatch off rows whose variable type
@@ -273,14 +238,7 @@ class VariablesPanel(ctk.CTkFrame):
         self.tree.tag_configure("empty", foreground=EMPTY_FG)
         self.tree.bind("<Double-Button-1>", self._on_double_click)
 
-        vsb = ctk.CTkScrollbar(
-            wrap, orientation="vertical",
-            command=self.tree.yview,
-            width=10, corner_radius=4,
-            fg_color="transparent",
-            button_color="#3a3a3a",
-            button_hover_color="#4a4a4a",
-        )
+        vsb = style.styled_scrollbar(wrap, command=self.tree.yview)
         self.tree.configure(yscrollcommand=vsb.set)
         self.tree.pack(side="left", fill="both", expand=True)
         vsb.pack(side="right", fill="y")
@@ -1406,16 +1364,17 @@ class ObjectReferencesPanel(ctk.CTkFrame):
         self.after(0, self._refresh)
 
     def _build_toolbar(self) -> None:
-        bar = tk.Frame(self, bg=TOOLBAR_BG, height=54, highlightthickness=0)
+        bar = style.make_toolbar(self)
         bar.pack(fill="x")
-        bar.pack_propagate(False)
-        self._add_global_btn = ctk.CTkButton(
-            bar, text="+ Add Window", width=110, height=30,
-            corner_radius=3, font=ui_font(11),
-            fg_color="#0e8a7d", hover_color="#149a8c",
-            command=self._on_add_global,
+        # Object References uses a teal accent — its own concept,
+        # distinct from Global (blue) / Local (orange) variables.
+        self._add_global_btn = style.primary_button(
+            bar, "+ Add Window", command=self._on_add_global, width=110,
         )
-        self._add_global_btn.pack(side="left", padx=(8, 6), pady=10)
+        self._add_global_btn.configure(
+            fg_color="#0e8a7d", hover_color="#149a8c",
+        )
+        style.pack_toolbar_button(self._add_global_btn, first=True)
         ctk.CTkLabel(
             bar,
             text="Window / Dialog refs only. Toggle locals via widget panel.",
@@ -1466,28 +1425,7 @@ class ObjectReferencesPanel(ctk.CTkFrame):
     def _build_tree(self) -> None:
         wrap = tk.Frame(self, bg=BG, highlightthickness=0)
         wrap.pack(fill="both", expand=True)
-        style = ttk.Style(self)
-        style.configure(
-            "ObjectRefs.Treeview",
-            background=TREE_BG,
-            fieldbackground=TREE_BG,
-            foreground=TREE_FG,
-            rowheight=TREE_ROW_HEIGHT,
-            borderwidth=0,
-            font=ui_font(TREE_FONT_SIZE),
-        )
-        style.map(
-            "ObjectRefs.Treeview",
-            background=[("selected", TREE_SELECTED_BG)],
-            foreground=[("selected", "#ffffff")],
-        )
-        style.configure(
-            "ObjectRefs.Treeview.Heading",
-            background=TREE_HEADING_BG,
-            foreground=TREE_HEADING_FG,
-            font=ui_font(TREE_FONT_SIZE, "bold"),
-            relief="flat",
-        )
+        style.apply_tree_style(self, "ObjectRefs.Treeview")
         self.tree = ttk.Treeview(
             wrap,
             columns=("type", "target"),
@@ -1508,14 +1446,7 @@ class ObjectReferencesPanel(ctk.CTkFrame):
         )
         self.tree.bind("<Button-3>", self._on_right_click)
         self.tree.bind("<Double-Button-1>", self._on_double_click)
-        vsb = ctk.CTkScrollbar(
-            wrap, orientation="vertical",
-            command=self.tree.yview,
-            width=10, corner_radius=4,
-            fg_color="transparent",
-            button_color="#3a3a3a",
-            button_hover_color="#4a4a4a",
-        )
+        vsb = style.styled_scrollbar(wrap, command=self.tree.yview)
         self.tree.configure(yscrollcommand=vsb.set)
         self.tree.pack(side="left", fill="both", expand=True)
         vsb.pack(side="right", fill="y")
@@ -1806,7 +1737,7 @@ class ObjectReferencesPanel(ctk.CTkFrame):
         super().destroy()
 
 
-class VariablesWindow(ctk.CTkToplevel):
+class VariablesWindow(ManagedToplevel):
     """Floating window wrapper around two ``VariablesPanel`` instances.
 
     Two tabs at the top — **Global** (blue, project-wide) and
@@ -1815,56 +1746,39 @@ class VariablesWindow(ctk.CTkToplevel):
     label and contents always match what the workspace is showing.
     """
 
+    window_key = "variables"
+    window_title = "Data"
+    default_size = (460, 440)
+    min_size = (360, 260)
+    fg_color = BG
+    # Tab strip + panel area drive their own padx/pady inside the
+    # wrapper, so suppress ManagedToplevel's outer padding.
+    panel_padding = (0, 0)
+
     def __init__(
         self, parent, project: "Project",
         on_close: Callable[[], None] | None = None,
         initial_scope: str = "global",
         initial_variable_id: str | None = None,
     ):
-        super().__init__(parent)
-        prepare_dialog(self)
-        self.title("Data")
-        self.configure(fg_color=BG)
-        self.geometry("460x440")
-        self.minsize(360, 260)
-        try:
-            self.transient(parent)
-        except tk.TclError:
-            pass
-
         from app.ui.icons import (
             VARIABLES_GLOBAL_COLOR, VARIABLES_LOCAL_COLOR,
         )
+        self.project = project
         self._global_color = VARIABLES_GLOBAL_COLOR
         self._local_color = VARIABLES_LOCAL_COLOR
-        self.project = project
-        self._on_close_callback = on_close
         self._active_scope = "global"
         self._local_doc_id: str | None = None
-
-        self._build_tab_strip()
-        self._content = tk.Frame(self, bg=BG, highlightthickness=0)
-        self._content.pack(fill="both", expand=True, padx=6, pady=(0, 6))
-
-        # Global panel — never rebuilt; always points at project.variables.
-        self._global_panel = VariablesPanel(
-            self._content, project, scope="global",
-        )
-        # Local panel — built against the currently active document.
-        # Rebuilt on active_document_changed so the title and the
-        # backing list track the workspace's current selection.
-        self._local_panel: VariablesPanel | None = None
-        self._build_local_panel()
-        # v1.10.8 — Object References panel (third tab). Combined view
-        # over globals + active-doc locals; refreshes on its own bus
-        # subscriptions, no rebuild on doc change.
-        self._objrefs_panel = ObjectReferencesPanel(self._content, project)
+        self._bus_subs: list[tuple[str, Callable]] = []
+        self._initial_scope = initial_scope
+        self._initial_variable_id = initial_variable_id
+        super().__init__(parent)
+        self.set_on_close(on_close)
 
         # Subscribe so a doc switch / rename behind the scenes reflows
         # the Local tab. Stored on the instance so destroy() can clean
         # up — leaving subscribers behind would keep the closed window
         # alive across the project's lifetime.
-        self._bus_subs: list[tuple[str, Callable]] = []
         self._subscribe(
             "active_document_changed",
             lambda *_a, **_k: self._on_active_doc_changed(),
@@ -1876,18 +1790,50 @@ class VariablesWindow(ctk.CTkToplevel):
             "widget_renamed", self._on_widget_renamed,
         )
 
-        self._show_scope(initial_scope)
-        if initial_variable_id is not None:
+        self._show_scope(self._initial_scope)
+        if self._initial_variable_id is not None:
             # Panels populate via after(0, _refresh) so the tree row
             # we want to select doesn't exist yet — defer onto the
             # same queue (FIFO → refresh first, then our select).
             self.after(
                 0,
-                lambda v=initial_variable_id: self._select_variable(v),
+                lambda v=self._initial_variable_id: self._select_variable(v),
             )
-        self._place_relative_to(parent)
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
-        reveal_dialog(self)
+
+    def build_content(self) -> tk.Frame:
+        wrapper = tk.Frame(self, bg=BG, highlightthickness=0)
+        self._build_tab_strip(wrapper)
+        self._panel_area = tk.Frame(wrapper, bg=BG, highlightthickness=0)
+        self._panel_area.pack(fill="both", expand=True, padx=6, pady=(0, 6))
+
+        # Global panel — never rebuilt; always points at project.variables.
+        self._global_panel = VariablesPanel(
+            self._panel_area, self.project, scope="global",
+        )
+        # Local panel — built against the currently active document.
+        # Rebuilt on active_document_changed so the title and the
+        # backing list track the workspace's current selection.
+        self._local_panel: VariablesPanel | None = None
+        self._build_local_panel()
+        # v1.10.8 — Object References panel (third tab). Combined view
+        # over globals + active-doc locals; refreshes on its own bus
+        # subscriptions, no rebuild on doc change.
+        self._objrefs_panel = ObjectReferencesPanel(
+            self._panel_area, self.project,
+        )
+        return wrapper
+
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+            w, h = self.default_size
+            return (px + (pw - w) // 2, py + (ph - h) // 2)
+        except tk.TclError:
+            return (100, 100)
 
     def _select_variable(self, var_id: str) -> None:
         """Select ``var_id`` in whichever panel currently owns it.
@@ -1907,7 +1853,7 @@ class VariablesWindow(ctk.CTkToplevel):
         doc = self.project.active_document
         self._local_doc_id = doc.id if doc is not None else None
         self._local_panel = VariablesPanel(
-            self._content, self.project,
+            self._panel_area, self.project,
             scope="local", document_id=self._local_doc_id,
         )
 
@@ -1946,8 +1892,8 @@ class VariablesWindow(ctk.CTkToplevel):
     # ------------------------------------------------------------------
     # Tab strip
     # ------------------------------------------------------------------
-    def _build_tab_strip(self) -> None:
-        strip = tk.Frame(self, bg=BG, highlightthickness=0)
+    def _build_tab_strip(self, parent) -> None:
+        strip = tk.Frame(parent, bg=BG, highlightthickness=0)
         strip.pack(fill="x", padx=6, pady=(6, 0))
         # Three equal columns so Global / Local / Object References
         # tabs share the window's full width — v1.10.8 added the
@@ -2079,35 +2025,6 @@ class VariablesWindow(ctk.CTkToplevel):
             self.focus_force()
         except tk.TclError:
             pass
-
-    def _place_relative_to(self, parent) -> None:
-        """Center the window on its parent, then clamp to the screen
-        so a parent flush against the right / bottom edge doesn't
-        throw us off-screen. The earlier "30px from parent's right
-        edge" heuristic looked like a deliberate hide on monitors
-        where the builder occupied the full screen width.
-        """
-        w, h = 460, 440
-        try:
-            parent.update_idletasks()
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-            x = px + (pw - w) // 2
-            y = py + (ph - h) // 2
-            x, y = _clamp_to_screen(self, x, y, w, h)
-            self.geometry(f"{w}x{h}+{x}+{y}")
-        except tk.TclError:
-            pass
-
-    def _on_close(self) -> None:
-        if self._on_close_callback is not None:
-            try:
-                self._on_close_callback()
-            except Exception:
-                pass
-        self.destroy()
 
     def destroy(self) -> None:
         # Drop the window-level bus subscriptions we registered in
