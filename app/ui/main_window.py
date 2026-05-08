@@ -2345,7 +2345,11 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         try:
             while drained < 200:
                 stream, line = self._console_queue.get_nowait()
-                ts = datetime.now().strftime("%H:%M:%S")
+                # ``%f`` is 6-digit microseconds; trimming the last 4
+                # leaves centiseconds (00-99) — enough precision to
+                # order a flood arriving in the same second without
+                # bloating every line by 4 extra characters.
+                ts = datetime.now().strftime("%H:%M:%S.%f")[:-4]
                 entry = (stream, ts, line)
                 self._console_buffer.append(entry)
                 # Cap the persistent buffer so a long-running preview

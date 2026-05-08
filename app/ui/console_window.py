@@ -131,9 +131,25 @@ class ConsoleWindow(ManagedToplevel):
         self._text.tag_configure("ts", foreground=style.EMPTY_FG)
         self._text.tag_configure("match", background=CONSOLE_MATCH_BG)
         self._text.pack(side="left", fill="both", expand=True)
-        # Right-click → Copy / Select all / Clear.
+        # Right-click → Copy / Select all / Clear. The handler also
+        # auto-selects the line under the cursor (when no multi-line
+        # selection already exists) so a right-click → Copy quickly
+        # grabs that single line.
         self._build_context_menu()
         self._text.bind("<Button-3>", self._show_context_menu, add="+")
+        # Left-click anywhere clears any selection — Tk's class
+        # binding already does this for normal click-to-place-cursor,
+        # but the right-click line-select tags ``sel`` programmatically;
+        # an explicit remove keeps the contract obvious.
+        self._text.bind("<Button-1>", self._on_text_left_click, add="+")
+        # Wheel scrolling auto-locks scroll: as soon as the user moves
+        # away from the bottom, "Lock scroll" checks itself; the moment
+        # they wheel back to the bottom, it unchecks. Bound on the
+        # textbox with ``add="+"`` so Tk's default scroll still runs.
+        # ``after_idle`` reads ``yview`` AFTER the default handler has
+        # advanced the view.
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            self._text.bind(seq, self._on_wheel_scroll, add="+")
 
         sb = style.styled_scrollbar(wrap, command=self._text.yview)
         self._text.configure(yscrollcommand=sb.set)
@@ -267,6 +283,24 @@ class ConsoleWindow(ManagedToplevel):
     def _show_context_menu(self, event) -> None:
         if self._context_menu is None:
             return
+        # Auto-select the line under the cursor when no selection is
+        # already active. Existing multi-line selections survive — the
+        # user may have intentionally selected several lines and is
+        # right-clicking to copy them all at once.
+        if self._text is not None:
+            try:
+                self._text.get("sel.first", "sel.last")
+                has_sel = True
+            except tk.TclError:
+                has_sel = False
+            if not has_sel:
+                try:
+                    pos = f"@{event.x},{event.y}"
+                    line_start = self._text.index(f"{pos} linestart")
+                    line_end = self._text.index(f"{pos} lineend")
+                    self._text.tag_add("sel", line_start, line_end)
+                except tk.TclError:
+                    pass
         try:
             self._context_menu.tk_popup(event.x_root, event.y_root)
         finally:
@@ -274,6 +308,45 @@ class ConsoleWindow(ManagedToplevel):
                 self._context_menu.grab_release()
             except tk.TclError:
                 pass
+
+    def _on_text_left_click(self, _event) -> None:
+        """Clear any tagged selection on left-click. Tk's default class
+        binding for ``<Button-1>`` already does this for natural
+        click-to-place behaviour, but right-click line-select adds
+        ``sel`` programmatically; this keeps the deselect contract
+        explicit and survives any future class-binding changes.
+        """
+        if self._text is None:
+            return
+        try:
+            self._text.tag_remove("sel", "1.0", "end")
+        except tk.TclError:
+            pass
+
+    def _on_wheel_scroll(self, _event) -> None:
+        """Mirror the textbox's bottom-state into ``_lock_var`` after
+        the scroll has been applied. Defers via ``after_idle`` because
+        the default class binding (which actually moves the view) runs
+        AFTER instance binds in the bindtag chain — reading ``yview``
+        at this point would still see the pre-scroll position.
+        """
+        if self._text is None or self._lock_var is None:
+            return
+        try:
+            self.after_idle(self._sync_lock_with_scroll)
+        except tk.TclError:
+            pass
+
+    def _sync_lock_with_scroll(self) -> None:
+        if self._text is None or self._lock_var is None:
+            return
+        try:
+            at_bottom = self._text.yview()[1] >= 0.999
+        except tk.TclError:
+            return
+        # ``set`` only fires the trace if the value actually changed,
+        # so this is cheap to call on every wheel event.
+        self._lock_var.set(not at_bottom)
 
     # ------------------------------------------------------------------
     # Search bar
