@@ -35,7 +35,6 @@ except Exception:
     def load_icon(*_args, **_kwargs) -> "ctk.CTkImage | None":
         return None
 
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 from app.ui.managed_window import ManagedToplevel
 
 REPO = "kandelucky/ctk_maker"
@@ -1062,30 +1061,49 @@ class BugReporterWindow(ManagedToplevel):
         self._stats_label.configure(text=text, text_color=color)
 
 
-class ReportDialog(ctk.CTkToplevel):
+class ReportDialog(ManagedToplevel):
+    window_title = "Report"
+    default_size = (520, 460)
+    min_size = (480, 420)
+    fg_color = BG
+    panel_padding = (0, 0)
+    modal = True
+
     def __init__(self, master: "BugReporterWindow") -> None:
-        super().__init__(master)
-        prepare_dialog(self)
-        self.configure(fg_color=BG)
         self._owner = master
-        self.title("Report")
-        self.geometry("520x460")
-        self.minsize(480, 420)
-        self.transient(master)
-        safe_grab_set(self)
+        super().__init__(master)
+
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+            w, h = self.default_size
+            return (
+                max(0, px + (pw - w) // 2),
+                max(0, py + (ph - h) // 2),
+            )
+        except tk.TclError:
+            return (100, 100)
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
 
         ctk.CTkLabel(
-            self,
+            container,
             text="How would you like to send this report?",
             font=ctk.CTkFont(size=13, weight="bold"),
             text_color=TITLE_FG,
         ).pack(pady=(16, 6))
 
-        build_screenshot_hint_panel(self, icon_size=18, compact=True).pack(
-            fill="x", padx=16, pady=(0, 10),
-        )
+        build_screenshot_hint_panel(
+            container, icon_size=18, compact=True,
+        ).pack(fill="x", padx=16, pady=(0, 10))
 
         self._add_card(
+            container,
             title="On GitHub",
             description=(
                 "Open the pre-filled report on GitHub to review and "
@@ -1099,6 +1117,7 @@ class ReportDialog(ctk.CTkToplevel):
             link_command=lambda: webbrowser.open(KNOWN_ISSUES_URL),
         )
         self._add_card(
+            container,
             title="By Email",
             description=(
                 "Save the report as a file and attach it to an "
@@ -1110,16 +1129,17 @@ class ReportDialog(ctk.CTkToplevel):
             link_command=lambda: webbrowser.open(KNOWN_ISSUES_URL),
         )
 
-        cancel_row = ctk.CTkFrame(self, fg_color="transparent")
+        cancel_row = ctk.CTkFrame(container, fg_color="transparent")
         cancel_row.pack(fill="x", padx=16, pady=(6, 12))
         _make_button(
             cancel_row, text="Cancel", command=self.destroy,
             width=90,
         ).pack(side="right")
-        reveal_dialog(self)
+        return container
 
     def _add_card(
         self,
+        parent,
         *,
         title: str,
         description: str,
@@ -1128,7 +1148,7 @@ class ReportDialog(ctk.CTkToplevel):
         link_command=None,
         email: str | None = None,
     ) -> None:
-        card = ctk.CTkFrame(self, fg_color=PANEL_BG, corner_radius=6)
+        card = ctk.CTkFrame(parent, fg_color=PANEL_BG, corner_radius=6)
         card.pack(fill="x", padx=16, pady=4)
         inner = ctk.CTkFrame(card, fg_color="transparent")
         inner.pack(fill="x", padx=12, pady=10)
