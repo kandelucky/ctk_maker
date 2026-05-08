@@ -29,8 +29,8 @@ from app.core.commands import (
     paste_target_parent_id,
     push_zorder_history,
 )
+from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog
 from app.ui.dialogs import RenameDialog
 from app.ui.icons import load_icon, load_tk_icon
 from app.widgets.layout_schema import normalise_layout_type
@@ -2224,7 +2224,7 @@ class ObjectTreePanel(ctk.CTkFrame):
 # ======================================================================
 # Floating-window wrapper — keeps the old "pop-out" Object Tree alive
 # ======================================================================
-class ObjectTreeWindow(ctk.CTkToplevel):
+class ObjectTreeWindow(ManagedToplevel):
     """Thin Toplevel wrapper around `ObjectTreePanel`.
 
     Most users see the docked ObjectTreePanel embedded in the right
@@ -2233,6 +2233,13 @@ class ObjectTreeWindow(ctk.CTkToplevel):
     detachable floating inspector.
     """
 
+    window_key = "object_tree"
+    window_title = "Object Tree"
+    default_size = (DIALOG_W, DIALOG_H)
+    min_size = (280, 200)
+    fg_color = BG
+    panel_padding = (0, 0)
+
     def __init__(
         self,
         parent,
@@ -2240,60 +2247,27 @@ class ObjectTreeWindow(ctk.CTkToplevel):
         on_close: Callable[[], None] | None = None,
         tool_setter: Callable[[str], None] | None = None,
     ):
+        self._project = project
+        self._tool_setter = tool_setter
         super().__init__(parent)
-        prepare_dialog(self)
-        self.title("Object Tree")
-        self.configure(fg_color=BG)
-        self.geometry(f"{DIALOG_W}x{DIALOG_H}")
-        self.minsize(280, 200)
+        self.set_on_close(on_close)
+
+    def default_offset(self, parent) -> tuple[int, int]:
         try:
-            self.transient(parent)
+            parent.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            x = px + pw - self.default_size[0] - 24
+            return (max(0, x), max(0, py + 80))
         except tk.TclError:
-            pass
+            return (100, 100)
 
-        self._on_close_callback = on_close
-        self.panel = ObjectTreePanel(self, project, tool_setter=tool_setter)
-        self.panel.pack(fill="both", expand=True)
-
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
-        self.after(100, self._center_on_parent)
-        self.after(150, self._raise_above_parent)
+    def build_content(self) -> ctk.CTkFrame:
+        self.panel = ObjectTreePanel(
+            self, self._project, tool_setter=self._tool_setter,
+        )
+        return self.panel
 
     def refresh(self) -> None:
         self.panel.refresh()
-
-    def _raise_above_parent(self) -> None:
-        """Force the Toplevel above the main builder window.
-
-        `transient()` alone is sometimes not enough on Windows —
-        briefly flip `-topmost` so the window lands in front instead
-        of behind its parent on launch.
-        """
-        try:
-            self.lift()
-            self.attributes("-topmost", True)
-            self.after(200, lambda: self.attributes("-topmost", False))
-        except tk.TclError:
-            pass
-
-    def _center_on_parent(self) -> None:
-        self.update_idletasks()
-        try:
-            px = self.master.winfo_rootx()
-            py = self.master.winfo_rooty()
-            pw = self.master.winfo_width()
-        except tk.TclError:
-            reveal_dialog(self)
-            return
-        x = px + pw - DIALOG_W - 24
-        y = py + 80
-        self.geometry(f"+{max(0, x)}+{max(0, y)}")
-        reveal_dialog(self)
-
-    def _on_close(self) -> None:
-        if self._on_close_callback is not None:
-            try:
-                self._on_close_callback()
-            except Exception:
-                pass
-        self.destroy()
