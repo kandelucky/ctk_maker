@@ -31,8 +31,8 @@ import customtkinter as ctk
 from app.core.logger import log_error
 from app.core.settings import load_settings, save_setting
 from app.io.code_exporter import export_project
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 from app.ui.icons import load_icon
+from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
 SETTING_INCLUDE_DESCRIPTIONS = "export_include_descriptions"
@@ -65,7 +65,7 @@ _DROPDOWN_STYLE: dict[str, Any] = {
 }
 
 
-class ExportDialog(ctk.CTkToplevel):
+class ExportDialog(ManagedToplevel):
     """Pick where + what to export, then call ``export_project``.
 
     Parameters
@@ -79,18 +79,16 @@ class ExportDialog(ctk.CTkToplevel):
         "All forms". Used by the per-document Export chrome icon.
     """
 
+    window_title = "Export"
+    default_size = (DIALOG_W, DIALOG_H)
+    min_size = (DIALOG_W - 40, DIALOG_H - 40)
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
+
     def __init__(self, parent, project, preselected_doc_id=None):
-        super().__init__(parent)
-        prepare_dialog(self)
         self.project = project
         self.result: str | None = None
-
-        self.title("Export")
-        self.resizable(False, False)
-        self.transient(parent)
-        safe_grab_set(self)
-        self.geometry(f"{DIALOG_W}x{DIALOG_H}")
-
         self._scope_options: list[tuple[str, str]] = self._build_scope_list()
         if preselected_doc_id:
             initial_label = next(
@@ -102,24 +100,25 @@ class ExportDialog(ctk.CTkToplevel):
             )
         else:
             initial_label = self._scope_options[0][0]
-        self._scope_label_var = tk.StringVar(value=initial_label)
-        self._name_var = tk.StringVar()
-        self._dir_var = tk.StringVar()
-        self._preview_var = tk.StringVar()
-        self._open_editor_var = tk.BooleanVar(value=True)
-        self._run_preview_var = tk.BooleanVar(value=False)
-        self._as_zip_var = tk.BooleanVar(value=False)
+        self._scope_label_var = tk.StringVar(master=parent, value=initial_label)
+        self._name_var = tk.StringVar(master=parent)
+        self._dir_var = tk.StringVar(master=parent)
+        self._preview_var = tk.StringVar(master=parent)
+        self._open_editor_var = tk.BooleanVar(master=parent, value=True)
+        self._run_preview_var = tk.BooleanVar(master=parent, value=False)
+        self._as_zip_var = tk.BooleanVar(master=parent, value=False)
         # Asset filter: default ON for multi-page projects (avoid
         # shipping unused assets per page); OFF for legacy projects
         # to preserve the historical "everything in assets/" behaviour.
         self._only_used_assets_var = tk.BooleanVar(
-            value=bool(project.folder_path),
+            master=parent, value=bool(project.folder_path),
         )
         # Phase 0 AI-bridge toggle. Persists to settings so the user's
         # last choice survives across exports / sessions. Default OFF
         # — clean code is the more common need; AI workflow is opt-in.
         _settings = load_settings()
         self._include_descriptions_var = tk.BooleanVar(
+            master=parent,
             value=bool(
                 _settings.get(SETTING_INCLUDE_DESCRIPTIONS, False),
             ),
@@ -127,8 +126,9 @@ class ExportDialog(ctk.CTkToplevel):
         self._open_editor_cb: ctk.CTkCheckBox | None = None
         self._run_preview_cb: ctk.CTkCheckBox | None = None
         self._user_edited_name = False
+        self._initial_label = initial_label
 
-        self._build()
+        super().__init__(parent)
 
         # Seed defaults from the initial scope. The folder defaults to
         # ``<project>/exports/`` and stays sticky once the user edits
@@ -151,12 +151,27 @@ class ExportDialog(ctk.CTkToplevel):
         self._as_zip_var.trace_add(
             "write", lambda *_: self._on_zip_toggle(),
         )
-
         self.bind("<Return>", lambda _e: self._on_export())
-        self.bind("<Escape>", lambda _e: self._on_cancel())
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
 
-        self.after(100, self._center_on_parent)
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+            w, h = self.default_size
+            return (
+                max(0, px + (pw - w) // 2),
+                max(0, py + (ph - h) // 2),
+            )
+        except tk.TclError:
+            return (100, 100)
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        self._build(container)
+        return container
 
     # ------------------------------------------------------------------
     # Scope list
@@ -217,9 +232,10 @@ class ExportDialog(ctk.CTkToplevel):
     # ------------------------------------------------------------------
     # Layout
     # ------------------------------------------------------------------
-    def _build(self) -> None:
+    def _build(self, container) -> None:
+        self._container = container
         self._panel = ctk.CTkFrame(
-            self, fg_color=PANEL_BG, corner_radius=6,
+            container, fg_color=PANEL_BG, corner_radius=6,
         )
         self._panel.pack(
             padx=20, pady=(20, 10), fill="both", expand=True,
@@ -418,7 +434,7 @@ class ExportDialog(ctk.CTkToplevel):
         self._run_preview_cb.pack(side="left", padx=(20, 0))
 
     def _build_footer(self) -> None:
-        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer = ctk.CTkFrame(self._container, fg_color="transparent")
         footer.pack(fill="x", padx=20, pady=(0, 16))
         ctk.CTkButton(
             footer, text="Export", width=160, height=32,
@@ -792,24 +808,3 @@ class ExportDialog(ctk.CTkToplevel):
 
     def _on_cancel(self) -> None:
         self.destroy()
-
-    # ------------------------------------------------------------------
-    # Geometry
-    # ------------------------------------------------------------------
-    def _center_on_parent(self) -> None:
-        self.update_idletasks()
-        parent = self.master
-        try:
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-        except tk.TclError:
-            reveal_dialog(self)
-            return
-        w = self.winfo_width()
-        h = self.winfo_height()
-        x = px + (pw - w) // 2
-        y = py + (ph - h) // 2
-        self.geometry(f"+{max(0, x)}+{max(0, y)}")
-        reveal_dialog(self)

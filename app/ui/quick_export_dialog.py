@@ -24,7 +24,7 @@ from pathlib import Path
 
 import customtkinter as ctk
 
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
 DIALOG_W = 500
@@ -37,7 +37,7 @@ PATH_FG = "#888888"
 ACCENT = "#5bc0f8"
 
 
-class QuickExportDialog(ctk.CTkToplevel):
+class QuickExportDialog(ManagedToplevel):
     """Compact "what format?" picker for the Quick Export flow.
 
     Parameters
@@ -53,35 +53,44 @@ class QuickExportDialog(ctk.CTkToplevel):
         is choosing it). Already truncated for display.
     """
 
+    window_title = "Quick Export"
+    default_size = (DIALOG_W, 480)
+    min_size = (DIALOG_W - 20, 440)
+    fg_color = "#1e1e1e"
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
+
     def __init__(
         self,
         parent,
         document_name: str,
         output_path_preview: str,
     ):
-        super().__init__(parent)
-        prepare_dialog(self)
         self.result: str | None = None
-
-        self.title("Quick Export")
-        self.resizable(False, False)
-        self.transient(parent)
-        safe_grab_set(self)
-        self.configure(fg_color="#1e1e1e")
-
-        self._build(document_name, output_path_preview)
-        self.update_idletasks()
-        self._center_on_parent(parent)
-
+        self._document_name = document_name
+        self._output_path_preview = output_path_preview
+        super().__init__(parent)
         self.bind("<Return>", lambda _e: self._pick("py"))
-        self.bind("<Escape>", lambda _e: self._pick(None))
-        self.protocol("WM_DELETE_WINDOW", lambda: self._pick(None))
-        reveal_dialog(self)
 
-    def _build(
-        self, document_name: str, output_path_preview: str,
-    ) -> None:
-        outer = ctk.CTkFrame(self, fg_color=PANEL_BG, corner_radius=6)
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+            w, h = self.default_size
+            return (
+                max(0, px + (pw - w) // 2),
+                max(0, py + (ph - h) // 2),
+            )
+        except tk.TclError:
+            return (100, 100)
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        outer = ctk.CTkFrame(container, fg_color=PANEL_BG, corner_radius=6)
         outer.pack(fill="both", expand=True, padx=10, pady=10)
 
         ctk.CTkLabel(
@@ -99,18 +108,18 @@ class QuickExportDialog(ctk.CTkToplevel):
             text_color=SUBTITLE_FG, anchor="w",
         ).pack(side="left")
         ctk.CTkLabel(
-            head, text=document_name,
+            head, text=self._document_name,
             font=ui_font(11, "bold"),
             text_color=ACCENT, anchor="w",
         ).pack(side="left", padx=(6, 0))
 
         # Body — what's included / what's not.
-        body = (
+        body_text = (
             "Only this form's widgets and the assets it references will "
             "be included. Other dialogs and pages stay behind."
         )
         tk.Label(
-            outer, text=body,
+            outer, text=body_text,
             font=ui_font(10), fg=BODY_FG, bg=PANEL_BG,
             anchor="w", justify="left",
             wraplength=DIALOG_W - 60,
@@ -124,7 +133,7 @@ class QuickExportDialog(ctk.CTkToplevel):
             font=ui_font(9), fg=SUBTITLE_FG, bg=PANEL_BG,
         ).pack(side="left")
         tk.Label(
-            out_row, text=output_path_preview,
+            out_row, text=self._output_path_preview,
             font=ui_font(9, "italic"), fg=PATH_FG, bg=PANEL_BG,
         ).pack(side="left", padx=(6, 0))
 
@@ -195,23 +204,8 @@ class QuickExportDialog(ctk.CTkToplevel):
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=lambda: self._pick(None),
         ).pack(side="right", padx=(0, 8))
+        return container
 
     def _pick(self, fmt: str | None) -> None:
         self.result = fmt
         self.destroy()
-
-    def _center_on_parent(self, parent) -> None:
-        try:
-            parent.update_idletasks()
-            self.update_idletasks()
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-            dw = self.winfo_width()
-            dh = self.winfo_height()
-            x = px + (pw - dw) // 2
-            y = py + (ph - dh) // 2
-            self.geometry(f"+{max(0, x)}+{max(0, y)}")
-        except tk.TclError:
-            pass

@@ -31,8 +31,8 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
 from app.core.paths import get_default_projects_dir
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 from app.ui.icons import load_icon
+from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
 DIALOG_W = 540
@@ -55,7 +55,7 @@ _SCOPE_PROJECT = "project"
 _SCOPE_EXTRACT = "extract"
 
 
-class SaveAsDialog(ctk.CTkToplevel):
+class SaveAsDialog(ManagedToplevel):
     """Pick scope + name + (optional) destination for a save.
 
     Parameters
@@ -66,18 +66,17 @@ class SaveAsDialog(ctk.CTkToplevel):
         Source project. Used to default field values.
     """
 
+    window_title = "Save As"
+    default_size = (DIALOG_W, DIALOG_H)
+    min_size = (DIALOG_W - 40, DIALOG_H - 40)
+    fg_color = "#1e1e1e"
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
+
     def __init__(self, parent, project):
-        super().__init__(parent)
-        prepare_dialog(self)
         self.project = project
         self.result: dict | None = None
-
-        self.title("Save As")
-        self.resizable(False, False)
-        self.transient(parent)
-        safe_grab_set(self)
-        self.geometry(f"{DIALOG_W}x{DIALOG_H}")
-        self.configure(fg_color="#1e1e1e")
 
         # Defaults pulled from the live project: current page name
         # for the Page scope; project name for Project / Extract.
@@ -89,8 +88,10 @@ class SaveAsDialog(ctk.CTkToplevel):
             "",
         )
 
-        self._scope_var = tk.StringVar(value=_SCOPE_PAGE)
-        self._name_var = tk.StringVar(value=active_page_name or "Untitled")
+        self._scope_var = tk.StringVar(master=parent, value=_SCOPE_PAGE)
+        self._name_var = tk.StringVar(
+            master=parent, value=active_page_name or "Untitled",
+        )
         # "Save to" parent dir defaults to the source project's
         # parent folder so the duplicate lands as a sibling — the
         # user's "projects directory" by convention.
@@ -98,16 +99,16 @@ class SaveAsDialog(ctk.CTkToplevel):
             default_save_dir = str(Path(project.folder_path).parent)
         else:
             default_save_dir = str(get_default_projects_dir())
-        self._save_to_var = tk.StringVar(value=default_save_dir)
-        self._preview_var = tk.StringVar()
+        self._save_to_var = tk.StringVar(master=parent, value=default_save_dir)
+        self._preview_var = tk.StringVar(master=parent)
 
         self._name_entry: ctk.CTkEntry | None = None
         self._save_to_entry: ctk.CTkEntry | None = None
         self._save_to_btn: ctk.CTkButton | None = None
 
-        self._build()
+        super().__init__(parent)
+
         self._on_scope_change()  # prime preview + field enabled state
-        self._center_on_parent(parent)
 
         self._name_var.trace_add(
             "write", lambda *_a: (
@@ -120,17 +121,32 @@ class SaveAsDialog(ctk.CTkToplevel):
         self._scope_var.trace_add(
             "write", lambda *_a: self._on_scope_change(),
         )
-
         self.bind("<Return>", lambda _e: self._on_save())
-        self.bind("<Escape>", lambda _e: self._on_cancel())
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-        reveal_dialog(self)
+
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+            w, h = self.default_size
+            return (
+                max(0, px + (pw - w) // 2),
+                max(0, py + (ph - h) // 2),
+            )
+        except tk.TclError:
+            return (100, 100)
+
+    def build_content(self) -> ctk.CTkFrame:
+        return self._build()
 
     # ------------------------------------------------------------------
     # Layout
     # ------------------------------------------------------------------
-    def _build(self) -> None:
-        outer = ctk.CTkFrame(self, fg_color=PANEL_BG, corner_radius=6)
+    def _build(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        outer = ctk.CTkFrame(container, fg_color=PANEL_BG, corner_radius=6)
         outer.pack(fill="both", expand=True, padx=10, pady=10)
 
         ctk.CTkLabel(
@@ -168,6 +184,7 @@ class SaveAsDialog(ctk.CTkToplevel):
         )
 
         self._build_footer(outer)
+        return container
 
     def _add_row(self, parent, label, builder) -> None:
         row = ctk.CTkFrame(parent, fg_color="transparent")
@@ -385,16 +402,3 @@ class SaveAsDialog(ctk.CTkToplevel):
     def _on_cancel(self) -> None:
         self.result = None
         self.destroy()
-
-    def _center_on_parent(self, parent) -> None:
-        try:
-            parent.update_idletasks()
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-            x = px + (pw - DIALOG_W) // 2
-            y = py + (ph - DIALOG_H) // 2
-            self.geometry(f"+{max(0, x)}+{max(0, y)}")
-        except tk.TclError:
-            pass

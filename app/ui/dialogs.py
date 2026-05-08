@@ -24,6 +24,7 @@ from app.core.project_folder import (
     read_project_meta,
     slugify_page_name,
 )
+from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 from app.ui.new_project_form import NewProjectForm
@@ -75,7 +76,7 @@ DIALOG_PRESETS: list[tuple[str, tuple[int, int] | None]] = [
 ]
 
 
-class AddDialogSizeDialog(ctk.CTkToplevel):
+class AddDialogSizeDialog(ManagedToplevel):
     """Quick modal for the Form → Add Dialog flow. Asks for a
     name + width + height and returns ``(name, w, h)`` on OK, or
     ``None`` on Cancel. Unlike NewProjectSizeDialog there's no
@@ -84,6 +85,13 @@ class AddDialogSizeDialog(ctk.CTkToplevel):
     have to guess common dimensions.
     """
 
+    window_title = "Add dialog"
+    default_size = (300, 320)
+    min_size = (280, 300)
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
+
     def __init__(
         self,
         parent,
@@ -91,44 +99,70 @@ class AddDialogSizeDialog(ctk.CTkToplevel):
         main_w: int = 800,
         main_h: int = 600,
     ):
-        super().__init__(parent)
-        prepare_dialog(self)
-        self.title("Add dialog")
-        self.resizable(False, False)
-        self.transient(parent)
-        safe_grab_set(self)
-
         self.result: tuple[str, int, int] | None = None
         self._main_w = int(main_w)
         self._main_h = int(main_h)
         self._suspend_preset_sync = False
+        self._name_var = tk.StringVar(master=parent, value=default_name)
+        self._preset_var = tk.StringVar(
+            master=parent, value=DIALOG_PRESETS[0][0],
+        )
+        self._w_var = tk.StringVar(master=parent, value=str(main_w))
+        self._h_var = tk.StringVar(master=parent, value=str(main_h))
+        self._w_var.trace_add("write", self._on_size_edited)
+        self._h_var.trace_add("write", self._on_size_edited)
+        super().__init__(parent)
+        self.bind("<Return>", lambda e: self._on_ok())
+        self.after(80, self._focus_name_entry)
 
-        body = ctk.CTkFrame(self, fg_color="transparent")
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+            w, h = self.default_size
+            return (
+                max(0, px + (pw - w) // 2),
+                max(0, py + (ph - h) // 2),
+            )
+        except tk.TclError:
+            return (100, 100)
+
+    def _focus_name_entry(self) -> None:
+        try:
+            self._name_entry.focus_set()
+            self._name_entry.select_range(0, tk.END)
+        except tk.TclError:
+            pass
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+
+        body = ctk.CTkFrame(container, fg_color="transparent")
         body.pack(padx=20, pady=(18, 10), fill="x")
 
         ctk.CTkLabel(body, text="Name").grid(
             row=0, column=0, sticky="w", pady=(0, 4),
         )
-        self._name_var = tk.StringVar(value=default_name)
-        name_entry = ctk.CTkEntry(
+        self._name_entry = ctk.CTkEntry(
             body, textvariable=self._name_var, width=220,
         )
-        name_entry.grid(
+        self._name_entry.grid(
             row=1, column=0, columnspan=2, sticky="ew", pady=(0, 10),
         )
 
         ctk.CTkLabel(body, text="Size Preset").grid(
             row=2, column=0, columnspan=2, sticky="w", pady=(0, 4),
         )
-        self._preset_var = tk.StringVar(value=DIALOG_PRESETS[0][0])
-        preset_menu = ctk.CTkOptionMenu(
+        ctk.CTkOptionMenu(
             body,
             values=[label for label, _ in DIALOG_PRESETS],
             variable=self._preset_var,
             width=220,
             command=self._on_preset_change,
-        )
-        preset_menu.grid(
+        ).grid(
             row=3, column=0, columnspan=2, sticky="ew", pady=(0, 12),
         )
 
@@ -138,10 +172,6 @@ class AddDialogSizeDialog(ctk.CTkToplevel):
         ctk.CTkLabel(body, text="Height").grid(
             row=4, column=1, sticky="w", pady=(0, 4), padx=(8, 0),
         )
-        self._w_var = tk.StringVar(value=str(main_w))
-        self._h_var = tk.StringVar(value=str(main_h))
-        self._w_var.trace_add("write", self._on_size_edited)
-        self._h_var.trace_add("write", self._on_size_edited)
         ctk.CTkEntry(body, textvariable=self._w_var, width=106).grid(
             row=5, column=0, sticky="w",
         )
@@ -151,7 +181,7 @@ class AddDialogSizeDialog(ctk.CTkToplevel):
         body.grid_columnconfigure(0, weight=1)
         body.grid_columnconfigure(1, weight=1)
 
-        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer = ctk.CTkFrame(container, fg_color="transparent")
         footer.pack(fill="x", padx=20, pady=(4, 16))
         ctk.CTkButton(
             footer, text="Add", width=120, height=32,
@@ -163,14 +193,7 @@ class AddDialogSizeDialog(ctk.CTkToplevel):
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_cancel,
         ).pack(side="right", padx=(0, 8))
-
-        self.bind("<Return>", lambda e: self._on_ok())
-        self.bind("<Escape>", lambda e: self._on_cancel())
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-
-        name_entry.focus_set()
-        name_entry.select_range(0, tk.END)
-        self.after(100, self._center_on_parent)
+        return container
 
     def _on_preset_change(self, label: str) -> None:
         for name, size in DIALOG_PRESETS:
@@ -244,26 +267,15 @@ class AddDialogSizeDialog(ctk.CTkToplevel):
         self.result = None
         self.destroy()
 
-    def _center_on_parent(self) -> None:
-        self.update_idletasks()
-        parent = self.master
-        try:
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-        except tk.TclError:
-            reveal_dialog(self)
-            return
-        w = self.winfo_width()
-        h = self.winfo_height()
-        x = px + (pw - w) // 2
-        y = py + (ph - h) // 2
-        self.geometry(f"+{max(0, x)}+{max(0, y)}")
-        reveal_dialog(self)
 
+class NewProjectSizeDialog(ManagedToplevel):
+    window_title = "New project"
+    default_size = (520, 560)
+    min_size = (480, 520)
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
 
-class NewProjectSizeDialog(ctk.CTkToplevel):
     def __init__(
         self,
         parent,
@@ -272,34 +284,42 @@ class NewProjectSizeDialog(ctk.CTkToplevel):
         default_name: str = "Untitled",
         default_save_dir: str | None = None,
     ):
-        super().__init__(parent)
-        prepare_dialog(self)
-        self.title("New project")
-        self.resizable(False, False)
-        self.transient(parent)
-        safe_grab_set(self)
-
         self.result: tuple[str, str, int, int] | None = None
+        self._form_default_w = default_w
+        self._form_default_h = default_h
+        self._form_default_name = default_name
+        self._form_default_save_dir = default_save_dir
+        super().__init__(parent)
+        self.bind("<Return>", lambda e: self._on_ok())
+
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+            w, h = self.default_size
+            return (
+                max(0, px + (pw - w) // 2),
+                max(0, py + (ph - h) // 2),
+            )
+        except tk.TclError:
+            return (100, 100)
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
 
         self._form = NewProjectForm(
-            self,
-            default_w=default_w,
-            default_h=default_h,
-            default_name=default_name,
-            default_save_dir=default_save_dir,
+            container,
+            default_w=self._form_default_w,
+            default_h=self._form_default_h,
+            default_name=self._form_default_name,
+            default_save_dir=self._form_default_save_dir,
         )
         self._form.pack(padx=20, pady=(20, 10), fill="both", expand=True)
 
-        self._build_footer()
-
-        self.bind("<Return>", lambda e: self._on_ok())
-        self.bind("<Escape>", lambda e: self._on_cancel())
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-
-        self.after(100, self._center_on_parent)
-
-    def _build_footer(self) -> None:
-        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer = ctk.CTkFrame(container, fg_color="transparent")
         footer.pack(fill="x", padx=20, pady=(0, 16))
         ctk.CTkButton(
             footer, text="+ Create Project", width=160, height=32,
@@ -311,24 +331,7 @@ class NewProjectSizeDialog(ctk.CTkToplevel):
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_cancel,
         ).pack(side="right", padx=(0, 8))
-
-    def _center_on_parent(self) -> None:
-        self.update_idletasks()
-        parent = self.master
-        try:
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-        except tk.TclError:
-            reveal_dialog(self)
-            return
-        w = self.winfo_width()
-        h = self.winfo_height()
-        x = px + (pw - w) // 2
-        y = py + (ph - h) // 2
-        self.geometry(f"+{max(0, x)}+{max(0, y)}")
-        reveal_dialog(self)
+        return container
 
     def _on_ok(self) -> None:
         validated = self._form.validate_and_get()

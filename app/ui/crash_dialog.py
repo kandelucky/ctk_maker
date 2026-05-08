@@ -28,7 +28,7 @@ from tkinter import messagebox, ttk
 import customtkinter as ctk
 
 from app.core.logger import crash_log_path
-from app.ui.dialog_utils import safe_grab_set
+from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import derive_mono_font
 
 
@@ -74,26 +74,30 @@ def _parent_is_alive(parent) -> bool:
         return False
 
 
-class _CrashDialog(ctk.CTkToplevel):
-    def __init__(self, parent, title: str, summary: str, tb_text: str) -> None:
-        super().__init__(parent)
-        self.title(title)
-        self._tb_text = tb_text
-        self.geometry("720x460")
-        self.minsize(520, 320)
-        self.transient(parent)
-        safe_grab_set(self)
-        self.bind("<Escape>", lambda _e: self.destroy())
+class _CrashDialog(ManagedToplevel):
+    default_size = (720, 460)
+    min_size = (520, 320)
+    panel_padding = (0, 0)
+    modal = True
 
+    def __init__(self, parent, title: str, summary: str, tb_text: str) -> None:
+        self.window_title = title
+        self._tb_text = tb_text
+        self._summary = summary
+        super().__init__(parent)
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
         log_path = crash_log_path()
 
         header = ctk.CTkLabel(
-            self, text=summary, anchor="w", font=ctk.CTkFont(size=13, weight="bold"),
+            container, text=self._summary, anchor="w",
+            font=ctk.CTkFont(size=13, weight="bold"),
         )
         header.pack(fill="x", padx=14, pady=(14, 4))
 
         sub = ctk.CTkLabel(
-            self,
+            container,
             text=f"Saved to {log_path}",
             anchor="w",
             font=ctk.CTkFont(size=11),
@@ -101,7 +105,7 @@ class _CrashDialog(ctk.CTkToplevel):
         )
         sub.pack(fill="x", padx=14, pady=(0, 8))
 
-        body = ctk.CTkFrame(self, fg_color="#1f1f1f")
+        body = ctk.CTkFrame(container, fg_color="#1f1f1f")
         body.pack(fill="both", expand=True, padx=14, pady=(0, 8))
 
         text = tk.Text(
@@ -122,10 +126,10 @@ class _CrashDialog(ctk.CTkToplevel):
         xscroll.grid(row=1, column=0, sticky="ew")
         body.grid_rowconfigure(0, weight=1)
         body.grid_columnconfigure(0, weight=1)
-        text.insert("1.0", tb_text)
+        text.insert("1.0", self._tb_text)
         text.configure(state="disabled")
 
-        buttons = ctk.CTkFrame(self, fg_color="transparent")
+        buttons = ctk.CTkFrame(container, fg_color="transparent")
         buttons.pack(fill="x", padx=14, pady=(0, 14))
         ctk.CTkButton(
             buttons, text="Copy traceback", width=140,
@@ -139,6 +143,7 @@ class _CrashDialog(ctk.CTkToplevel):
             buttons, text="Close", width=100,
             command=self.destroy,
         ).pack(side="right")
+        return container
 
     def _copy(self) -> None:
         try:

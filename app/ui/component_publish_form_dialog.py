@@ -21,7 +21,7 @@ from app.ui.system_fonts import ui_font
 from app.core.logger import log_error
 from app.core.settings import load_settings, save_setting
 from app.io.component_io import load_metadata, rewrite_payload_for_publish
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui.managed_window import ManagedToplevel
 
 CATEGORY_GUIDE_URL = (
     "https://github.com/kandelucky/ctk_maker/wiki/Component-Categories"
@@ -78,31 +78,66 @@ def _format_date(iso: str) -> str:
         return iso
 
 
-class ComponentPublishFormDialog(ctk.CTkToplevel):
-    def __init__(self, parent, source_path: Path):
-        super().__init__(parent)
-        prepare_dialog(self)
-        self.title("Publish component")
-        self.resizable(False, False)
-        self.transient(parent)
-        safe_grab_set(self)
-        self.configure(fg_color="#1a1a1a")
+class ComponentPublishFormDialog(ManagedToplevel):
+    window_title = "Publish component"
+    default_size = (440, 600)
+    min_size = (420, 560)
+    fg_color = "#1a1a1a"
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
 
+    def __init__(self, parent, source_path: Path):
         self.result: bool = False
         self._source_path = source_path
         self._destination: Path | None = None
-
-        meta = load_metadata(source_path) or {}
+        self._meta = load_metadata(source_path) or {}
         try:
-            file_bytes = source_path.stat().st_size
+            self._file_bytes = source_path.stat().st_size
         except OSError:
-            file_bytes = 0
+            self._file_bytes = 0
+        cached_author = str(
+            load_settings().get(LAST_AUTHOR_KEY, "") or "",
+        )
+        self._cached_author = cached_author
+        self._name_var = tk.StringVar(
+            master=parent, value=component_display_stem(source_path),
+        )
+        self._author_var = tk.StringVar(
+            master=parent,
+            value=self._meta.get("author", "") or cached_author,
+        )
+        self._category_var = tk.StringVar(
+            master=parent, value=CATEGORY_NAMES[0],
+        )
+        self._dest_var = tk.StringVar(master=parent, value="")
+        super().__init__(parent)
 
-        body = ctk.CTkFrame(self, fg_color="transparent")
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+            w, h = self.default_size
+            return (
+                max(0, px + (pw - w) // 2),
+                max(0, py + (ph - h) // 2),
+            )
+        except tk.TclError:
+            return (100, 100)
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        meta = self._meta
+
+        body = ctk.CTkFrame(container, fg_color="transparent")
         body.pack(padx=22, pady=(18, 6), fill="x")
 
         ctk.CTkLabel(
-            body, text=meta.get("name") or component_display_stem(source_path),
+            body,
+            text=meta.get("name") or component_display_stem(self._source_path),
             font=ui_font(14, "bold"),
             text_color="#e6e6e6", anchor="w",
         ).grid(row=0, column=0, sticky="w")
@@ -110,7 +145,7 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
             body,
             text=(
                 f"{meta.get('view_w', 0)} × {meta.get('view_h', 0)}"
-                f"  ·  {_format_size(file_bytes)}"
+                f"  ·  {_format_size(self._file_bytes)}"
                 f"  ·  {_format_date(meta.get('created_at', ''))}"
             ),
             font=ui_font(9),
@@ -132,9 +167,6 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             body, text="Name", font=ui_font(10),
         ).grid(row=3, column=0, sticky="w", pady=(0, 4))
-        self._name_var = tk.StringVar(
-            value=component_display_stem(self._source_path),
-        )
         ctk.CTkEntry(
             body, textvariable=self._name_var, width=340,
         ).grid(row=4, column=0, sticky="ew", pady=(0, 12))
@@ -143,13 +175,6 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
             body, text="Author (required — used as MIT copyright holder)",
             font=ui_font(10),
         ).grid(row=5, column=0, sticky="w", pady=(0, 4))
-        cached_author = str(
-            load_settings().get(LAST_AUTHOR_KEY, "") or "",
-        )
-        self._author_var = tk.StringVar(
-            value=meta.get("author", "") or cached_author,
-        )
-        self._cached_author = cached_author
         ctk.CTkEntry(
             body, textvariable=self._author_var, width=340,
             placeholder_text="your name or handle",
@@ -169,7 +194,6 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
             text_color="#9ec3ff",
             command=self._open_category_guide,
         ).grid(row=0, column=1, sticky="e")
-        self._category_var = tk.StringVar(value=CATEGORY_NAMES[0])
         self._category_menu = ctk.CTkOptionMenu(
             body, values=CATEGORY_NAMES,
             variable=self._category_var, width=340,
@@ -208,7 +232,6 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
         path_row = ctk.CTkFrame(body, fg_color="transparent")
         path_row.grid(row=14, column=0, sticky="ew", pady=(0, 12))
         path_row.grid_columnconfigure(0, weight=1)
-        self._dest_var = tk.StringVar(value="")
         ctk.CTkEntry(
             path_row, textvariable=self._dest_var,
             placeholder_text="(pick a folder)", height=28,
@@ -220,7 +243,7 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
 
         body.grid_columnconfigure(0, weight=1)
 
-        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer = ctk.CTkFrame(container, fg_color="transparent")
         footer.pack(fill="x", padx=22, pady=(4, 16))
         ctk.CTkButton(
             footer, text="Publish", width=130, height=32,
@@ -232,10 +255,7 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_cancel,
         ).pack(side="right", padx=(0, 8))
-
-        self.bind("<Escape>", lambda _e: self._on_cancel())
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-        self.after(100, self._center_on_parent)
+        return container
 
     def _open_category_guide(self) -> None:
         import webbrowser
@@ -421,21 +441,3 @@ class ComponentPublishFormDialog(ctk.CTkToplevel):
     def _on_cancel(self) -> None:
         self.result = False
         self.destroy()
-
-    def _center_on_parent(self) -> None:
-        self.update_idletasks()
-        parent = self.master
-        try:
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-        except tk.TclError:
-            reveal_dialog(self)
-            return
-        w = self.winfo_width()
-        h = self.winfo_height()
-        x = px + (pw - w) // 2
-        y = py + (ph - h) // 2
-        self.geometry(f"+{max(0, x)}+{max(0, y)}")
-        reveal_dialog(self)

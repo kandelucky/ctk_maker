@@ -23,7 +23,7 @@ from pathlib import Path
 
 import customtkinter as ctk
 
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
 _BG = "#1a1a1a"
@@ -37,26 +37,22 @@ _DANGER_HOVER = "#bf4646"
 _LINK_FG = "#5eb3ff"
 
 
-def _center_on_parent(dialog: ctk.CTkToplevel) -> None:
-    dialog.update_idletasks()
-    parent = dialog.master
+def _parent_centered(parent, w: int, h: int) -> tuple[int, int]:
     try:
+        parent.update_idletasks()
         px = parent.winfo_rootx()
         py = parent.winfo_rooty()
         pw = parent.winfo_width()
         ph = parent.winfo_height()
+        return (
+            max(0, px + (pw - w) // 2),
+            max(0, py + (ph - h) // 2),
+        )
     except tk.TclError:
-        reveal_dialog(dialog)
-        return
-    w = dialog.winfo_width()
-    h = dialog.winfo_height()
-    x = px + (pw - w) // 2
-    y = py + (ph - h) // 2
-    dialog.geometry(f"+{max(0, x)}+{max(0, y)}")
-    reveal_dialog(dialog)
+        return (100, 100)
 
 
-class WindowDeleteDialog(ctk.CTkToplevel):
+class WindowDeleteDialog(ManagedToplevel):
     """Confirmation gate for ``DeleteDocumentCommand``. Shown for
     every window deletion regardless of what the window contains —
     the user always knows what's about to disappear, even for empty
@@ -76,6 +72,13 @@ class WindowDeleteDialog(ctk.CTkToplevel):
     only" principle).
     """
 
+    window_title = "Delete window"
+    min_size = (440, 220)
+    fg_color = _BG
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
+
     def __init__(
         self,
         parent,
@@ -86,26 +89,41 @@ class WindowDeleteDialog(ctk.CTkToplevel):
         line_count: int,
         default_save_path: str | Path,
     ):
-        super().__init__(parent)
-        prepare_dialog(self)
-        self.title("Delete window")
-        self.resizable(False, False)
-        self.transient(parent)
-        safe_grab_set(self)
-        self.configure(fg_color=_BG)
-
         self.confirmed: bool = False
         self.script_action: str = (
             "recycle" if method_count > 0 else "none"
         )
         self.save_target_path: str = str(default_save_path)
         self._has_script = method_count > 0
+        self._window_name = window_name
+        self._widget_count = widget_count
+        self._local_var_count = local_var_count
+        self._method_count = method_count
+        self._line_count = line_count
+        self._default_save_path = default_save_path
+        # Dynamic size — the script-route radios + path entry add
+        # ~140px of vertical content when present.
+        self.default_size = (490, 380 if self._has_script else 240)
+        if self._has_script:
+            self._script_action_var = tk.StringVar(
+                master=parent, value="recycle",
+            )
+            self._path_var = tk.StringVar(
+                master=parent, value=str(default_save_path),
+            )
+        super().__init__(parent)
 
-        body = ctk.CTkFrame(self, fg_color="transparent")
+    def default_offset(self, parent) -> tuple[int, int]:
+        return _parent_centered(parent, *self.default_size)
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+
+        body = ctk.CTkFrame(container, fg_color="transparent")
         body.pack(padx=22, pady=(20, 8), fill="x")
 
         ctk.CTkLabel(
-            body, text=f"Delete \"{window_name}\"?",
+            body, text=f"Delete \"{self._window_name}\"?",
             font=ui_font(14, "bold"),
             text_color=_HEADING_FG, anchor="w",
         ).pack(anchor="w", pady=(0, 10))
@@ -118,17 +136,18 @@ class WindowDeleteDialog(ctk.CTkToplevel):
         )
         info.pack(fill="x", pady=(0, 12))
         bullets: list[str] = [
-            f"• {widget_count} widget{'s' if widget_count != 1 else ''}",
-            f"• {local_var_count} local variable"
-            f"{'s' if local_var_count != 1 else ''} "
+            f"• {self._widget_count} widget"
+            f"{'s' if self._widget_count != 1 else ''}",
+            f"• {self._local_var_count} local variable"
+            f"{'s' if self._local_var_count != 1 else ''} "
             "(will be lost)",
         ]
-        if method_count > 0:
+        if self._method_count > 0:
             bullets.append(
-                f"• Behavior script — {method_count} method"
-                f"{'s' if method_count != 1 else ''}, "
-                f"{line_count} line"
-                f"{'s' if line_count != 1 else ''}",
+                f"• Behavior script — {self._method_count} method"
+                f"{'s' if self._method_count != 1 else ''}, "
+                f"{self._line_count} line"
+                f"{'s' if self._line_count != 1 else ''}",
             )
         else:
             bullets.append("• No behavior script attached")
@@ -145,8 +164,6 @@ class WindowDeleteDialog(ctk.CTkToplevel):
                 font=ui_font(10, "bold"),
                 text_color=_HEADING_FG, anchor="w",
             ).pack(anchor="w", pady=(0, 4))
-
-            self._script_action_var = tk.StringVar(value="recycle")
 
             recycle_row = tk.Frame(body, bg=_BG)
             recycle_row.pack(fill="x", pady=(2, 4))
@@ -176,7 +193,6 @@ class WindowDeleteDialog(ctk.CTkToplevel):
 
             path_row = tk.Frame(body, bg=_BG)
             path_row.pack(fill="x", padx=(24, 0), pady=(4, 0))
-            self._path_var = tk.StringVar(value=str(default_save_path))
             self._path_entry = ctk.CTkEntry(
                 path_row,
                 textvariable=self._path_var,
@@ -204,7 +220,7 @@ class WindowDeleteDialog(ctk.CTkToplevel):
                 anchor="w", justify="left", wraplength=420,
             ).pack(anchor="w", padx=(24, 0), pady=(6, 0))
 
-        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer = ctk.CTkFrame(container, fg_color="transparent")
         footer.pack(fill="x", padx=22, pady=(16, 16))
         ctk.CTkButton(
             footer, text="Delete window",
@@ -218,10 +234,7 @@ class WindowDeleteDialog(ctk.CTkToplevel):
             fg_color=_BTN_BG, hover_color=_BTN_HOVER,
             command=self._on_cancel,
         ).pack(side="right", padx=(0, 8))
-
-        self.bind("<Escape>", lambda _e: self._on_cancel())
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-        self.after(100, lambda: _center_on_parent(self))
+        return container
 
     def _on_action_radio(self) -> None:
         choice = self._script_action_var.get()
@@ -262,7 +275,7 @@ class WindowDeleteDialog(ctk.CTkToplevel):
         self.destroy()
 
 
-class ActionDeleteDialog(ctk.CTkToplevel):
+class ActionDeleteDialog(ManagedToplevel):
     """Confirmation gate for the Properties panel ``[✕]`` button
     and the right-click ``Delete action`` entry. Three terminal
     buttons (no radios — every option is a one-click action):
@@ -277,6 +290,13 @@ class ActionDeleteDialog(ctk.CTkToplevel):
       from the .py file via the text-based helper.
     """
 
+    window_title = "Delete action"
+    min_size = (480, 200)
+    fg_color = _BG
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
+
     def __init__(
         self,
         parent,
@@ -284,22 +304,28 @@ class ActionDeleteDialog(ctk.CTkToplevel):
         line_count: int,
         also_bound_elsewhere: int = 0,
     ):
-        super().__init__(parent)
-        prepare_dialog(self)
-        self.title("Delete action")
-        self.resizable(False, False)
-        self.transient(parent)
-        safe_grab_set(self)
-        self.configure(fg_color=_BG)
-
         self.action: str = "cancel"
+        self._method_name = method_name
+        self._line_count = line_count
+        self._also_bound_elsewhere = also_bound_elsewhere
+        # Warning card adds ~70px when surfaced.
+        self.default_size = (
+            500, 320 if also_bound_elsewhere > 0 else 240,
+        )
+        super().__init__(parent)
 
-        body = ctk.CTkFrame(self, fg_color="transparent")
+    def default_offset(self, parent) -> tuple[int, int]:
+        return _parent_centered(parent, *self.default_size)
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+
+        body = ctk.CTkFrame(container, fg_color="transparent")
         body.pack(padx=22, pady=(20, 8), fill="x")
 
         ctk.CTkLabel(
             body,
-            text=f"Delete action \"{method_name}\"?",
+            text=f"Delete action \"{self._method_name}\"?",
             font=ui_font(13, "bold"),
             text_color=_HEADING_FG, anchor="w",
         ).pack(anchor="w", pady=(0, 8))
@@ -308,8 +334,8 @@ class ActionDeleteDialog(ctk.CTkToplevel):
         info.pack(fill="x", pady=(0, 4))
         body_text = (
             f"This will remove the binding AND delete the method "
-            f"from the behavior file ({line_count} line"
-            f"{'s' if line_count != 1 else ''} of code).\n"
+            f"from the behavior file ({self._line_count} line"
+            f"{'s' if self._line_count != 1 else ''} of code).\n"
             f"Choose \"Open in editor\" first if you want to copy "
             f"the body before deleting."
         )
@@ -320,7 +346,7 @@ class ActionDeleteDialog(ctk.CTkToplevel):
             justify="left", anchor="w", wraplength=420,
         ).pack(anchor="w", padx=12, pady=10)
 
-        if also_bound_elsewhere > 0:
+        if self._also_bound_elsewhere > 0:
             warn = ctk.CTkFrame(
                 body, fg_color="#3a2a18", corner_radius=4,
             )
@@ -329,8 +355,8 @@ class ActionDeleteDialog(ctk.CTkToplevel):
                 warn,
                 text=(
                     f"⚠  This method is also bound to "
-                    f"{also_bound_elsewhere} other event"
-                    f"{'s' if also_bound_elsewhere != 1 else ''} on "
+                    f"{self._also_bound_elsewhere} other event"
+                    f"{'s' if self._also_bound_elsewhere != 1 else ''} on "
                     "this window. Deleting the file definition will "
                     "break those too."
                 ),
@@ -339,7 +365,7 @@ class ActionDeleteDialog(ctk.CTkToplevel):
                 justify="left", anchor="w", wraplength=420,
             ).pack(anchor="w", padx=12, pady=10)
 
-        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer = ctk.CTkFrame(container, fg_color="transparent")
         footer.pack(fill="x", padx=22, pady=(16, 16))
         ctk.CTkButton(
             footer, text="Delete",
@@ -359,10 +385,7 @@ class ActionDeleteDialog(ctk.CTkToplevel):
             fg_color=_BTN_BG, hover_color=_BTN_HOVER,
             command=self._on_cancel,
         ).pack(side="right", padx=(0, 8))
-
-        self.bind("<Escape>", lambda _e: self._on_cancel())
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-        self.after(100, lambda: _center_on_parent(self))
+        return container
 
     def _on_delete(self) -> None:
         self.action = "delete"

@@ -12,7 +12,7 @@ from typing import Any
 
 import customtkinter as ctk
 
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import derive_mono_font
 
 
@@ -21,20 +21,39 @@ COMPONENT_LIBRARY_URL = (
 )
 
 
-class ComponentExportChoiceDialog(ctk.CTkToplevel):
-    def __init__(self, parent, source_path: Path):
-        super().__init__(parent)
-        prepare_dialog(self)
-        self.title("Export component")
-        self.resizable(False, False)
-        self.transient(parent)
-        safe_grab_set(self)
+class ComponentExportChoiceDialog(ManagedToplevel):
+    window_title = "Export component"
+    default_size = (520, 380)
+    min_size = (480, 360)
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
 
+    def __init__(self, parent, source_path: Path):
         self._source_path = source_path
         self._parent = parent
-        self.result: str | None = None  # "personal" | "publish" | None
+        self.result: str | None = None
+        super().__init__(parent)
 
-        body = ctk.CTkFrame(self, fg_color="transparent")
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+            w, h = self.default_size
+            return (
+                max(0, px + (pw - w) // 2),
+                max(0, py + (ph - h) // 2),
+            )
+        except tk.TclError:
+            return (100, 100)
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+
+        body = ctk.CTkFrame(container, fg_color="transparent")
         body.pack(padx=24, pady=(20, 8), fill="x")
 
         ctk.CTkLabel(
@@ -106,7 +125,7 @@ class ComponentExportChoiceDialog(ctk.CTkToplevel):
             justify="center",
         ).pack(pady=(6, 0))
 
-        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer = ctk.CTkFrame(container, fg_color="transparent")
         footer.pack(fill="x", padx=24, pady=(8, 18))
         ctk.CTkButton(
             footer, text="Cancel", width=90, height=30,
@@ -114,10 +133,7 @@ class ComponentExportChoiceDialog(ctk.CTkToplevel):
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_cancel,
         ).pack(side="right")
-
-        self.bind("<Escape>", lambda _e: self._on_cancel())
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-        self.after(100, self._center_on_parent)
+        return container
 
     def _on_visit_library(self) -> None:
         try:
@@ -136,24 +152,6 @@ class ComponentExportChoiceDialog(ctk.CTkToplevel):
     def _on_cancel(self) -> None:
         self.result = None
         self.destroy()
-
-    def _center_on_parent(self) -> None:
-        self.update_idletasks()
-        parent = self.master
-        try:
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-        except tk.TclError:
-            reveal_dialog(self)
-            return
-        w = self.winfo_width()
-        h = self.winfo_height()
-        x = px + (pw - w) // 2
-        y = py + (ph - h) // 2
-        self.geometry(f"+{max(0, x)}+{max(0, y)}")
-        reveal_dialog(self)
 
 
 MIT_LICENSE_TEXT = """MIT License
@@ -181,54 +179,76 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
 
 
-class _MITTextWindow(ctk.CTkToplevel):
-    def __init__(self, parent):
-        super().__init__(parent)
-        prepare_dialog(self)
-        self.title("MIT License — full text")
-        self.geometry("560x440")
-        self.transient(parent)
-        safe_grab_set(self)
-        self.configure(fg_color="#1a1a1a")
+class _MITTextWindow(ManagedToplevel):
+    window_title = "MIT License — full text"
+    default_size = (560, 440)
+    min_size = (480, 360)
+    fg_color = "#1a1a1a"
+    panel_padding = (0, 0)
+    modal = True
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+
+        ctk.CTkButton(
+            container, text="Close", width=90, height=30,
+            corner_radius=4,
+            fg_color="#3c3c3c", hover_color="#4a4a4a",
+            command=self.destroy,
+        ).pack(side="bottom", pady=(0, 14))
 
         textbox = ctk.CTkTextbox(
-            self, font=derive_mono_font(size=10),  # type: ignore[arg-type]
+            container, font=derive_mono_font(size=10),  # type: ignore[arg-type]
             fg_color="#111111", text_color="#cfcfcf",
             wrap="word",
         )
         textbox.pack(fill="both", expand=True, padx=14, pady=(14, 8))
         textbox.insert("1.0", MIT_LICENSE_TEXT)
         textbox.configure(state="disabled")
-
-        ctk.CTkButton(
-            self, text="Close", width=90, height=30,
-            corner_radius=4,
-            fg_color="#3c3c3c", hover_color="#4a4a4a",
-            command=self.destroy,
-        ).pack(side="bottom", pady=(0, 14))
-        self.bind("<Escape>", lambda _e: self.destroy())
-        reveal_dialog(self)
+        return container
 
 
-class ComponentPublishLicenseDialog(ctk.CTkToplevel):
+class ComponentPublishLicenseDialog(ManagedToplevel):
     """License-agreement gate before the actual Publish form. Three
     required confirmations + MIT-text viewer. ``result`` is True when
     the user accepts.
     """
 
-    def __init__(self, parent, source_path: Path):
-        super().__init__(parent)
-        prepare_dialog(self)
-        self.title("License agreement")
-        self.resizable(False, False)
-        self.transient(parent)
-        safe_grab_set(self)
-        self.configure(fg_color="#1a1a1a")
+    window_title = "License agreement"
+    default_size = (520, 460)
+    min_size = (480, 420)
+    fg_color = "#1a1a1a"
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
 
+    def __init__(self, parent, source_path: Path):
         self._source_path = source_path
         self.result: bool = False
+        self._var_rights = tk.BooleanVar(master=parent, value=False)
+        self._var_mit = tk.BooleanVar(master=parent, value=False)
+        self._var_responsibility = tk.BooleanVar(master=parent, value=False)
+        super().__init__(parent)
 
-        body = ctk.CTkFrame(self, fg_color="transparent")
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+            w, h = self.default_size
+            return (
+                max(0, px + (pw - w) // 2),
+                max(0, py + (ph - h) // 2),
+            )
+        except tk.TclError:
+            return (100, 100)
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+
+        body = ctk.CTkFrame(container, fg_color="transparent")
         body.pack(padx=24, pady=(20, 8), fill="x")
 
         ctk.CTkLabel(
@@ -243,10 +263,6 @@ class ComponentPublishLicenseDialog(ctk.CTkToplevel):
             font=ctk.CTkFont(size=10),
             text_color="#bdbdbd", anchor="w",
         ).pack(anchor="w", pady=(0, 14))
-
-        self._var_rights = tk.BooleanVar(value=False)
-        self._var_mit = tk.BooleanVar(value=False)
-        self._var_responsibility = tk.BooleanVar(value=False)
 
         check_kwargs: dict[str, Any] = dict(
             font=ctk.CTkFont(size=10),
@@ -304,7 +320,7 @@ class ComponentPublishLicenseDialog(ctk.CTkToplevel):
             command=self._show_mit_text,
         ).pack(anchor="w", pady=(0, 4))
 
-        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer = ctk.CTkFrame(container, fg_color="transparent")
         footer.pack(fill="x", padx=24, pady=(8, 18))
         self._accept_btn = ctk.CTkButton(
             footer, text="Accept & continue",
@@ -320,10 +336,7 @@ class ComponentPublishLicenseDialog(ctk.CTkToplevel):
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_cancel,
         ).pack(side="right", padx=(0, 8))
-
-        self.bind("<Escape>", lambda _e: self._on_cancel())
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-        self.after(100, self._center_on_parent)
+        return container
 
     def _refresh_accept(self) -> None:
         all_checked = (
@@ -345,24 +358,6 @@ class ComponentPublishLicenseDialog(ctk.CTkToplevel):
     def _on_cancel(self) -> None:
         self.result = False
         self.destroy()
-
-    def _center_on_parent(self) -> None:
-        self.update_idletasks()
-        parent = self.master
-        try:
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-        except tk.TclError:
-            reveal_dialog(self)
-            return
-        w = self.winfo_width()
-        h = self.winfo_height()
-        x = px + (pw - w) // 2
-        y = py + (ph - h) // 2
-        self.geometry(f"+{max(0, x)}+{max(0, y)}")
-        reveal_dialog(self)
 
 
 def run_export_flow(parent, source_path: Path) -> None:

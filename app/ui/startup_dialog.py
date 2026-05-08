@@ -21,7 +21,7 @@ from PIL import Image
 
 from app import __version__
 from app.core.screen import center_geometry
-from app.ui.dialog_utils import safe_grab_set
+from app.ui.managed_window import ManagedToplevel
 from app.ui.new_project_form import NewProjectForm
 from app.ui.recent_list import RecentList
 from app.ui.system_fonts import ui_font
@@ -38,71 +38,74 @@ LOGO_PATH = Path(__file__).resolve().parents[2] / "app" / "assets" / "icon.png"
 LOGO_SIZE = 28
 
 
-class StartupDialog(ctk.CTkToplevel):
+class StartupDialog(ManagedToplevel):
+    window_title = "CTkMaker"
+    default_size = (DIALOG_W, DIALOG_H)
+    min_size = (DIALOG_W - 40, DIALOG_H - 40)
+    fg_color = BG
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
+    # Custom close confirmation lives on _on_close; let the local
+    # bind drive both Escape and X so the helper's auto-destroy
+    # path doesn't bypass the "Quit CTkMaker?" prompt.
+    escape_closes = False
+
     def __init__(self, parent, on_ready=None):
-        super().__init__(parent)
-        # Hide before the WM maps the window; reveal at the end of
-        # __init__ once geometry has been positioned. Otherwise the
-        # window flashes at the WM-default location and jumps to the
-        # centered position. Alpha=0 layered on top so even the
-        # first map after deiconify doesn't show Windows' default
-        # white background for one frame.
-        self.withdraw()
-        self.attributes("-alpha", 0.0)
-        self.title("CTkMaker")
-        self.resizable(False, False)
-        self.transient(parent)
-        self.configure(fg_color=BG)
-
         self.result: tuple | None = None
-
-        self.geometry(f"{DIALOG_W}x{DIALOG_H}")
-        self._center_on_screen()
-
-        self._build_header()
-        self._build_body()
-        self._build_footer()
-
+        self._on_ready = on_ready
+        super().__init__(parent)
+        # Override the helper's WM_DELETE_WINDOW + add Escape so the
+        # confirmation prompt fires before any destroy.
         self.protocol("WM_DELETE_WINDOW", self._on_close)
-        self.bind("<Escape>", lambda e: self._on_close())
+        self.bind("<Escape>", self._on_escape_close)
         self.bind("<Return>", lambda e: self._on_create())
-
-        self.deiconify()
-        self.update_idletasks()
-        self.attributes("-alpha", 1.0)
         # Dismiss the splash AFTER this window is fully revealed, not
         # before — otherwise there's a visible gap with neither window
-        # on screen while we paint.
-        if on_ready is not None:
+        # on screen while we paint. ManagedToplevel set alpha=1 in
+        # super(); the dialog is visible by the time we reach here.
+        if self._on_ready is not None:
             try:
-                on_ready()
+                self._on_ready()
             except Exception:
                 pass
-        safe_grab_set(self)
 
-    # ------------------------------------------------------------------
-    # Layout
-    # ------------------------------------------------------------------
-    def _center_on_screen(self) -> None:
-        # Use the cached work-area helper — no Tk geometry queries,
-        # no update_idletasks pump. Falls back to Tk's screen size
-        # only when the Win32 work-area lookup fails. Pass our CTk
-        # window scaling so center_geometry accounts for the scaling
-        # CTk applies to width/height before placement.
+    def default_offset(self, parent) -> tuple[int, int]:
+        # Startup has no real parent layout; center on the screen.
         scale = float(self._get_window_scaling() or 1.0)
         geom = center_geometry(DIALOG_W, DIALOG_H, scale=scale)
-        if geom is None:
+        if geom is not None:
+            try:
+                _, coords = geom.split("+", 1)
+                xs, ys = coords.split("+")
+                return (int(xs), int(ys))
+            except (ValueError, IndexError):
+                pass
+        try:
             sw = self.winfo_screenwidth()
             sh = self.winfo_screenheight()
-            physical_w = int(DIALOG_W * scale)
-            physical_h = int(DIALOG_H * scale)
-            x = max(0, (sw - physical_w) // 2)
-            y = max(0, (sh - physical_h) // 2)
-            geom = f"{DIALOG_W}x{DIALOG_H}+{x}+{y}"
-        self.geometry(geom)
+        except tk.TclError:
+            return (100, 100)
+        physical_w = int(DIALOG_W * scale)
+        physical_h = int(DIALOG_H * scale)
+        return (
+            max(0, (sw - physical_w) // 2),
+            max(0, (sh - physical_h) // 2),
+        )
 
-    def _build_header(self) -> None:
-        header = ctk.CTkFrame(self, fg_color="transparent")
+    def _on_escape_close(self, _event=None) -> str:
+        self._on_close()
+        return "break"
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        self._build_header(container)
+        self._build_body(container)
+        self._build_footer(container)
+        return container
+
+    def _build_header(self, parent) -> None:
+        header = ctk.CTkFrame(parent, fg_color="transparent")
         header.pack(fill="x", padx=24, pady=(18, 8))
 
         title_row = ctk.CTkFrame(header, fg_color="transparent")
@@ -138,8 +141,8 @@ class StartupDialog(ctk.CTkToplevel):
             text_color=SUBTITLE_FG, anchor="w",
         ).pack(fill="x", pady=(2, 0))
 
-    def _build_body(self) -> None:
-        body = ctk.CTkFrame(self, fg_color="transparent")
+    def _build_body(self, parent) -> None:
+        body = ctk.CTkFrame(parent, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=24, pady=(0, 8))
         body.grid_columnconfigure(0, weight=1, minsize=200)
         body.grid_columnconfigure(1, weight=0, minsize=12)
@@ -186,8 +189,8 @@ class StartupDialog(ctk.CTkToplevel):
         )
         self._open_btn.grid(row=0, column=1, sticky="ew", padx=(3, 0))
 
-    def _build_footer(self) -> None:
-        footer = ctk.CTkFrame(self, fg_color="transparent")
+    def _build_footer(self, parent) -> None:
+        footer = ctk.CTkFrame(parent, fg_color="transparent")
         footer.pack(fill="x", padx=24, pady=(4, 16))
         ctk.CTkButton(
             footer, text="+ Create Project", width=160, height=32,

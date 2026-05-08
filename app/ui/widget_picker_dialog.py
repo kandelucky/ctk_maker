@@ -18,7 +18,7 @@ from tkinter import ttk
 
 import customtkinter as ctk
 
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui.managed_window import ManagedToplevel
 
 _BG = "#1a1a1a"
 _HEADING_FG = "#e6e6e6"
@@ -31,26 +31,7 @@ _ACCENT_HOVER = "#388bfd"
 _DISABLED_FG = "#6a6a6a"
 
 
-def _center_on_parent(dialog: ctk.CTkToplevel) -> None:
-    dialog.update_idletasks()
-    parent = dialog.master
-    try:
-        px = parent.winfo_rootx()
-        py = parent.winfo_rooty()
-        pw = parent.winfo_width()
-        ph = parent.winfo_height()
-    except tk.TclError:
-        reveal_dialog(dialog)
-        return
-    w = dialog.winfo_width()
-    h = dialog.winfo_height()
-    x = px + (pw - w) // 2
-    y = py + (ph - h) // 2
-    dialog.geometry(f"+{max(0, x)}+{max(0, y)}")
-    reveal_dialog(dialog)
-
-
-class WidgetPickerDialog(ctk.CTkToplevel):
+class WidgetPickerDialog(ManagedToplevel):
     """Modal widget picker. ``expected_type`` is the annotation type
     name (e.g., ``"CTkLabel"``). Widgets whose ``widget_type`` differs
     render as disabled rows so the user sees the full tree but can
@@ -60,6 +41,12 @@ class WidgetPickerDialog(ctk.CTkToplevel):
     - ``self.selected_widget_id`` — chosen id, or ``None`` on cancel.
     """
 
+    default_size = (440, 520)
+    min_size = (420, 480)
+    fg_color = _BG
+    panel_padding = (0, 0)
+    modal = True
+
     def __init__(
         self,
         parent,
@@ -68,33 +55,41 @@ class WidgetPickerDialog(ctk.CTkToplevel):
         field_name: str,
         current_widget_id: str = "",
     ):
-        super().__init__(parent)
-        prepare_dialog(self)
-        self.title(f"Pick widget for {field_name}")
-        self.transient(parent)
-        safe_grab_set(self)
-        self.configure(fg_color=_BG)
-        self.minsize(420, 480)
-
+        self.window_title = f"Pick widget for {field_name}"
         self._document = document
         self._expected_type = expected_type
+        self._field_name = field_name
         self._current_widget_id = current_widget_id
         self.selected_widget_id: str | None = None
         self._iid_to_widget_id: dict[str, str] = {}
         self._compatible_iids: set[str] = set()
-
-        self._build_ui(field_name, expected_type)
+        super().__init__(parent)
         self._populate_tree()
 
-        self.bind("<Escape>", lambda _e: self._cancel())
-        self.protocol("WM_DELETE_WINDOW", self._cancel)
-        self.after(50, _center_on_parent, self)
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+            w, h = self.default_size
+            return (
+                max(0, px + (pw - w) // 2),
+                max(0, py + (ph - h) // 2),
+            )
+        except tk.TclError:
+            return (100, 100)
+
+    def build_content(self) -> ctk.CTkFrame:
+        return self._build_ui(self._field_name, self._expected_type)
 
     # ------------------------------------------------------------------
     # UI scaffold
     # ------------------------------------------------------------------
-    def _build_ui(self, field_name: str, expected_type: str) -> None:
-        header = ctk.CTkFrame(self, fg_color=_CARD_BG, corner_radius=0)
+    def _build_ui(self, field_name: str, expected_type: str) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        header = ctk.CTkFrame(container, fg_color=_CARD_BG, corner_radius=0)
         header.pack(fill="x", padx=0, pady=0)
         ctk.CTkLabel(
             header, text=f"Pick widget for «{field_name}»",
@@ -110,7 +105,7 @@ class WidgetPickerDialog(ctk.CTkToplevel):
             anchor="w",
         ).pack(fill="x", padx=16, pady=(2, 12))
 
-        body = ctk.CTkFrame(self, fg_color="transparent")
+        body = ctk.CTkFrame(container, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=12, pady=(8, 0))
 
         # ttk Treeview gives us indented hierarchy + per-item tags
@@ -160,7 +155,7 @@ class WidgetPickerDialog(ctk.CTkToplevel):
         self.tree.bind("<Double-1>", self._on_double_click)
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
 
-        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer = ctk.CTkFrame(container, fg_color="transparent")
         footer.pack(fill="x", padx=12, pady=12)
         # Clear binding (when one already exists) — sets the slot to
         # empty so the field is unbound. Hidden when the slot was
@@ -187,6 +182,7 @@ class WidgetPickerDialog(ctk.CTkToplevel):
             command=self._pick,
         )
         self._pick_btn.pack(side="right")
+        return container
 
     # ------------------------------------------------------------------
     # Tree population

@@ -18,9 +18,9 @@ import customtkinter as ctk
 
 from app.core.component_paths import COMPONENT_EXT, component_display_stem
 from app.core.logger import log_error
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 from app.core.settings import load_settings, save_setting
 from app.io.component_io import load_metadata, rewrite_payload_author
+from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
 LAST_AUTHOR_KEY = "last_component_author"
@@ -49,30 +49,62 @@ def _format_date(iso: str) -> str:
     return iso[:10] if iso else ""
 
 
-class ComponentExportDialog(ctk.CTkToplevel):
-    def __init__(self, parent, source_path: Path):
-        super().__init__(parent)
-        prepare_dialog(self)
-        self.title("Export component")
-        self.resizable(False, False)
-        self.transient(parent)
-        safe_grab_set(self)
+class ComponentExportDialog(ManagedToplevel):
+    window_title = "Export component"
+    default_size = (400, 360)
+    min_size = (380, 340)
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
 
+    def __init__(self, parent, source_path: Path):
         self.result: bool = False
         self._source_path = source_path
         self._destination: Path | None = None
-
-        meta = load_metadata(source_path) or {}
+        self._meta = load_metadata(source_path) or {}
         try:
-            file_bytes = source_path.stat().st_size
+            self._file_bytes = source_path.stat().st_size
         except OSError:
-            file_bytes = 0
+            self._file_bytes = 0
+        cached_author = str(
+            load_settings().get(LAST_AUTHOR_KEY, "") or "",
+        )
+        self._cached_author = cached_author
+        self._name_var = tk.StringVar(
+            master=parent, value=component_display_stem(source_path),
+        )
+        self._author_var = tk.StringVar(
+            master=parent,
+            value=self._meta.get("author", "") or cached_author,
+        )
+        self._dest_var = tk.StringVar(master=parent, value="")
+        super().__init__(parent)
 
-        body = ctk.CTkFrame(self, fg_color="transparent")
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+            w, h = self.default_size
+            return (
+                max(0, px + (pw - w) // 2),
+                max(0, py + (ph - h) // 2),
+            )
+        except tk.TclError:
+            return (100, 100)
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        meta = self._meta
+
+        body = ctk.CTkFrame(container, fg_color="transparent")
         body.pack(padx=20, pady=(18, 6), fill="x")
 
         ctk.CTkLabel(
-            body, text=meta.get("name") or component_display_stem(source_path),
+            body,
+            text=meta.get("name") or component_display_stem(self._source_path),
             font=ui_font(14, "bold"),
             text_color="#e6e6e6", anchor="w",
         ).grid(row=0, column=0, sticky="w")
@@ -80,7 +112,7 @@ class ComponentExportDialog(ctk.CTkToplevel):
             body,
             text=(
                 f"{meta.get('view_w', 0)} × {meta.get('view_h', 0)}"
-                f"  ·  {_format_size(file_bytes)}"
+                f"  ·  {_format_size(self._file_bytes)}"
                 f"  ·  {_format_date(meta.get('created_at', ''))}"
             ),
             font=ui_font(9),
@@ -90,9 +122,6 @@ class ComponentExportDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             body, text="Name", font=ui_font(10),
         ).grid(row=2, column=0, sticky="w", pady=(0, 4))
-        self._name_var = tk.StringVar(
-            value=component_display_stem(self._source_path),
-        )
         ctk.CTkEntry(
             body, textvariable=self._name_var, width=320,
         ).grid(row=3, column=0, sticky="ew", pady=(0, 12))
@@ -100,16 +129,6 @@ class ComponentExportDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             body, text="Author", font=ui_font(10),
         ).grid(row=4, column=0, sticky="w", pady=(0, 4))
-        # Prefer the file's stored author; fall back to the last
-        # author the user typed in any export so they don't have to
-        # retype on every share.
-        cached_author = str(
-            load_settings().get(LAST_AUTHOR_KEY, "") or "",
-        )
-        self._author_var = tk.StringVar(
-            value=meta.get("author", "") or cached_author,
-        )
-        self._cached_author = cached_author
         ctk.CTkEntry(
             body, textvariable=self._author_var, width=320,
             placeholder_text="optional",
@@ -121,7 +140,6 @@ class ComponentExportDialog(ctk.CTkToplevel):
         path_row = ctk.CTkFrame(body, fg_color="transparent")
         path_row.grid(row=7, column=0, sticky="ew", pady=(0, 12))
         path_row.grid_columnconfigure(0, weight=1)
-        self._dest_var = tk.StringVar(value="")
         ctk.CTkEntry(
             path_row, textvariable=self._dest_var,
             placeholder_text="(pick a folder)", height=28,
@@ -133,7 +151,7 @@ class ComponentExportDialog(ctk.CTkToplevel):
 
         body.grid_columnconfigure(0, weight=1)
 
-        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer = ctk.CTkFrame(container, fg_color="transparent")
         footer.pack(fill="x", padx=20, pady=(4, 16))
         ctk.CTkButton(
             footer, text="Export", width=120, height=32,
@@ -145,10 +163,7 @@ class ComponentExportDialog(ctk.CTkToplevel):
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_cancel,
         ).pack(side="right", padx=(0, 8))
-
-        self.bind("<Escape>", lambda _e: self._on_cancel())
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-        self.after(100, self._center_on_parent)
+        return container
 
     def _on_browse(self) -> None:
         path = filedialog.askdirectory(
@@ -227,21 +242,3 @@ class ComponentExportDialog(ctk.CTkToplevel):
     def _on_cancel(self) -> None:
         self.result = False
         self.destroy()
-
-    def _center_on_parent(self) -> None:
-        self.update_idletasks()
-        parent = self.master
-        try:
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-        except tk.TclError:
-            reveal_dialog(self)
-            return
-        w = self.winfo_width()
-        h = self.winfo_height()
-        x = px + (pw - w) // 2
-        y = py + (ph - h) // 2
-        self.geometry(f"+{max(0, x)}+{max(0, y)}")
-        reveal_dialog(self)
