@@ -181,6 +181,11 @@ def _spawn_preview(tmp_dir: Path, tmp_path: Path, cwd: str) -> subprocess.Popen:
         )
     if mode == "inapp":
         env["PYTHONUNBUFFERED"] = "1"
+        # Lets the inlined preview floater know it's running under the
+        # in-app console; the floater grows a 3rd "Console" button only
+        # when this is set, and the click writes a marker line that
+        # ``_drain_console_queue`` recognises as "open the Console".
+        env["CTKMAKER_PREVIEW_CONSOLE_MODE"] = "inapp"
         return subprocess.Popen(
             [py, "-u", str(tmp_path)], cwd=cwd,
             stdout=subprocess.PIPE,
@@ -2349,6 +2354,17 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         try:
             while drained < 200:
                 stream, line = self._console_queue.get_nowait()
+                # IPC from the inlined preview floater: when the user
+                # clicks its "Console" button the subprocess writes
+                # this exact marker on stdout. We recognise it, pop
+                # the Console window open, and drop the marker so it
+                # never lands in the visible buffer.
+                if stream == "stdout" and line == "__CTKMAKER_OPEN_CONSOLE__":
+                    if not bool(self._console_var.get()):
+                        self._console_var.set(True)
+                        self._on_toggle_console_window()
+                    drained += 1
+                    continue
                 # ``%f`` is 6-digit microseconds; trimming the last 4
                 # leaves centiseconds (00-99) — enough precision to
                 # order a flood arriving in the same second without
