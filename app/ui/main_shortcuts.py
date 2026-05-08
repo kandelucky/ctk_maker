@@ -150,17 +150,15 @@ class ShortcutsMixin(_MainWindowHost):
         self.bind_all("<F9>", lambda e: self._on_f9_history_window())
         self.bind_all("<F10>", lambda e: self._on_f10_project_window())
         self.bind_all("<F11>", lambda e: self._on_f11_variables_window())
-        # On Windows, holding Shift with a digit shifts the keysym
-        # ("1" → "exclam" on US, etc.). Bind both the bare digit and
-        # the US-shifted symbol so the chord fires regardless of which
-        # one Tk reports for the active layout.
-        shifted = {1: "exclam", 2: "at", 3: "numbersign", 4: "dollar"}
-        for idx in range(len(DEV_TEST_WINDOW_CLASSES)):
-            digit = idx + 1
+        # Ctrl+Alt+H/J/K/L — letters chosen because they're unused
+        # elsewhere in this binder and Ctrl+Alt+digit was unreliable
+        # on layouts where Ctrl+Alt acts as AltGr (digit 4 produced
+        # EuroSign/currency keysyms instead of "4").
+        dev_test_keys = ("h", "j", "k", "l")
+        for idx, key in enumerate(dev_test_keys):
             handler = lambda e, i=idx: self._on_toggle_dev_test_window(i)
-            self.bind(f"<Control-Shift-Alt-Key-{digit}>", handler)
-            if digit in shifted:
-                self.bind(f"<Control-Shift-Alt-{shifted[digit]}>", handler)
+            self.bind(f"<Control-Alt-Key-{key}>", handler)
+            self.bind(f"<Control-Alt-Key-{key.upper()}>", handler)
         self.bind(f"<{MOD_KEY}-q>", lambda e: self._on_quit())
         self.bind(f"<{MOD_KEY}-comma>", lambda e: self._on_open_preferences())
         # bind_all so undo/redo works when the Object Tree toplevel

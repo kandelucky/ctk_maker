@@ -10,6 +10,7 @@ This document is the entry point. Deeper detail in:
 - [EXTENSION.md](EXTENSION.md) — adding widgets, property editors, components
 - [CONCEPTS.md](CONCEPTS.md) — user-facing concepts (Project / Page / Window / Variable / Reference / Handler / Component)
 - [WIDGETS.md](WIDGETS.md) — every widget's properties, types, defaults, nuances
+- [WINDOW_STYLE.md](WINDOW_STYLE.md) — `ManagedToplevel` base + `style.py` tokens for floating tool windows
 - [AI_CHEATSHEET.md](AI_CHEATSHEET.md) — distilled quick reference for AI prompts
 
 ## Layers
