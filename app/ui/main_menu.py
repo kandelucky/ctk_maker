@@ -400,7 +400,7 @@ class MenuMixin(_MainWindowHost):
         help_menu.add_separator()
         self._add_cmd(
             help_menu, "Report a Bug", self._on_report_bug,
-            icon="bell",
+            icon="bug-play",
         )
         help_menu.add_separator()
         self._add_cmd(help_menu, "About...", self._on_about, icon="info")

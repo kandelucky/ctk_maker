@@ -23,6 +23,7 @@ BTN_HOVER = "#3a3a3a"
 SEP_FG = "#3c3c3c"
 ICON_TINT = "#cccccc"
 ICON_TINT_DISABLED = "#555555"
+ICON_TINT_CARROT = "#cfba9d"
 
 BAR_HEIGHT = 34
 BTN_SIZE = 26
@@ -57,11 +58,13 @@ class Toolbar(ctk.CTkFrame):
         self._add_separator()
         self._add_button(
             "file-code", on_export, tooltip="Export to Python",
+            color=ICON_TINT_CARROT,
         )
         if on_run_script is not None:
             self._add_button(
                 "tv-minimal-play", on_run_script,
                 tooltip="Run Python Script...",
+                color=ICON_TINT_CARROT,
             )
         self._add_separator()
         # Pre-load both icon variants so we can swap in place without
@@ -217,8 +220,9 @@ class Toolbar(ctk.CTkFrame):
         command: Callable[[], None],
         *,
         tooltip: str | None = None,
+        color: str = ICON_TINT,
     ) -> ctk.CTkButton:
-        icon = load_icon(icon_name, size=ICON_SIZE, color=ICON_TINT)
+        icon = load_icon(icon_name, size=ICON_SIZE, color=color)
         btn = ctk.CTkButton(
             self,
             text="" if icon else icon_name[0].upper(),
