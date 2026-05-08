@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 import customtkinter as ctk
 
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
 if TYPE_CHECKING:
@@ -30,23 +30,40 @@ def _is_valid_name(name: str) -> bool:
     return not any(ch in _FORBIDDEN for ch in name)
 
 
-class ComponentVarConflictDialog(ctk.CTkToplevel):
-    def __init__(self, parent, conflicts: "list[VarConflict]"):
-        super().__init__(parent)
-        prepare_dialog(self)
-        self.title("Resolve variable conflicts")
-        self.transient(parent)
-        safe_grab_set(self)
+class ComponentVarConflictDialog(ManagedToplevel):
+    window_title = "Resolve variable conflicts"
+    default_size = (460, 420)
+    min_size = (400, 320)
+    panel_padding = (0, 0)
+    modal = True
 
+    def __init__(self, parent, conflicts: "list[VarConflict]"):
         self._conflicts = conflicts
         self._row_state: list[dict] = []
         self.result: bool = False
+        super().__init__(parent)
+        self.bind("<Return>", lambda _e: self._on_ok())
 
-        self.geometry("460x420")
-        self.minsize(400, 320)
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+            w, h = self.default_size
+            return (
+                max(0, px + (pw - w) // 2),
+                max(0, py + (ph - h) // 2),
+            )
+        except tk.TclError:
+            return (100, 100)
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
 
         intro = ctk.CTkLabel(
-            self,
+            container,
             text=(
                 "These variables already exist in the target window "
                 "with a different type. Pick a resolution for each:"
@@ -59,14 +76,14 @@ class ComponentVarConflictDialog(ctk.CTkToplevel):
         intro.pack(padx=16, pady=(14, 8), anchor="w")
 
         scroll = ctk.CTkScrollableFrame(
-            self, fg_color="#1e1e1e", corner_radius=4,
+            container, fg_color="#1e1e1e", corner_radius=4,
         )
         scroll.pack(padx=12, pady=(0, 8), fill="both", expand=True)
 
-        for conflict in conflicts:
+        for conflict in self._conflicts:
             self._build_row(scroll, conflict)
 
-        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer = ctk.CTkFrame(container, fg_color="transparent")
         footer.pack(fill="x", padx=16, pady=(4, 14))
         ctk.CTkButton(
             footer, text="OK", width=100, height=30,
@@ -78,11 +95,7 @@ class ComponentVarConflictDialog(ctk.CTkToplevel):
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_cancel,
         ).pack(side="right", padx=(0, 8))
-
-        self.bind("<Return>", lambda _e: self._on_ok())
-        self.bind("<Escape>", lambda _e: self._on_cancel())
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-        self.after(100, self._center_on_parent)
+        return container
 
     def _build_row(self, parent, conflict: "VarConflict") -> None:
         wrap = ctk.CTkFrame(
@@ -162,21 +175,3 @@ class ComponentVarConflictDialog(ctk.CTkToplevel):
     def _on_cancel(self) -> None:
         self.result = False
         self.destroy()
-
-    def _center_on_parent(self) -> None:
-        self.update_idletasks()
-        parent = self.master
-        try:
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-        except tk.TclError:
-            reveal_dialog(self)
-            return
-        w = self.winfo_width()
-        h = self.winfo_height()
-        x = px + (pw - w) // 2
-        y = py + (ph - h) // 2
-        self.geometry(f"+{max(0, x)}+{max(0, y)}")
-        reveal_dialog(self)
