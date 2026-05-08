@@ -41,17 +41,14 @@ from app.core.variables import (
     sanitize_var_name,
 )
 from app.core.logger import log_error
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
-from app.ui.system_fonts import derive_ui_font
 
 if TYPE_CHECKING:
     from app.core.project import Project
 
 # Color / spacing tokens are sourced from app.ui.style — local aliases
-# kept so the rest of this file stays terse. Modal dialogs in this
-# module (VariableEditDialog, ReparentVariablesDialog,
-# AddGlobalReferenceDialog) still wire their colours inline; bulk
-# migration there is Phase C.
+# kept so the rest of this file stays terse. Inline hex literals
+# remain in the modal dialogs below; token migration of dialog
+# chrome is Phase F territory.
 BG = style.BG
 PANEL_BG = style.PANEL_BG
 TOOLBAR_BG = style.TOOLBAR_BG
@@ -70,30 +67,6 @@ TREE_FONT_SIZE = style.TREE_FONT_SIZE
 
 EMPTY_TEXT_GLOBAL = "No global variables yet — click + Add to create one"
 EMPTY_TEXT_LOCAL = "No local variables for this document — click + Add"
-
-# 8px outer breathing room when clamping a window onto the screen so
-# its drop shadow / titlebar isn't flush against the screen edge.
-SCREEN_CLAMP_MARGIN = 8
-
-
-def _clamp_to_screen(window, x: int, y: int, w: int, h: int) -> tuple[int, int]:
-    """Push (x, y) inward so a (w x h) window fits within the screen.
-
-    Used by both VariablesWindow and VariableEditDialog: centring a
-    child on its parent works fine when the parent sits in the middle
-    of the screen, but a parent flush against an edge throws the
-    child off-screen. This pulls everything back inside without
-    changing size.
-    """
-    try:
-        sw = window.winfo_screenwidth()
-        sh = window.winfo_screenheight()
-    except tk.TclError:
-        return x, y
-    margin = SCREEN_CLAMP_MARGIN
-    max_x = max(margin, sw - w - margin)
-    max_y = max(margin, sh - h - margin)
-    return max(margin, min(x, max_x)), max(margin, min(y, max_y))
 
 TYPE_LABELS = {
     "str": "String",
@@ -521,7 +494,7 @@ class VariablesPanel(ctk.CTkFrame):
         self._bus_subs = []
 
 
-class ReparentVariablesDialog(ctk.CTkToplevel):
+class ReparentVariablesDialog(ManagedToplevel):
     """Cross-doc reparent picker for local-variable handling.
 
     Shown when the user moves widget(s) into another document and the
@@ -544,6 +517,17 @@ class ReparentVariablesDialog(ctk.CTkToplevel):
     ``None`` on Cancel (which aborts the whole reparent).
     """
 
+    window_title = "Move widget(s) across windows"
+    # Content is bounded — listbox is clamped to 3 visible rows with a
+    # scrollbar, so the natural height never exceeds this even for
+    # large var sets. Width 460 leaves room for the long radio labels.
+    default_size = (460, 380)
+    min_size = (440, 0)
+    fg_color = BG
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
+
     def __init__(
         self, parent,
         source_doc_name: str,
@@ -551,40 +535,30 @@ class ReparentVariablesDialog(ctk.CTkToplevel):
         var_entries: list,
         external_usage: int,
     ):
-        super().__init__(parent)
-        prepare_dialog(self)
-        self.title("Move widget(s) across windows")
-        self.configure(fg_color=BG)
-        # Tight minsize so the dialog auto-sizes to its content
-        # rather than leaving a vertical gap when only 1-2 vars are
-        # listed. The list itself is fixed-height with a scrollbar
-        # so larger var sets don't grow the dialog past this either.
-        self.minsize(440, 0)
-        self.resizable(False, False)
-        try:
-            self.transient(parent)
-        except tk.TclError:
-            pass
-        safe_grab_set(self)
-
         self.result: tuple[str, str] | None = None
         self._source_name = source_doc_name
         self._target_name = target_doc_name
         self._var_entries = list(var_entries)
         self._external_usage = int(external_usage)
-
         self._source_var = tk.StringVar(value="keep")
         self._target_var = tk.StringVar(value="duplicate")
-
-        self._build()
-
+        super().__init__(parent)
         self.bind("<Return>", lambda _e: self._on_ok())
-        self.bind("<Escape>", lambda _e: self._on_cancel())
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-        self.after(50, self._center_on_parent)
 
-    def _build(self) -> None:
-        outer = ctk.CTkFrame(self, fg_color=PANEL_BG, corner_radius=6)
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px, py = parent.winfo_rootx(), parent.winfo_rooty()
+            pw, ph = parent.winfo_width(), parent.winfo_height()
+            w, h = self.default_size
+            return (px + (pw - w) // 2, py + (ph - h) // 2)
+        except tk.TclError:
+            return (100, 100)
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+
+        outer = ctk.CTkFrame(container, fg_color=PANEL_BG, corner_radius=6)
         outer.pack(padx=18, pady=(18, 10), fill="both", expand=True)
 
         ctk.CTkLabel(
@@ -610,7 +584,7 @@ class ReparentVariablesDialog(ctk.CTkToplevel):
             text_color="#7da7d9", anchor="w",
         ).pack(fill="x", padx=14, pady=(8, 12))
 
-        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer = ctk.CTkFrame(container, fg_color="transparent")
         footer.pack(fill="x", padx=18, pady=(0, 14))
         ctk.CTkButton(
             footer, text="OK", width=110, height=30,
@@ -622,6 +596,7 @@ class ReparentVariablesDialog(ctk.CTkToplevel):
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_cancel,
         ).pack(side="right", padx=(0, 8))
+        return container
 
     def _build_var_list(self, parent) -> None:
         # Three visible rows max; scrollable beyond. Tk's
@@ -724,23 +699,6 @@ class ReparentVariablesDialog(ctk.CTkToplevel):
         self.result = None
         self.destroy()
 
-    def _center_on_parent(self) -> None:
-        try:
-            parent = self.master
-            parent.update_idletasks()
-            self.update_idletasks()
-            w = self.winfo_width() or 460
-            h = self.winfo_height() or 380
-            px, py = parent.winfo_rootx(), parent.winfo_rooty()
-            pw, ph = parent.winfo_width(), parent.winfo_height()
-            x = px + (pw - w) // 2
-            y = py + (ph - h) // 2
-            x, y = _clamp_to_screen(self, x, y, w, h)
-            self.geometry(f"+{x}+{y}")
-        except tk.TclError:
-            pass
-        reveal_dialog(self)
-
 
 def confirm_clipboard_paste_policy(
     parent_window, project, target_doc,
@@ -783,10 +741,17 @@ def confirm_clipboard_paste_policy(
     return True, dialog.result
 
 
-class VariableEditDialog(ctk.CTkToplevel):
+class VariableEditDialog(ManagedToplevel):
     """Modal Add / Edit dialog. Result is ``(name, type, default)`` on
     OK, ``None`` on cancel.
     """
+
+    default_size = (DIALOG_W, DIALOG_H)
+    min_size = (360, 280)
+    fg_color = BG
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
 
     def __init__(
         self, parent, title: str,
@@ -794,16 +759,6 @@ class VariableEditDialog(ctk.CTkToplevel):
         existing_names: set[str],
         allowed_types: tuple[str, ...] | None = None,
     ):
-        super().__init__(parent)
-        prepare_dialog(self)
-        self.title(title)
-        self.configure(fg_color=BG)
-        self.geometry(f"{DIALOG_W}x{DIALOG_H}")
-        self.minsize(360, 280)
-        self.resizable(False, False)
-        self.transient(parent)
-        safe_grab_set(self)
-
         self.result: tuple[str, str, str] | None = None
         self._existing_names = existing_names
         # When the dialog is opened from a property row's "Create new
@@ -832,16 +787,25 @@ class VariableEditDialog(ctk.CTkToplevel):
         self._last_auto_default = TYPE_DEFAULT_VALUES.get(initial_type, "")
         self._type_var.trace_add("write", self._on_type_changed)
 
-        self._build()
-
+        super().__init__(parent)
+        self.title(title)
         self.bind("<Return>", lambda _e: self._on_ok())
-        self.bind("<Escape>", lambda _e: self._on_cancel())
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-        self.after(50, self._center_on_parent)
         self.after(80, lambda: self._name_entry.focus_set())
 
-    def _build(self) -> None:
-        panel = ctk.CTkFrame(self, fg_color=PANEL_BG, corner_radius=6)
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px, py = parent.winfo_rootx(), parent.winfo_rooty()
+            pw, ph = parent.winfo_width(), parent.winfo_height()
+            w, h = self.default_size
+            return (px + (pw - w) // 2, py + (ph - h) // 2)
+        except tk.TclError:
+            return (100, 100)
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+
+        panel = ctk.CTkFrame(container, fg_color=PANEL_BG, corner_radius=6)
         panel.pack(padx=18, pady=(18, 10), fill="both", expand=True)
 
         ctk.CTkLabel(
@@ -864,7 +828,7 @@ class VariableEditDialog(ctk.CTkToplevel):
             anchor="w",
         ).pack(fill="x", padx=(98, 14), pady=(2, 8))
 
-        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer = ctk.CTkFrame(container, fg_color="transparent")
         footer.pack(fill="x", padx=18, pady=(0, 14))
         ctk.CTkButton(
             footer, text="OK", width=110, height=30,
@@ -876,6 +840,7 @@ class VariableEditDialog(ctk.CTkToplevel):
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_cancel,
         ).pack(side="right", padx=(0, 8))
+        return container
 
     def _add_field(self, parent, label: str, builder) -> None:
         row = ctk.CTkFrame(parent, fg_color="transparent")
@@ -1048,28 +1013,8 @@ class VariableEditDialog(ctk.CTkToplevel):
         self.result = None
         self.destroy()
 
-    def _center_on_parent(self) -> None:
-        """Center on the Variables window, then clamp to the screen.
-        Clamp is the load-bearing part — the parent itself can sit
-        right on a screen edge after a Variables-window resize, so a
-        plain centre would push half the dialog off-screen.
-        """
-        try:
-            parent = self.master
-            parent.update_idletasks()
-            self.update_idletasks()
-            px, py = parent.winfo_rootx(), parent.winfo_rooty()
-            pw, ph = parent.winfo_width(), parent.winfo_height()
-            x = px + (pw - DIALOG_W) // 2
-            y = py + (ph - DIALOG_H) // 2
-            x, y = _clamp_to_screen(self, x, y, DIALOG_W, DIALOG_H)
-            self.geometry(f"{DIALOG_W}x{DIALOG_H}+{x}+{y}")
-        except tk.TclError:
-            pass
-        reveal_dialog(self)
 
-
-class AddGlobalReferenceDialog(ctk.CTkToplevel):
+class AddGlobalReferenceDialog(ManagedToplevel):
     """v1.10.8 — Modal for declaring a global ``ref[Window]`` /
     ``ref[Dialog]``. User picks a target document + type, types a
     name. Result attributes (read after ``wait_window``):
@@ -1079,27 +1024,42 @@ class AddGlobalReferenceDialog(ctk.CTkToplevel):
     - ``self.name_value`` — Python identifier the slot will use.
     """
 
+    window_title = "Add global reference"
+    default_size = (440, 320)
+    min_size = (420, 280)
+    fg_color = BG
+    panel_padding = (0, 0)
+    modal = True
+
     def __init__(self, parent, project, existing_names: set[str]):
-        super().__init__(parent)
-        prepare_dialog(self)
-        self.title("Add global reference")
-        self.transient(parent)
-        safe_grab_set(self)
-        self.configure(fg_color=BG)
-        self.minsize(420, 280)
         self._project = project
         self._existing_names = set(existing_names)
         self.target_id: str | None = None
         self.target_type: str = "Window"
         self.name_value: str = ""
         self._name_dirty = False
-        self._build_ui()
-        self.bind("<Escape>", lambda _e: self._cancel())
-        self.protocol("WM_DELETE_WINDOW", self._cancel)
-        self.after(50, self._center_on_parent)
+        super().__init__(parent)
 
-    def _build_ui(self) -> None:
-        header = ctk.CTkFrame(self, fg_color="#252526", corner_radius=0)
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px, py = parent.winfo_rootx(), parent.winfo_rooty()
+            pw, ph = parent.winfo_width(), parent.winfo_height()
+            w, h = self.default_size
+            return (px + (pw - w) // 2, py + (ph - h) // 2)
+        except tk.TclError:
+            return (100, 100)
+
+    def on_close(self) -> None:
+        # X-close / Escape land here. Clear the result so the caller's
+        # ``not dlg.name_value`` check treats it as cancel.
+        self.target_id = None
+        self.name_value = ""
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+
+        header = ctk.CTkFrame(container, fg_color="#252526", corner_radius=0)
         header.pack(fill="x")
         ctk.CTkLabel(
             header, text="Add global reference",
@@ -1118,7 +1078,7 @@ class AddGlobalReferenceDialog(ctk.CTkToplevel):
             anchor="w", wraplength=380, justify="left",
         ).pack(fill="x", padx=14, pady=(2, 12))
 
-        body = ctk.CTkFrame(self, fg_color="transparent")
+        body = ctk.CTkFrame(container, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=14, pady=8)
 
         # Type radio: Window / Dialog. Drives the target dropdown.
@@ -1185,7 +1145,7 @@ class AddGlobalReferenceDialog(ctk.CTkToplevel):
         )
         self._error_label.pack(fill="x", pady=(6, 0))
 
-        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer = ctk.CTkFrame(container, fg_color="transparent")
         footer.pack(fill="x", padx=14, pady=12)
         ctk.CTkButton(
             footer, text="Cancel", width=80,
@@ -1203,6 +1163,7 @@ class AddGlobalReferenceDialog(ctk.CTkToplevel):
         self._add_btn.pack(side="right")
 
         self._refresh_target_options()
+        return container
 
     def _refresh_target_options(self) -> None:
         want_toplevel = self._type_var.get() == "Dialog"
@@ -1299,25 +1260,6 @@ class AddGlobalReferenceDialog(ctk.CTkToplevel):
         self.target_id = None
         self.name_value = ""
         self.destroy()
-
-    def _center_on_parent(self) -> None:
-        try:
-            parent = self.master
-            parent.update_idletasks()
-            self.update_idletasks()
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-            w = self.winfo_width()
-            h = self.winfo_height()
-            x = px + (pw - w) // 2
-            y = py + (ph - h) // 2
-            x, y = _clamp_to_screen(self, x, y, w, h)
-            self.geometry(f"+{max(0, x)}+{max(0, y)}")
-        except tk.TclError:
-            pass
-        reveal_dialog(self)
 
 
 def run_add_global_reference_dialog(
