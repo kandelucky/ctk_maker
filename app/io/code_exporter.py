@@ -76,6 +76,26 @@ except _ctkmaker_tk.TclError:
     _ctkmaker_orig_title = ""
 {target}.title("\U0001F7E0 PREVIEW — " + (_ctkmaker_orig_title or "CTkMaker"))
 
+# Keep the preview window — and any Toplevels the user opens from
+# inside it — on top of other apps. Without this, clicking the
+# parent CTkMaker's Console window pulls focus away and the preview
+# slips behind. The class-level ``Toplevel.__init__`` monkey-patch
+# defers the ``-topmost`` set to ``after_idle`` so it lands AFTER
+# the original init (and any CTkToplevel post-init steps) completes.
+try:
+    {target}.attributes("-topmost", True)
+except _ctkmaker_tk.TclError:
+    pass
+
+_ctkmaker_orig_toplevel_init = _ctkmaker_tk.Toplevel.__init__
+def _ctkmaker_topmost_toplevel_init(self, *args, **kwargs):
+    _ctkmaker_orig_toplevel_init(self, *args, **kwargs)
+    try:
+        self.after_idle(lambda: self.attributes("-topmost", True))
+    except _ctkmaker_tk.TclError:
+        pass
+_ctkmaker_tk.Toplevel.__init__ = _ctkmaker_topmost_toplevel_init
+
 _CTKMAKER_RING_THICKNESS = 2
 _ctkmaker_ring = []           # [(frame, place_kwargs), ...] — kept so we
                               # can place_forget/place back during capture
