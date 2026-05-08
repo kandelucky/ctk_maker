@@ -348,6 +348,7 @@ class MenuMixin(_MainWindowHost):
             label="Console",
             variable=self._console_var,
             command=self._on_toggle_console_window,
+            accelerator="F12",
         )
         menubar.add_cascade(label="View", menu=view_menu)
 

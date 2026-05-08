@@ -153,6 +153,7 @@ class ShortcutsMixin(_MainWindowHost):
         self.bind_all("<F9>", lambda e: self._on_f9_history_window())
         self.bind_all("<F10>", lambda e: self._on_f10_project_window())
         self.bind_all("<F11>", lambda e: self._on_f11_variables_window())
+        self.bind_all("<F12>", lambda e: self._on_f12_console_window())
         # Ctrl+Alt+H/J/K/L — letters chosen because they're unused
         # elsewhere in this binder and Ctrl+Alt+digit was unreliable
         # on layouts where Ctrl+Alt acts as AltGr (digit 4 produced

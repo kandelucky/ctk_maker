@@ -2279,6 +2279,10 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         self._console_window = None
         self._console_var.set(False)
 
+    def _on_f12_console_window(self) -> None:
+        self._console_var.set(not self._console_var.get())
+        self._on_toggle_console_window()
+
     def _on_console_clear(self) -> None:
         # User pressed Clear inside the console window — also drop the
         # main-window-side buffer so a later reopen doesn't replay

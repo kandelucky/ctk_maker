@@ -26,6 +26,7 @@ from typing import Callable, Optional
 import customtkinter as ctk
 
 from app.ui import style
+from app.ui.icons import load_icon
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
@@ -73,6 +74,8 @@ class ConsoleWindow(ManagedToplevel):
         self._search_entry: Optional[ctk.CTkEntry] = None
         self._search_var: Optional[tk.StringVar] = None
         self._toolbar: Optional[tk.Frame] = None
+        self._pin_btn: Optional[ctk.CTkButton] = None
+        self._pin_top: bool = False
         super().__init__(parent)
         self.set_on_close(on_close)
 
@@ -106,6 +109,18 @@ class ConsoleWindow(ManagedToplevel):
             text_color=style.TREE_FG,
             font=ui_font(11),
         ).pack(side="right", padx=(0, style.TOOLBAR_PADX), pady=style.TOOLBAR_PADY)
+        # Always-on-top toggle (Lucide pin). Off by default; clicking
+        # flips ``-topmost`` and recolours the button so the active
+        # state is visible at a glance (blue when pinned, gray when
+        # not — same palette as primary/secondary buttons).
+        self._pin_btn = ctk.CTkButton(
+            self._toolbar, image=load_icon("pin", 16), text="",
+            width=30, height=style.BUTTON_HEIGHT,
+            corner_radius=style.BUTTON_RADIUS,
+            fg_color=style.SECONDARY_BG, hover_color=style.SECONDARY_HOVER,
+            command=self._toggle_pin_top,
+        )
+        self._pin_btn.pack(side="right", padx=(0, 4), pady=style.TOOLBAR_PADY)
 
         # Search bar — built but not packed; ``_show_search`` slides it
         # in between the toolbar and the textbox on Ctrl+F.
@@ -259,6 +274,25 @@ class ConsoleWindow(ManagedToplevel):
             self._on_stop()
         except Exception:
             pass
+
+    def _toggle_pin_top(self) -> None:
+        if self._pin_btn is None:
+            return
+        self._pin_top = not self._pin_top
+        try:
+            self.attributes("-topmost", self._pin_top)
+        except tk.TclError:
+            return
+        if self._pin_top:
+            self._pin_btn.configure(
+                fg_color=style.PRIMARY_BG,
+                hover_color=style.PRIMARY_HOVER,
+            )
+        else:
+            self._pin_btn.configure(
+                fg_color=style.SECONDARY_BG,
+                hover_color=style.SECONDARY_HOVER,
+            )
 
     def _build_context_menu(self) -> None:
         """Lazy-build the right-click context menu mirroring the toolbar
