@@ -36,6 +36,7 @@ except Exception:
         return None
 
 from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui.managed_window import ManagedToplevel
 
 REPO = "kandelucky/ctk_maker"
 NEW_ISSUE_URL = f"https://github.com/{REPO}/issues/new"
@@ -343,25 +344,26 @@ def build_screenshot_hint_panel(
     return section
 
 
-class BugReporterWindow(ctk.CTkToplevel):
-    def __init__(self, master) -> None:
-        super().__init__(master)
-        prepare_dialog(self)
-        self.configure(fg_color=BG)
-        self.title("Report a Bug — CTkMaker")
-        self.geometry("660x590")
-        self.minsize(560, 540)
-        self.transient(master)
-        safe_grab_set(self)
+class BugReporterWindow(ManagedToplevel):
+    window_key = "bug_reporter"
+    window_title = "Report a Bug — CTkMaker"
+    default_size = (660, 590)
+    min_size = (560, 540)
+    fg_color = BG
+    panel_padding = (0, 0)
+    modal = True
 
-        self._mode = ctk.StringVar(value="Bug Report")
-        self._title_var = ctk.StringVar()
-        self._severity_var = ctk.StringVar(value=PLACEHOLDER_SEVERITY)
-        self._repro_var = ctk.StringVar(value=PLACEHOLDER_REPRO)
-        self._area_var = ctk.StringVar(value=PLACEHOLDER_AREA)
-        self._version_var = ctk.StringVar(value=APP_VERSION)
-        self._os_var = ctk.StringVar(value=detect_os())
-        self._py_var = ctk.StringVar(value=detect_python_bucket())
+    def __init__(self, master) -> None:
+        self._mode = ctk.StringVar(master=master, value="Bug Report")
+        self._title_var = ctk.StringVar(master=master)
+        self._severity_var = ctk.StringVar(
+            master=master, value=PLACEHOLDER_SEVERITY,
+        )
+        self._repro_var = ctk.StringVar(master=master, value=PLACEHOLDER_REPRO)
+        self._area_var = ctk.StringVar(master=master, value=PLACEHOLDER_AREA)
+        self._version_var = ctk.StringVar(master=master, value=APP_VERSION)
+        self._os_var = ctk.StringVar(master=master, value=detect_os())
+        self._py_var = ctk.StringVar(master=master, value=detect_python_bucket())
         self._extra_env: dict[str, str] = {}
 
         for v in (
@@ -370,11 +372,23 @@ class BugReporterWindow(ctk.CTkToplevel):
         ):
             v.trace_add("write", lambda *_: self._refresh_all())
 
-        self._build_ui()
+        super().__init__(master)
+
         self._show_picker()
         self._refresh_all()
         self._on_autodetect()
-        reveal_dialog(self)
+
+    def build_content(self) -> ctk.CTkFrame:
+        # The window swaps between two top-level views: a picker that
+        # fills the whole content area on open, and the form that
+        # appears after the user commits to a mode. Both live as
+        # sibling frames inside ``container`` so swapping is a
+        # pack_forget / pack pair.
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        self._picker_container = self._build_picker(container)
+        self._form_container = ctk.CTkFrame(container, fg_color="transparent")
+        self._build_form(self._form_container)
+        return container
 
     # ------------------------------------------------------------------
     # View state — picker on open, form after the user picks a mode.
@@ -389,17 +403,8 @@ class BugReporterWindow(ctk.CTkToplevel):
         self._form_container.pack(fill="both", expand=True)
         self._switch_mode(mode)
 
-    def _build_ui(self) -> None:
-        # The window swaps between two top-level views: a picker that
-        # fills the whole content area on open, and the form that
-        # appears after the user commits to a mode. Both live as
-        # sibling frames so swapping is a pack_forget / pack pair.
-        self._picker_container = self._build_picker()
-        self._form_container = ctk.CTkFrame(self, fg_color="transparent")
-        self._build_form(self._form_container)
-
-    def _build_picker(self) -> ctk.CTkFrame:
-        f = ctk.CTkFrame(self, fg_color="transparent")
+    def _build_picker(self, parent) -> ctk.CTkFrame:
+        f = ctk.CTkFrame(parent, fg_color="transparent")
 
         self._build_intro_banner(f).pack(
             fill="x", padx=20, pady=(18, 44),
