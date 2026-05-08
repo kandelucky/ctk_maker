@@ -46,8 +46,8 @@ from app.core.logger import log_error
 from app.core.paths import (
     ASSET_SUBDIRS, assets_dir, ensure_project_folder,
 )
+from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog
 
 if TYPE_CHECKING:
     from app.core.project import Project
@@ -2135,8 +2135,15 @@ class ProjectPanel(ctk.CTkFrame):
 # Floating window wrapper
 # ---------------------------------------------------------------------------
 
-class ProjectWindow(ctk.CTkToplevel):
+class ProjectWindow(ManagedToplevel):
     """Floating wrapper around ``ProjectPanel`` (opened by F10)."""
+
+    window_key = "project"
+    window_title = "Assets"
+    default_size = (DIALOG_W, DIALOG_H)
+    min_size = (260, 320)
+    fg_color = BG
+    panel_padding = (6, 6)
 
     def __init__(
         self,
@@ -2147,46 +2154,30 @@ class ProjectWindow(ctk.CTkToplevel):
         on_switch_page: Callable[[str], bool] | None = None,
         on_active_page_path_changed: Callable[[str], None] | None = None,
     ):
+        self._project = project
+        self._path_provider = path_provider
+        self._on_switch_page = on_switch_page
+        self._on_active_page_path_changed = on_active_page_path_changed
         super().__init__(parent)
-        prepare_dialog(self)
-        self.title("Assets")
-        self.configure(fg_color=BG)
-        self.geometry(f"{DIALOG_W}x{DIALOG_H}")
-        self.minsize(260, 320)
-        try:
-            self.transient(parent)
-        except tk.TclError:
-            pass
+        self.set_on_close(on_close)
 
-        self._on_close_callback = on_close
-        self.panel = ProjectPanel(
-            self, project, path_provider,
-            on_switch_page=on_switch_page,
-            on_active_page_path_changed=on_active_page_path_changed,
-        )
-        self.panel.pack(fill="both", expand=True, padx=6, pady=6)
-        self._place_relative_to(parent)
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
-        reveal_dialog(self)
-
-    def _place_relative_to(self, parent) -> None:
+    def default_offset(self, parent) -> tuple[int, int]:
         try:
             parent.update_idletasks()
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            x = px + 60
-            y = py + 80
-            self.geometry(f"{DIALOG_W}x{DIALOG_H}+{x}+{y}")
+            return (
+                parent.winfo_rootx() + 60,
+                parent.winfo_rooty() + 80,
+            )
         except tk.TclError:
-            pass
+            return (100, 100)
 
-    def _on_close(self) -> None:
-        if self._on_close_callback is not None:
-            try:
-                self._on_close_callback()
-            except Exception:
-                pass
-        self.destroy()
+    def build_content(self) -> ctk.CTkFrame:
+        self.panel = ProjectPanel(
+            self, self._project, self._path_provider,
+            on_switch_page=self._on_switch_page,
+            on_active_page_path_changed=self._on_active_page_path_changed,
+        )
+        return self.panel
 
 
 # ---------------------------------------------------------------------------
