@@ -1302,6 +1302,16 @@ def _generate_code_inner(
     needs_circle_button = any(
         w.widget_type == "CTkButton" for w in scoped_widgets
     )
+    # Inlines CircleLabel for every project that contains a CTkLabel.
+    # Future improvement: tighten this gate. CircleLabel carries two
+    # fixes — a corner-radius padx fix (only observable when
+    # ``2*corner_radius >= width``) and a unified event router (only
+    # observable when the user calls ``bind()`` on the label). When a
+    # label is used as a passive visual element with neither
+    # condition met, ``ctk.CTkLabel(...)`` could be emitted directly
+    # to keep exported scripts smaller. Detecting "no events" needs
+    # static analysis of the user's behavior file, which today is a
+    # 1-handler bridge — non-trivial; deferred.
     needs_circle_label = any(
         w.widget_type == "CTkLabel" for w in scoped_widgets
     )
