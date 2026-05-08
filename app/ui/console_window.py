@@ -5,8 +5,10 @@ preview subprocess so the user can read ``print()`` output and
 crash tracebacks without a separate Windows ``cmd`` window.
 
 Pairs with ``MainWindow``:
-- The buffer (list of ``(stream, line)``) lives on ``MainWindow`` so it
-  survives close/reopen of this window.
+- The buffer (list of ``(stream, ts, line)``) lives on ``MainWindow``
+  so it survives close/reopen of this window. ``ts`` is the
+  ``HH:MM:SS`` stamp captured at the moment the line was drained
+  from the reader queue (always set; rendered as a dim prefix).
 - ``MainWindow`` polls a ``queue.Queue`` filled by reader threads and
   calls ``append_line`` on the live window when one exists.
 - Window close resets the parent toggle var via the standard
@@ -25,8 +27,10 @@ import customtkinter as ctk
 
 from app.ui import style
 from app.ui.managed_window import ManagedToplevel
+from app.ui.system_fonts import ui_font
 
 CONSOLE_STDERR_FG = "#ff6b6b"
+CONSOLE_MATCH_BG = "#553d00"
 
 MAX_TEXT_LINES = 5000
 TRIM_LINES = 500
@@ -34,7 +38,7 @@ TRIM_LINES = 500
 
 def _stream_tag(stream: str) -> str:
     """Map a buffer stream value to the ``tk.Text`` tag used to render
-    it. ``stdout`` is the default (no special tag); ``stderr`` and
+    the body of the line. ``stdout`` is the default; ``stderr`` and
     ``separator`` get their own colours.
     """
     if stream in ("stderr", "separator"):
@@ -64,24 +68,48 @@ class ConsoleWindow(ManagedToplevel):
         self._on_stop = on_stop
         self._text: Optional[tk.Text] = None
         self._context_menu: Optional[tk.Menu] = None
+        self._lock_var: Optional[tk.BooleanVar] = None
+        self._search_bar: Optional[tk.Frame] = None
+        self._search_entry: Optional[ctk.CTkEntry] = None
+        self._search_var: Optional[tk.StringVar] = None
+        self._toolbar: Optional[tk.Frame] = None
         super().__init__(parent)
         self.set_on_close(on_close)
 
     def build_content(self) -> ctk.CTkFrame:
         frame = ctk.CTkFrame(self, fg_color=style.PANEL_BG, corner_radius=0)
 
-        bar = style.make_toolbar(frame)
-        bar.pack(fill="x")
+        self._toolbar = style.make_toolbar(frame)
+        self._toolbar.pack(fill="x")
         style.pack_toolbar_button(
-            style.secondary_button(bar, "Clear", command=self._handle_clear),
+            style.secondary_button(self._toolbar, "Clear", command=self._handle_clear),
             first=True,
         )
         style.pack_toolbar_button(
-            style.secondary_button(bar, "Copy", command=self._handle_copy),
+            style.secondary_button(self._toolbar, "Copy", command=self._handle_copy),
         )
         style.pack_toolbar_button(
-            style.danger_button(bar, "Stop", command=self._handle_stop),
+            style.danger_button(self._toolbar, "Stop", command=self._handle_stop),
         )
+        # Auto-scroll lock — when checked, append_line stops auto-
+        # scrolling to the end on new output. Useful when the user
+        # parks the view at a specific frame mid-flood and doesn't
+        # want every new line to yank them back.
+        self._lock_var = tk.BooleanVar(value=False)
+        ctk.CTkCheckBox(
+            self._toolbar, text="Lock scroll",
+            variable=self._lock_var,
+            width=90, height=style.BUTTON_HEIGHT,
+            checkbox_width=14, checkbox_height=14,
+            corner_radius=2,
+            fg_color=style.PRIMARY_BG, hover_color=style.PRIMARY_HOVER,
+            text_color=style.TREE_FG,
+            font=ui_font(11),
+        ).pack(side="right", padx=(0, style.TOOLBAR_PADX), pady=style.TOOLBAR_PADY)
+
+        # Search bar — built but not packed; ``_show_search`` slides it
+        # in between the toolbar and the textbox on Ctrl+F.
+        self._build_search_bar(frame)
 
         wrap = tk.Frame(frame, bg=style.BG, highlightthickness=0)
         wrap.pack(fill="both", expand=True)
@@ -100,10 +128,10 @@ class ConsoleWindow(ManagedToplevel):
         )
         self._text.tag_configure("stderr", foreground=CONSOLE_STDERR_FG)
         self._text.tag_configure("separator", foreground=style.EMPTY_FG)
+        self._text.tag_configure("ts", foreground=style.EMPTY_FG)
+        self._text.tag_configure("match", background=CONSOLE_MATCH_BG)
         self._text.pack(side="left", fill="both", expand=True)
-        # Right-click anywhere in the textbox pops the context menu —
-        # Copy / Select all / Clear. Same actions as the toolbar, but
-        # closer to the cursor when user is reading a long traceback.
+        # Right-click → Copy / Select all / Clear.
         self._build_context_menu()
         self._text.bind("<Button-3>", self._show_context_menu, add="+")
 
@@ -111,35 +139,47 @@ class ConsoleWindow(ManagedToplevel):
         self._text.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
 
+        # Ctrl+F opens the search bar; F3 jumps to next match. Bound on
+        # the Toplevel so any descendant focus picks them up — bind_all
+        # is unnecessary because Console focus is the only context
+        # where these chords are meaningful.
+        self.bind("<Control-f>", lambda e: self._show_search())
+        self.bind("<F3>", lambda e: self._search_next())
+
         return frame
 
     # ------------------------------------------------------------------
     # Public API used by MainWindow
 
-    def append_line(self, stream: str, line: str) -> None:
+    def append_line(self, stream: str, ts: str, line: str) -> None:
         if self._text is None:
             return
         try:
             at_bottom = self._text.yview()[1] >= 0.999
             self._text.configure(state="normal")
+            if ts:
+                self._text.insert("end", f"[{ts}] ", ("ts",))
             tag = _stream_tag(stream)
             self._text.insert("end", line + "\n", (tag,))
             self._trim_if_needed()
             self._text.configure(state="disabled")
-            if at_bottom:
+            locked = bool(self._lock_var.get()) if self._lock_var else False
+            if at_bottom and not locked:
                 self._text.see("end")
         except tk.TclError:
             pass
 
     def replay(self, lines) -> None:
-        """Insert a sequence of ``(stream, line)`` from the parent
-        buffer when the window is opened mid-run.
+        """Insert a sequence of ``(stream, ts, line)`` tuples from the
+        parent buffer when the window is opened mid-run.
         """
         if self._text is None:
             return
         try:
             self._text.configure(state="normal")
-            for stream, line in lines:
+            for stream, ts, line in lines:
+                if ts:
+                    self._text.insert("end", f"[{ts}] ", ("ts",))
                 tag = _stream_tag(stream)
                 self._text.insert("end", line + "\n", (tag,))
             self._trim_if_needed()
@@ -154,6 +194,7 @@ class ConsoleWindow(ManagedToplevel):
         try:
             self._text.configure(state="normal")
             self._text.delete("1.0", "end")
+            self._text.tag_remove("match", "1.0", "end")
             self._text.configure(state="disabled")
         except tk.TclError:
             pass
@@ -233,6 +274,138 @@ class ConsoleWindow(ManagedToplevel):
                 self._context_menu.grab_release()
             except tk.TclError:
                 pass
+
+    # ------------------------------------------------------------------
+    # Search bar
+
+    def _build_search_bar(self, parent) -> None:
+        """Construct the slim search row but don't pack it. Packed on
+        Ctrl+F via ``_show_search``, hidden via ``_hide_search``.
+        """
+        bar = tk.Frame(
+            parent, bg=style.PANEL_BG, height=34, highlightthickness=0,
+        )
+        bar.pack_propagate(False)
+
+        self._search_var = tk.StringVar()
+        entry = style.styled_entry(
+            bar, textvariable=self._search_var,
+            placeholder_text="Find…",
+        )
+        entry.bind("<KeyRelease>", lambda e: self._on_search_changed())
+        entry.bind("<Return>", lambda e: (self._search_next(), "break")[1])
+        entry.bind("<Escape>", lambda e: self._on_search_escape())
+        entry.pack(side="left", padx=(8, 4), pady=2, fill="x", expand=True)
+
+        ctk.CTkButton(
+            bar, text="▼ Next", command=self._search_next,
+            width=70, height=style.BUTTON_HEIGHT,
+            corner_radius=style.BUTTON_RADIUS,
+            font=ui_font(style.BUTTON_FONT_SIZE),
+            fg_color=style.SECONDARY_BG, hover_color=style.SECONDARY_HOVER,
+        ).pack(side="left", padx=(0, 4), pady=2)
+
+        ctk.CTkButton(
+            bar, text="×", command=self._hide_search,
+            width=28, height=style.BUTTON_HEIGHT,
+            corner_radius=style.BUTTON_RADIUS,
+            font=ui_font(14),
+            fg_color=style.SECONDARY_BG, hover_color=style.SECONDARY_HOVER,
+        ).pack(side="right", padx=(0, 8), pady=2)
+
+        self._search_bar = bar
+        self._search_entry = entry
+
+    def _show_search(self) -> None:
+        if self._search_bar is None or self._toolbar is None:
+            return
+        try:
+            if not self._search_bar.winfo_ismapped():
+                self._search_bar.pack(fill="x", after=self._toolbar)
+            if self._search_entry is not None:
+                self._search_entry.focus_set()
+                self._search_entry.select_range(0, "end")
+        except tk.TclError:
+            pass
+
+    def _hide_search(self) -> None:
+        if self._search_bar is None:
+            return
+        try:
+            self._search_bar.pack_forget()
+            if self._text is not None:
+                self._text.tag_remove("match", "1.0", "end")
+                self._text.focus_set()
+        except tk.TclError:
+            pass
+
+    def _on_search_escape(self) -> str:
+        self._hide_search()
+        return "break"
+
+    def _on_search_changed(self) -> None:
+        if self._search_var is None or self._text is None:
+            return
+        query = self._search_var.get()
+        self._highlight_all(query)
+        if query:
+            self._jump_to_first_match()
+
+    def _highlight_all(self, query: str) -> None:
+        if self._text is None:
+            return
+        try:
+            self._text.tag_remove("match", "1.0", "end")
+            if not query:
+                return
+            start = "1.0"
+            while True:
+                idx = self._text.search(query, start, "end", nocase=True)
+                if not idx:
+                    break
+                end_idx = f"{idx}+{len(query)}c"
+                self._text.tag_add("match", idx, end_idx)
+                start = end_idx
+        except tk.TclError:
+            pass
+
+    def _jump_to_first_match(self) -> None:
+        if self._text is None:
+            return
+        try:
+            ranges = self._text.tag_ranges("match")
+            if not ranges:
+                return
+            self._text.mark_set("insert", ranges[0])
+            self._text.see(ranges[0])
+        except tk.TclError:
+            pass
+
+    def _search_next(self) -> None:
+        """Advance to the next ``match`` range relative to the current
+        cursor, wrapping to the start when past the last hit.
+        """
+        if self._text is None or self._search_var is None:
+            return
+        query = self._search_var.get()
+        if not query:
+            return
+        try:
+            cursor = self._text.index("insert")
+            idx = self._text.search(
+                query, f"{cursor}+1c", "end", nocase=True,
+            )
+            if not idx:
+                idx = self._text.search(query, "1.0", "end", nocase=True)
+            if not idx:
+                return
+            end_idx = f"{idx}+{len(query)}c"
+            self._text.mark_set("insert", end_idx)
+            self._text.see(idx)
+        except tk.TclError:
+            pass
+
+    # ------------------------------------------------------------------
 
     def _trim_if_needed(self) -> None:
         """Cap the buffer at ``MAX_TEXT_LINES`` by dropping the oldest

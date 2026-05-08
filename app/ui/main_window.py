@@ -515,11 +515,12 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         # window can be opened mid-run and replay everything captured
         # so far. Reader threads (one per preview's stdout/stderr pipe)
         # push (stream, line) tuples into the queue; the main-thread
-        # poller drains the queue, appends to the buffer, and forwards
-        # to the live window if one exists.
+        # poller drains the queue, stamps an HH:MM:SS timestamp, and
+        # appends a (stream, ts, line) entry to the buffer (and to the
+        # live window when one exists).
         self._console_window: ConsoleWindow | None = None
         self._console_var = tk.BooleanVar(value=False)
-        self._console_buffer: list[tuple[str, str]] = []
+        self._console_buffer: list[tuple[str, str, str]] = []
         self._console_queue: queue.Queue[tuple[str, str]] = queue.Queue()
         self._console_poller_id: str | None = None
 
@@ -2302,10 +2303,10 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 except OSError:
                     pass
         if stopped:
+            plural = "s" if stopped != 1 else ""
             self._console_queue.put((
                 "separator",
-                f"─── stop requested ({stopped} preview"
-                f"{'s' if stopped != 1 else ''}) ───",
+                f"─── stop requested ({stopped} preview{plural}) ───",
             ))
 
     def _attach_console_capture(self, proc: subprocess.Popen) -> None:
@@ -2317,12 +2318,12 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         Pushes a ``separator`` line into the queue first so the buffer
         and live window both show a visual divider between successive
         preview runs (the buffer is shared across runs and would
-        otherwise blur them together).
+        otherwise blur them together). The timestamp comes from the
+        poller's ``HH:MM:SS`` prefix — no need to repeat it inline.
         """
         if proc.stdout is None and proc.stderr is None:
             return  # not inapp mode (devnull or new-console path)
-        ts = datetime.now().strftime("%H:%M:%S")
-        self._console_queue.put(("separator", f"─── preview started {ts} ───"))
+        self._console_queue.put(("separator", "─── preview started ───"))
         for stream_name, fp in (("stdout", proc.stdout), ("stderr", proc.stderr)):
             if fp is None:
                 continue
@@ -2335,22 +2336,25 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
 
     def _drain_console_queue(self) -> None:
         """Main-thread poller: pull (stream, line) tuples out of the
-        thread-safe queue, append them to the persistent buffer, and
-        forward to the live console window if one is open. Capped at
-        200 lines per tick so a flood doesn't stall the Tk event loop.
+        thread-safe queue, stamp an HH:MM:SS timestamp, append a
+        (stream, ts, line) entry to the persistent buffer, and forward
+        to the live console window if one is open. Capped at 200 lines
+        per tick so a flood doesn't stall the Tk event loop.
         """
         drained = 0
         try:
             while drained < 200:
                 stream, line = self._console_queue.get_nowait()
-                self._console_buffer.append((stream, line))
+                ts = datetime.now().strftime("%H:%M:%S")
+                entry = (stream, ts, line)
+                self._console_buffer.append(entry)
                 # Cap the persistent buffer so a long-running preview
                 # with chatty print() doesn't eat unbounded memory.
                 if len(self._console_buffer) > 5000:
                     del self._console_buffer[:500]
                 if self._console_window is not None:
                     try:
-                        self._console_window.append_line(stream, line)
+                        self._console_window.append_line(*entry)
                     except tk.TclError:
                         pass
                 drained += 1
