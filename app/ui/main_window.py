@@ -539,6 +539,18 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         self._console_buffer: list[tuple[str, str, str]] = []
         self._console_queue: queue.Queue[tuple[str, str]] = queue.Queue()
         self._console_poller_id: str | None = None
+        self._console_clear_on_preview_var = tk.BooleanVar(
+            value=bool(load_settings().get(
+                "console_clear_on_preview_start", False,
+            )),
+        )
+        self._console_clear_on_preview_var.trace_add(
+            "write",
+            lambda *_: save_setting(
+                "console_clear_on_preview_start",
+                bool(self._console_clear_on_preview_var.get()),
+            ),
+        )
 
         settings = load_settings()
         initial_mode = settings.get("appearance_mode", "Dark")
@@ -2364,6 +2376,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 on_clear=self._on_console_clear,
                 on_stop=self._on_console_stop,
                 on_close=self._on_console_dock_close,
+                clear_on_preview_var=self._console_clear_on_preview_var,
             )
             self.paned_outer.add(
                 self._console_panel,
@@ -2421,6 +2434,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 on_close=self._on_console_window_closed,
                 on_clear=self._on_console_clear,
                 on_stop=self._on_console_stop,
+                clear_on_preview_var=self._console_clear_on_preview_var,
             )
             if self._console_buffer:
                 self._console_window.replay(self._console_buffer)
@@ -2489,6 +2503,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         """
         if proc.stdout is None and proc.stderr is None:
             return  # not inapp mode (devnull or new-console path)
+        if bool(self._console_clear_on_preview_var.get()):
+            self._on_console_clear()
         self._console_queue.put(("separator", "─── preview started ───"))
         for stream_name, fp in (("stdout", proc.stdout), ("stderr", proc.stderr)):
             if fp is None:

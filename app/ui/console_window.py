@@ -65,6 +65,7 @@ class ConsolePanel(ctk.CTkFrame):
         on_clear: Optional[Callable[[], None]] = None,
         on_stop: Optional[Callable[[], None]] = None,
         on_close: Optional[Callable[[], None]] = None,
+        clear_on_preview_var: Optional[tk.BooleanVar] = None,
     ):
         super().__init__(parent, fg_color=style.PANEL_BG, corner_radius=0)
         self._on_clear = on_clear
@@ -73,6 +74,10 @@ class ConsolePanel(ctk.CTkFrame):
         # floating ConsoleWindow closes via the OS title bar so its
         # wrapper leaves this None and the toolbar omits the X.
         self._on_close = on_close
+        # Shared across docked + floating forms by MainWindow so both
+        # checkboxes flip together and the chosen state is what the
+        # preview-launch hook reads.
+        self._clear_on_preview_var = clear_on_preview_var
         self._text: Optional[tk.Text] = None
         self._context_menu: Optional[tk.Menu] = None
         self._lock_var: Optional[tk.BooleanVar] = None
@@ -92,6 +97,22 @@ class ConsolePanel(ctk.CTkFrame):
             style.secondary_button(self._toolbar, "Clear", command=self._handle_clear),
             first=True,
         )
+        # Auto-clear checkbox — the BooleanVar is owned by MainWindow
+        # so both console forms share state and so the preview-launch
+        # hook can read it without reaching into a panel instance.
+        if self._clear_on_preview_var is not None:
+            ctk.CTkCheckBox(
+                self._toolbar, text="Auto-clear on preview",
+                variable=self._clear_on_preview_var,
+                width=160, height=style.BUTTON_HEIGHT,
+                checkbox_width=14, checkbox_height=14,
+                corner_radius=2,
+                fg_color=style.PRIMARY_BG, hover_color=style.PRIMARY_HOVER,
+                text_color=style.TREE_FG,
+                font=ui_font(11),
+            ).pack(
+                side="left", padx=(4, 0), pady=style.TOOLBAR_PADY,
+            )
         style.pack_toolbar_button(
             style.secondary_button(self._toolbar, "Copy", command=self._handle_copy),
         )
@@ -516,9 +537,11 @@ class ConsoleWindow(ManagedToplevel):
         on_close: Optional[Callable[[], None]] = None,
         on_clear: Optional[Callable[[], None]] = None,
         on_stop: Optional[Callable[[], None]] = None,
+        clear_on_preview_var: Optional[tk.BooleanVar] = None,
     ):
         self._on_clear_cb = on_clear
         self._on_stop_cb = on_stop
+        self._clear_on_preview_var = clear_on_preview_var
         self._panel: Optional[ConsolePanel] = None
         super().__init__(parent)
         self.set_on_close(on_close)
@@ -526,6 +549,7 @@ class ConsoleWindow(ManagedToplevel):
     def build_content(self) -> ctk.CTkFrame:
         self._panel = ConsolePanel(
             self, on_clear=self._on_clear_cb, on_stop=self._on_stop_cb,
+            clear_on_preview_var=self._clear_on_preview_var,
         )
         return self._panel
 
