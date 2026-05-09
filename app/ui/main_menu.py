@@ -421,6 +421,10 @@ class MenuMixin(_MainWindowHost):
             tools_menu, "Transitions Demo",
             self._on_open_transitions_demo, icon="sparkles",
         )
+        self._add_cmd(
+            tools_menu, "Color Palette",
+            self._on_open_color_palette, icon="palette",
+        )
         menubar.add_cascade(label="Tools", menu=tools_menu)
 
         # ---- Settings ----

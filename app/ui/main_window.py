@@ -2177,6 +2177,20 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         from app.ui.transitions_demo_window import TransitionsDemoWindow
         self._transitions_demo_win = TransitionsDemoWindow(self)
 
+    def _on_open_color_palette(self) -> None:
+        win = getattr(self, "_color_palette_win", None)
+        if win is not None and win.winfo_exists():
+            try:
+                win.deiconify()
+                win.lift()
+                win.focus_set()
+            except tk.TclError:
+                self._color_palette_win = None
+            else:
+                return
+        from app.ui.color_palette_window import ColorPaletteWindow
+        self._color_palette_win = ColorPaletteWindow(self)
+
     def _on_toggle_object_tree(self) -> None:
         """Open/close Object Tree window in sync with its View-menu check.
 
