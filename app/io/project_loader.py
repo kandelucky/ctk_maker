@@ -319,14 +319,18 @@ def load_project(
     # so the workspace gets ``widget_added`` for each node. We
     # temporarily detach the children from each root, then re-add
     # them so the event stream covers the full subtree.
-    project.event_bus.publish(
-        "active_document_changed", project.active_document_id,
-    )
+    #
+    # The active-document id is flipped silently between docs (direct
+    # field set, no ``active_document_changed`` publish) so the
+    # workspace doesn't redraw + re-focus the canvas N times during a
+    # multi-doc load. Earlier this loop fired the bus event per doc,
+    # which made the canvas flash through every dialog before settling
+    # on the saved active one. Only the final, definitive id gets
+    # published — once, after every widget has been added.
     for doc in documents:
         # add_widget writes into self.active_document.root_widgets,
         # so align active before populating each doc.
         project.active_document_id = doc.id
-        project.event_bus.publish("active_document_changed", doc.id)
         roots_to_add = list(doc.root_widgets)
         doc.root_widgets = []
         for node in roots_to_add:

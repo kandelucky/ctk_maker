@@ -80,6 +80,12 @@ class Document:
         # than the CTk main window — drives the exporter's class
         # signature (``class X(ctk.CTk):`` vs ``ctk.CTkToplevel``).
         self.is_toplevel: bool = bool(is_toplevel)
+        # Builder-only — when True the document is hidden from the
+        # canvas (no rect, no chrome, no widget instantiation) and
+        # surfaces as a small tab in the canvas bottom-left strip.
+        # Persisted so the layout survives reload; widgets are only
+        # built lazily when the user expands the doc again.
+        self.collapsed: bool = False
         self.root_widgets: list[WidgetNode] = []
         # AI-bridge meta-property for the window itself. Mirror of
         # ``WidgetNode.description`` — emitted as Python comments above
@@ -122,6 +128,8 @@ class Document:
             "widgets": [w.to_dict() for w in self.root_widgets],
             "name_counters": dict(self.name_counters),
         }
+        if self.collapsed:
+            result["collapsed"] = True
         if self.description:
             result["description"] = self.description
         if self.local_variables:
@@ -150,6 +158,7 @@ class Document:
         raw_id = data.get("id")
         if isinstance(raw_id, str) and raw_id:
             doc.id = raw_id
+        doc.collapsed = bool(data.get("collapsed", False))
         raw_desc = data.get("description")
         if isinstance(raw_desc, str):
             doc.description = raw_desc

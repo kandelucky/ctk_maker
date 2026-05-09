@@ -90,6 +90,20 @@ class MenuMixin(_MainWindowHost):
         self.project.set_active_document(doc_id)
         self.workspace.focus_document(doc_id)
 
+    def _refresh_visibility_menu_state(self) -> None:
+        """Grey out Restore All when no doc is collapsed — there's
+        nothing to restore. Indices: 0=Minimize Window, 1=Minimize
+        All, 2=Restore All."""
+        m = getattr(self, "_visibility_menu", None)
+        if m is None:
+            return
+        any_collapsed = any(
+            d.collapsed for d in self.project.documents
+        )
+        on = MENU_FG
+        off = MENU_DISABLED_FG
+        m.entryconfig(2, foreground=on if any_collapsed else off)
+
     def _refresh_form_menu_state(self) -> None:
         m = getattr(self, "_form_menu", None)
         if m is None:
@@ -102,11 +116,11 @@ class MenuMixin(_MainWindowHost):
         off = MENU_DISABLED_FG
         # Remove (index 4) — disabled on main window
         m.entryconfig(4, foreground=on if is_dialog else off)
-        # Move Up (index 9) — dialog and not first dialog (idx>1)
-        m.entryconfig(9, foreground=on if (is_dialog and idx > 1) else off)
-        # Move Down (index 10) — dialog and not last
+        # Move Up (index 10) — dialog and not first dialog (idx>1)
+        m.entryconfig(10, foreground=on if (is_dialog and idx > 1) else off)
+        # Move Down (index 11) — dialog and not last
         m.entryconfig(
-            10, foreground=on if (is_dialog and idx < len(docs) - 1) else off,
+            11, foreground=on if (is_dialog and idx < len(docs) - 1) else off,
         )
 
     # ------------------------------------------------------------------
@@ -273,8 +287,8 @@ class MenuMixin(_MainWindowHost):
         self._form_menu = form_menu
         # indices: 0=Preview, 1=Preview Active, 2=sep,
         #          3=Add Dialog, 4=Remove, 5=sep,
-        #          6=Rename, 7=Form Settings, 8=sep,
-        #          9=Move Up, 10=Move Down
+        #          6=Rename, 7=Form Settings, 8=Visibility (cascade),
+        #          9=sep, 10=Move Up, 11=Move Down
         self._add_cmd(form_menu, "Preview", self._on_preview,
                       icon="play", accelerator=f"{MOD_LABEL_PLUS}R")
         self._add_cmd(form_menu, "Preview Active Dialog", self._on_preview_active,
@@ -289,6 +303,30 @@ class MenuMixin(_MainWindowHost):
                       icon="pencil", accelerator=f"{MOD_LABEL_PLUS}I")
         self._add_cmd(form_menu, "Window Settings", self._on_form_settings,
                       icon="settings")
+        # Visibility — minimise / restore the active doc + bulk
+        # actions. The submenu mirrors the chrome chevron-down +
+        # bottom-tab restore flow but reachable via menu / keyboard.
+        visibility_menu = tk.Menu(
+            form_menu, tearoff=0,
+            postcommand=self._refresh_visibility_menu_state,
+            **menu_style(),
+        )
+        self._visibility_menu = visibility_menu
+        self._add_cmd(
+            visibility_menu, "Minimize Window",
+            self._on_minimize_active_doc, icon="chevron-down",
+        )
+        self._add_cmd(
+            visibility_menu, "Minimize All",
+            self._on_minimize_all_docs, icon="chevrons-down",
+        )
+        self._add_cmd(
+            visibility_menu, "Restore All",
+            self._on_restore_all_docs, icon="chevrons-up",
+        )
+        self._add_cascade(
+            form_menu, "Visibility", visibility_menu, icon="eye",
+        )
         form_menu.add_separator()
         self._add_cmd(form_menu, "Move Up", self._on_move_doc_up,
                       icon="arrow-up")
@@ -378,6 +416,10 @@ class MenuMixin(_MainWindowHost):
         self._add_cmd(
             tools_menu, "Inspect CTk Widget...",
             self._on_inspect_widget, icon="search",
+        )
+        self._add_cmd(
+            tools_menu, "Transitions Demo",
+            self._on_open_transitions_demo, icon="sparkles",
         )
         menubar.add_cascade(label="Tools", menu=tools_menu)
 

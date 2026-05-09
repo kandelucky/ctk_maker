@@ -1727,6 +1727,25 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
     def _on_close_project(self) -> None:
         self._on_new()
 
+    # ------------------------------------------------------------------
+    # Window > Visibility submenu
+    # ------------------------------------------------------------------
+    def _on_minimize_active_doc(self) -> None:
+        active = self.project.active_document
+        if active is not None:
+            self.project.set_document_collapsed(active.id, True)
+
+    def _on_minimize_all_docs(self) -> None:
+        # Walk via id snapshot — set_document_collapsed flips the
+        # active id mid-loop and re-iterating ``documents`` directly
+        # would skip whichever doc lands on the active slot last.
+        for doc_id in [d.id for d in self.project.documents]:
+            self.project.set_document_collapsed(doc_id, True)
+
+    def _on_restore_all_docs(self) -> None:
+        for doc_id in [d.id for d in self.project.documents]:
+            self.project.set_document_collapsed(doc_id, False)
+
     def _on_quit(self) -> None:
         self._on_window_close()
 
@@ -2134,6 +2153,20 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 return
         from app.ui.widget_inspector_window import WidgetInspectorWindow
         self._widget_inspector_win = WidgetInspectorWindow(self)
+
+    def _on_open_transitions_demo(self) -> None:
+        win = getattr(self, "_transitions_demo_win", None)
+        if win is not None and win.winfo_exists():
+            try:
+                win.deiconify()
+                win.lift()
+                win.focus_set()
+            except tk.TclError:
+                self._transitions_demo_win = None
+            else:
+                return
+        from app.ui.transitions_demo_window import TransitionsDemoWindow
+        self._transitions_demo_win = TransitionsDemoWindow(self)
 
     def _on_toggle_object_tree(self) -> None:
         """Open/close Object Tree window in sync with its View-menu check.

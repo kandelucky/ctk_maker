@@ -89,6 +89,10 @@ class WidgetLifecycle:
         bus.subscribe(
             "widget_locked_changed", self.on_widget_locked_changed,
         )
+        bus.subscribe(
+            "document_collapsed_changed",
+            self.on_document_collapsed_changed,
+        )
 
     # ------------------------------------------------------------------
     # Widget creation
@@ -208,6 +212,12 @@ class WidgetLifecycle:
         descriptor = get_descriptor(node.widget_type)
         if descriptor is None:
             return
+        # Collapsed docs are unrendered — skip widget instantiation.
+        # Lazy-build runs from on_document_collapsed_changed when the
+        # user expands the doc again.
+        owning_doc = self.project.find_document_for_widget(node.id)
+        if owning_doc is not None and owning_doc.collapsed:
+            return
         parent_node = node.parent
         master = self._resolve_master(parent_node, node)
         if parent_node is not None:
@@ -231,7 +241,6 @@ class WidgetLifecycle:
         except (TypeError, ValueError):
             lw = lh = 0
         is_composite = anchor_widget is not widget
-        owning_doc = self.project.find_document_for_widget(node.id)
         if parent_node is None:
             window_id = self._place_top_level(
                 anchor_widget, owning_doc, lx, ly, lw, lh, is_composite,
@@ -692,6 +701,31 @@ class WidgetLifecycle:
                 )
         if widget_id == self.project.selected_id:
             self.workspace._schedule_selection_redraw()
+
+    # ------------------------------------------------------------------
+    # Document collapse / expand
+    # ------------------------------------------------------------------
+    def on_document_collapsed_changed(
+        self, doc_id: str, collapsed: bool,
+    ) -> None:
+        """Lazy build / teardown for a doc's widget views. Collapse
+        destroys every CTk widget the doc owns (so the canvas pays
+        zero render cost while it's hidden); expand walks the saved
+        widget tree and reinstantiates each subtree under the canvas.
+
+        ``on_widget_added`` already short-circuits for collapsed docs,
+        so the create path here is the *only* moment a collapsed
+        doc's widgets reach the canvas.
+        """
+        doc = self.project.get_document(doc_id)
+        if doc is None:
+            return
+        if collapsed:
+            for node in list(doc.root_widgets):
+                self.destroy_widget_subtree(node)
+        else:
+            for node in list(doc.root_widgets):
+                self.create_widget_subtree(node)
 
     # ------------------------------------------------------------------
     # Visibility + lock

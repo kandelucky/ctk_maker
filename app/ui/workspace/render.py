@@ -136,9 +136,10 @@ class Renderer:
     def iter_render_order(self) -> list:
         """Documents sorted so the active one is drawn last — its
         rectangle and chrome end up on top of every inactive doc at
-        overlap points.
+        overlap points. Collapsed documents are excluded — they are
+        drawn separately as bottom-left tabs.
         """
-        docs = list(self.project.documents)
+        docs = [d for d in self.project.documents if not d.collapsed]
         active_id = self.project.active_document_id
         docs.sort(key=lambda d: 1 if d.id == active_id else 0)
         return docs
@@ -261,6 +262,8 @@ class Renderer:
         pad = DOCUMENT_PADDING
         bboxes: dict[str, tuple[int, int, int, int]] = {}
         for doc in self.project.documents:
+            if doc.collapsed:
+                continue
             dw = int(doc.width * zoom)
             dh = int(doc.height * zoom)
             x1 = pad + int(doc.canvas_x * zoom)

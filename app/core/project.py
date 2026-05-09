@@ -359,6 +359,101 @@ class Project:
         self.active_document_id = document_id
         self.event_bus.publish("active_document_changed", document_id)
 
+    def set_document_collapsed(
+        self, document_id: str, collapsed: bool,
+    ) -> None:
+        """Toggle a document's collapsed state. Collapsed docs are
+        hidden from the canvas (no rect / chrome / widget render) and
+        surface as a tab in the canvas bottom-left strip — see
+        ``render.py`` and ``chrome.py``.
+
+        Activeness rules:
+        - Collapsing the currently-active doc demotes it; the next
+          expanded doc (in document order) is promoted. If every doc
+          ends up collapsed, ``active_document_id`` keeps pointing at
+          the requested doc — the canvas will simply show only tabs.
+        - Expanding a collapsed doc activates it (matches the mental
+          model of "I'm bringing back this window to work on it").
+        """
+        doc = self.get_document(document_id)
+        if doc is None:
+            return
+        target = bool(collapsed)
+        if doc.collapsed == target:
+            return
+        if target:
+            # Clear selection if it points into the doc that's about
+            # to lose its widgets — otherwise the selection chrome
+            # would draw against a destroyed canvas item.
+            sel = self.selected_id
+            if sel is not None and sel != "__window__":
+                sel_doc = self.find_document_for_widget(sel)
+                if sel_doc is doc:
+                    self.select_widget(None)
+        doc.collapsed = target
+        if target:
+            if self.active_document_id == document_id:
+                fallback = next(
+                    (d.id for d in self.documents
+                     if not d.collapsed and d.id != document_id),
+                    None,
+                )
+                if fallback is not None:
+                    self.active_document_id = fallback
+                    self.event_bus.publish(
+                        "active_document_changed", fallback,
+                    )
+        else:
+            # Smart restore — if the saved position now collides with
+            # another visible doc (user moved something into the gap
+            # while this one was minimised), shift the restored doc to
+            # the right of all visible docs. Same +120 gap as Add
+            # Dialog so the spacing reads consistent.
+            self._shift_if_position_occluded(doc)
+            if self.active_document_id != document_id:
+                self.active_document_id = document_id
+                self.event_bus.publish(
+                    "active_document_changed", document_id,
+                )
+        self.event_bus.publish(
+            "document_collapsed_changed", document_id, target,
+        )
+
+    def _shift_if_position_occluded(self, doc) -> None:
+        """If ``doc``'s saved canvas rectangle overlaps any other
+        non-collapsed doc, move it to the right of all visible docs.
+
+        Called from the expand path of ``set_document_collapsed`` so
+        a restored window never lands underneath one the user moved
+        into its old slot. The shift is permanent — next save / next
+        collapse-restore cycle remembers the new position.
+        """
+        others = [
+            d for d in self.documents
+            if d is not doc and not d.collapsed
+        ]
+        if not others:
+            return
+        my_left = doc.canvas_x
+        my_top = doc.canvas_y
+        my_right = my_left + doc.width
+        my_bottom = my_top + doc.height
+        for other in others:
+            ol = other.canvas_x
+            ot = other.canvas_y
+            orr = ol + other.width
+            ob = ot + other.height
+            if (
+                my_left < orr and my_right > ol
+                and my_top < ob and my_bottom > ot
+            ):
+                # Overlap — shift to the right of the rightmost other,
+                # +120 gap (matches MainWindow._add_document).
+                max_right = max(o.canvas_x + o.width for o in others)
+                doc.canvas_x = max_right + 120
+                doc.canvas_y = 0
+                return
+
     def bring_document_to_front(self, document_id: str) -> None:
         """Make the document the topmost visible one. The active=top
         render sort (see Workspace.iter_render_order) already draws

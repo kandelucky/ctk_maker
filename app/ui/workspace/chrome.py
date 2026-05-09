@@ -49,6 +49,7 @@ CHROME_PREVIEW_IMG_TAG = "window_chrome_preview_img"
 CHROME_EXPORT_TAG = "window_chrome_export"
 CHROME_EXPORT_IMG_TAG = "window_chrome_export_img"
 CHROME_MIN_TAG = "window_chrome_min"
+CHROME_MIN_IMG_TAG = "window_chrome_min_img"
 CHROME_CLOSE_TAG = "window_chrome_close"
 CHROME_HEIGHT = 28
 CHROME_BG_COLOR = "#2d2d30"
@@ -162,6 +163,17 @@ class ChromeManager:
         )
         self._export_icon_hover = load_tk_icon(
             "file-code", size=14, color="#ffffff",
+        )
+        # Chrome chevron-down — click collapses this doc. Sized larger
+        # (18 vs the 14-pt icon family elsewhere in the chrome strip)
+        # so it reads as a primary action target. The matching restore
+        # (chevron-up) icon lives on the bottom tabs bar (rendered
+        # outside the canvas, in the workspace itself).
+        self._minimize_icon = load_tk_icon(
+            "chevron-down", size=18, color=CHROME_FG_DIM,
+        )
+        self._minimize_icon_hover = load_tk_icon(
+            "chevron-down", size=18, color="#ffffff",
         )
         self._drag: dict | None = None
 
@@ -386,14 +398,22 @@ class ChromeManager:
                     doc_export_tag, doc_export_img_tag, doc_tag,
                 ),
             )
-        self.canvas.create_text(
-            right - MIN_X_OFFSET, mid,
-            text="−",
-            anchor="center",
-            fill=CHROME_FG_DIM,
-            font=ui_font(16, "bold"),
-            tags=(CHROME_TAG, CHROME_MIN_TAG, doc_tag),
-        )
+        doc_min_tag = f"chrome_min:{doc.id}"
+        doc_min_img_tag = f"chrome_min_img:{doc.id}"
+        if self._minimize_icon is not None:
+            self._draw_icon_button(
+                right - MIN_X_OFFSET, top, doc_top, mid, bg_fill,
+                self._minimize_icon,
+                rect_tags=(
+                    CHROME_TAG, CHROME_MIN_TAG,
+                    doc_min_tag, doc_tag,
+                ),
+                image_tags=(
+                    CHROME_TAG, CHROME_MIN_TAG,
+                    CHROME_MIN_IMG_TAG,
+                    doc_min_tag, doc_min_img_tag, doc_tag,
+                ),
+            )
         self.canvas.create_text(
             right - CLOSE_X_OFFSET, mid,
             text="✕",
@@ -415,6 +435,7 @@ class ChromeManager:
             doc_export_tag, doc_export_img_tag,
             doc_desc_tag, doc_desc_img_tag,
             doc_vars_local_tag, doc_vars_local_img_tag,
+            doc_min_tag, doc_min_img_tag,
         )
 
     def _draw_icon_button(
@@ -474,6 +495,7 @@ class ChromeManager:
         export_tag=None, export_img_tag=None,
         desc_tag=None, desc_img_tag=None,
         vars_local_tag=None, vars_local_img_tag=None,
+        min_tag=None, min_img_tag=None,
     ) -> None:
         """Wire the click / drag / hover bindings for a single
         document's chrome strip. Each document gets its own tag
@@ -512,6 +534,15 @@ class ChromeManager:
             self._settings_icon, self._settings_icon_hover,
             on_click=lambda d=doc_id: self._on_settings_click(None, d),
         )
+        if (
+            min_tag and min_img_tag
+            and self._minimize_icon is not None
+        ):
+            self._bind_icon_hover(
+                min_tag, min_img_tag,
+                self._minimize_icon, self._minimize_icon_hover,
+                on_click=lambda d=doc_id: self._on_minimize_click(d),
+            )
         if (
             desc_tag and desc_img_tag and self._desc_icon is not None
         ):
@@ -666,6 +697,13 @@ class ChromeManager:
             self.canvas.configure(cursor=cursor)
         except tk.TclError:
             pass
+
+    # ------------------------------------------------------------------
+    # Minimize → collapse to bottom workspace tab strip
+    # ------------------------------------------------------------------
+    def _on_minimize_click(self, doc_id: str) -> str:
+        self.project.set_document_collapsed(doc_id, True)
+        return "break"
 
     # ------------------------------------------------------------------
     # Close → remove document

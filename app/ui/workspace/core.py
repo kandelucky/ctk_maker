@@ -43,6 +43,7 @@ from app.ui.workspace.chrome import (
     CHROME_TAG,
     ChromeManager,
 )
+from app.ui.workspace.collapsed_tabs_bar import CollapsedTabsBar
 from app.ui.workspace.controls import (
     TOOL_CURSORS,
     TOOL_HAND,
@@ -105,6 +106,11 @@ class Workspace(ctk.CTkFrame):
         self.controls.build_tool_bar()
         self._build_canvas()
         self.controls.build_status_bar()
+        # Pack order: status bar first (side=bottom), tabs bar after
+        # (also side=bottom) so the tabs strip ends up directly above
+        # the zoom/status bar. The bar hides itself when no doc is
+        # collapsed so the workspace doesn't reserve dead space.
+        self.collapsed_tabs_bar = CollapsedTabsBar(self, self)
         self._subscribe_events()
 
         self.after(0, self._redraw_document)
@@ -1861,6 +1867,12 @@ class Workspace(ctk.CTkFrame):
             state=save_state,
         )
         menu.add_separator()
+        menu.add_command(
+            label="Minimize Window",
+            command=lambda d=doc: self.project.set_document_collapsed(
+                d.id, True,
+            ),
+        )
         from app.core.project import WINDOW_ID
         props_label = (
             "Dialog Properties" if doc.is_toplevel else "Window Properties"
