@@ -58,6 +58,8 @@ No event introspection, no priority, no async. If an event fires no one cares ab
 | `document_position_changed` | `(doc_id, x, y)` | commands.py:1245 | Canvas drag of a document. |
 | `documents_reordered` | `()` | [project.py:404](../../app/core/project.py#L404) | Tab strip reorder. |
 | `active_document_changed` | `(doc_id)` | project.py:360, project.py:372, project.py:403, commands.py:1275, project_loader.py:329, chrome.py:711 | Switches workspace + properties focus. |
+| `document_collapsed_changed` | `(doc_id, collapsed: bool)` | [project.py](../../app/core/project.py) `set_document_collapsed` | Toggle ON destroys widgets via lifecycle + adds chip to the bottom tabs bar. Toggle OFF rebuilds widgets at the saved canvas position; an auto-shift moves the doc clear of any other doc that crept into its slot while it was minimised. |
+| `document_ghost_changed` | `(doc_id, ghost: bool)` | [project.py](../../app/core/project.py) `set_document_ghost` | Toggle ON captures the doc's rect as a desaturated PIL screenshot via `GhostManager.freeze`, destroys widgets, places a single canvas image item. Toggle OFF deletes the image and rebuilds widgets via `lifecycle.create_widget_subtree`. |
 
 ### Variables
 

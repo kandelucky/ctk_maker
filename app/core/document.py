@@ -86,6 +86,13 @@ class Document:
         # Persisted so the layout survives reload; widgets are only
         # built lazily when the user expands the doc again.
         self.collapsed: bool = False
+        # Builder-only — when True the document's live widgets are
+        # destroyed and replaced with a desaturated PIL screenshot
+        # placed on the workspace canvas at the same canvas_x / y.
+        # Frees up Tk event/render cost for inactive forms while
+        # keeping a visible placeholder; ghost auto-disables on the
+        # currently-active doc (set_document_ghost demotes it).
+        self.ghosted: bool = False
         self.root_widgets: list[WidgetNode] = []
         # AI-bridge meta-property for the window itself. Mirror of
         # ``WidgetNode.description`` — emitted as Python comments above
@@ -130,6 +137,8 @@ class Document:
         }
         if self.collapsed:
             result["collapsed"] = True
+        if self.ghosted:
+            result["ghosted"] = True
         if self.description:
             result["description"] = self.description
         if self.local_variables:
@@ -159,6 +168,13 @@ class Document:
         if isinstance(raw_id, str) and raw_id:
             doc.id = raw_id
         doc.collapsed = bool(data.get("collapsed", False))
+        # Ghost state has to be deferred — applying it before widgets
+        # are built would skip their creation, leaving nothing to
+        # screenshot. The post-load pass on the workspace consumes
+        # ``_pending_ghost`` to freeze each saved-ghost doc once
+        # widgets are alive on the canvas.
+        doc.ghosted = False
+        doc._pending_ghost = bool(data.get("ghosted", False))
         raw_desc = data.get("description")
         if isinstance(raw_desc, str):
             doc.description = raw_desc

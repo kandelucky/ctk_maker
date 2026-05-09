@@ -61,6 +61,7 @@ from app.ui.workspace.layout_overlay import (
     _forget_current_manager,  # noqa: F401 — re-exported for tests
     _strip_layout_keys,
 )
+from app.ui.workspace.ghost_manager import GhostManager
 from app.ui.workspace.widget_lifecycle import WidgetLifecycle
 from app.widgets.layout_schema import (
     is_layout_container,
@@ -223,6 +224,10 @@ class Workspace(ctk.CTkFrame):
         self.drag_controller = WidgetDragController(self)
         # Widget add / remove / reparent / z-order / visibility handler.
         self.lifecycle = WidgetLifecycle(self)
+        # Ghost manager — captures inactive docs as desaturated PIL
+        # screenshots and swaps in a single canvas image item, freeing
+        # tk widget cost while keeping the doc visually present.
+        self.ghost_manager = GhostManager(self)
         # Canvas rendering — document rect + builder grid +
         # visibility mask. Declared last so every other sidecar is
         # alive before the first redraw fires.
@@ -245,6 +250,10 @@ class Workspace(ctk.CTkFrame):
         apply_all. Redraws the document rect / grid and refreshes
         selection chrome around the currently selected widget."""
         self._redraw_document()
+        # Ghost screenshot images live on the canvas but aren't
+        # touched by apply_all — rescale them to match the new zoom.
+        if getattr(self, "ghost_manager", None) is not None:
+            self.ghost_manager.on_zoom_changed()
         if hasattr(self, "selection"):
             self.selection.update()
 
@@ -289,6 +298,26 @@ class Workspace(ctk.CTkFrame):
             "document_collapsed_changed",
             self._on_document_collapsed_changed,
         )
+        bus.subscribe(
+            "document_ghost_changed",
+            self._on_document_ghost_changed,
+        )
+
+    def _on_document_ghost_changed(
+        self, doc_id: str, ghost: bool,
+    ) -> None:
+        # Lifecycle has no separate handler for ghost — the GhostManager
+        # owns the freeze/unfreeze. After the freeze the canvas redraw
+        # repaints chrome (the doc's switch state needs to mirror the
+        # new value).
+        doc = self.project.get_document(doc_id)
+        if doc is None:
+            return
+        if ghost:
+            self.ghost_manager.freeze(doc)
+        else:
+            self.ghost_manager.unfreeze(doc)
+        self._redraw_document()
 
     def _on_document_collapsed_changed(
         self, _doc_id: str, _collapsed: bool,
@@ -302,6 +331,8 @@ class Workspace(ctk.CTkFrame):
         # Add / remove / active-switch of a document changes which
         # chrome strip is highlighted and, on add/remove, the total
         # scroll region. A full redraw covers both cheaply.
+        if self.chrome is not None:
+            self.chrome.reap_stale_ghost_switches()
         self._redraw_document()
         # Center viewport on the now-active document so the user
         # never ends up looking at the wrong canvas region after a
@@ -320,6 +351,12 @@ class Workspace(ctk.CTkFrame):
         # new canvas offset, refresh selection chrome if any.
         self._redraw_document()
         self.zoom.apply_all()
+        # Ghost images need an explicit move — they're not in
+        # widget_views and aren't touched by apply_all.
+        if getattr(self, "ghost_manager", None) is not None:
+            for doc in self.project.documents:
+                if doc.ghosted:
+                    self.ghost_manager.reposition_doc(doc)
         if self.project.selected_id:
             self.selection.update()
 

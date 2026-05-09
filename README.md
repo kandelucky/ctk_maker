@@ -5,11 +5,11 @@ Drag-and-drop visual designer for **[CustomTkinter](https://github.com/TomSchima
 **Community Hub:** [kandelucky.github.io/ctkmaker-hub](https://kandelucky.github.io/ctkmaker-hub/) — browse and share reusable components built in CTkMaker.
 
 > **Recent:**
-> - **v1.20.0** — Object Tree: arrow-key navigation + focus-aware selection style + auto Edit-tool switch
-> - **v1.19.0** — central `ui_font` helper: editor dialogs use the host's native UI font on every OS
-> - **v1.18.0** — exporter mirrors the Windows Segoe UI patch so preview/run bold text matches the editor
-> - **v1.17.0** — splash screen + alpha-hide reveal pattern eliminates dialog flash
-> - **v1.16.0** — DPI factor centralized + startup dialog centering + autofit recompute on load
+> - **v1.27.0** — Ghost Mode: per-doc square-check icon swaps live widgets for a desaturated PIL screenshot
+> - **v1.26.0** — Transitions Demo: code generators for all 5 categories
+> - **v1.25.0** — Minimize windows to a bottom tab strip + chrome chevron-down + Window > Visibility menu
+> - **v1.24.1** — Console: docked panel + preview floater follows active dialog
+> - **v1.24.0** — Phase E: remaining modal dialogs migrated onto ManagedToplevel
 >
 > ⚠️ **Tested on Windows only.** macOS and Linux are not verified — see [issue #5](https://github.com/kandelucky/ctk_maker/issues/5) for the running list of known incompatibilities + how to help.
 

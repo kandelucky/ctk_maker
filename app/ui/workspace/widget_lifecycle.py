@@ -214,9 +214,12 @@ class WidgetLifecycle:
             return
         # Collapsed docs are unrendered — skip widget instantiation.
         # Lazy-build runs from on_document_collapsed_changed when the
-        # user expands the doc again.
+        # user expands the doc again. Ghosted docs are rendered as a
+        # static screenshot image; their widgets are also skipped.
         owning_doc = self.project.find_document_for_widget(node.id)
-        if owning_doc is not None and owning_doc.collapsed:
+        if owning_doc is not None and (
+            owning_doc.collapsed or owning_doc.ghosted
+        ):
             return
         parent_node = node.parent
         master = self._resolve_master(parent_node, node)

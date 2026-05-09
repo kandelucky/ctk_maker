@@ -133,6 +133,8 @@ One window inside a project (Main Window or Toplevel). 207 lines.
 | `width` / `height` | `int` | `800` × `600` | Window size at design-time and export-time. |
 | `canvas_x` / `canvas_y` | `int` | `0` × `0` | Where the document sits on the shared workspace canvas. |
 | `is_toplevel` | `bool` | `False` | `False` → `class X(ctk.CTk)`. `True` → `ctk.CTkToplevel`. |
+| `collapsed` | `bool` | `False` | Builder-only — when `True` the doc is hidden from the canvas (no rect / chrome / widget render) and surfaces as a chip on the bottom tab strip. Persisted; widgets are lazy-built on expand. |
+| `ghosted` | `bool` | `False` | Builder-only — when `True` the doc's live widgets are destroyed and replaced with a desaturated PIL screenshot at the same `canvas_x` / `canvas_y`. Persisted; restored on chrome icon toggle (deferred to post-load via `_pending_ghost` on the in-memory dataclass so the screenshot can capture real pixels). |
 | `window_properties` | `dict` | `DEFAULT_WINDOW_PROPERTIES` | Window-level config. See below. |
 | `root_widgets` | `list[WidgetNode]` | `[]` | Top-level widget tree for this document. |
 | `description` | `str` | `""` | AI-bridge plain-language description (emitted as code comments). |

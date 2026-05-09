@@ -419,6 +419,52 @@ class Project:
             "document_collapsed_changed", document_id, target,
         )
 
+    def set_document_ghost(
+        self, document_id: str, ghost: bool,
+    ) -> None:
+        """Toggle a document's ghosted state. Ghosted docs lose their
+        live widgets and are replaced on-canvas by a desaturated PIL
+        screenshot (see ``ghost_manager.py``).
+
+        Activeness rules mirror ``set_document_collapsed``: ghosting
+        the active doc demotes it, expanding promotes the target.
+        """
+        doc = self.get_document(document_id)
+        if doc is None:
+            return
+        target = bool(ghost)
+        if doc.ghosted == target:
+            return
+        if target:
+            sel = self.selected_id
+            if sel is not None and sel != "__window__":
+                sel_doc = self.find_document_for_widget(sel)
+                if sel_doc is doc:
+                    self.select_widget(None)
+        doc.ghosted = target
+        if target:
+            if self.active_document_id == document_id:
+                fallback = next(
+                    (d.id for d in self.documents
+                     if not d.ghosted and not d.collapsed
+                     and d.id != document_id),
+                    None,
+                )
+                if fallback is not None:
+                    self.active_document_id = fallback
+                    self.event_bus.publish(
+                        "active_document_changed", fallback,
+                    )
+        else:
+            if self.active_document_id != document_id:
+                self.active_document_id = document_id
+                self.event_bus.publish(
+                    "active_document_changed", document_id,
+                )
+        self.event_bus.publish(
+            "document_ghost_changed", document_id, target,
+        )
+
     def _shift_if_position_occluded(self, doc) -> None:
         """If ``doc``'s saved canvas rectangle overlaps any other
         non-collapsed doc, move it to the right of all visible docs.

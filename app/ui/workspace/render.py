@@ -124,6 +124,13 @@ class Renderer:
                 except tk.TclError:
                     pass
             layout_overlay.draw_overlays_for_doc(doc, x1, y1, x2, y2)
+            # Ghost images for this doc need to ride above the doc
+            # rect / grid / chrome that we just (re)drew — otherwise
+            # the body fill paints over the screenshot.
+            try:
+                canvas.tag_raise(f"ghost:{doc.id}")
+            except tk.TclError:
+                pass
             if x2 > max_right:
                 max_right = x2
             if y2 > max_bottom:

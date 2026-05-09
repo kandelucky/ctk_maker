@@ -1055,6 +1055,12 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             )
             return
         self._set_current_path(path)
+        # Apply any ``_pending_ghost`` flags the loader queued up —
+        # the load path skipped real freeze because widgets weren't
+        # built yet; now they are, so the ghost manager can capture.
+        gm = getattr(self.workspace, "ghost_manager", None)
+        if gm is not None:
+            gm.freeze_pending()
         # Detect legacy single-file projects (no project.json marker
         # in the walked-up folder) and offer a one-shot conversion
         # to the multi-page format. Skipped for already-converted
@@ -1214,6 +1220,9 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 "Unexpected error recovering from backup.", tb,
             )
             return
+        gm = getattr(self.workspace, "ghost_manager", None)
+        if gm is not None:
+            gm.freeze_pending()
         # Untitled — force Save As so the user can't blindly Ctrl+S
         # over the original .ctkproj sitting next to the .bak.
         self._current_path = None

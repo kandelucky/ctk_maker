@@ -89,9 +89,22 @@ PREVIEW_X_OFFSET = 228
 # Dialog-only "Export this dialog" button — single-document export
 # to standalone .py. Sits just left of the preview icon.
 EXPORT_X_OFFSET = 258
+# Ghost toggle — square-check icon. Always rendered (every doc can
+# be ghosted), so it sits past EXPORT/PREVIEW slots that only show
+# on Toplevels. Gray when OFF, dark carrot when ON; click flips.
+GHOST_X_OFFSET = 288
 # Half-width of the invisible hit-rect that sits behind each icon
 # so clicking near the glyph (not just on its pixels) registers.
 ICON_HIT_PADDING = 10
+
+# Ghost icon palette — gray at rest / off, dark carrot when ghost
+# is ON. Hover brightens the active colour (white-ish off, brighter
+# carrot on) so the user gets the same hover feedback as the rest
+# of the chrome icons.
+GHOST_ICON_OFF = CHROME_FG_DIM
+GHOST_ICON_OFF_HOVER = "#ffffff"
+GHOST_ICON_ON = "#b8682c"
+GHOST_ICON_ON_HOVER = "#d48a4c"
 
 
 class ChromeManager:
@@ -174,6 +187,22 @@ class ChromeManager:
         )
         self._minimize_icon_hover = load_tk_icon(
             "chevron-down", size=18, color="#ffffff",
+        )
+        # Ghost toggle — square-check icon, two colour states. Pre-
+        # loaded into both rest + hover variants for each state so
+        # the same _bind_icon_hover plumbing the rest of the chrome
+        # uses can swap them on Enter / Leave.
+        self._ghost_icon_off = load_tk_icon(
+            "square-check", size=14, color=GHOST_ICON_OFF,
+        )
+        self._ghost_icon_off_hover = load_tk_icon(
+            "square-check", size=14, color=GHOST_ICON_OFF_HOVER,
+        )
+        self._ghost_icon_on = load_tk_icon(
+            "square-check", size=14, color=GHOST_ICON_ON,
+        )
+        self._ghost_icon_on_hover = load_tk_icon(
+            "square-check", size=14, color=GHOST_ICON_ON_HOVER,
         )
         self._drag: dict | None = None
 
@@ -414,6 +443,7 @@ class ChromeManager:
                     doc_min_tag, doc_min_img_tag, doc_tag,
                 ),
             )
+        self._draw_ghost_switch(doc, right, mid)
         self.canvas.create_text(
             right - CLOSE_X_OFFSET, mid,
             text="✕",
@@ -437,6 +467,59 @@ class ChromeManager:
             doc_vars_local_tag, doc_vars_local_img_tag,
             doc_min_tag, doc_min_img_tag,
         )
+
+    def _draw_ghost_switch(self, doc, right: int, mid: int) -> None:
+        """Paint the ghost-toggle icon (square-check) for ``doc``.
+        Click flips ``doc.ghosted`` — ON colours the icon dark
+        carrot, OFF leaves it dim gray. Hover brightens whichever
+        state is current."""
+        if self._ghost_icon_off is None:
+            return
+        is_on = doc.ghosted
+        icon_rest = self._ghost_icon_on if is_on else self._ghost_icon_off
+        icon_hover = (
+            self._ghost_icon_on_hover if is_on
+            else self._ghost_icon_off_hover
+        )
+        doc_ghost_tag = f"chrome_ghost:{doc.id}"
+        doc_ghost_img_tag = f"chrome_ghost_img:{doc.id}"
+        cx = right - GHOST_X_OFFSET
+        top = mid - CHROME_HEIGHT // 2
+        doc_top = mid + CHROME_HEIGHT // 2
+        bg_fill = (
+            CHROME_BG_COLOR if doc.id == self.project.active_document_id
+            else "#222222"
+        )
+        # Reuse the existing icon-button helper so the hit padding +
+        # bg matches every other chrome icon.
+        self._draw_icon_button(
+            cx, top, doc_top, mid, bg_fill, icon_rest,
+            rect_tags=(CHROME_TAG, doc_ghost_tag, f"chrome_doc:{doc.id}"),
+            image_tags=(
+                CHROME_TAG, doc_ghost_tag, doc_ghost_img_tag,
+                f"chrome_doc:{doc.id}",
+            ),
+        )
+        self._bind_icon_hover(
+            doc_ghost_tag, doc_ghost_img_tag,
+            icon_rest, icon_hover,
+            on_click=lambda d=doc.id: self._on_ghost_toggled(d),
+        )
+
+    def _on_ghost_toggled(self, doc_id: str) -> None:
+        doc = self.project.get_document(doc_id)
+        if doc is None:
+            return
+        self.project.set_document_ghost(doc_id, not doc.ghosted)
+
+    def reap_stale_ghost_switches(self) -> None:
+        """No-op kept for API compatibility — the icon-based ghost
+        toggle carries no per-doc state on the chrome side, so
+        there's nothing to reap. The previous CTkSwitch implementation
+        needed cleanup across project loads; this stub preserves the
+        call site (``workspace.core._on_active_document_changed``)
+        without forcing a churn there."""
+        return
 
     def _draw_icon_button(
         self, cx: int, top: int, doc_top: int, mid: int,
