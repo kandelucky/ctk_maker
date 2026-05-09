@@ -279,6 +279,18 @@ class Workspace(ctk.CTkFrame):
             "document_position_changed",
             self._on_document_position_changed,
         )
+        bus.subscribe(
+            "document_collapsed_changed",
+            self._on_document_collapsed_changed,
+        )
+
+    def _on_document_collapsed_changed(
+        self, _doc_id: str, _collapsed: bool,
+    ) -> None:
+        # Lifecycle subscriber tears down or rebuilds widget views.
+        # The canvas redraw afterwards repaints chrome (or hides it,
+        # for a collapse) and refreshes the bottom-left tab strip.
+        self._redraw_document()
 
     def _on_active_document_changed(self, *_args, **_kwargs) -> None:
         # Add / remove / active-switch of a document changes which
@@ -1786,6 +1798,13 @@ class Workspace(ctk.CTkFrame):
         # Always recurse — even if THIS widget is already bound, a
         # composite CTk widget may have spawned brand-new children
         # since the last walk that still need their handlers.
+        # Exception: CircleLabel.bind() dual-binds onto its inner
+        # canvas + label itself, so recursing here would stack a
+        # second binding on top of CircleLabel's already-routed one
+        # and every right-click would fire the handler twice.
+        from app.widgets.runtime.circle_label import CircleLabel
+        if isinstance(widget, CircleLabel):
+            return
         for child in widget.winfo_children():
             self._bind_widget_events(child, nid)
 
