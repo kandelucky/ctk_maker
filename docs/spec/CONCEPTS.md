@@ -278,6 +278,31 @@ To share: **Publish to Community** → MIT agreement form → post in the repo's
 | Component | `<project>/components/*.ctkcomp` | All projects (after import) |
 | Asset | `<project>/assets/{images,fonts,icons}/` | Every page in this project |
 
+## Builder workspace
+
+UX layered on top of the model — runtime-only, never persisted to the export.
+
+### Selection
+
+- **Single click** sets the primary selection. **Marquee** — drag a rectangle on empty canvas to add to the selection.
+- **Groups (Ctrl+G / Ctrl+Shift+G)** bind a same-parent selection together. Clicking any member targets the whole group; a fast follow-up click drills to one member. Object Tree shows them as a virtual `◆ Group (n)` parent with members nested in soft orange. Group invariant lives in [SelectionController](../../app/ui/selection_controller.py).
+
+### Drag and snap
+
+- While dragging a widget, **cyan smart-guide lines** snap its edges and centre to siblings and to the container. Hold **Alt** to bypass.
+- Drag-reparent works **across windows** on the shared canvas. When the moved widget carries local-variable bindings, a **migration dialog** asks whether to preserve them on the new doc — see `migrate_local_var_bindings` and the `local_variables_migrated` event.
+
+### Preview
+
+- **F5** runs the active window as a real CTk app — exporter writes a temp `.py` and launches a `python` subprocess.
+- **F12** floating Screenshot button captures the client area as PNG. The button itself is injected via `inject_preview_screenshot=True` (see [EXPORT.md](EXPORT.md)).
+- **View → Console** tails preview stdout/stderr inline; toolbar checkbox optionally auto-clears on each preview start (persisted setting).
+
+### Window visibility
+
+- **Window → Visibility** menu (or chrome chevron-down) **minimizes** a doc to a chip on the bottom tab strip — click the chip to restore. Persisted as [`Document.collapsed`](../../app/core/document.py).
+- The square-check chrome icon toggles **Ghost mode** — live widgets are replaced by a desaturated PIL screenshot at the same canvas position. Frees Tk resources without losing visual context. Persisted as `Document.ghosted`.
+
 ## What's design-time only
 
 Things you see in the builder that **don't** survive into the exported `.py`:

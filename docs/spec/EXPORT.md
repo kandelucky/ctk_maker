@@ -292,6 +292,18 @@ Each widget's emit goes through:
 
 Schema in [app/widgets/layout_schema.py](../../app/widgets/layout_schema.py).
 
+### Flex layout (vbox / hbox)
+
+Each child of a `vbox` / `hbox` parent carries a `stretch` mode (per-child property, default `"fixed"`):
+
+| Mode | Main axis | Cross axis |
+|---|---|---|
+| `fixed` | nominal `width` / `height` | nominal |
+| `fill` | nominal | fills container |
+| `grow` | shares remaining space among `grow` siblings | fills container |
+
+Shrink floor: `grow` siblings shrink down to text + icon + chrome padding before clipping; `fixed` siblings keep their nominal size. Pack-balance helper (`_project_needs_pack_balance`) emits filler frames when needed so `grow` distribution stays consistent at runtime. The `prefers_fill_in_layout` descriptor flag (see [EXTENSION.md](EXTENSION.md)) auto-picks `fill` for widgets that should default to filling — Frame, Label, Button — when dropped into a flex container. Project loader infers `stretch` for legacy projects from sibling layout: see [project_loader.py:584](../../app/io/project_loader.py#L584).
+
 ## Module-level state
 
 The exporter uses module-level globals as a per-export context (alternative to threading the project through every helper). Set at the top of `export_project` / `generate_code` and cleared at the end:
