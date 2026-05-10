@@ -294,7 +294,7 @@ UX layered on top of the model — runtime-only, never persisted to the export.
 
 ### Preview
 
-- **F5** runs the active window as a real CTk app — exporter writes a temp `.py` and launches a `python` subprocess.
+- **Ctrl+R / F5** runs the project as a real CTk app — exporter writes a temp `.py` and launches a `python` subprocess. **Ctrl+P** previews only the active doc (main window or single dialog).
 - **F12** floating Screenshot button captures the client area as PNG. The button itself is injected via `inject_preview_screenshot=True` (see [EXPORT.md](EXPORT.md)).
 - **View → Console** tails preview stdout/stderr inline; toolbar checkbox optionally auto-clears on each preview start (persisted setting).
 

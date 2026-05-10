@@ -109,7 +109,7 @@ No event introspection, no priority, no async. If an event fires no one cares ab
 
 | Event | Payload | Published by | Subscriber |
 |---|---|---|---|
-| `request_preview` | `()` | controls.py:149 | MainWindow F5 handler |
+| `request_preview` | `()` | controls.py:149 | MainWindow Ctrl+R / F5 handler |
 | `request_preview_active` | `()` | controls.py:159 | Preview current document |
 | `request_preview_dialog` | `(doc_id)` | chrome.py:611 | Preview a specific dialog |
 | `request_add_dialog` | `()` | controls.py:284 | MainWindow → opens new-dialog flow |

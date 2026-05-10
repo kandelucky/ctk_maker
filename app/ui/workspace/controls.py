@@ -153,7 +153,7 @@ class WorkspaceControls:
         self._btn_preview.pack(
             side="left", expand=True, anchor="e", padx=(0, 2), pady=3,
         )
-        _attach_tooltip(self._btn_preview, "Preview Project (Ctrl+R)")
+        _attach_tooltip(self._btn_preview, "Preview Project (Ctrl+R / F5)")
 
         self._btn_preview_active = ctk.CTkButton(
             center, image=self._icon_sq_off,

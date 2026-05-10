@@ -290,7 +290,7 @@ class MenuMixin(_MainWindowHost):
         #          6=Rename, 7=Form Settings, 8=Visibility (cascade),
         #          9=sep, 10=Move Up, 11=Move Down
         self._add_cmd(form_menu, "Preview", self._on_preview,
-                      icon="play", accelerator=f"{MOD_LABEL_PLUS}R")
+                      icon="play", accelerator=f"{MOD_LABEL_PLUS}R / F5")
         self._add_cmd(form_menu, "Preview Active Dialog", self._on_preview_active,
                       icon="square-play", accelerator=f"{MOD_LABEL_PLUS}P")
         form_menu.add_separator()
