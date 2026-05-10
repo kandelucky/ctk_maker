@@ -153,20 +153,10 @@ def _ctkmaker_make_btn(text):
         relief="flat",
     )
 
-_ctkmaker_btn_save = _ctkmaker_make_btn(" 💾  Save  ·  F12 ")
+_ctkmaker_btn_save = _ctkmaker_make_btn(" Save PNG  ·  F12 ")
 _ctkmaker_btn_save.pack(side="left", padx=(0, 1))
-_ctkmaker_btn_copy = _ctkmaker_make_btn(" 📋  Copy  ·  F11 ")
+_ctkmaker_btn_copy = _ctkmaker_make_btn(" Copy PNG  ·  F11 ")
 _ctkmaker_btn_copy.pack(side="left")
-
-# Optional 3rd button — only shown when the parent CTkMaker process
-# launched this preview in inapp-console mode (env var). Click writes
-# an IPC marker on stdout that the parent watches for and uses to
-# pop its View → Console window open.
-import os as _ctkmaker_os
-_ctkmaker_btn_console = None
-if _ctkmaker_os.environ.get("CTKMAKER_PREVIEW_CONSOLE_MODE") == "inapp":
-    _ctkmaker_btn_console = _ctkmaker_make_btn(" \U0001F5A5  Console ")
-    _ctkmaker_btn_console.pack(side="left", padx=(1, 0))
 
 def _ctkmaker_toast(message):
     """Self-destroying Toplevel — bottom-centre of the active target,
@@ -281,14 +271,6 @@ def _ctkmaker_screenshot_copy(_event=None):
 {target}.bind_all("<F12>", _ctkmaker_screenshot_save)
 {target}.bind_all("<F11>", _ctkmaker_screenshot_copy)
 
-def _ctkmaker_open_console(_event=None):
-    """IPC marker for the parent CTkMaker process. The parent's queue
-    drainer watches stdout for this exact line and toggles its
-    Console window on receipt — only meaningful in inapp console
-    mode, which is also the only mode where the button is rendered.
-    """
-    print("__CTKMAKER_OPEN_CONSOLE__", flush=True)
-
 # --- Drag — let the user reposition the button anywhere on screen.
 # While unchanged, default top-right anchoring kicks in. Once dragged,
 # the offset persists relative to the target window. Each button
@@ -340,14 +322,6 @@ for _btn, _action in (
     _btn.bind("<ButtonPress-1>", _ctkmaker_press, add="+")
     _btn.bind("<B1-Motion>", _ctkmaker_drag, add="+")
     _btn.bind("<ButtonRelease-1>", _ctkmaker_release_factory(_action), add="+")
-
-if _ctkmaker_btn_console is not None:
-    _ctkmaker_btn_console.bind("<ButtonPress-1>", _ctkmaker_press, add="+")
-    _ctkmaker_btn_console.bind("<B1-Motion>", _ctkmaker_drag, add="+")
-    _ctkmaker_btn_console.bind(
-        "<ButtonRelease-1>",
-        _ctkmaker_release_factory(_ctkmaker_open_console), add="+",
-    )
 
 def _ctkmaker_position_floater(_event=None):
     try:

@@ -2527,29 +2527,6 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         try:
             while drained < 200:
                 stream, line = self._console_queue.get_nowait()
-                # IPC from the inlined preview floater: when the user
-                # clicks its "Console" button the subprocess writes
-                # this exact marker on stdout. We recognise it, pop
-                # the Console window open, and drop the marker so it
-                # never lands in the visible buffer.
-                if stream == "stdout" and line == "__CTKMAKER_OPEN_CONSOLE__":
-                    # Pop the docked panel by default — that's the
-                    # user-visible "Console" entry. If they already
-                    # have docked OR floating open, the click is a
-                    # no-op (the log is already on screen).
-                    dock_alive = (
-                        self._console_panel is not None
-                        and self._console_panel.winfo_exists()
-                    )
-                    win_alive = (
-                        self._console_window is not None
-                        and self._console_window.winfo_exists()
-                    )
-                    if not dock_alive and not win_alive:
-                        self._console_dock_var.set(True)
-                        self._on_toggle_console_dock()
-                    drained += 1
-                    continue
                 # ``%f`` is 6-digit microseconds; trimming the last 4
                 # leaves centiseconds (00-99) — enough precision to
                 # order a flood arriving in the same second without
