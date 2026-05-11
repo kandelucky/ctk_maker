@@ -377,6 +377,78 @@ def _confirm_var_name_fallbacks(parent) -> bool:
     )
 
 
+def _format_ref_annotation_issues_body() -> str | None:
+    """Build the human-readable issue list shared by the F5 confirm
+    dialog and the export-dialog post-export warning. Returns
+    ``None`` when there's nothing to report (or the exporter symbol
+    isn't importable, which happens during partial-rebuild tests).
+    """
+    try:
+        from app.io.code_exporter import get_ref_annotation_issues
+    except ImportError:
+        return None
+    issues = get_ref_annotation_issues()
+    if not issues:
+        return None
+    by_doc: dict[str, list[tuple[str, str, str]]] = {}
+    for doc_name, kind, ref_name, detail in issues:
+        by_doc.setdefault(doc_name, []).append((kind, ref_name, detail))
+    lines = [
+        "Some Object References don't line up with the behavior "
+        "file's ref[Type] annotations:",
+        "",
+    ]
+    for doc_name, rows in by_doc.items():
+        head = rows[:5]
+        rest = len(rows) - len(head)
+        lines.append(f"  • {doc_name}:")
+        for kind, ref_name, detail in head:
+            if kind == "missing_annotation":
+                lines.append(
+                    f"      {ref_name!r} — no matching "
+                    f"`{ref_name}: ref[{detail}]` in the behavior class",
+                )
+            elif kind == "orphan_annotation":
+                lines.append(
+                    f"      {ref_name!r} — annotation has no matching "
+                    f"Object Reference (type ref[{detail}])",
+                )
+            elif kind == "type_mismatch":
+                lines.append(
+                    f"      {ref_name!r} — type mismatch ({detail})",
+                )
+            else:
+                lines.append(f"      {ref_name!r} — {kind}: {detail}")
+        if rest > 0:
+            lines.append(f"      … (+{rest} more)")
+    lines.append("")
+    lines.append(
+        "Behavior code reading self.<ref_name> on these will raise "
+        "AttributeError at the first click. Rename the annotation or "
+        "the Properties-panel entry so the names match verbatim.",
+    )
+    return "\n".join(lines)
+
+
+def _confirm_ref_annotation_issues(parent) -> bool:
+    """Surface mismatches between GUI Object References and behavior-
+    file ``<name>: ref[<Type>]`` annotations from the most recent
+    export. Verbatim wiring means a typo or rename in either place
+    leaves ``self.<ref_name>`` unbound until the first widget
+    interaction raises ``AttributeError`` — far from the user's edit
+    site. Returns ``True`` (proceed) on Yes or when the issue list is
+    empty, ``False`` when the user backs out.
+    """
+    body = _format_ref_annotation_issues_body()
+    if body is None:
+        return True
+    return messagebox.askyesno(
+        "Object Reference annotations out of sync",
+        body + "\n\nContinue with the preview anyway?",
+        parent=parent,
+    )
+
+
 def _preview_cwd(project, tmp_dir: Path) -> Path:
     """Pick the working directory for a preview subprocess. Multi-page
     projects expose ``project.folder_path`` — the project root holding
@@ -2057,6 +2129,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             return
         if not _confirm_var_name_fallbacks(self):
             return
+        if not _confirm_ref_annotation_issues(self):
+            return
         try:
             proc = _spawn_preview(
                 tmp_dir, tmp_path,
@@ -2109,6 +2183,8 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         if not _confirm_missing_handler_methods(self):
             return
         if not _confirm_var_name_fallbacks(self):
+            return
+        if not _confirm_ref_annotation_issues(self):
             return
         try:
             proc = _spawn_preview(
@@ -2708,6 +2784,16 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 parent=self,
             )
             return
+        # Ref-annotation mismatches are non-fatal but bite at first
+        # widget interaction in the exported app — surface them before
+        # the success toast so the user can fix before sharing.
+        ref_body = _format_ref_annotation_issues_body()
+        if ref_body is not None:
+            messagebox.showwarning(
+                "Object Reference annotations out of sync",
+                ref_body,
+                parent=self,
+            )
         # Show a relative path in the toast — the user already
         # knows their project folder; the noisy absolute prefix
         # would push the actual filename off-screen on a small

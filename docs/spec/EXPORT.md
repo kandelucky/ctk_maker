@@ -262,10 +262,25 @@ self._behavior.username_entry = self.entry_username
 
 Cross-window refs (target = `Window` / `Dialog`) live on `Project.object_references`. The exporter resolves the target document's class symbol via `_DOC_ID_TO_CLASS`.
 
+**Name match is verbatim.** `self._behavior.<entry.name>` is assigned with no fuzzy match, suffix-stripping, or normalisation. If the Properties-panel ref says `counter_label_ref` but the behavior class has `counter_label: ref[CTkLabel]`, the runtime sets `self._behavior.counter_label_ref` (the GUI name) and the user's `self.counter_label` access raises `AttributeError` at the first widget interaction. Both ends must match exactly.
+
+Auto-stub paths keep the two in sync on the GUI side: `panel.py:_maybe_write_ref_annotation` writes the annotation when a ref is created, `_maybe_delete_ref_annotation` strips it on remove, and `variables_window.py:_maybe_rename_annotation` propagates renames. Manual edits to the behavior file bypass these — `_scan_ref_annotations_for_export` walks every doc at the top of `generate_code` and populates `_REF_ANNOTATION_ISSUES` with `(doc_name, kind, ref_name, detail)` rows so launchers can warn the user.
+
+Issue kinds:
+
+| Kind | Meaning |
+|---|---|
+| `missing_annotation` | A Properties-panel local ref has no matching `<name>: ref[<Type>]` line in the behavior class. |
+| `orphan_annotation` | A `ref[<Type>]` annotation has no matching ref in `doc.local_object_references` or `project.object_references`. |
+| `type_mismatch` | Both sides exist but the annotation's type disagrees with the ref's `target_type`. |
+
+Read via `get_ref_annotation_issues()`. F5 preview asks the user via `_confirm_ref_annotation_issues`; export + quick export show a `messagebox.showwarning` after a successful write.
+
 Helpers:
 
 - `_emit_object_reference_lines(...)` — [:1875](../../app/io/code_exporter.py#L1875)
 - `_behavior_class_for_doc(doc)` — [:1920](../../app/io/code_exporter.py#L1920)
+- `_scan_ref_annotations_for_export(project)` / `get_ref_annotation_issues()` — annotation-vs-model diff
 
 ## Per-widget construction
 

@@ -196,7 +196,7 @@ Two scopes (mirror Variables):
 - **Local** — points at a widget. Lives on Document.
 - **Global** — points at a `Window` or `Dialog`. Lives on Project. Lets one window reach another.
 
-Names must be valid Python identifiers (used directly as `self.<name>`).
+Names must be valid Python identifiers (used directly as `self.<name>`). Annotation name = Properties-panel ref name verbatim — export warns on mismatch.
 
 ## Save format
 

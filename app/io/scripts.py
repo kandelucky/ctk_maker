@@ -65,9 +65,14 @@ to a handler binding configured in the Properties panel.
 
 To bind a widget as an Inspector slot, declare a ``ref[<WidgetType>]``
 annotation on the class (e.g. ``target_label: ref[CTkLabel]``) and
-add a matching entry in the Properties panel's Object References
-group. Import ``ref`` from the auto-generated ``_runtime`` module
-and the widget class from ``customtkinter``.
+add an entry with the **same name verbatim** in the Properties
+panel's Object References group. CTkMaker keeps the two ends in
+sync when refs are created / renamed in the GUI; renaming the
+annotation by hand without updating the GUI side (or vice versa)
+leaves ``self.<name>`` unbound — the next export run surfaces a
+warning before the runtime hits ``AttributeError``. Import ``ref``
+from the auto-generated ``_runtime`` module and the widget class
+from ``customtkinter``.
 """
 
 
@@ -656,6 +661,15 @@ class ref(Generic[T]):
     ``target: ref[CTkLabel]`` are resolved by the exporter into
     ``self._behavior.target = self.<widget_var>`` assignments after
     the UI is built.
+
+    Name match is verbatim: the annotation name must equal the
+    Properties-panel Object Reference name exactly. ``counter_label``
+    and ``counter_label_ref`` are two different slots — typoing one
+    side means ``self.<annotation_name>`` stays unbound and the first
+    access raises ``AttributeError``. CTkMaker keeps the two in sync
+    when you create / rename / delete refs in the GUI; if you edit
+    this file by hand, an export-time validator warns before runtime
+    hits the mismatch.
     """
 
     pass

@@ -608,6 +608,19 @@ class ExportDialog(ManagedToplevel):
             )
             return
         self.result = str(target)
+        # Verbatim ref-annotation mismatches (Properties-panel ref ↔
+        # behavior-file ref[Type]) become AttributeError at the first
+        # widget interaction. The last-export issues live on the
+        # exporter module — surface them before the success info so
+        # the user can fix before opening the .py or shipping it.
+        from app.ui.main_window import _format_ref_annotation_issues_body
+        ref_body = _format_ref_annotation_issues_body()
+        if ref_body is not None:
+            messagebox.showwarning(
+                "Object Reference annotations out of sync",
+                ref_body,
+                parent=self,
+            )
         do_editor = self._open_editor_var.get()
         do_preview = self._run_preview_var.get()
         if do_editor:

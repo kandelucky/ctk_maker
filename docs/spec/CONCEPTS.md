@@ -168,6 +168,8 @@ From the Properties panel: click the **+** button next to a widget's name in the
 
 For window-level references: Window / Dialog panel has a global toggle in the Properties header.
 
+Name match is verbatim — the `ref[<Type>]` annotation name in the behavior file must equal the Properties-panel ref name exactly. CTkMaker keeps the annotation in sync on create / rename / delete; if you edit the behavior file by hand and drift, the next export warns before the runtime hits `AttributeError`.
+
 ## Event Handlers
 
 A widget **Handler** is a method on the window's behavior class invoked when the user interacts with the widget.
@@ -296,7 +298,7 @@ UX layered on top of the model — runtime-only, never persisted to the export.
 
 - **Ctrl+R / F5** runs the project as a real CTk app — exporter writes a temp `.py` and launches a `python` subprocess. **Ctrl+P** previews only the active doc (main window or single dialog).
 - **F12** floating Screenshot button captures the client area as PNG. The button itself is injected via `inject_preview_screenshot=True` (see [EXPORT.md](EXPORT.md)).
-- **View → Console** tails preview stdout/stderr inline; toolbar checkbox optionally auto-clears on each preview start (persisted setting).
+- **View → Console** tails preview stdout/stderr inline; toolbar checkbox optionally auto-clears on each preview start (persisted setting). **Ctrl+F** (or the toolbar 🔍 button) opens a slide-in search bar.
 
 ### Window visibility
 

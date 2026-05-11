@@ -440,6 +440,19 @@ _DOC_ID_TO_CLASS: dict = {}
 # ``get_var_name_fallbacks()`` so launchers (F5 preview, export
 # dialog) can show the user which names were silently rewritten.
 _VAR_NAME_FALLBACKS: list[tuple[str, str, str, str]] = []
+# v1.10.9 — mismatches between GUI Object References and the per-doc
+# behavior file's ``<name>: ref[<Type>]`` annotations. Auto-stub paths
+# (panel.py ``_maybe_write_ref_annotation`` + variables_window
+# ``_maybe_rename_annotation``) cover the happy path; this scan
+# catches the case where the user edited the .py manually and drifted
+# from the GUI names — verbatim wiring means ``self.<ref_name>`` then
+# stays unbound until the first widget interaction raises
+# ``AttributeError``. Tuples are ``(doc_name, kind, ref_name, detail)``;
+# ``kind`` is ``"missing_annotation"`` / ``"orphan_annotation"`` /
+# ``"type_mismatch"``. Reset by ``_scan_ref_annotations_for_export``
+# at the top of ``generate_code``. Surfaced via
+# ``get_ref_annotation_issues()`` for F5 preview + export dialog.
+_REF_ANNOTATION_ISSUES: list[tuple[str, str, str, str]] = []
 # Per-doc memoisation for ``_resolve_var_names`` so the resolver
 # runs once per ``generate_code`` call per doc — keeps the
 # ``_emit_subtree`` walk and the ``_build_id_to_var_name`` Phase 3
@@ -1247,6 +1260,7 @@ def generate_code(
     # ``self._behavior.<missing>`` references that crash the preview
     # at __init__ time.
     _scan_behavior_methods_for_export(project)
+    _scan_ref_annotations_for_export(project)
     try:
         return _generate_code_inner(
             project,
@@ -1646,6 +1660,109 @@ def get_var_name_fallbacks() -> list[tuple[str, str, str, str]]:
     raise ``AttributeError`` at runtime with no hint why.
     """
     return list(_VAR_NAME_FALLBACKS)
+
+
+def _scan_ref_annotations_for_export(project: Project) -> None:
+    """Diff every doc's Object References against its behavior file's
+    ``<name>: ref[<Type>]`` annotations. Populates
+    ``_REF_ANNOTATION_ISSUES`` with one tuple per mismatch so launchers
+    can warn the user before runtime would otherwise raise
+    ``AttributeError`` on the first widget interaction.
+
+    Three issue kinds:
+
+    - ``missing_annotation`` — a local Object Reference declared in
+      the Properties panel has no matching ``<name>: ref[<Type>]``
+      line in the behavior class. The auto-stub (panel.py
+      ``_maybe_write_ref_annotation``) usually keeps these in sync;
+      reaching here means the user edited the .py manually and
+      removed / renamed the annotation.
+    - ``orphan_annotation`` — annotation present in the .py with no
+      matching ref in either ``doc.local_object_references`` or the
+      project-level globals. ``self.<name>`` stays unbound at runtime.
+    - ``type_mismatch`` — both sides exist but disagree on the widget
+      type (e.g., annotation says ``ref[CTkButton]`` but the GUI ref
+      targets a ``CTkLabel``).
+
+    Globals are only consulted to suppress ``orphan_annotation``
+    warnings — they don't need a matching annotation on every doc
+    that has access to them, so we never flag them as
+    ``missing_annotation``.
+
+    Robust to unsaved projects (skip — annotations live next to the
+    saved project) and missing files (skip the doc — the annotation
+    will be created next time the user opens the file).
+    """
+    global _REF_ANNOTATION_ISSUES
+    _REF_ANNOTATION_ISSUES = []
+    project_path = getattr(project, "path", None)
+    if not project_path:
+        return
+    from app.core.script_paths import (
+        behavior_class_name, behavior_file_path,
+    )
+    from app.io.scripts import parse_object_reference_fields
+    global_names = {
+        entry.name for entry in (project.object_references or [])
+        if entry.name
+    }
+    for doc in project.documents:
+        file_path = behavior_file_path(project_path, doc)
+        if file_path is None or not file_path.exists():
+            continue
+        annotated = {
+            field.name: field.type_name
+            for field in parse_object_reference_fields(
+                file_path, behavior_class_name(doc),
+            )
+        }
+        locals_map = {
+            entry.name: entry.target_type
+            for entry in (doc.local_object_references or [])
+            if entry.name
+        }
+        # Locals: warn on missing annotation + type mismatch. Verbatim
+        # wiring means ``self.<entry.name>`` won't resolve unless the
+        # behavior file declares the same name.
+        for name, target_type in locals_map.items():
+            ann_type = annotated.get(name)
+            if ann_type is None:
+                _REF_ANNOTATION_ISSUES.append(
+                    (doc.name, "missing_annotation", name, target_type),
+                )
+            elif target_type and ann_type and ann_type != target_type:
+                _REF_ANNOTATION_ISSUES.append(
+                    (
+                        doc.name, "type_mismatch", name,
+                        f"annotation=ref[{ann_type}], "
+                        f"reference target={target_type}",
+                    ),
+                )
+        # Orphan annotations — the user typed a ref[...] line whose
+        # name doesn't match any local OR global. Globals are checked
+        # too so a shared ``main_window: ref[Window]`` annotation
+        # doesn't fire a false positive.
+        for name, ann_type in annotated.items():
+            if name in locals_map or name in global_names:
+                continue
+            _REF_ANNOTATION_ISSUES.append(
+                (doc.name, "orphan_annotation", name, ann_type),
+            )
+
+
+def get_ref_annotation_issues() -> list[tuple[str, str, str, str]]:
+    """Return ``(doc_name, kind, ref_name, detail)`` rows for every
+    mismatch the most recent export found between GUI Object
+    References and the per-doc behavior file's ``ref[<Type>]``
+    annotations. ``kind`` is one of ``"missing_annotation"`` /
+    ``"orphan_annotation"`` / ``"type_mismatch"`` — see
+    ``_scan_ref_annotations_for_export`` for the precise semantics.
+    Empty list when every annotation lines up. Read by F5 preview /
+    export dialog launchers to show a pre-spawn notice — without it
+    the user only learns about the mismatch when the first widget
+    interaction raises ``AttributeError``.
+    """
+    return list(_REF_ANNOTATION_ISSUES)
 
 
 def _emit_handler_lines(
