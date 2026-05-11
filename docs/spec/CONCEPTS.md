@@ -110,7 +110,7 @@ In Tk terms: variables are `tk.StringVar` / `IntVar` / `DoubleVar` / `BooleanVar
 
 Two scopes:
 
-- **Global** — visible to every window in every page. Lives on the Project. Best for shared app-wide state (current user, theme, language, signed-in flag). On export: created on the Main Window class; Toplevels read via `self.master.var_X`.
+- **Global** — visible to every window in **one page** (Main + Dialogs). Each page owns its own set; switching pages reloads a different set. Best for shared state inside a screen (form values, theme, signed-in flag). On export: created on the Main Window class of the page; Toplevels read via `self.master.var_X`. There is no cross-page scope — pages export as independent `.py` files.
 - **Local** — visible only to widgets in one specific window. Lives on the Document. Best for per-window state (form field bindings, slider values, dialog-internal flags). On export: created on the owning class as `self.var_X`.
 
 The Variables window (F11) shows both, separated by a blue **Global** tab and an orange **Local: \<doc\>** tab.
@@ -266,15 +266,15 @@ A whole window can be saved too; dropping a window component spawns a fresh Topl
 
 To share: **Publish to Community** → MIT agreement form → post in the repo's [Components Discussion](https://github.com/kandelucky/ctk_maker/discussions/new?category=components). A sync workflow picks it up within ~30 minutes.
 
-## Per-window vs project-wide — quick lookup
+## Per-window vs page-wide — quick lookup
 
 | Thing | Lives on | Visible to |
 |---|---|---|
 | Widget | Document | Its own document |
 | Local Variable | Document | All widgets in that document |
 | Local Object Reference | Document | The behavior file of that document |
-| Global Variable | Project | Every widget in every document of every page |
-| Global Object Reference | Project | Every behavior file (cross-window references) |
+| Global Variable | Page | Every widget in every document of **that one page** |
+| Global Object Reference | Page | Every behavior file in that one page (cross-window references within the page) |
 | Handler | WidgetNode | One method on the window's behavior class |
 | Behavior file | `assets/scripts/<page>/<window>.py` | One class per window |
 | Component | `<project>/components/*.ctkcomp` | All projects (after import) |

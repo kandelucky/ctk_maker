@@ -1,12 +1,18 @@
-"""Project-level variable system — Phase 1 of the visual scripting plan.
+"""Page-scoped variable system — Phase 1 of the visual scripting plan.
 
-Each project carries a flat list of named, typed shared values
+Each page carries a flat list of named, typed shared values
 (``str`` / ``int`` / ``float`` / ``bool`` / ``color``). Widgets bind
 to a variable via a ``var:<uuid>`` token written into the property
 slot; the runtime resolves the token to a shared ``tk.Variable``
 instance so multiple widgets bound to the same variable stay in sync
 without any custom wiring (Tkinter's built-in ``textvariable`` /
 ``variable`` mechanism does the work for us).
+
+Globals are page-scoped — the active page's ``project.variables``
+holds them; switching pages reloads a different set. Locals are
+window-scoped on ``Document.local_variables``. There is no
+cross-page variable scope — pages export as independent ``.py``
+files and don't talk to each other at runtime.
 
 ``color`` values flow as hex strings (``#rrggbb``) through StringVars,
 identical to ``str`` at runtime — the type tag only changes the
@@ -40,7 +46,8 @@ VAR_TOKEN_PREFIX = "var:"
 class VariableEntry:
     """One named, typed shared value.
 
-    ``scope == "global"`` lives on ``Project.variables``;
+    ``scope == "global"`` lives on ``Project.variables`` (page-scoped —
+    one set per page, shared across that page's Main + Dialogs);
     ``scope == "local"`` lives on a single ``Document.local_variables``
     and is invisible to widgets in other documents. Identity is the
     UUID — token rewrites are needed only when copying a local across

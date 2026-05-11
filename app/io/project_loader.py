@@ -236,11 +236,16 @@ def load_project(
         if isinstance(raw_system, list) else []
     )
 
-    # Phase 1: project-level shared variables. Missing key → empty
-    # list (legacy projects + never-declared state). Tk vars stay
-    # lazy — they're built on first ``get_tk_var`` call.
+    # Page-scoped shared variables. Read from the page file ``data``;
+    # for legacy multi-page projects whose globals still live in
+    # ``project.json`` (``multi_page_meta``), fall back to that copy
+    # on first load — the next save persists into the page file and
+    # ``project_meta_to_dict`` stops emitting them, completing the
+    # migration silently. Missing key → empty list.
     from app.core.variables import VariableEntry
-    raw_vars = meta_source.get("variables")
+    raw_vars = data.get("variables")
+    if raw_vars is None and multi_page_meta is not None:
+        raw_vars = multi_page_meta.get("variables")
     project.variables = (
         [VariableEntry.from_dict(d) for d in raw_vars if isinstance(d, dict)]
         if isinstance(raw_vars, list) else []
@@ -248,10 +253,13 @@ def load_project(
     project.reset_tk_vars()
 
     # v1.10.8 Object References (global scope — Window / Dialog
-    # targets). Local refs live on each Document and are restored in
-    # Document.from_dict.
+    # targets, page-scoped as of the variable-scope redesign). Local
+    # refs live on each Document and are restored in
+    # Document.from_dict. Same legacy migration as variables.
     from app.core.object_references import ObjectReferenceEntry
-    raw_refs = meta_source.get("object_references")
+    raw_refs = data.get("object_references")
+    if raw_refs is None and multi_page_meta is not None:
+        raw_refs = multi_page_meta.get("object_references")
     project.object_references = (
         [
             ObjectReferenceEntry.from_dict(d)

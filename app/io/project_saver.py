@@ -48,32 +48,31 @@ def project_to_dict(project: Project) -> dict:
     """Serialise the in-memory project to the ``.ctkproj`` page file
     schema.
 
-    Multi-page projects (``project.folder_path`` set) emit only
-    page-level fields. Project-level metadata (``name``,
-    ``font_defaults``, ``system_fonts``, ``variables``,
-    ``object_references``) lives in ``project.json`` and is the only
-    authoritative copy; emitting it here too would silently overwrite
-    user-meaningful fields (e.g. a manually edited page-file ``name``)
-    with the project-level values on every save.
+    Variables and object references are page-scoped — each page owns
+    its own set, so both lists go in every page's ``.ctkproj``.
+    Truly project-level metadata (``name``, ``font_defaults``,
+    ``system_fonts``) lives in ``project.json`` for multi-page
+    projects and is omitted here.
 
     Legacy single-file projects (``folder_path is None``) still emit
-    everything so the lone ``.ctkproj`` round-trips on its own.
+    project-level fields so the lone ``.ctkproj`` round-trips on its
+    own.
     """
     data: dict = {
         "version": FILE_VERSION,
         "active_document": project.active_document_id,
         "documents": [doc.to_dict() for doc in project.documents],
+        "variables": [
+            v.to_dict() for v in (project.variables or [])
+        ],
+        "object_references": [
+            r.to_dict() for r in (project.object_references or [])
+        ],
     }
     if not project.folder_path:
         data["name"] = project.name
         data["font_defaults"] = dict(project.font_defaults or {})
         data["system_fonts"] = sorted(set(project.system_fonts or []))
-        data["variables"] = [
-            v.to_dict() for v in (project.variables or [])
-        ]
-        data["object_references"] = [
-            r.to_dict() for r in (project.object_references or [])
-        ]
     # Convert any in-assets absolute image paths to portable tokens
     # so the saved JSON survives a project-folder move.
     if project.path:
@@ -87,7 +86,8 @@ def project_meta_to_dict(project: Project) -> dict:
     Pulls ``name`` / ``font_defaults`` / ``system_fonts`` from the
     in-memory project (these are project-level, not page-level) and
     pairs them with the page list. ``active_page`` is whichever id
-    is currently in memory.
+    is currently in memory. Variables and object references are
+    page-scoped — they live in each page's ``.ctkproj``, not here.
     """
     from app.core.project_folder import PROJECT_META_VERSION
     return {
@@ -105,10 +105,6 @@ def project_meta_to_dict(project: Project) -> dict:
         ],
         "font_defaults": dict(project.font_defaults or {}),
         "system_fonts": sorted(set(project.system_fonts or [])),
-        "variables": [v.to_dict() for v in (project.variables or [])],
-        "object_references": [
-            r.to_dict() for r in (project.object_references or [])
-        ],
     }
 
 

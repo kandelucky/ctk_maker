@@ -116,7 +116,7 @@ The Windows-only theme patch mirrors [main.py:main()](../../main.py)'s startup. 
 |---|---|---|
 | `super().__init__()` | always | required |
 | `title` / `geometry` / `resizable` / `frameless` | always | from `Document.window_properties` |
-| Phase 1 variable instantiation | only if class owns variables | globals on main window class only; locals on owning class |
+| Phase 1 variable instantiation | only if class owns variables | page-globals on main window class only (this page's set); locals on owning class |
 | `self._behavior = <WindowName>Page()` | only if doc has handlers OR object refs | Phase 2 |
 | `self._build_ui()` call | always | constructs widget tree |
 | `self._behavior.setup(self)` | only if behavior class exists | Phase 2 setup hook |
@@ -169,7 +169,7 @@ Build helpers:
 
 ### Phase 1.5 — Global vs local scope split
 
-Globals live on the **main window class only**. Toplevels read them via `self.master.var_X`:
+Globals are page-scoped — `project.variables` holds the active page's set. They live on the **main window class only** of the page being exported. Toplevels in the same page read them via `self.master.var_X`:
 
 ```python
 class MainWindow(ctk.CTk):

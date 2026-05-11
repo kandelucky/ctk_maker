@@ -266,17 +266,20 @@ class Project:
         self._id_index: dict[str, WidgetNode] = {}
         self._doc_index: dict[str, Document] = {}
         self._window_proxy = _WindowProxy(self)
-        # Phase 1 (visual scripting): project-level shared variables.
-        # ``variables`` is the persisted list of declarations; ``_tk_vars``
-        # is the lazy runtime cache of ``tk.Variable`` instances (keyed
-        # by VariableEntry.id). Widgets bind via a ``var:<uuid>`` token
-        # in their property slot; the runtime resolves the token through
-        # ``get_tk_var`` and feeds the live ``tk.Variable`` to the widget
+        # Phase 1 (visual scripting): page-scoped shared variables.
+        # ``variables`` is the persisted list of declarations for the
+        # active page (each page owns its own set; pages don't share
+        # variables at runtime). ``_tk_vars`` is the lazy runtime
+        # cache of ``tk.Variable`` instances keyed by VariableEntry.id.
+        # Widgets bind via a ``var:<uuid>`` token in their property
+        # slot; the runtime resolves the token through ``get_tk_var``
+        # and feeds the live ``tk.Variable`` to the widget
         # constructor (``textvariable=`` / ``variable=``).
         self.variables: list[VariableEntry] = []
         self._tk_vars: dict[str, tk.Variable] = {}
-        # v1.10.8 Object References — global scope holds typed
-        # ``ref[Window]`` / ``ref[Dialog]`` slots whose target lives in
+        # v1.10.8 Object References — "global" scope (page-scoped as
+        # of the variable-scope redesign) holds typed ``ref[Window]``
+        # / ``ref[Dialog]`` slots whose target lives in
         # ``Project.documents``. Inner-widget refs live on each
         # ``Document.local_object_references`` instead. Matches the
         # variables system's global / local split.
@@ -1113,7 +1116,8 @@ class Project:
     # Variables (Phase 1 visual scripting — shared state)
     #
     # Two scopes:
-    #   * ``"global"`` lives on ``self.variables`` (project-wide)
+    #   * ``"global"`` lives on ``self.variables`` (page-wide — shared
+    #     across every window in the active page; reloaded per-page)
     #   * ``"local"``  lives on ``Document.local_variables`` (per-doc)
     #
     # The token (``var:<uuid>``) does not encode scope — UUIDs are

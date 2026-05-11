@@ -13,8 +13,8 @@ Project                           (top container, in-memory only)
 │       (each WidgetNode also has handlers: dict[event → list[method_name]])
 │   ├── local_variables: list[VariableEntry]      (scope="local")
 │   └── local_object_references: list[ObjectReferenceEntry]  (scope="local")
-├── variables: list[VariableEntry]                (scope="global")
-├── object_references: list[ObjectReferenceEntry] (scope="global")
+├── variables: list[VariableEntry]                (scope="global", page-scoped — active page only)
+├── object_references: list[ObjectReferenceEntry] (scope="global", page-scoped — active page only)
 ├── font_defaults: dict[str, str]
 ├── system_fonts: list[str]
 ├── pages: list[dict]                             (multi-page projects)
@@ -34,8 +34,8 @@ Top-level container. Single instance per loaded project. 1,811 lines, ~79 method
 | `name` | `str` | Display name. Defaults to `"Untitled"`. |
 | `documents` | `list[Document]` | Window list. Always at least one (Main Window). |
 | `active_document_id` | `str` | Which document the canvas is focused on. |
-| `variables` | `list[VariableEntry]` | Project-wide shared variables. |
-| `object_references` | `list[ObjectReferenceEntry]` | Project-wide window/dialog references. |
+| `variables` | `list[VariableEntry]` | Page-scoped shared variables (active page only). Stored in each page's `.ctkproj`, not in `project.json`. |
+| `object_references` | `list[ObjectReferenceEntry]` | Page-scoped window/dialog references (active page only). Stored in each page's `.ctkproj`, not in `project.json`. |
 | `font_defaults` | `dict[str, str]` | `{"_all": "Inter", "CTkButton": "Roboto", ...}` cascade. |
 | `system_fonts` | `list[str]` | OS fonts user added to the project palette. |
 | `folder_path` | `str \| None` | Multi-page project root. `None` for single-file projects. |
@@ -220,7 +220,7 @@ Phase 1 / 1.5. Dataclass.
 | `name` | `str` | `""` | Display name. Sanitized for export — see [variables.py:242](../../app/core/variables.py#L242). |
 | `type` | `"str" \| "int" \| "float" \| "bool" \| "color"` | `"str"` | Maps to `tk.StringVar` / `IntVar` / `DoubleVar` / `BooleanVar`. `color` reuses `StringVar` — the type tag only changes the editor surface (swatch + picker) and bind-picker filtering for color-typed properties. |
 | `default` | `str` | `""` | String form of initial value. Coerced at runtime. For `color`, must be `#rgb` / `#rrggbb`; invalid input falls back to `#000000`. |
-| `scope` | `"global" \| "local"` | `"global"` | Lives on `Project.variables` (global) or `Document.local_variables` (local). |
+| `scope` | `"global" \| "local"` | `"global"` | Lives on `Project.variables` (global — page-scoped, active page only) or `Document.local_variables` (local). |
 
 ### Tokens
 
@@ -337,13 +337,11 @@ JSON, schema version 2. Two layouts:
         ...
     ],
     "font_defaults": { "_all": "Inter", "CTkButton": "Roboto" },
-    "system_fonts": [ "Segoe UI" ],
-    "variables": [ <VariableEntry.to_dict()>, ... ],
-    "object_references": [ <ObjectReferenceEntry.to_dict()>, ... ]
+    "system_fonts": [ "Segoe UI" ]
 }
 ```
 
-`<project>/assets/pages/<page_slug>.ctkproj` — one per page, page-level fields only:
+`<project>/assets/pages/<page_slug>.ctkproj` — one per page, page-level fields:
 
 ```json
 {
@@ -364,11 +362,15 @@ JSON, schema version 2. Two layouts:
             "local_variables": [ ... ],
             "local_object_references": [ ... ]
         }
-    ]
+    ],
+    "variables": [ <VariableEntry.to_dict()>, ... ],
+    "object_references": [ <ObjectReferenceEntry.to_dict()>, ... ]
 }
 ```
 
-Project-level fields (`name`, `font_defaults`, `system_fonts`, `variables`, `object_references`) are deliberately **absent** from the page `.ctkproj` — they live in `project.json` and were silently overwritten on every save when emitted twice. Page files written by older builds keep those fields until next save, when the saver drops them.
+Variables and object references are **page-scoped** — each page's `.ctkproj` owns its own set. Truly project-level fields (`name`, `font_defaults`, `system_fonts`) stay in `project.json`. Pages don't share variables at runtime; they export as independent `.py` files.
+
+Legacy migration: projects whose `project.json` still has `variables` / `object_references` from the old project-wide scheme — those values flow into the active page on first load; the next save writes them into the page `.ctkproj` and drops the legacy `project.json` copies. Non-active pages don't receive the legacy globals.
 
 Shared assets live in `<project>/assets/{images,fonts,icons,scripts,components}/`.
 

@@ -81,7 +81,7 @@ Nesting: a `CTkFrame` can have its own layout type for its children, independent
 
 Two scopes:
 
-- **Global** — visible to every window in every page. On Project. Use for app-wide state.
+- **Global** — visible to every window in **one page** (Main + Dialogs). Each page owns its own set. Use for cross-window state inside a page.
 - **Local** — visible only to widgets in one window. On Document. Use for window-internal state.
 
 Five types: `str`, `int`, `float`, `bool`, `color` → backed by `tk.StringVar`, `IntVar`, `DoubleVar`, `BooleanVar`, `StringVar`. `color` stores a hex string (`#rrggbb` / `#rgb`) and edits via swatch + picker; the bind-picker on color properties (`fg_color`, `text_color`, `border_color`, …) lists `color` and `str` variables.

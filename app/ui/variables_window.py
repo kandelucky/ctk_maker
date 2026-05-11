@@ -1670,10 +1670,11 @@ class ObjectReferencesPanel(ctk.CTkFrame):
 class VariablesWindow(ManagedToplevel):
     """Floating window wrapper around two ``VariablesPanel`` instances.
 
-    Two tabs at the top — **Global** (blue, project-wide) and
-    **Local: <doc-name>** (orange, per-document). The local panel is
-    rebuilt against the active document whenever it changes, so the
-    label and contents always match what the workspace is showing.
+    Two tabs at the top — **Global** (blue, page-scoped — shared by
+    every window in the active page) and **Local: <doc-name>**
+    (orange, per-document). The local panel is rebuilt against the
+    active document whenever it changes, so the label and contents
+    always match what the workspace is showing.
     """
 
     window_key = "variables"
