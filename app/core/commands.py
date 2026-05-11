@@ -1025,18 +1025,83 @@ class DeleteDocumentCommand(Command):
     """Removing a Document (typically a dialog — the main window is
     protected). Snapshot + index mirror AddDocumentCommand; their
     undo / redo sides are the same mechanic in opposite directions.
+
+    Optional ``shifts``: list of ``(doc_id, before_x, before_y,
+    after_x, after_y)`` for sibling docs that auto-shifted left to
+    fill the deleted slot. Undo restores their original positions
+    after the doc is re-inserted; redo re-applies the shifts.
     """
 
-    def __init__(self, snapshot: dict, index: int):
+    def __init__(
+        self,
+        snapshot: dict,
+        index: int,
+        shifts: list | None = None,
+    ):
         self._snapshot = snapshot
         self._index = index
+        self._shifts = list(shifts) if shifts else []
         self.description = f"Delete {snapshot.get('name', 'document')}"
 
     def undo(self, project: "Project") -> None:
         _restore_document(project, self._snapshot, self._index)
+        # Restore siblings to their pre-delete positions in REVERSE
+        # order — symmetric with redo so chains of shift values stay
+        # consistent when commands interleave.
+        for doc_id, bx, by, _ax, _ay in self._shifts:
+            doc = project.get_document(doc_id)
+            if doc is None:
+                continue
+            doc.canvas_x, doc.canvas_y = int(bx), int(by)
+            project.event_bus.publish(
+                "document_position_changed", doc_id,
+            )
 
     def redo(self, project: "Project") -> None:
         _remove_document_by_id(project, self._snapshot["id"])
+        for doc_id, _bx, _by, ax, ay in self._shifts:
+            doc = project.get_document(doc_id)
+            if doc is None:
+                continue
+            doc.canvas_x, doc.canvas_y = int(ax), int(ay)
+            project.event_bus.publish(
+                "document_position_changed", doc_id,
+            )
+
+
+class ArrangeDocumentsCommand(Command):
+    """Repositions every visible (non-collapsed) document on the
+    canvas in one undoable step. ``before`` / ``after`` are lists of
+    ``(doc_id, x, y)`` for each doc that gets moved. Triggered by the
+    Arrange Horizontally / Arrange Vertically entries on the All
+    Windows dropdown.
+    """
+
+    def __init__(
+        self,
+        before: list,
+        after: list,
+        axis: str,
+    ):
+        self._before = list(before)
+        self._after = list(after)
+        self.description = f"Arrange documents ({axis})"
+
+    def _apply(self, project: "Project", positions: list) -> None:
+        for doc_id, x, y in positions:
+            doc = project.get_document(doc_id)
+            if doc is None:
+                continue
+            doc.canvas_x, doc.canvas_y = int(x), int(y)
+            project.event_bus.publish(
+                "document_position_changed", doc_id,
+            )
+
+    def undo(self, project: "Project") -> None:
+        self._apply(project, self._before)
+
+    def redo(self, project: "Project") -> None:
+        self._apply(project, self._after)
 
 
 class MoveDocumentCommand(Command):

@@ -209,6 +209,20 @@ class WorkspaceControls:
                     foreground="#ffffff" if is_active else "#cccccc",
                     command=lambda did=doc.id: self._focus_document(did),
                 )
+            # Arrange entries only when there's something to arrange.
+            visible_count = sum(
+                1 for d in self.project.documents if not d.collapsed
+            )
+            if visible_count >= 2:
+                menu.add_separator()
+                menu.add_command(
+                    label="   Arrange Horizontally",
+                    command=lambda: self._arrange_documents("horizontal"),
+                )
+                menu.add_command(
+                    label="   Arrange Vertically",
+                    command=lambda: self._arrange_documents("vertical"),
+                )
             try:
                 x = btn.winfo_rootx()
                 y = btn.winfo_rooty() + btn.winfo_height()
@@ -303,6 +317,72 @@ class WorkspaceControls:
     def _focus_document(self, doc_id: str) -> None:
         self.project.set_active_document(doc_id)
         self.workspace.focus_document(doc_id)
+
+    # Horizontal / vertical gap between arranged docs. Matches the
+    # 120 px gap used by Add Dialog placement and the auto-shift on
+    # delete — keeps the visual rhythm consistent across all the
+    # ways a doc lands at a particular coord.
+    _ARRANGE_GAP = 120
+
+    def _arrange_documents(self, axis: str) -> None:
+        """Sort visible dialogs alphabetically by name and line them
+        up along ``axis`` ("horizontal" or "vertical") after the
+        Main Window. Main Window is the program's entry point and
+        always sits in the first slot regardless of alphabetical
+        order — moving it around would surprise the user. Collapsed
+        docs (tabs at the bottom) keep their stored positions — they
+        aren't on the canvas right now. One ArrangeDocumentsCommand
+        captures every doc that moves so undo is atomic.
+        """
+        from app.core.commands import ArrangeDocumentsCommand
+        visible = [
+            d for d in self.project.documents if not d.collapsed
+        ]
+        if len(visible) < 2:
+            return
+        main = next((d for d in visible if not d.is_toplevel), None)
+        dialogs = [d for d in visible if d.is_toplevel]
+        dialogs_sorted = sorted(
+            dialogs, key=lambda d: (d.name or "").lower(),
+        )
+        ordered = ([main] if main is not None else []) + dialogs_sorted
+        before = [(d.id, d.canvas_x, d.canvas_y) for d in visible]
+        after: list = []
+        if axis == "horizontal":
+            x = 0
+            for d in ordered:
+                after.append((d.id, x, 0))
+                x += d.width + self._ARRANGE_GAP
+        else:  # vertical
+            y = 0
+            for d in ordered:
+                after.append((d.id, 0, y))
+                y += d.height + self._ARRANGE_GAP
+        # Reorder the after-list to match before-list order so the
+        # command snapshots pair up cleanly on undo.
+        after_map = {did: (x, y) for did, x, y in after}
+        after_ordered = [
+            (did, *after_map[did]) for (did, _bx, _by) in before
+        ]
+        if before == after_ordered:
+            return
+        for doc_id, x, y in after_ordered:
+            doc = self.project.get_document(doc_id)
+            if doc is None:
+                continue
+            doc.canvas_x, doc.canvas_y = int(x), int(y)
+            self.project.event_bus.publish(
+                "document_position_changed", doc_id,
+            )
+        self.project.history.push(
+            ArrangeDocumentsCommand(before, after_ordered, axis),
+        )
+        # Focus the active doc after rearranging so the user lands on
+        # a known position rather than wherever the viewport happened
+        # to be pointing.
+        active_id = self.project.active_document_id
+        if active_id is not None:
+            self.workspace.focus_document(active_id)
 
     def refresh_preview_buttons(self) -> None:
         if self._btn_preview is None:

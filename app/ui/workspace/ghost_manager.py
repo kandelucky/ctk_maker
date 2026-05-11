@@ -171,6 +171,20 @@ class GhostManager:
         for node in list(doc.root_widgets):
             lifecycle.create_widget_subtree(node)
 
+    def purge(self, doc_id: str) -> None:
+        """Drop the ghost image item + entry for a doc that's been
+        deleted. ``unfreeze`` rebuilds widgets and assumes the doc
+        still exists; deletion has no doc to rebuild into and we
+        only want to peel the screenshot off the canvas.
+        """
+        entry = self.ghosts.pop(doc_id, None)
+        if entry is None:
+            return
+        try:
+            self.canvas.delete(entry["image_id"])
+        except tk.TclError:
+            pass
+
     def is_ghosted(self, doc_id: str) -> bool:
         return doc_id in self.ghosts
 

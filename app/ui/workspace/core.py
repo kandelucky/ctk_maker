@@ -302,6 +302,20 @@ class Workspace(ctk.CTkFrame):
             "document_ghost_changed",
             self._on_document_ghost_changed,
         )
+        bus.subscribe(
+            "document_removed", self._on_document_removed_ghost_cleanup,
+        )
+
+    def _on_document_removed_ghost_cleanup(
+        self, doc_id: str, _doc_name: str,
+    ) -> None:
+        """A ghosted doc that gets deleted otherwise leaves its image
+        item on the canvas — ``_redraw_document`` only clears DOC /
+        GRID / CHROME / LAYOUT_OVERLAY tags, never the per-doc
+        ``ghost:<id>`` tag. Purge here so the canvas doesn't keep a
+        screenshot for a doc that no longer exists."""
+        if self.ghost_manager is not None:
+            self.ghost_manager.purge(doc_id)
 
     def _on_document_ghost_changed(
         self, doc_id: str, ghost: bool,

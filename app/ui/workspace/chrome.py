@@ -739,9 +739,23 @@ class ChromeManager:
         snapshot = doc.to_dict()
         doc_name = doc.name
         index = self.project.documents.index(doc)
+        # Compute auto-shift: right neighbours that vertically overlap
+        # the deleted doc slide left to fill the gap. Captured BEFORE
+        # mutation so the undo path on DeleteDocumentCommand can
+        # replay both restore + un-shift.
+        shifts = self._compute_delete_shifts(doc)
         for node in list(doc.root_widgets):
             self.project.remove_widget(node.id)
         self.project.documents.remove(doc)
+        # Apply the shifts now that the doc is gone.
+        for sid, _bx, _by, ax, ay in shifts:
+            sdoc = self.project.get_document(sid)
+            if sdoc is None:
+                continue
+            sdoc.canvas_x, sdoc.canvas_y = int(ax), int(ay)
+            self.project.event_bus.publish(
+                "document_position_changed", sid,
+            )
         if self.project.active_document_id == doc_id:
             self.project.active_document_id = (
                 self.project.documents[0].id
@@ -760,8 +774,42 @@ class ChromeManager:
             "document_removed", doc_id, doc_name,
         )
         self.project.history.push(
-            DeleteDocumentCommand(snapshot, index),
+            DeleteDocumentCommand(snapshot, index, shifts=shifts),
         )
+
+    # Horizontal gap between docs after an auto-shift. Matches the
+    # 120 px gap MainWindow._add_document / Project._shift_if_position
+    # _occluded use when placing new docs to the right of existing
+    # ones — keeps the visual rhythm consistent.
+    _DOC_AUTO_SHIFT_GAP = 120
+
+    def _compute_delete_shifts(self, deleted_doc) -> list:
+        """Return ``[(doc_id, before_x, before_y, after_x, after_y)]``
+        for every non-collapsed doc to the right of ``deleted_doc``
+        whose vertical span overlaps it. Each gets shifted left by
+        ``deleted.width + _DOC_AUTO_SHIFT_GAP``. Vertically separate
+        docs aren't touched so a user-arranged second row stays put.
+        """
+        d_top = deleted_doc.canvas_y
+        d_bot = deleted_doc.canvas_y + deleted_doc.height
+        d_left = deleted_doc.canvas_x
+        shift_dx = deleted_doc.width + self._DOC_AUTO_SHIFT_GAP
+        shifts: list = []
+        for other in self.project.documents:
+            if other.id == deleted_doc.id or other.collapsed:
+                continue
+            if other.canvas_x <= d_left:
+                continue
+            # Vertical overlap test — non-overlapping rows stay put.
+            if (
+                other.canvas_y >= d_bot
+                or other.canvas_y + other.height <= d_top
+            ):
+                continue
+            bx, by = other.canvas_x, other.canvas_y
+            ax = max(0, other.canvas_x - shift_dx)
+            shifts.append((other.id, bx, by, ax, by))
+        return shifts
 
     # ------------------------------------------------------------------
     # Drag
