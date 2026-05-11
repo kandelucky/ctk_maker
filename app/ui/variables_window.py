@@ -46,9 +46,7 @@ if TYPE_CHECKING:
     from app.core.project import Project
 
 # Color / spacing tokens are sourced from app.ui.style — local aliases
-# kept so the rest of this file stays terse. Inline hex literals
-# remain in the modal dialogs below; token migration of dialog
-# chrome is Phase F territory.
+# kept so the rest of this file stays terse.
 BG = style.BG
 PANEL_BG = style.PANEL_BG
 TOOLBAR_BG = style.TOOLBAR_BG
@@ -59,6 +57,11 @@ TREE_HEADING_BG = style.TREE_HEADING_BG
 TREE_HEADING_FG = style.TREE_HEADING_FG
 EMPTY_FG = style.EMPTY_FG
 BORDER = style.BORDER
+HEADER_BG = style.HEADER_BG
+SECONDARY_BG = style.SECONDARY_BG
+SECONDARY_HOVER = style.SECONDARY_HOVER
+DANGER_HOVER = style.DANGER_HOVER
+BUTTON_RADIUS = style.BUTTON_RADIUS
 
 DIALOG_W = 420
 DIALOG_H = 360
@@ -805,13 +808,15 @@ class VariableEditDialog(ManagedToplevel):
     def build_content(self) -> ctk.CTkFrame:
         container = ctk.CTkFrame(self, fg_color="transparent")
 
-        panel = ctk.CTkFrame(container, fg_color=PANEL_BG, corner_radius=6)
+        panel = ctk.CTkFrame(
+            container, fg_color=PANEL_BG, corner_radius=BUTTON_RADIUS,
+        )
         panel.pack(padx=18, pady=(18, 10), fill="both", expand=True)
 
-        ctk.CTkLabel(
-            panel, text="Variable",
+        style.styled_label(
+            panel, "Variable",
             font=ui_font(11, "bold"),
-            text_color="#888888", anchor="w",
+            text_color=EMPTY_FG, anchor="w",
         ).pack(fill="x", padx=14, pady=(10, 6))
 
         self._add_field(panel, "Name", self._build_name_row)
@@ -823,39 +828,32 @@ class VariableEditDialog(ManagedToplevel):
         tk.Label(
             panel,
             textvariable=self._error_var,
-            bg=PANEL_BG, fg="#e07a7a",
+            bg=PANEL_BG, fg=DANGER_HOVER,
             font=ui_font(9, "italic"),
             anchor="w",
         ).pack(fill="x", padx=(98, 14), pady=(2, 8))
 
         footer = ctk.CTkFrame(container, fg_color="transparent")
         footer.pack(fill="x", padx=18, pady=(0, 14))
-        ctk.CTkButton(
-            footer, text="OK", width=110, height=30,
-            corner_radius=4, command=self._on_ok,
+        style.primary_button(
+            footer, "OK", command=self._on_ok, width=110,
         ).pack(side="right")
-        ctk.CTkButton(
-            footer, text="Cancel", width=80, height=30,
-            corner_radius=4,
-            fg_color="#3c3c3c", hover_color="#4a4a4a",
-            command=self._on_cancel,
+        style.secondary_button(
+            footer, "Cancel", command=self._on_cancel, width=80,
         ).pack(side="right", padx=(0, 8))
         return container
 
     def _add_field(self, parent, label: str, builder) -> None:
         row = ctk.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", padx=14, pady=4)
-        ctk.CTkLabel(
-            row, text=f"{label}:", width=80, anchor="w",
-            font=ui_font(11), text_color="#cccccc",
+        style.styled_label(
+            row, f"{label}:", width=80, anchor="w",
         ).pack(side="left")
         builder(row)
 
     def _build_name_row(self, row) -> None:
-        self._name_entry = ctk.CTkEntry(
+        self._name_entry = style.styled_entry(
             row, textvariable=self._name_var, height=28,
-            corner_radius=3, font=ui_font(11),
-            border_color=BORDER, border_width=1,
         )
         self._name_entry.pack(side="left", fill="x", expand=True)
 
@@ -870,13 +868,13 @@ class VariableEditDialog(ManagedToplevel):
             row, values=type_values,
             variable=self._type_var,
             width=160, height=28, dynamic_resizing=False,
-            corner_radius=3,
-            fg_color="#3c3c3c", button_color="#3c3c3c",
-            button_hover_color="#4a4a4a",
-            text_color="#cccccc",
-            dropdown_fg_color="#2d2d30",
-            dropdown_hover_color="#094771",
-            dropdown_text_color="#cccccc",
+            corner_radius=BUTTON_RADIUS,
+            fg_color=SECONDARY_BG, button_color=SECONDARY_BG,
+            button_hover_color=SECONDARY_HOVER,
+            text_color=TREE_FG,
+            dropdown_fg_color=HEADER_BG,
+            dropdown_hover_color=TREE_SELECTED_BG,
+            dropdown_text_color=TREE_FG,
         ).pack(side="left")
 
     def _build_default_row(self, row) -> None:
@@ -885,10 +883,8 @@ class VariableEditDialog(ManagedToplevel):
         # ``_apply_type_to_default_row``; building lazily would mean
         # rebuilding the row on every type swap, which flickers.
         self._default_row = row
-        self._default_entry = ctk.CTkEntry(
+        self._default_entry = style.styled_entry(
             row, textvariable=self._default_var, height=28,
-            corner_radius=3, font=ui_font(11),
-            border_color=BORDER, border_width=1,
         )
         # Color editor: swatch label + Pick… button. The swatch is a
         # plain ``tk.Label`` with a ``bg=hex`` so it tracks the hex
@@ -900,18 +896,16 @@ class VariableEditDialog(ManagedToplevel):
             relief="solid", bd=1, highlightthickness=0,
         )
         self._color_swatch.pack(side="left", padx=(0, 8), pady=2)
-        self._color_pick_btn = ctk.CTkButton(
-            self._color_frame, text="Pick…",
-            width=70, height=28, corner_radius=3,
-            fg_color="#3c3c3c", hover_color="#4a4a4a",
-            font=ui_font(11),
-            command=self._open_color_picker,
+        self._color_pick_btn = style.secondary_button(
+            self._color_frame, "Pick…",
+            command=self._open_color_picker, width=70,
         )
+        self._color_pick_btn.configure(height=28)
         self._color_pick_btn.pack(side="left")
         self._color_hex_label = tk.Label(
             self._color_frame,
             textvariable=self._default_var,
-            bg=PANEL_BG, fg="#cccccc",
+            bg=PANEL_BG, fg=TREE_FG,
             font=ui_font(10),
         )
         self._color_hex_label.pack(side="left", padx=(10, 0))
@@ -1059,22 +1053,21 @@ class AddGlobalReferenceDialog(ManagedToplevel):
     def build_content(self) -> ctk.CTkFrame:
         container = ctk.CTkFrame(self, fg_color="transparent")
 
-        header = ctk.CTkFrame(container, fg_color="#252526", corner_radius=0)
+        header = ctk.CTkFrame(container, fg_color=PANEL_BG, corner_radius=0)
         header.pack(fill="x")
-        ctk.CTkLabel(
-            header, text="Add global reference",
-            text_color="#e6e6e6",
-            font=ctk.CTkFont(size=14, weight="bold"),
+        style.styled_label(
+            header, "Add global reference",
+            font=ui_font(14, "bold"),
             anchor="w",
         ).pack(fill="x", padx=14, pady=(10, 0))
-        ctk.CTkLabel(
+        style.styled_label(
             header,
             text=(
                 "Pick a window or dialog from this project. "
                 "Behavior code reaches it via ``self.<name>``."
             ),
-            text_color="#9aa4b2",
-            font=ctk.CTkFont(size=11),
+            text_color=EMPTY_FG,
+            font=ui_font(11),
             anchor="w", wraplength=380, justify="left",
         ).pack(fill="x", padx=14, pady=(2, 12))
 
@@ -1084,9 +1077,8 @@ class AddGlobalReferenceDialog(ManagedToplevel):
         # Type radio: Window / Dialog. Drives the target dropdown.
         type_row = ctk.CTkFrame(body, fg_color="transparent")
         type_row.pack(fill="x", pady=(2, 6))
-        ctk.CTkLabel(
-            type_row, text="Type:", text_color="#bdbdbd",
-            font=ctk.CTkFont(size=11), width=70, anchor="w",
+        style.styled_label(
+            type_row, "Type:", width=70, anchor="w",
         ).pack(side="left")
         self._type_var = tk.StringVar(value="Window")
         self._type_var.trace_add(
@@ -1097,7 +1089,8 @@ class AddGlobalReferenceDialog(ManagedToplevel):
                 type_row, text=label, value=label,
                 variable=self._type_var,
                 radiobutton_height=14, radiobutton_width=14,
-                font=ctk.CTkFont(size=11),
+                font=ui_font(11),
+                text_color=TREE_FG,
             )
             rb.pack(side="left", padx=(4, 12))
 
@@ -1106,17 +1099,21 @@ class AddGlobalReferenceDialog(ManagedToplevel):
         # CTkToplevel-style docs.
         target_row = ctk.CTkFrame(body, fg_color="transparent")
         target_row.pack(fill="x", pady=(6, 6))
-        ctk.CTkLabel(
-            target_row, text="Target:", text_color="#bdbdbd",
-            font=ctk.CTkFont(size=11), width=70, anchor="w",
+        style.styled_label(
+            target_row, "Target:", width=70, anchor="w",
         ).pack(side="left")
         self._target_var = tk.StringVar(value="")
         self._target_options: list[tuple[str, str]] = []
         self._target_menu = ctk.CTkOptionMenu(
             target_row, variable=self._target_var,
             values=["—"], width=240,
-            fg_color="#3c3c3c", button_color="#3c3c3c",
-            button_hover_color="#4a4a4a",
+            corner_radius=BUTTON_RADIUS,
+            fg_color=SECONDARY_BG, button_color=SECONDARY_BG,
+            button_hover_color=SECONDARY_HOVER,
+            text_color=TREE_FG,
+            dropdown_fg_color=HEADER_BG,
+            dropdown_hover_color=TREE_SELECTED_BG,
+            dropdown_text_color=TREE_FG,
             command=lambda _v: self._on_target_changed(),
         )
         self._target_menu.pack(side="left")
@@ -1124,42 +1121,33 @@ class AddGlobalReferenceDialog(ManagedToplevel):
         # Name input.
         name_row = ctk.CTkFrame(body, fg_color="transparent")
         name_row.pack(fill="x", pady=(6, 6))
-        ctk.CTkLabel(
-            name_row, text="Name:", text_color="#bdbdbd",
-            font=ctk.CTkFont(size=11), width=70, anchor="w",
+        style.styled_label(
+            name_row, "Name:", width=70, anchor="w",
         ).pack(side="left")
         self._name_var = tk.StringVar(value="")
         self._name_var.trace_add(
             "write", lambda *_a: self._on_name_changed(),
         )
-        self._name_entry = ctk.CTkEntry(
+        self._name_entry = style.styled_entry(
             name_row, textvariable=self._name_var, width=240,
-            fg_color="#1a1a1a", border_color="#3c3c3c",
-            text_color="#e6e6e6",
         )
         self._name_entry.pack(side="left")
 
-        self._error_label = ctk.CTkLabel(
-            body, text="", text_color="#ef4444",
-            font=ctk.CTkFont(size=10), anchor="w",
+        self._error_label = style.styled_label(
+            body, "", text_color=DANGER_HOVER,
+            font=ui_font(10), anchor="w",
         )
         self._error_label.pack(fill="x", pady=(6, 0))
 
         footer = ctk.CTkFrame(container, fg_color="transparent")
         footer.pack(fill="x", padx=14, pady=12)
-        ctk.CTkButton(
-            footer, text="Cancel", width=80,
-            fg_color="#3c3c3c", hover_color="#4a4a4a",
-            text_color="#e6e6e6",
-            command=self._cancel,
+        style.secondary_button(
+            footer, "Cancel", command=self._cancel, width=80,
         ).pack(side="right", padx=(8, 0))
-        self._add_btn = ctk.CTkButton(
-            footer, text="Add", width=80,
-            fg_color="#0e8a7d", hover_color="#149a8c",
-            text_color="#ffffff",
-            state="disabled",
-            command=self._commit,
+        self._add_btn = style.primary_button(
+            footer, "Add", command=self._commit, width=80,
         )
+        self._add_btn.configure(state="disabled")
         self._add_btn.pack(side="right")
 
         self._refresh_target_options()

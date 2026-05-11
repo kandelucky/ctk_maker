@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, simpledialog
+from tkinter import filedialog, messagebox
 from typing import Any
 
 import customtkinter as ctk
@@ -24,45 +24,103 @@ from app.core.project_folder import (
     read_project_meta,
     slugify_page_name,
 )
+from app.ui import style
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 from app.ui.new_project_form import NewProjectForm
 
 
-class RenameDialog(simpledialog.Dialog):
+class RenameDialog(ManagedToplevel):
     """Blocking rename dialog. Rejects empty names: bells, restores the
-    original value in the entry, and keeps the dialog open.
+    original value in the entry, keeps the dialog open. ``__init__``
+    blocks until the user closes the dialog (mirrors the previous
+    ``simpledialog.Dialog`` contract — callers don't need to call
+    ``wait_window`` themselves).
     """
+
+    window_title = "Rename Widget"
+    default_size = (340, 170)
+    min_size = (320, 170)
+    fg_color = style.BG
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
 
     def __init__(self, parent, initial_value: str):
         self._initial = initial_value
         self.result: str | None = None
-        super().__init__(parent, "Rename Widget")
+        self._name_var = tk.StringVar(master=parent, value=initial_value)
+        super().__init__(parent)
+        self.bind("<Return>", lambda _e: self._on_ok())
+        self.after(80, self._focus_entry)
+        # Block the caller until the dialog closes — preserves the
+        # synchronous contract the old simpledialog.Dialog gave us so
+        # existing callers can still ``if dialog.result: ...`` straight
+        # after construction.
+        self.wait_window(self)
 
-    def body(self, master):
-        tk.Label(master, text="New name:").pack(padx=16, pady=(12, 4))
-        self.entry = tk.Entry(master, width=30)
-        self.entry.insert(0, self._initial)
-        self.entry.select_range(0, tk.END)
-        self.entry.pack(padx=16, pady=(0, 12))
-        return self.entry
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+            w, h = self.default_size
+            return (
+                max(0, px + (pw - w) // 2),
+                max(0, py + (ph - h) // 2),
+            )
+        except tk.TclError:
+            return (100, 100)
 
-    def validate(self) -> bool:
-        value = self.entry.get().strip()
+    def _focus_entry(self) -> None:
+        try:
+            self._entry.focus_set()
+            self._entry.select_range(0, tk.END)
+        except tk.TclError:
+            pass
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+
+        body = ctk.CTkFrame(container, fg_color="transparent")
+        body.pack(padx=20, pady=(18, 10), fill="x")
+
+        style.styled_label(body, "New name:").pack(
+            anchor="w", pady=(0, 4),
+        )
+        self._entry = style.styled_entry(
+            body, textvariable=self._name_var,
+        )
+        self._entry.pack(fill="x")
+
+        footer = ctk.CTkFrame(container, fg_color="transparent")
+        footer.pack(fill="x", padx=20, pady=(4, 16))
+        footer.grid_columnconfigure(0, weight=1, uniform="btn")
+        footer.grid_columnconfigure(1, weight=1, uniform="btn")
+        style.secondary_button(
+            footer, "Cancel", command=self._on_cancel,
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        style.primary_button(
+            footer, "OK", command=self._on_ok,
+        ).grid(row=0, column=1, sticky="ew", padx=(4, 0))
+        return container
+
+    def _on_ok(self) -> None:
+        value = self._name_var.get().strip()
         if not value:
             self.bell()
-            self.entry.delete(0, tk.END)
-            self.entry.insert(0, self._initial)
-            self.entry.select_range(0, tk.END)
-            self.entry.focus_set()
-            return False
+            self._name_var.set(self._initial)
+            self._focus_entry()
+            return
         self.result = value
-        return True
+        self.destroy()
 
-    def apply(self):
-        # result is already set inside validate()
-        pass
+    def _on_cancel(self) -> None:
+        self.result = None
+        self.destroy()
 
 
 DIALOG_PRESETS: list[tuple[str, tuple[int, int] | None]] = [
@@ -88,6 +146,7 @@ class AddDialogSizeDialog(ManagedToplevel):
     window_title = "Add dialog"
     default_size = (300, 320)
     min_size = (280, 300)
+    fg_color = style.BG
     panel_padding = (0, 0)
     modal = True
     window_resizable = (False, False)
@@ -143,39 +202,46 @@ class AddDialogSizeDialog(ManagedToplevel):
         body = ctk.CTkFrame(container, fg_color="transparent")
         body.pack(padx=20, pady=(18, 10), fill="x")
 
-        ctk.CTkLabel(body, text="Name").grid(
+        style.styled_label(body, "Name").grid(
             row=0, column=0, sticky="w", pady=(0, 4),
         )
-        self._name_entry = ctk.CTkEntry(
+        self._name_entry = style.styled_entry(
             body, textvariable=self._name_var, width=220,
         )
         self._name_entry.grid(
             row=1, column=0, columnspan=2, sticky="ew", pady=(0, 10),
         )
 
-        ctk.CTkLabel(body, text="Size Preset").grid(
+        style.styled_label(body, "Size Preset").grid(
             row=2, column=0, columnspan=2, sticky="w", pady=(0, 4),
         )
         ctk.CTkOptionMenu(
             body,
             values=[label for label, _ in DIALOG_PRESETS],
             variable=self._preset_var,
-            width=220,
+            width=220, height=style.BUTTON_HEIGHT,
+            corner_radius=style.BUTTON_RADIUS,
+            fg_color=style.SECONDARY_BG, button_color=style.SECONDARY_BG,
+            button_hover_color=style.SECONDARY_HOVER,
+            text_color=style.TREE_FG,
+            dropdown_fg_color=style.HEADER_BG,
+            dropdown_hover_color=style.TREE_SELECTED_BG,
+            dropdown_text_color=style.TREE_FG,
             command=self._on_preset_change,
         ).grid(
             row=3, column=0, columnspan=2, sticky="ew", pady=(0, 12),
         )
 
-        ctk.CTkLabel(body, text="Width").grid(
+        style.styled_label(body, "Width").grid(
             row=4, column=0, sticky="w", pady=(0, 4),
         )
-        ctk.CTkLabel(body, text="Height").grid(
+        style.styled_label(body, "Height").grid(
             row=4, column=1, sticky="w", pady=(0, 4), padx=(8, 0),
         )
-        ctk.CTkEntry(body, textvariable=self._w_var, width=106).grid(
+        style.styled_entry(body, textvariable=self._w_var, width=106).grid(
             row=5, column=0, sticky="w",
         )
-        ctk.CTkEntry(body, textvariable=self._h_var, width=106).grid(
+        style.styled_entry(body, textvariable=self._h_var, width=106).grid(
             row=5, column=1, sticky="w", padx=(8, 0),
         )
         body.grid_columnconfigure(0, weight=1)
@@ -183,16 +249,14 @@ class AddDialogSizeDialog(ManagedToplevel):
 
         footer = ctk.CTkFrame(container, fg_color="transparent")
         footer.pack(fill="x", padx=20, pady=(4, 16))
-        ctk.CTkButton(
-            footer, text="Add", width=120, height=32,
-            corner_radius=4, command=self._on_ok,
-        ).pack(side="right")
-        ctk.CTkButton(
-            footer, text="Cancel", width=90, height=32,
-            corner_radius=4,
-            fg_color="#3c3c3c", hover_color="#4a4a4a",
-            command=self._on_cancel,
-        ).pack(side="right", padx=(0, 8))
+        footer.grid_columnconfigure(0, weight=1, uniform="btn")
+        footer.grid_columnconfigure(1, weight=1, uniform="btn")
+        style.secondary_button(
+            footer, "Cancel", command=self._on_cancel,
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        style.primary_button(
+            footer, "Add", command=self._on_ok,
+        ).grid(row=0, column=1, sticky="ew", padx=(4, 0))
         return container
 
     def _on_preset_change(self, label: str) -> None:

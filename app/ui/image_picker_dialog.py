@@ -18,7 +18,6 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
 from typing import TYPE_CHECKING, Sequence
-from app.ui.system_fonts import ui_font
 
 if TYPE_CHECKING:
     from PIL import ImageTk
@@ -27,9 +26,11 @@ import customtkinter as ctk
 
 from app.core.assets import copy_to_assets, resolve_asset_token
 from app.core.logger import log_error
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
 from app.core.paths import ASSETS_DIR_NAME
+from app.ui import style
 from app.ui.icons import load_tk_icon
+from app.ui.managed_window import ManagedToplevel
+from app.ui.system_fonts import ui_font
 
 HELP_TEXT = (
     "Image widgets only accept files that live inside the\n"
@@ -42,14 +43,13 @@ HELP_TEXT = (
     "    the .ctkproj stays portable across machines."
 )
 
-BG = "#1e1e1e"
-PANEL_BG = "#252526"
-HEADER_BG = "#2d2d30"
-HEADER_FG = "#cccccc"
-DIM_FG = "#888888"
-ROW_HOVER = "#2a2a2a"
-ROW_SELECTED = "#094771"
-DIVIDER = "#3a3a3a"
+BG = style.BG
+PANEL_BG = style.PANEL_BG
+HEADER_BG = style.HEADER_BG
+HEADER_FG = style.TREE_FG
+DIM_FG = "#888888"  # local — slightly lighter than style.EMPTY_FG
+ROW_SELECTED = style.TREE_SELECTED_BG
+DIVIDER = style.BORDER
 
 DIALOG_W = 480
 DIALOG_H = 480
@@ -58,55 +58,60 @@ THUMB = 40
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico"}
 
 
-class ImagePickerDialog(tk.Toplevel):
+class ImagePickerDialog(ManagedToplevel):
+    window_title = "Select image"
+    default_size = (DIALOG_W, DIALOG_H)
+    min_size = (DIALOG_W, DIALOG_H)
+    fg_color = BG
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
+
     def __init__(self, parent, project_file: str, event_bus=None):
-        super().__init__(parent)
-        prepare_dialog(self)
         self.project_file = project_file
         self._event_bus = event_bus
         self.result: str | None = None
-
-        self.title("Select image")
-        self.configure(bg=BG)
-        self.resizable(False, False)
-        self.transient(parent)
-        safe_grab_set(self)
-
-        self.geometry(f"{DIALOG_W}x{DIALOG_H}")
-        self._center_on_parent(parent)
-
         self._selected_path: Path | None = None
         self._row_widgets: dict[str, dict] = {}
         self._thumb_cache: dict[str, ImageTk.PhotoImage] = {}
-
-        self._build_header()
-        self._build_list()
-        self._build_footer()
-
-        self.bind("<Escape>", lambda _e: self._on_cancel())
+        self._tip_window: tk.Toplevel | None = None
+        super().__init__(parent)
         self.bind("<Return>", lambda _e: self._on_ok())
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-
-        reveal_dialog(self)
-        # Defer the first list build so the CTkScrollableFrame is
+        # Defer the first list build until the CTkScrollableFrame is
         # realised — packing into an unmapped scrollable canvas can
         # leave children invisible until the next layout pass.
         self.after_idle(self._refresh)
 
-    # ------- layout -------
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px, py = parent.winfo_rootx(), parent.winfo_rooty()
+            pw, ph = parent.winfo_width(), parent.winfo_height()
+            w, h = self.default_size
+            return (
+                max(0, px + (pw - w) // 2),
+                max(0, py + (ph - h) // 2),
+            )
+        except tk.TclError:
+            return (100, 100)
 
-    def _build_header(self) -> None:
-        bar = tk.Frame(self, bg=HEADER_BG)
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        self._build_header(container)
+        self._build_list(container)
+        self._build_footer(container)
+        return container
+
+    def _build_header(self, parent) -> None:
+        bar = tk.Frame(parent, bg=HEADER_BG)
         bar.pack(fill="x")
-        ctk.CTkButton(
-            bar, text="+ Import image...", width=140, height=30,
-            corner_radius=4,
-            command=self._on_import,
+        style.primary_button(
+            bar, "+ Import image...",
+            command=self._on_import, width=140,
         ).pack(side="left", padx=(10, 4), pady=10)
-        ctk.CTkButton(
-            bar, text="+ Lucide icon...", width=140, height=30,
-            corner_radius=4, fg_color="#3c3c3c", hover_color="#4a4a4a",
-            command=self._on_pick_lucide,
+        style.secondary_button(
+            bar, "+ Lucide icon...",
+            command=self._on_pick_lucide, width=140,
         ).pack(side="left", padx=(0, 4), pady=10)
 
         # Hover-help icon, pinned to the right edge of the bar.
@@ -115,55 +120,33 @@ class ImagePickerDialog(tk.Toplevel):
         help_img = load_tk_icon("circle-help", size=20, color="#aaaaaa")
         self._help_lbl = tk.Label(
             bar, bg=HEADER_BG, image=help_img if help_img else "",
-            text="" if help_img else "?", fg="#cccccc",
+            text="" if help_img else "?", fg=HEADER_FG,
             font=ui_font(12, "bold"), cursor="hand2",
         )
-        self._help_lbl.image = help_img  # type: ignore[attr-defined]  # keep ref
+        self._help_lbl.image = help_img  # type: ignore[attr-defined]
         self._help_lbl.pack(side="right", padx=14, pady=8)
         self._help_lbl.bind("<Enter>", self._show_help)
         self._help_lbl.bind("<Leave>", self._hide_help)
         self._help_lbl.bind("<Button-1>", self._show_help)
-        self._tip_window: tk.Toplevel | None = None
 
-    def _build_list(self) -> None:
+    def _build_list(self, parent) -> None:
         wrap = ctk.CTkScrollableFrame(
-            self, fg_color=PANEL_BG, corner_radius=0,
+            parent, fg_color=PANEL_BG, corner_radius=0,
         )
         wrap.pack(fill="both", expand=True, padx=8, pady=(8, 4))
         self._list_wrap = wrap
-        # Empty placeholder when no images — replaced on _refresh.
-        self._empty_label = ctk.CTkLabel(
-            wrap, text="No images yet. Click + Import to add one.",
-            font=ui_font(10),
-            text_color=DIM_FG,
-        )
 
-    def _build_footer(self) -> None:
-        foot = tk.Frame(self, bg=BG)
+    def _build_footer(self, parent) -> None:
+        foot = tk.Frame(parent, bg=BG)
         foot.pack(fill="x", padx=10, pady=(4, 10))
-        self._ok_btn = ctk.CTkButton(
-            foot, text="OK", width=90, height=30, corner_radius=4,
-            command=self._on_ok, state="disabled",
+        self._ok_btn = style.primary_button(
+            foot, "OK", command=self._on_ok, width=90,
         )
+        self._ok_btn.configure(state="disabled")
         self._ok_btn.pack(side="right")
-        ctk.CTkButton(
-            foot, text="Cancel", width=90, height=30, corner_radius=4,
-            fg_color="#3c3c3c", hover_color="#4a4a4a",
-            command=self._on_cancel,
+        style.secondary_button(
+            foot, "Cancel", command=self._on_cancel, width=90,
         ).pack(side="right", padx=(0, 8))
-
-    def _center_on_parent(self, parent) -> None:
-        try:
-            parent.update_idletasks()
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-            x = px + (pw - DIALOG_W) // 2
-            y = py + (ph - DIALOG_H) // 2
-            self.geometry(f"+{max(0, x)}+{max(0, y)}")
-        except tk.TclError:
-            pass
 
     # ------- list population -------
 
@@ -227,12 +210,12 @@ class ImagePickerDialog(tk.Toplevel):
             row, bg=PANEL_BG,
             image=thumb if thumb else "",
             text="" if thumb else "?",
-            fg="#cccccc", width=THUMB, height=THUMB,
+            fg=HEADER_FG, width=THUMB, height=THUMB,
         )
         thumb_lbl.pack(side="left", padx=8, pady=4)
 
         name_lbl = tk.Label(
-            row, text=path.name, bg=PANEL_BG, fg="#cccccc",
+            row, text=path.name, bg=PANEL_BG, fg=HEADER_FG,
             font=ui_font(11), anchor="w",
         )
         name_lbl.pack(side="left", fill="x", expand=True, padx=4)
@@ -258,8 +241,8 @@ class ImagePickerDialog(tk.Toplevel):
         self._set_selected(path)
         menu = tk.Menu(
             self, tearoff=0,
-            bg="#2d2d30", fg="#cccccc",
-            activebackground="#094771", activeforeground="#ffffff",
+            bg=HEADER_BG, fg=HEADER_FG,
+            activebackground=ROW_SELECTED, activeforeground="#ffffff",
             relief="flat", bd=0, font=ui_font(10),
         )
         menu.add_command(
@@ -422,8 +405,14 @@ class ImagePickerDialog(tk.Toplevel):
 
     def _on_cancel(self) -> None:
         self.result = None
-        self._hide_help()
         self.destroy()
+
+    def destroy(self) -> None:
+        # Tooltip is a child Toplevel — drop it on every close path
+        # (Cancel button, OK button, X-close, Escape) so it doesn't
+        # outlive the dialog and float orphaned on screen.
+        self._hide_help()
+        super().destroy()
 
     # ------- help tooltip -------
 
@@ -441,11 +430,11 @@ class ImagePickerDialog(tk.Toplevel):
             tip.attributes("-topmost", True)
         except tk.TclError:
             pass
-        tip.configure(bg="#1c1c1c")
-        frame = tk.Frame(tip, bg="#1c1c1c", padx=10, pady=8)
+        tip.configure(bg=BG)
+        frame = tk.Frame(tip, bg=BG, padx=10, pady=8)
         frame.pack()
         tk.Label(
-            frame, text=HELP_TEXT, bg="#1c1c1c", fg="#dddddd",
+            frame, text=HELP_TEXT, bg=BG, fg=HEADER_FG,
             font=ui_font(11), justify="left", anchor="w",
         ).pack()
         tip.geometry(f"+{x}+{y}")

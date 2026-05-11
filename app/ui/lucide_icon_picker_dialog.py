@@ -22,22 +22,23 @@ from tkinter import messagebox
 import customtkinter as ctk
 from PIL import Image, ImageTk
 
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui import style
+from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
 LUCIDE_DIR = Path(__file__).resolve().parent.parent / "assets" / "lucide"
 PNG_DIR = LUCIDE_DIR / "png-icons"
 CATS_FILE = LUCIDE_DIR / "categories.json"
 
-BG = "#1e1e1e"
-PANEL_BG = "#252526"
-HEADER_BG = "#2d2d30"
-HEADER_FG = "#cccccc"
-DIM_FG = "#888888"
-ROW_SELECTED = "#094771"
-GRID_BG = "#1a1a1a"
-GRID_HOVER = "#2a2a2a"
-GRID_SELECTED = "#094771"
+BG = style.BG
+PANEL_BG = style.PANEL_BG
+HEADER_BG = style.HEADER_BG
+HEADER_FG = style.TREE_FG
+DIM_FG = "#888888"  # local — slightly lighter than style.EMPTY_FG
+ROW_SELECTED = style.TREE_SELECTED_BG
+GRID_BG = "#1a1a1a"  # local — deeper bg for icon grid contrast
+GRID_HOVER = style.TOOLBAR_BG
+GRID_SELECTED = style.TREE_SELECTED_BG
 
 DIALOG_W = 760
 DIALOG_H = 580
@@ -55,7 +56,7 @@ SIZE_OPTIONS = (24, 32, 48, 64, 96, 128)
 DEFAULT_OUTPUT_SIZE = 64
 
 
-class LucideIconPickerDialog(tk.Toplevel):
+class LucideIconPickerDialog(ManagedToplevel):
     """Pick a Lucide icon, tint it, save to ``target_dir``.
 
     Caller passes ``target_dir`` — absolute path where the tinted
@@ -67,19 +68,17 @@ class LucideIconPickerDialog(tk.Toplevel):
 
     _meta_cache: dict | None = None
 
+    window_title = "Lucide icons"
+    default_size = (DIALOG_W, DIALOG_H)
+    min_size = (DIALOG_W, DIALOG_H)
+    fg_color = BG
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
+
     def __init__(self, parent, target_dir: Path | str) -> None:
-        super().__init__(parent)
-        prepare_dialog(self)
         self.target_dir = Path(target_dir)
         self.result: str | None = None
-
-        self.title("Lucide icons")
-        self.configure(bg=BG)
-        self.resizable(False, False)
-        self.transient(parent)
-        safe_grab_set(self)
-        self.geometry(f"{DIALOG_W}x{DIALOG_H}")
-        self._center_on_parent(parent)
 
         self._meta = self._load_meta()
         self._categories: dict[str, dict] = self._meta.get("categories", {})
@@ -98,18 +97,26 @@ class LucideIconPickerDialog(tk.Toplevel):
         self._cat_buttons: dict[str, tk.Frame] = {}
         self._grid_cells: dict[str, tk.Frame] = {}
 
-        self._build()
-
-        self.bind("<Escape>", lambda _e: self._on_cancel())
+        super().__init__(parent)
         self.bind("<Return>", lambda _e: self._on_apply())
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-
-        reveal_dialog(self)
         # Defer first paint until the scrollable frames are realised —
         # tk's CTkScrollableFrame leaves children unmapped if you push
         # them in before the canvas has been packed.
         self.after_idle(self._populate_categories)
         self.after_idle(self._refresh_grid)
+
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px, py = parent.winfo_rootx(), parent.winfo_rooty()
+            pw, ph = parent.winfo_width(), parent.winfo_height()
+            w, h = self.default_size
+            return (
+                max(0, px + (pw - w) // 2),
+                max(0, py + (ph - h) // 2),
+            )
+        except tk.TclError:
+            return (100, 100)
 
     # ------------------------------------------------------------------
     # Meta loading
@@ -128,17 +135,19 @@ class LucideIconPickerDialog(tk.Toplevel):
     # ------------------------------------------------------------------
     # Layout
     # ------------------------------------------------------------------
-    def _build(self) -> None:
-        self._build_header()
-        body = tk.Frame(self, bg=BG)
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        self._build_header(container)
+        body = tk.Frame(container, bg=BG)
         body.pack(fill="both", expand=True, padx=8, pady=(4, 4))
         self._build_sidebar(body)
         self._build_grid(body)
         self._build_preview(body)
-        self._build_footer()
+        self._build_footer(container)
+        return container
 
-    def _build_header(self) -> None:
-        bar = tk.Frame(self, bg=HEADER_BG)
+    def _build_header(self, parent) -> None:
+        bar = tk.Frame(parent, bg=HEADER_BG)
         bar.pack(fill="x")
 
         tk.Label(
@@ -150,7 +159,7 @@ class LucideIconPickerDialog(tk.Toplevel):
         self._search_var.trace_add(
             "write", lambda *_: self._on_search_change(),
         )
-        ctk.CTkEntry(
+        style.styled_entry(
             bar, textvariable=self._search_var, width=240, height=28,
             placeholder_text="filter by name or tag...",
         ).pack(side="left", padx=(0, 8), pady=6)
@@ -192,7 +201,7 @@ class LucideIconPickerDialog(tk.Toplevel):
         self._preview_lbl.pack(pady=(20, 8))
 
         self._name_lbl = tk.Label(
-            wrap, text="(no selection)", bg=PANEL_BG, fg="#cccccc",
+            wrap, text="(no selection)", bg=PANEL_BG, fg=HEADER_FG,
             font=ui_font(11, "bold"),
             wraplength=PREVIEW_W - 16,
         )
@@ -211,7 +220,7 @@ class LucideIconPickerDialog(tk.Toplevel):
             tint_row, text="Tint:", bg=PANEL_BG, fg=HEADER_FG,
             font=ui_font(10),
         ).pack(side="left", padx=(0, 4))
-        self._tint_entry = ctk.CTkEntry(
+        self._tint_entry = style.styled_entry(
             tint_row, width=80, height=26,
         )
         self._tint_entry.insert(0, self._tint)
@@ -243,23 +252,28 @@ class LucideIconPickerDialog(tk.Toplevel):
         self._size_menu = ctk.CTkOptionMenu(
             size_row, values=[f"{s} px" for s in SIZE_OPTIONS],
             width=100, height=26, dynamic_resizing=False,
+            corner_radius=style.BUTTON_RADIUS,
+            fg_color=style.SECONDARY_BG, button_color=style.SECONDARY_BG,
+            button_hover_color=style.SECONDARY_HOVER,
+            text_color=HEADER_FG,
+            dropdown_fg_color=HEADER_BG,
+            dropdown_hover_color=ROW_SELECTED,
+            dropdown_text_color=HEADER_FG,
             command=self._on_size_change,
         )
         self._size_menu.set(f"{self._output_size} px")
         self._size_menu.pack(side="left")
 
-    def _build_footer(self) -> None:
-        foot = tk.Frame(self, bg=BG)
+    def _build_footer(self, parent) -> None:
+        foot = tk.Frame(parent, bg=BG)
         foot.pack(fill="x", padx=10, pady=(4, 10))
-        self._apply_btn = ctk.CTkButton(
-            foot, text="Apply", width=140, height=32, corner_radius=4,
-            command=self._on_apply, state="disabled",
+        self._apply_btn = style.primary_button(
+            foot, "Apply", command=self._on_apply, width=140,
         )
+        self._apply_btn.configure(state="disabled")
         self._apply_btn.pack(side="right")
-        ctk.CTkButton(
-            foot, text="Cancel", width=90, height=32, corner_radius=4,
-            fg_color="#3c3c3c", hover_color="#4a4a4a",
-            command=self._on_cancel,
+        style.secondary_button(
+            foot, "Cancel", command=self._on_cancel, width=90,
         ).pack(side="right", padx=(0, 8))
 
     # ------------------------------------------------------------------
@@ -390,7 +404,7 @@ class LucideIconPickerDialog(tk.Toplevel):
         lbl = tk.Label(
             cell, bg=GRID_BG,
             image=thumb if thumb else None,
-            text="" if thumb else "?", fg="#888888",
+            text="" if thumb else "?", fg=DIM_FG,
         )
         if thumb is not None:
             lbl.image = thumb  # keep ref
@@ -557,22 +571,6 @@ class LucideIconPickerDialog(tk.Toplevel):
         if size is not None and tinted.size != (size, size):
             tinted = tinted.resize((size, size), Image.LANCZOS)
         return tinted
-
-    # ------------------------------------------------------------------
-    # Geometry
-    # ------------------------------------------------------------------
-    def _center_on_parent(self, parent: tk.Misc) -> None:
-        try:
-            parent.update_idletasks()
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-            x = px + (pw - DIALOG_W) // 2
-            y = py + (ph - DIALOG_H) // 2
-            self.geometry(f"+{max(0, x)}+{max(0, y)}")
-        except tk.TclError:
-            pass
 
     # ------------------------------------------------------------------
     # Apply / Cancel

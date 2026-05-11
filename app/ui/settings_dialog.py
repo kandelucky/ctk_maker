@@ -26,27 +26,28 @@ from typing import Any
 import customtkinter as ctk
 
 from app.core.settings import load_settings, save_setting
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui import style
+from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
 DIALOG_W = 700
 DIALOG_H = 520
 
 SIDEBAR_W = 170
-SIDEBAR_BG = "#252526"
-SIDEBAR_ROW_BG = "#252526"
-SIDEBAR_ROW_HOVER_BG = "#2a2d2e"
-SIDEBAR_ROW_SELECTED_BG = "#37373d"
-SIDEBAR_ROW_FG = "#cccccc"
+SIDEBAR_BG = style.PANEL_BG
+SIDEBAR_ROW_BG = style.PANEL_BG
+SIDEBAR_ROW_HOVER_BG = "#2a2d2e"  # local — sidebar hover, no style equivalent
+SIDEBAR_ROW_SELECTED_BG = "#37373d"  # local — sidebar selected, no style equivalent
+SIDEBAR_ROW_FG = style.TREE_FG
 SIDEBAR_ROW_SELECTED_FG = "#ffffff"
 
-BG = "#1e1e1e"
-PANEL_BG = "#252526"
-HEADER_BG = "#2d2d30"
-HEADER_FG = "#cccccc"
-SECTION_FG = "#bbbbbb"
-DIM_FG = "#888888"
-ENTRY_BORDER = "#3c3c3c"
+BG = style.BG
+PANEL_BG = style.PANEL_BG
+HEADER_BG = style.HEADER_BG
+HEADER_FG = style.TREE_FG
+SECTION_FG = "#bbbbbb"  # local — section label, no style equivalent
+DIM_FG = "#888888"  # local — slightly lighter than style.EMPTY_FG
+ENTRY_BORDER = style.BORDER
 
 THEME_OPTIONS = ("Dark", "Light", "System")
 GRID_STYLE_OPTIONS = ("dots", "lines", "none")
@@ -101,48 +102,54 @@ EDITOR_PRESETS: tuple[tuple[str, str], ...] = (
 # Settings dialog don't render with CTk's default light-grey button
 # colour against the dark surrounding panels.
 _DROPDOWN_STYLE = dict(
-    fg_color="#3c3c3c",
-    button_color="#3c3c3c",
-    button_hover_color="#4a4a4a",
-    text_color="#cccccc",
-    dropdown_fg_color="#2d2d30",
-    dropdown_hover_color="#094771",
-    dropdown_text_color="#cccccc",
+    fg_color=style.SECONDARY_BG,
+    button_color=style.SECONDARY_BG,
+    button_hover_color=style.SECONDARY_HOVER,
+    text_color=style.TREE_FG,
+    dropdown_fg_color=style.HEADER_BG,
+    dropdown_hover_color=style.TREE_SELECTED_BG,
+    dropdown_text_color=style.TREE_FG,
 )
 
 
-class SettingsDialog(tk.Toplevel):
+class SettingsDialog(ManagedToplevel):
     """Preferences window. ``on_appearance_change`` is reserved for
     when the theme tab gets re-enabled; it is currently not invoked
     because the theme dropdown is disabled.
     """
 
+    window_title = "Preferences"
+    default_size = (DIALOG_W, DIALOG_H)
+    min_size = (DIALOG_W, DIALOG_H)
+    fg_color = BG
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
+
     def __init__(
         self, parent, on_appearance_change=None,
         on_workspace_changed=None,
     ):
-        super().__init__(parent)
-        prepare_dialog(self)
         self._on_appearance_change = on_appearance_change
         self._on_workspace_changed = on_workspace_changed
-
-        self.title("Preferences")
-        self.configure(bg=BG)
-        self.resizable(False, False)
-        self.transient(parent)
-        safe_grab_set(self)
-        self.geometry(f"{DIALOG_W}x{DIALOG_H}")
-        self._center_on_parent(parent)
-
         self._initial = load_settings()
 
-        self._configure_ttk_style()
-        self._build()
-
-        self.bind("<Escape>", lambda _e: self._on_cancel())
+        super().__init__(parent)
         self.bind("<Return>", lambda _e: self._on_ok())
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-        reveal_dialog(self)
+        self._configure_ttk_style()
+
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px, py = parent.winfo_rootx(), parent.winfo_rooty()
+            pw, ph = parent.winfo_width(), parent.winfo_height()
+            w, h = self.default_size
+            return (
+                max(0, px + (pw - w) // 2),
+                max(0, py + (ph - h) // 2),
+            )
+        except tk.TclError:
+            return (100, 100)
 
     # ------------------------------------------------------------------
     # Style
@@ -159,8 +166,9 @@ class SettingsDialog(tk.Toplevel):
     # ------------------------------------------------------------------
     # Layout
     # ------------------------------------------------------------------
-    def _build(self) -> None:
-        outer = tk.Frame(self, bg=BG)
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        outer = tk.Frame(container, bg=BG)
         outer.pack(fill="both", expand=True)
 
         body = tk.Frame(outer, bg=BG)
@@ -204,7 +212,8 @@ class SettingsDialog(tk.Toplevel):
             self._tab_rows[name] = row
 
         self._select_tab("Workspace")
-        self._build_footer()
+        self._build_footer(container)
+        return container
 
     def _make_sidebar_row(self, name: str) -> tk.Label:
         row = tk.Label(
@@ -306,15 +315,15 @@ class SettingsDialog(tk.Toplevel):
             value=self._initial.get(KEY_DEFAULT_DIR)
             or str(Path.home() / "Documents" / "CTkMaker"),
         )
-        ctk.CTkEntry(
+        style.styled_entry(
             loc_row, textvariable=self._dir_var,
             width=300, height=24,
         ).pack(side="left", padx=(8, 6))
-        ctk.CTkButton(
-            loc_row, text="Browse...", width=80, height=24,
-            corner_radius=3, fg_color="#3c3c3c", hover_color="#4a4a4a",
-            command=self._on_browse_dir,
-        ).pack(side="left")
+        browse_btn = style.secondary_button(
+            loc_row, "Browse...", command=self._on_browse_dir, width=80,
+        )
+        browse_btn.configure(height=24)
+        browse_btn.pack(side="left")
 
         size_row = tk.Frame(tab, bg=BG)
         size_row.pack(fill="x")
@@ -327,7 +336,7 @@ class SettingsDialog(tk.Toplevel):
                 self._initial.get(KEY_DEFAULT_W) or DEFAULT_PROJECT_W,
             ),
         )
-        ctk.CTkEntry(
+        style.styled_entry(
             size_row, textvariable=self._w_var, width=80, height=24,
         ).pack(side="left", padx=(8, 4))
         tk.Label(
@@ -339,7 +348,7 @@ class SettingsDialog(tk.Toplevel):
                 self._initial.get(KEY_DEFAULT_H) or DEFAULT_PROJECT_H,
             ),
         )
-        ctk.CTkEntry(
+        style.styled_entry(
             size_row, textvariable=self._h_var, width=80, height=24,
         ).pack(side="left", padx=(4, 0))
         tk.Label(
@@ -400,7 +409,7 @@ class SettingsDialog(tk.Toplevel):
                 self._initial.get(KEY_GRID_COLOR) or DEFAULT_GRID_COLOR,
             ),
         )
-        ctk.CTkEntry(
+        style.styled_entry(
             color_row, textvariable=self._grid_color_var,
             width=110, height=24,
         ).pack(side="left", padx=(8, 6))
@@ -427,7 +436,7 @@ class SettingsDialog(tk.Toplevel):
                 self._initial.get(KEY_GRID_SPACING) or DEFAULT_GRID_SPACING,
             ),
         )
-        ctk.CTkEntry(
+        style.styled_entry(
             spacing_row, textvariable=self._grid_spacing_var,
             width=80, height=24,
         ).pack(side="left", padx=(8, 0))
@@ -513,7 +522,7 @@ class SettingsDialog(tk.Toplevel):
         self._editor_cmd_var.trace_add(
             "write", lambda *_: self._sync_editor_preset_from_cmd(),
         )
-        cmd_entry = ctk.CTkEntry(
+        cmd_entry = style.styled_entry(
             cmd_row, textvariable=self._editor_cmd_var,
             width=420, height=24,
         )
@@ -585,12 +594,12 @@ class SettingsDialog(tk.Toplevel):
             wraplength=DIALOG_W - 80,
         ).pack(anchor="w", pady=(2, 6))
         self._vscode_fix_status = tk.StringVar(value="")
-        ctk.CTkButton(
-            fix_frame,
-            text="Configure VS Code Python Path",
-            width=230, height=26,
-            command=self._configure_vscode_python,
-        ).pack(anchor="w")
+        vscode_btn = style.primary_button(
+            fix_frame, "Configure VS Code Python Path",
+            command=self._configure_vscode_python, width=230,
+        )
+        vscode_btn.configure(height=26)
+        vscode_btn.pack(anchor="w")
         tk.Label(
             fix_frame,
             textvariable=self._vscode_fix_status,
@@ -705,7 +714,7 @@ class SettingsDialog(tk.Toplevel):
             variable=self._preview_floater_var,
             checkbox_width=16, checkbox_height=16,
             font=ui_font(11),
-            fg_color="#0e639c", hover_color="#1177bb",
+            fg_color=style.PRIMARY_BG, hover_color=style.PRIMARY_HOVER,
         ).pack(anchor="w")
 
         self._section_label(tab, "Console").pack(anchor="w", pady=(14, 0))
@@ -721,7 +730,7 @@ class SettingsDialog(tk.Toplevel):
                 variable=self._preview_console_mode_var, value=value,
                 radiobutton_width=16, radiobutton_height=16,
                 font=ui_font(11),
-                fg_color="#0e639c", hover_color="#1177bb",
+                fg_color=style.PRIMARY_BG, hover_color=style.PRIMARY_HOVER,
             ).pack(anchor="w")
 
         self._hint(
@@ -765,7 +774,7 @@ class SettingsDialog(tk.Toplevel):
                 self._initial.get(KEY_AUTOSAVE, DEFAULT_AUTOSAVE_MIN),
             ),
         )
-        ctk.CTkEntry(
+        style.styled_entry(
             row, textvariable=self._autosave_var, width=80, height=24,
         ).pack(side="left", padx=(8, 0))
 
@@ -792,7 +801,7 @@ class SettingsDialog(tk.Toplevel):
             variable=self._reset_advisories_var,
             checkbox_width=16, checkbox_height=16,
             font=ui_font(11),
-            fg_color="#0e639c", hover_color="#1177bb",
+            fg_color=style.PRIMARY_BG, hover_color=style.PRIMARY_HOVER,
         ).pack(anchor="w")
 
         self._hint(
@@ -808,24 +817,19 @@ class SettingsDialog(tk.Toplevel):
 
     # ----- Footer -----
 
-    def _build_footer(self) -> None:
-        sep = tk.Frame(self, bg="#3a3a3a", height=1)
+    def _build_footer(self, parent) -> None:
+        sep = tk.Frame(parent, bg=ENTRY_BORDER, height=1)
         sep.pack(fill="x")
-        foot = tk.Frame(self, bg=BG)
+        foot = tk.Frame(parent, bg=BG)
         foot.pack(fill="x", padx=14, pady=10)
-        ctk.CTkButton(
-            foot, text="OK", width=80, height=24, corner_radius=3,
-            command=self._on_ok,
+        style.primary_button(
+            foot, "OK", command=self._on_ok, width=80,
         ).pack(side="right")
-        ctk.CTkButton(
-            foot, text="Cancel", width=80, height=24, corner_radius=3,
-            fg_color="#3c3c3c", hover_color="#4a4a4a",
-            command=self._on_cancel,
+        style.secondary_button(
+            foot, "Cancel", command=self._on_cancel, width=80,
         ).pack(side="right", padx=(0, 6))
-        ctk.CTkButton(
-            foot, text="Apply", width=80, height=24, corner_radius=3,
-            fg_color="#3c3c3c", hover_color="#4a4a4a",
-            command=self._on_apply,
+        style.secondary_button(
+            foot, "Apply", command=self._on_apply, width=80,
         ).pack(side="right", padx=(0, 6))
 
     # ------------------------------------------------------------------
@@ -944,21 +948,6 @@ class SettingsDialog(tk.Toplevel):
     def _on_cancel(self) -> None:
         self.destroy()
 
-    # ------------------------------------------------------------------
-    # Geometry
-    # ------------------------------------------------------------------
-    def _center_on_parent(self, parent) -> None:
-        try:
-            parent.update_idletasks()
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-            x = px + (pw - DIALOG_W) // 2
-            y = py + (ph - DIALOG_H) // 2
-            self.geometry(f"+{max(0, x)}+{max(0, y)}")
-        except tk.TclError:
-            pass
 
 
 def _looks_like_hex(value: str) -> bool:

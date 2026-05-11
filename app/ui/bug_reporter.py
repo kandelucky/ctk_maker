@@ -35,7 +35,9 @@ except Exception:
     def load_icon(*_args, **_kwargs) -> "ctk.CTkImage | None":
         return None
 
+from app.ui import style
 from app.ui.managed_window import ManagedToplevel
+from app.ui.system_fonts import ui_font
 
 REPO = "kandelucky/ctk_maker"
 NEW_ISSUE_URL = f"https://github.com/{REPO}/issues/new"
@@ -46,12 +48,15 @@ URL_PREFILL_LIMIT = 8000
 BUG_REPORT_EMAIL = "kandelucky.dev+ctkmaker@gmail.com"
 MIN_DESCRIPTION_WORDS = 10
 
-# Palette — kept in sync with startup_dialog.py / dialogs.py AboutDialog.
-BG = "#1e1e1e"
-PANEL_BG = "#252526"
-BTN_BG = "#3c3c3c"
-BTN_HOVER = "#4a4a4a"
-TEXT_FG = "#cccccc"
+# Color tokens — bg/panel/button/text sourced from app.ui.style for
+# cross-window consistency. DIM_FG / TITLE_FG / LINK_FG / ACCENT_* stay
+# local (no direct equivalent in style.py).
+BG = style.BG
+PANEL_BG = style.PANEL_BG
+BORDER = style.BORDER
+BTN_BG = style.SECONDARY_BG
+BTN_HOVER = style.SECONDARY_HOVER
+TEXT_FG = style.TREE_FG
 DIM_FG = "#888888"
 TITLE_FG = "#e0e0e0"
 LINK_FG = "#5bc0f8"
@@ -272,25 +277,23 @@ def attach_context_menu(widget) -> None:
 
 
 def _make_button(parent, *, text, command, primary=False, **kwargs):
-    """Standard secondary button — startup-style ``#3c3c3c``/``#4a4a4a``.
-
-    ``primary=True`` keeps the CTk default accent (used only for the
-    Submit-equivalent button so the call to action stands out).
+    """Wrap style.primary_button / style.secondary_button so the
+    reporter's ``primary=True`` flag drives the call-to-action button
+    in the same VS-Code-blue used everywhere else.
     """
+    width = kwargs.pop("width", None)
     if primary:
-        return ctk.CTkButton(
-            parent, text=text, command=command,
-            corner_radius=4, height=30,
-            font=ctk.CTkFont(size=11, weight="bold"),
-            **kwargs,
+        btn = style.primary_button(
+            parent, text, command=command, width=width or 140,
         )
-    return ctk.CTkButton(
-        parent, text=text, command=command,
-        corner_radius=4, height=30,
-        fg_color=BTN_BG, hover_color=BTN_HOVER, text_color=TEXT_FG,
-        font=ctk.CTkFont(size=11),
-        **kwargs,
-    )
+        btn.configure(font=ui_font(11, "bold"))
+    else:
+        btn = style.secondary_button(
+            parent, text, command=command, width=width or 64,
+        )
+    if kwargs:
+        btn.configure(**kwargs)
+    return btn
 
 
 def build_screenshot_hint_panel(
@@ -319,13 +322,13 @@ def build_screenshot_hint_panel(
     text_col.pack(side="left", fill="x", expand=True)
     ctk.CTkLabel(
         text_col, text="Attaching a screenshot",
-        font=ctk.CTkFont(size=heading_size, weight="bold"),
+        font=ui_font(heading_size, "bold"),
         text_color=TITLE_FG, anchor="w",
     ).pack(fill="x")
     ctk.CTkLabel(
         text_col,
         text="GitHub: drop or paste it on the page after it opens.",
-        font=ctk.CTkFont(size=text_size),
+        font=ui_font(text_size),
         text_color=DIM_FG, anchor="w", justify="left",
         wraplength=460,
     ).pack(fill="x", pady=(2, 0))
@@ -335,7 +338,7 @@ def build_screenshot_hint_panel(
             "Email: attach the image to your email along with the "
             "report file."
         ),
-        font=ctk.CTkFont(size=text_size),
+        font=ui_font(text_size),
         text_color=DIM_FG, anchor="w", justify="left",
         wraplength=460,
     ).pack(fill="x", pady=(1, 0))
@@ -411,13 +414,13 @@ class BugReporterWindow(ManagedToplevel):
 
         ctk.CTkLabel(
             f, text="What would you like to report?",
-            font=ctk.CTkFont(size=18, weight="bold"),
+            font=ui_font(18, "bold"),
             text_color=TITLE_FG,
         ).pack(pady=(0, 6))
         ctk.CTkLabel(
             f,
             text="Pick a track to start filling out the report.",
-            font=ctk.CTkFont(size=11),
+            font=ui_font(11),
             text_color=DIM_FG,
         ).pack(pady=(0, 24))
 
@@ -475,7 +478,7 @@ class BugReporterWindow(ManagedToplevel):
             )
         ctk.CTkLabel(
             head_row, text="Why this matters",
-            font=ctk.CTkFont(size=13, weight="bold"),
+            font=ui_font(13, "bold"),
             text_color=TITLE_FG, anchor="w",
         ).pack(side="left", fill="x", expand=True)
 
@@ -487,7 +490,7 @@ class BugReporterWindow(ManagedToplevel):
                 "what gets fixed and built next. Thanks for taking "
                 "the time to write one."
             ),
-            font=ctk.CTkFont(size=11),
+            font=ui_font(11),
             text_color=TEXT_FG, anchor="w", justify="left",
             wraplength=560,
         ).pack(fill="x", pady=(8, 4))
@@ -497,7 +500,7 @@ class BugReporterWindow(ManagedToplevel):
             text=(
                 "Please check existing issues first to avoid duplicates."
             ),
-            font=ctk.CTkFont(size=11),
+            font=ui_font(11),
             text_color=DIM_FG, anchor="w", justify="left",
             wraplength=560,
         ).pack(fill="x", pady=(0, 6))
@@ -511,8 +514,8 @@ class BugReporterWindow(ManagedToplevel):
             command=lambda: webbrowser.open(WIKI_REPORTING_URL),
             fg_color=BTN_BG, hover_color=BTN_HOVER,
             text_color=LINK_FG,
-            font=ctk.CTkFont(size=11, weight="bold"),
-            height=28, corner_radius=4,
+            font=ui_font(11, "bold"),
+            height=28, corner_radius=style.BUTTON_RADIUS,
         )
         guide_btn.pack(side="left")
 
@@ -522,8 +525,8 @@ class BugReporterWindow(ManagedToplevel):
             command=lambda: webbrowser.open(KNOWN_ISSUES_URL),
             fg_color=BTN_BG, hover_color=BTN_HOVER,
             text_color=LINK_FG,
-            font=ctk.CTkFont(size=11, weight="bold"),
-            height=28, corner_radius=4,
+            font=ui_font(11, "bold"),
+            height=28, corner_radius=style.BUTTON_RADIUS,
         )
         issues_btn.pack(side="right")
 
@@ -550,12 +553,12 @@ class BugReporterWindow(ManagedToplevel):
         ctk.CTkLabel(card, image=icon_img, text="").pack(pady=(20, 6))
         ctk.CTkLabel(
             card, text=title,
-            font=ctk.CTkFont(size=14, weight="bold"),
+            font=ui_font(14, "bold"),
             text_color=title_color,
         ).pack(pady=(0, 4))
         ctk.CTkLabel(
             card, text=subtitle,
-            font=ctk.CTkFont(size=10),
+            font=ui_font(10),
             text_color=DIM_FG, justify="center",
         ).pack(pady=(0, 12))
 
@@ -598,14 +601,14 @@ class BugReporterWindow(ManagedToplevel):
             command=self._show_picker,
             fg_color="transparent", hover_color=BTN_HOVER,
             text_color=LINK_FG,
-            font=ctk.CTkFont(size=10, underline=True),
+            font=ui_font(10, "underline"),
             width=120, height=22, anchor="w",
-            corner_radius=4,
+            corner_radius=style.BUTTON_RADIUS,
         ).pack(side="left")
 
         self._form_heading = ctk.CTkLabel(
             parent, text="",
-            font=ctk.CTkFont(size=18, weight="bold"),
+            font=ui_font(18, "bold"),
             text_color=TITLE_FG, anchor="w",
         )
         self._form_heading.pack(fill="x", padx=16, pady=(0, 8))
@@ -614,16 +617,16 @@ class BugReporterWindow(ManagedToplevel):
         title_frame.pack(fill="x", padx=16, pady=(0, 8))
         ctk.CTkLabel(
             title_frame, text="Title *",
-            font=ctk.CTkFont(size=11),
+            font=ui_font(11),
             text_color=TEXT_FG, anchor="w",
         ).pack(fill="x")
         title_entry = ctk.CTkEntry(
             title_frame,
             textvariable=self._title_var,
             placeholder_text="Short summary",
-            corner_radius=4, height=28,
-            font=ctk.CTkFont(size=11),
-            fg_color=PANEL_BG, border_color=BTN_BG,
+            corner_radius=style.BUTTON_RADIUS, height=28,
+            font=ui_font(11),
+            fg_color=PANEL_BG, border_color=BORDER,
         )
         title_entry.pack(fill="x")
         attach_context_menu(title_entry)
@@ -645,13 +648,13 @@ class BugReporterWindow(ManagedToplevel):
 
         self._stats_label = ctk.CTkLabel(
             parent, text="",
-            font=ctk.CTkFont(size=10),
+            font=ui_font(10),
             anchor="w", text_color=DIM_FG,
         )
         self._stats_label.pack(fill="x", padx=16, pady=(0, 1))
         self._status_label = ctk.CTkLabel(
             parent, text="",
-            font=ctk.CTkFont(size=10),
+            font=ui_font(10),
             anchor="w", text_color=DIM_FG,
         )
         self._status_label.pack(fill="x", padx=16, pady=(0, 10))
@@ -680,7 +683,7 @@ class BugReporterWindow(ManagedToplevel):
 
         ctk.CTkLabel(
             f, text="Environment",
-            font=ctk.CTkFont(size=11, weight="bold"),
+            font=ui_font(11, "bold"),
             text_color=TITLE_FG, anchor="w",
         ).pack(fill="x", pady=(8, 4))
 
@@ -693,9 +696,9 @@ class BugReporterWindow(ManagedToplevel):
         self._mini_label(col_v, "CTkMaker version")
         version_entry = ctk.CTkEntry(
             col_v, textvariable=self._version_var, state="readonly",
-            corner_radius=4, height=26,
-            font=ctk.CTkFont(size=11),
-            fg_color=PANEL_BG, border_color=BTN_BG,
+            corner_radius=style.BUTTON_RADIUS, height=26,
+            font=ui_font(11),
+            fg_color=PANEL_BG, border_color=BORDER,
         )
         version_entry.pack(fill="x")
         attach_context_menu(version_entry)
@@ -715,7 +718,7 @@ class BugReporterWindow(ManagedToplevel):
 
         self._env_preview = ctk.CTkLabel(
             f, text="",
-            font=ctk.CTkFont(size=10),
+            font=ui_font(10),
             anchor="w", text_color=DIM_FG, justify="left",
             wraplength=600,
         )
@@ -762,15 +765,15 @@ class BugReporterWindow(ManagedToplevel):
     def _mini_label(self, parent, text: str) -> None:
         ctk.CTkLabel(
             parent, text=text,
-            font=ctk.CTkFont(size=10),
+            font=ui_font(10),
             text_color=DIM_FG, anchor="w",
         ).pack(fill="x")
 
     def _mini_optionmenu(self, parent, var, values) -> ctk.CTkOptionMenu:
         om = ctk.CTkOptionMenu(
             parent, variable=var, values=values,
-            corner_radius=4, height=26,
-            font=ctk.CTkFont(size=11),
+            corner_radius=style.BUTTON_RADIUS, height=26,
+            font=ui_font(11),
             fg_color=BTN_BG, button_color=BTN_BG,
             button_hover_color=BTN_HOVER, text_color=TEXT_FG,
         )
@@ -782,14 +785,14 @@ class BugReporterWindow(ManagedToplevel):
     ) -> ctk.CTkTextbox:
         ctk.CTkLabel(
             parent, text=label,
-            font=ctk.CTkFont(size=11),
+            font=ui_font(11),
             text_color=TEXT_FG, anchor="w",
         ).pack(fill="x", pady=(6, 2))
         box = ctk.CTkTextbox(
             parent, height=height, wrap="word",
-            corner_radius=4,
-            font=ctk.CTkFont(size=11),
-            fg_color=PANEL_BG, border_color=BTN_BG,
+            corner_radius=style.BUTTON_RADIUS,
+            font=ui_font(11),
+            fg_color=PANEL_BG, border_color=BORDER,
         )
         box.pack(fill="x")
         box.bind("<KeyRelease>", lambda _e: self._refresh_all())
@@ -804,20 +807,20 @@ class BugReporterWindow(ManagedToplevel):
         row.pack(fill="x", pady=(6, 2))
         ctk.CTkLabel(
             row, text=f"{label} *",
-            font=ctk.CTkFont(size=11),
+            font=ui_font(11),
             text_color=TEXT_FG, anchor="w",
         ).pack(side="left", fill="x", expand=True)
         counter = ctk.CTkLabel(
             row, text=f"0 / {min_words} words",
-            font=ctk.CTkFont(size=10),
+            font=ui_font(10),
             text_color=DIM_FG, anchor="e",
         )
         counter.pack(side="right")
         box = ctk.CTkTextbox(
             parent, height=height, wrap="word",
-            corner_radius=4,
-            font=ctk.CTkFont(size=11),
-            fg_color=PANEL_BG, border_color=BTN_BG,
+            corner_radius=style.BUTTON_RADIUS,
+            font=ui_font(11),
+            fg_color=PANEL_BG, border_color=BORDER,
         )
         box.pack(fill="x")
         box.bind("<KeyRelease>", lambda _e: self._refresh_all())
@@ -1094,7 +1097,7 @@ class ReportDialog(ManagedToplevel):
         ctk.CTkLabel(
             container,
             text="How would you like to send this report?",
-            font=ctk.CTkFont(size=13, weight="bold"),
+            font=ui_font(13, "bold"),
             text_color=TITLE_FG,
         ).pack(pady=(16, 6))
 
@@ -1154,12 +1157,12 @@ class ReportDialog(ManagedToplevel):
         inner.pack(fill="x", padx=12, pady=10)
         ctk.CTkLabel(
             inner, text=title,
-            font=ctk.CTkFont(size=12, weight="bold"),
+            font=ui_font(12, "bold"),
             text_color=TITLE_FG, anchor="w",
         ).pack(fill="x")
         ctk.CTkLabel(
             inner, text=description,
-            font=ctk.CTkFont(size=10),
+            font=ui_font(10),
             text_color=DIM_FG, anchor="w",
             wraplength=440, justify="left",
         ).pack(fill="x", pady=(2, 6))
@@ -1169,12 +1172,12 @@ class ReportDialog(ManagedToplevel):
             email_row.pack(fill="x", pady=(0, 8))
             ctk.CTkLabel(
                 email_row, text="Send to:",
-                font=ctk.CTkFont(size=10),
+                font=ui_font(10),
                 text_color=DIM_FG,
             ).pack(side="left", padx=(0, 6))
             ctk.CTkLabel(
                 email_row, text=email,
-                font=ctk.CTkFont(size=10, weight="bold"),
+                font=ui_font(10, "bold"),
                 text_color=LINK_FG,
             ).pack(side="left")
 
@@ -1191,10 +1194,10 @@ class ReportDialog(ManagedToplevel):
 
             copy_btn = ctk.CTkButton(
                 email_row, text="Copy", command=_copy_email,
-                width=56, height=22, corner_radius=4,
+                width=56, height=22, corner_radius=style.BUTTON_RADIUS,
                 fg_color=BTN_BG, hover_color=BTN_HOVER,
                 text_color=TEXT_FG,
-                font=ctk.CTkFont(size=10),
+                font=ui_font(10),
             )
             copy_btn.pack(side="left", padx=(8, 0))
 
@@ -1206,7 +1209,7 @@ class ReportDialog(ManagedToplevel):
                 bottom, text=link_text, command=link_command,
                 fg_color="transparent", hover_color=BTN_HOVER,
                 text_color=LINK_FG,
-                font=ctk.CTkFont(size=10, underline=True),
+                font=ui_font(10, "underline"),
                 width=170, height=26, anchor="w",
             )
             link_btn.pack(side="left")
