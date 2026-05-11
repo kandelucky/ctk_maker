@@ -177,6 +177,7 @@ def place_bind_button(
 # =====================================================================
 SLOT_COLOR = "color"
 SLOT_COLOR_CLEAR = "color_clear"
+SLOT_BOUND_COLOR_SWATCH = "bound_color_swatch"
 SLOT_ENUM_BUTTON = "enum_button"
 SLOT_NUMBER_SPIN = "number_spin"
 SLOT_TEXT_VALUE = "text_value"
@@ -200,6 +201,32 @@ def place_bind_clear(
     spot is always free.
     """
     _place_value_cell_right(tree, widget, iid, width=14, pad_y=4)
+
+
+def place_bound_color_swatch(
+    tree: tk.Widget, widget: tk.Widget, iid: str,
+) -> None:
+    """Small clickable swatch for a variable-bound color row. Sits at
+    the right edge with a 22 px offset so it doesn't collide with the
+    ✕ unbind button (which lives at the far right via place_bind_clear,
+    14 px wide + 4 px right margin = 18 px reserved + 4 px gap).
+    """
+    try:
+        bbox = tree.bbox(iid, "value")
+    except tk.TclError:
+        bbox = ()
+    if not bbox:
+        widget.place_forget()
+        return
+    x, y, w, h = bbox
+    SWATCH_W = 22
+    RIGHT_OFFSET = 22  # leaves room for the 14-px ✕ + gap
+    pad_y = 4
+    widget.place(
+        x=x + w - SWATCH_W - RIGHT_OFFSET, y=y + pad_y,
+        width=SWATCH_W, height=max(1, h - pad_y * 2),
+    )
+    widget.lift()
 
 
 def place_event_add(

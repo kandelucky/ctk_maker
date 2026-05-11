@@ -27,6 +27,7 @@ from ctk_color_picker import ColorPickerDialog
 
 from app.core.commands import (
     ChangePropertyCommand,
+    ChangeVariableDefaultCommand,
     MultiChangePropertyCommand,
 )
 from app.ui.system_fonts import ui_font
@@ -340,7 +341,15 @@ class CommitMixin:
         node = self.project.get_widget(self.current_id)
         if node is None:
             return
-        initial = node.properties.get(pname) or "#6366f1"
+        value = node.properties.get(pname)
+        var_id = parse_var_token(value)
+        entry = (
+            self.project.get_variable(var_id) if var_id is not None else None
+        )
+        if entry is not None:
+            self._pick_color_for_variable(entry)
+            return
+        initial = value or "#6366f1"
         dialog = ColorPickerDialog(
             self.winfo_toplevel(), initial_color=initial,
         )
@@ -348,6 +357,39 @@ class CommitMixin:
         hex_value = getattr(dialog, "result", None)
         if hex_value:
             self._commit_prop(pname, hex_value)
+
+    def _pick_color_for_variable(self, entry) -> None:
+        # Bound row: picker rewrites the variable's default, so every
+        # widget bound to it repaints in lock-step. Falls back to
+        # #000000 when the stored default isn't valid hex (loose-policy
+        # mirror of the literal flow's "" → #6366f1 default).
+        from app.core.variables import COLOR_DEFAULT, is_valid_hex
+        initial = entry.default if is_valid_hex(entry.default) else COLOR_DEFAULT
+        dialog = ColorPickerDialog(
+            self.winfo_toplevel(), initial_color=initial,
+        )
+        try:
+            uses = sum(1 for _ in self.project.iter_bindings_for(entry.id))
+            suffix = (
+                f" — used by {uses} widget{'s' if uses != 1 else ''}"
+                if uses else ""
+            )
+            dialog.title(f"Editing variable: {entry.name}{suffix}")
+        except tk.TclError:
+            pass
+        dialog.wait_window()
+        hex_value = getattr(dialog, "result", None)
+        if not hex_value or hex_value == entry.default:
+            return
+        before = entry.default
+        self.project.change_variable_default(entry.id, hex_value)
+        # change_variable_default coerces invalid input — push the
+        # coerced value so undo restores exactly what redo would land on.
+        after = entry.default
+        if after != before:
+            self.project.history.push(
+                ChangeVariableDefaultCommand(entry.id, before, after),
+            )
 
     def _pick_image(self, pname: str) -> None:
         # Project-scoped picker — only shows images already in

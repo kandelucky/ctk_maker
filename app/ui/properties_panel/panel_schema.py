@@ -820,8 +820,13 @@ class SchemaMixin:
         # variable — the chip in the cell is the editor surface, and
         # any literal-value overlay would visually fight with it. The
         # right-click menu handles bind / unbind from this row.
+        # Color rows are the exception: a small swatch sits to the
+        # left of the ✕ unbind button so the picker-edits-variable
+        # flow stays discoverable on bound rows.
         if chip is None:
             get_editor(ptype).populate(self, iid, pname, prop, value)
+        elif ptype == "color":
+            get_editor(ptype).populate_bound(self, iid, pname)
 
         # Resolve binding scope so the diamond carries the same colour
         # cue as the Variables window tab — global = blue, local =

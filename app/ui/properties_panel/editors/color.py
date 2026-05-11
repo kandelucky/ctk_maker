@@ -14,12 +14,12 @@ from __future__ import annotations
 
 import tkinter as tk
 
-from app.core.variables import is_var_token
-
 from ..constants import BOOL_OFF_FG, TREE_FG, VALUE_BG
 from ..overlays import (
+    SLOT_BOUND_COLOR_SWATCH,
     SLOT_COLOR,
     SLOT_COLOR_CLEAR,
+    place_bound_color_swatch,
     place_color_clear,
     place_color_swatch,
 )
@@ -80,7 +80,7 @@ class ColorEditor(Editor):
             )
         overlay.bind(
             "<Button-1>",
-            lambda _e, p=pname: self._open_picker_if_unbound(panel, p),
+            lambda _e, p=pname: panel._pick_color(p),
         )
         panel.overlays.add(iid, SLOT_COLOR, overlay, place_color_swatch)
         if self._is_clearable(panel, prop):
@@ -187,14 +187,42 @@ class ColorEditor(Editor):
             except tk.TclError:
                 pass
 
+    def populate_bound(self, panel, iid: str, pname: str) -> None:
+        """Render the picker-affordance swatch on a variable-bound row.
+        The regular ``populate`` is skipped for bound rows (the chip
+        pill owns the value cell), but the color editor still needs a
+        clickable surface to surface the picker-edits-variable flow.
+        Resolves the swatch fill through the live tk var so the
+        rendered color tracks whatever the variable currently holds.
+        """
+        from app.core.variables import parse_var_token
+        node = panel.project.get_widget(panel.current_id)
+        if node is None:
+            return
+        var_id = parse_var_token(node.properties.get(pname))
+        if var_id is None:
+            return
+        tk_var = panel.project.get_tk_var(var_id)
+        try:
+            hex_color = tk_var.get() if tk_var is not None else None
+        except Exception:
+            hex_color = None
+        overlay = tk.Frame(
+            panel.tree, bg=_swatch_bg(hex_color),
+            highlightthickness=1, highlightbackground="#3a3a3a",
+            cursor="hand2",
+        )
+        overlay.bind(
+            "<Button-1>",
+            lambda _e, p=pname: panel._pick_color(p),
+        )
+        panel.overlays.add(
+            iid, SLOT_BOUND_COLOR_SWATCH, overlay, place_bound_color_swatch,
+        )
+
     def on_double_click(self, panel, pname, prop, event) -> bool:
         # Var-bound rows are intercepted in panel_commit._on_double_click
         # before this dispatch (jumps to the Variables window), so the
         # editor only sees literal values here.
         panel._pick_color(pname)
         return True
-
-    def _open_picker_if_unbound(self, panel, pname: str) -> None:
-        if is_var_token(self._read_value(panel, pname)):
-            return
-        panel._pick_color(pname)
