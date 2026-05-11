@@ -30,8 +30,10 @@ from typing import Callable, Optional
 import customtkinter as ctk
 
 from app.ui import style
+from app.ui.icons import load_icon
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
+from app.ui.toolbar import _attach_tooltip
 
 CONSOLE_STDERR_FG = "#ff6b6b"
 CONSOLE_MATCH_BG = "#553d00"
@@ -93,15 +95,16 @@ class ConsolePanel(ctk.CTkFrame):
     def _build(self) -> None:
         self._toolbar = style.make_toolbar(self)
         self._toolbar.pack(fill="x")
-        style.pack_toolbar_button(
-            style.secondary_button(self._toolbar, "Clear", command=self._handle_clear),
-            first=True,
+        clear_btn = style.secondary_button(
+            self._toolbar, "Clear", command=self._handle_clear,
         )
+        style.pack_toolbar_button(clear_btn, first=True)
+        _attach_tooltip(clear_btn, "Clear log")
         # Auto-clear checkbox — the BooleanVar is owned by MainWindow
         # so both console forms share state and so the preview-launch
         # hook can read it without reaching into a panel instance.
         if self._clear_on_preview_var is not None:
-            ctk.CTkCheckBox(
+            auto_clear_cb = ctk.CTkCheckBox(
                 self._toolbar, text="Auto-clear on preview",
                 variable=self._clear_on_preview_var,
                 width=160, height=style.BUTTON_HEIGHT,
@@ -110,14 +113,34 @@ class ConsolePanel(ctk.CTkFrame):
                 fg_color=style.PRIMARY_BG, hover_color=style.PRIMARY_HOVER,
                 text_color=style.TREE_FG,
                 font=ui_font(11),
-            ).pack(
+            )
+            auto_clear_cb.pack(
                 side="left", padx=(4, 0), pady=style.TOOLBAR_PADY,
             )
-        style.pack_toolbar_button(
-            style.secondary_button(self._toolbar, "Copy", command=self._handle_copy),
+            _attach_tooltip(auto_clear_cb, "Clear log on each preview start")
+        copy_btn = style.secondary_button(
+            self._toolbar, "Copy", command=self._handle_copy,
         )
-        style.pack_toolbar_button(
-            style.danger_button(self._toolbar, "Stop", command=self._handle_stop),
+        style.pack_toolbar_button(copy_btn)
+        _attach_tooltip(copy_btn, "Copy all to clipboard")
+        # Search — icon-only entry point for the slide-in find bar.
+        # Same handler as Ctrl+F; surfaces the feature for users who
+        # don't know the shortcut.
+        search_btn = ctk.CTkButton(
+            self._toolbar, text="",
+            image=load_icon("search", size=16, color="#cccccc"),
+            command=self._show_search,
+            width=28, height=style.BUTTON_HEIGHT,
+            corner_radius=style.BUTTON_RADIUS,
+            fg_color=style.SECONDARY_BG, hover_color=style.SECONDARY_HOVER,
+        )
+        style.pack_toolbar_button(search_btn)
+        _attach_tooltip(search_btn, "Search (Ctrl+F)")
+        # Stop button — created here, packed in the right cluster
+        # below so it sits at the end of the toolbar (just left of the
+        # close × when floating, rightmost when docked).
+        stop_btn = style.danger_button(
+            self._toolbar, "Stop", command=self._handle_stop,
         )
         # Auto-scroll lock — when checked, append_line stops auto-
         # scrolling to the end on new output. Useful when the user
@@ -135,9 +158,8 @@ class ConsolePanel(ctk.CTkFrame):
             font=ui_font(11),
         )
         # Pack order matters: ``side="right"`` stacks right-to-left, so
-        # the close button is packed first (rightmost) when present and
-        # Lock scroll lands just to its left. Without the close button,
-        # Lock scroll takes the rightmost slot directly.
+        # the rightmost slot is packed first. Visual order (LTR):
+        # [Lock scroll] [Stop] [×]  (× Close present only when floating).
         if self._on_close is not None:
             close_btn = ctk.CTkButton(
                 self._toolbar, text="×", command=self._handle_close,
@@ -150,14 +172,20 @@ class ConsolePanel(ctk.CTkFrame):
                 side="right", padx=(0, style.TOOLBAR_PADX),
                 pady=style.TOOLBAR_PADY,
             )
-            lock_cb.pack(
+            _attach_tooltip(close_btn, "Close")
+            stop_btn.pack(
                 side="right", padx=(0, 4), pady=style.TOOLBAR_PADY,
             )
         else:
-            lock_cb.pack(
+            stop_btn.pack(
                 side="right", padx=(0, style.TOOLBAR_PADX),
                 pady=style.TOOLBAR_PADY,
             )
+        _attach_tooltip(stop_btn, "Stop preview process")
+        lock_cb.pack(
+            side="right", padx=(0, 4), pady=style.TOOLBAR_PADY,
+        )
+        _attach_tooltip(lock_cb, "Don't auto-scroll on new output")
 
         # Search bar — built but not packed; ``_show_search`` slides it
         # in between the toolbar and the textbox on Ctrl+F.
