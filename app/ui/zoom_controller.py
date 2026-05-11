@@ -7,6 +7,11 @@ bottom status-bar zoom widgets (−/+, percentage menu, warning label).
 Workspace creates one `ZoomController` per workspace instance and
 wires an `on_zoom_changed` callback that redraws the document rect,
 grid, and selection chrome when the zoom value updates.
+
+Ghost hint label: shown inline next to the zoom percentage whenever
+2+ live (non-ghost, non-collapsed) docs sit on the canvas. Pure
+state-based — no timing heuristics — and disappears the moment the
+user ghosts enough docs to fall under the threshold.
 """
 from __future__ import annotations
 
@@ -31,6 +36,9 @@ ZOOM_MENU_LABELS = [
 
 ZOOM_WARNING_FG = "#d4a340"
 ZOOM_WARNING_TEXT = "      ⚠  Not actual size — set 100% for real preview"
+# Reddish hue — visually distinct from the carrot "not actual size"
+# warning so the two reads as separate concerns.
+GHOST_HINT_FG = "#e06c5e"
 
 
 class ZoomController:
@@ -66,6 +74,7 @@ class ZoomController:
         self._menu: ctk.CTkOptionMenu | None = None
         self._menu_var: tk.StringVar | None = None
         self._warning: ctk.CTkLabel | None = None
+        self._ghost_hint: ctk.CTkLabel | None = None
 
     @property
     def canvas_scale(self) -> float:
@@ -321,6 +330,41 @@ class ZoomController:
             return None
 
     # ------------------------------------------------------------------
+    # Ghost hint — nudge the user when too many live docs share canvas
+    # ------------------------------------------------------------------
+    def _count_live_docs(self) -> int:
+        """Docs that pay full widget-cost during apply_all — neither
+        ghosted (replaced by a single canvas image) nor collapsed
+        (drawn as tabs, widgets destroyed). 2+ is when ghost mode
+        starts to matter; below that the user has nothing to ghost.
+        """
+        try:
+            return sum(
+                1 for d in self.project.documents
+                if not d.ghosted and not d.collapsed
+            )
+        except Exception:
+            return 0
+
+    def refresh_ghost_hint(self) -> None:
+        """Show / hide the reddish "use ghost mode" label next to the
+        zoom percentage. Drives off ``_count_live_docs()`` — purely
+        state-based, no timing. Safe to call before ``mount_controls``
+        (no-op until the label exists).
+        """
+        if self._ghost_hint is None:
+            return
+        live = self._count_live_docs()
+        if live >= 2:
+            text = (
+                f"      ⚠  {live} live windows — "
+                f"click the ● Live strip to ghost"
+            )
+            self._ghost_hint.configure(text=text)
+        else:
+            self._ghost_hint.configure(text="")
+
+    # ------------------------------------------------------------------
     # Status-bar UI
     # ------------------------------------------------------------------
     def mount_controls(self, bar) -> None:
@@ -380,6 +424,35 @@ class ZoomController:
         )
         self._warning.pack(side="left", padx=(4, 0), pady=3)
 
+        # Ghost-mode hint — appears as soon as the canvas carries 2+
+        # live docs and disappears the moment the user ghosts one of
+        # them. Keeps the user informed *while* the condition holds
+        # without ever popping a modal.
+        self._ghost_hint = ctk.CTkLabel(
+            bar, text="",
+            font=ui_font(10), text_color=GHOST_HINT_FG,
+            anchor="w",
+        )
+        self._ghost_hint.pack(side="left", padx=(4, 0), pady=3)
+        # Subscribe to every event that changes the live-doc count so
+        # the hint stays in sync without leaning on the zoom callback
+        # (the user may add or ghost docs without touching zoom).
+        try:
+            bus = self.project.event_bus
+        except AttributeError:
+            bus = None
+        if bus is not None:
+            for evt in (
+                "document_added",
+                "document_removed",
+                "document_ghost_changed",
+                "document_collapsed_changed",
+            ):
+                bus.subscribe(
+                    evt, lambda *_a, **_k: self.refresh_ghost_hint(),
+                )
+        self.refresh_ghost_hint()
+
     def _refresh_readout(self) -> None:
         if self._menu_var is None:
             return
@@ -391,6 +464,11 @@ class ZoomController:
                 self._warning.configure(text=ZOOM_WARNING_TEXT)
             else:
                 self._warning.configure(text="")
+        # Live-doc count is independent of zoom percentage, but
+        # refreshing alongside the readout keeps the two warnings
+        # consistent when the user opens a new project and the loader
+        # snaps zoom + adds docs in the same burst.
+        self.refresh_ghost_hint()
 
     def _on_menu_select(self, label: str) -> None:
         if label == "Actual size":

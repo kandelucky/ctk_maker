@@ -902,6 +902,15 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         bus.subscribe(
             "document_removed", self._on_document_removed_for_behavior,
         )
+        # Ghost toggle persists the base64 screenshot into
+        # ``Document.to_dict`` — flush to disk immediately so the
+        # frozen image survives close-without-save. Load-time
+        # ``freeze_pending`` deliberately bypasses the bus, so this
+        # subscriber only fires for genuine user toggles.
+        bus.subscribe(
+            "document_ghost_changed",
+            self._on_ghost_toggled_save,
+        )
         # Alignment toolbar buttons enable/disable on selection
         # change — also fire on widget add/remove since the same
         # selection might gain or lose siblings.
@@ -1145,6 +1154,23 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
         gm = getattr(self.workspace, "ghost_manager", None)
         if gm is not None:
             gm.freeze_pending()
+            # Re-focus the active doc after load. Deferred via
+            # ``after_idle`` + a small ``after`` because at this point
+            # the splash is still up (alpha=0), the paned window
+            # hasn't divided the workspace into its final width, and
+            # ``focus_document`` reads ``canvas.winfo_width()`` which
+            # at that instant returns the placeholder / full-screen
+            # size — the doc lands offset accordingly. Waiting one
+            # idle round + a frame lets the layout settle so startup
+            # centering matches the click-time behaviour.
+            active_id = self.project.active_document_id
+            if active_id is not None:
+                self.after_idle(
+                    lambda: self.after(
+                        100,
+                        lambda: self.workspace.focus_document(active_id),
+                    ),
+                )
         # Detect legacy single-file projects (no project.json marker
         # in the walked-up folder) and offer a one-shot conversion
         # to the multi-page format. Skipped for already-converted
@@ -1552,6 +1578,21 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
             self._set_current_path(self._current_path)
         else:
             self._on_save_as()
+
+    def _on_ghost_toggled_save(self, _doc_id, _ghost) -> None:
+        """Persist the project immediately when a ghost toggle fires
+        so the freshly captured base64 PNG in ``Document.to_dict``
+        survives close-without-save. Silent on missing path
+        (untitled project — nothing to write back to) and on OSError
+        (next regular save will catch up; can't surface a modal in
+        the middle of a workspace click)."""
+        if self._current_path is None:
+            return
+        try:
+            save_project(self.project, self._current_path)
+            clear_autosave(self._current_path)
+        except OSError:
+            log_error("save_project (ghost toggle)")
 
     def _on_save_as(self) -> None:
         # Multi-page projects open the 3-scope dialog; legacy

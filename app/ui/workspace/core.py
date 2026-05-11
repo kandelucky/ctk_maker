@@ -307,9 +307,9 @@ class Workspace(ctk.CTkFrame):
         self, doc_id: str, ghost: bool,
     ) -> None:
         # Lifecycle has no separate handler for ghost — the GhostManager
-        # owns the freeze/unfreeze. After the freeze the canvas redraw
-        # repaints chrome (the doc's switch state needs to mirror the
-        # new value).
+        # owns the freeze/unfreeze. The redraw afterwards repaints the
+        # ghost statusbar in its new colour / label so the user sees
+        # the state flip immediately.
         doc = self.project.get_document(doc_id)
         if doc is None:
             return
@@ -317,6 +317,7 @@ class Workspace(ctk.CTkFrame):
             self.ghost_manager.freeze(doc)
         else:
             self.ghost_manager.unfreeze(doc)
+        self._redraw_document()
         self._redraw_document()
 
     def _on_document_collapsed_changed(
@@ -331,8 +332,6 @@ class Workspace(ctk.CTkFrame):
         # Add / remove / active-switch of a document changes which
         # chrome strip is highlighted and, on add/remove, the total
         # scroll region. A full redraw covers both cheaply.
-        if self.chrome is not None:
-            self.chrome.reap_stale_ghost_switches()
         self._redraw_document()
         # Center viewport on the now-active document so the user
         # never ends up looking at the wrong canvas region after a

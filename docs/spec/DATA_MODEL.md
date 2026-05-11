@@ -134,7 +134,8 @@ One window inside a project (Main Window or Toplevel). 207 lines.
 | `canvas_x` / `canvas_y` | `int` | `0` × `0` | Where the document sits on the shared workspace canvas. |
 | `is_toplevel` | `bool` | `False` | `False` → `class X(ctk.CTk)`. `True` → `ctk.CTkToplevel`. |
 | `collapsed` | `bool` | `False` | Builder-only — when `True` the doc is hidden from the canvas (no rect / chrome / widget render) and surfaces as a chip on the bottom tab strip. Persisted; widgets are lazy-built on expand. |
-| `ghosted` | `bool` | `False` | Builder-only — when `True` the doc's live widgets are destroyed and replaced with a desaturated PIL screenshot at the same `canvas_x` / `canvas_y`. Persisted; restored on chrome icon toggle (deferred to post-load via `_pending_ghost` on the in-memory dataclass so the screenshot can capture real pixels). |
+| `ghosted` | `bool` | `False` | Builder-only — when `True` the doc's live widgets are destroyed and replaced with a desaturated PIL screenshot at the same `canvas_x` / `canvas_y`. Persisted; restored post-load via the in-memory `_pending_ghost` flag once widgets exist (legacy path) or directly from `ghost_image` when present. |
+| `ghost_image` | `str` (base64 PNG) | absent | Persisted screenshot for a ghosted doc. Encoded on save when `ghosted=True` and `Document._cached_ghost_pil` is populated. Inflated on load into `_cached_ghost_pil`; `GhostManager.freeze_from_cache` places it verbatim — no `ImageGrab` race against the startup paint. Absent for legacy projects or live docs. |
 | `window_properties` | `dict` | `DEFAULT_WINDOW_PROPERTIES` | Window-level config. See below. |
 | `root_widgets` | `list[WidgetNode]` | `[]` | Top-level widget tree for this document. |
 | `description` | `str` | `""` | AI-bridge plain-language description (emitted as code comments). |

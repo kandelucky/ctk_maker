@@ -303,7 +303,10 @@ UX layered on top of the model — runtime-only, never persisted to the export.
 ### Window visibility
 
 - **Window → Visibility** menu (or chrome chevron-down) **minimizes** a doc to a chip on the bottom tab strip — click the chip to restore. Persisted as [`Document.collapsed`](../../app/core/document.py).
-- The square-check chrome icon toggles **Ghost mode** — live widgets are replaced by a desaturated PIL screenshot at the same canvas position. Frees Tk resources without losing visual context. Persisted as `Document.ghosted`.
+- Every doc carries a **ghost statusbar** along its bottom edge — `● Live  —  click to ghost` (neutral grey) or `● GHOST  —  click to restore live widgets` (bright carrot). Click the strip *or* the desaturated PIL screenshot to flip state. Frees Tk resources without losing visual context; persisted as `Document.ghosted` + base64 PNG in `ghost_image`. Drawn in [render.py](../../app/ui/workspace/render.py) `_draw_ghost_statusbar`; freeze/unfreeze in [ghost_manager.py](../../app/ui/workspace/ghost_manager.py).
+- **Two-step click rule** — clicking a ghosted doc (statusbar or screenshot) only focuses it on the first click; a second click on the same now-active ghost actually unghosts. Live → ghost stays one-click since the operation is cheap and is the action the user typically wants. Prevents a stray click while panning from rebuilding every widget in the doc.
+- **Screenshot persistence** — every fresh capture is cached on `Document._cached_ghost_pil`. Toggling ghost ON triggers an immediate `save_project` ([main_window.py](../../app/ui/main_window.py) `_on_ghost_toggled_save`) so the base64 PNG lands in `.ctkproj` without waiting for autosave. Next load reads it back and `GhostManager.freeze_from_cache` places it verbatim — the user sees the exact image they left behind instead of whatever pixels happened to sit at those coords during startup.
+- **Live-window lag hint** — when 2+ live (non-ghost, non-collapsed) docs share the canvas, the bottom zoom bar shows a reddish `⚠  N live windows — click the ● Live strip to ghost` label next to the percentage. Pure state-based — no timing heuristics — and disappears the moment the user ghosts enough docs to fall under the threshold. Implemented in [zoom_controller.py](../../app/ui/zoom_controller.py) `refresh_ghost_hint`.
 
 ## What's design-time only
 

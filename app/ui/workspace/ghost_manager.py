@@ -11,6 +11,13 @@ When a doc enters ghost state the manager:
 5. Places the filtered image as a canvas item at the doc's logical
    rect, raised above any chrome / grid drawn underneath.
 
+Persistence: the desaturated PIL is cached on ``Document._cached
+_ghost_pil`` and base64-PNG'd into the .ctkproj at save time. Next
+load reads it back; ``freeze_from_cache`` places it without ever
+touching the screen so the user sees the exact frozen image they
+left behind instead of whatever pixels happened to sit at those
+coords during startup.
+
 Zoom keeps the screenshot in sync via PIL.Image.resize → fresh
 PhotoImage. Pan uses Tk's native viewport shift — no per-image
 work needed.
@@ -51,13 +58,53 @@ class GhostManager:
     # Public API
     # ------------------------------------------------------------------
     def freeze(self, doc) -> None:
-        """Capture screenshot, destroy widgets, place ghost image."""
+        """User-toggle path — captures fresh from the live widgets,
+        updates the persisted cache, then places the ghost image."""
         if doc is None or doc.id in self.ghosts:
             return
         photo, base_pil = self._capture(doc)
         if photo is None:
             return
+        # Stash the desaturated PIL on the Document so the next save
+        # serialises it into the .ctkproj. Survives unfreeze too —
+        # toggling off and on cheaply reuses the same image (until
+        # the user re-toggles to refresh).
+        doc._cached_ghost_pil = base_pil
         self._destroy_widgets(doc)
+        self._place_ghost(doc, photo, base_pil)
+
+    def freeze_from_cache(self, doc) -> None:
+        """Load path — places the ghost image from ``doc._cached_ghost
+        _pil`` without touching the screen. Falls through to a live
+        ``freeze`` only when no cached image exists (legacy .ctkproj
+        files that predate screenshot persistence)."""
+        if doc is None or doc.id in self.ghosts:
+            return
+        cached = getattr(doc, "_cached_ghost_pil", None)
+        if cached is None:
+            self.freeze(doc)
+            return
+        zoom = self.workspace.zoom.canvas_scale
+        target_w = max(1, int(doc.width * zoom))
+        target_h = max(1, int(doc.height * zoom))
+        try:
+            resized = cached.resize(
+                (target_w, target_h), Image.BILINEAR,
+            )
+        except Exception:
+            # Corrupt cached image — give up cleanly, fall through
+            # to live capture so the user at least sees something.
+            self.freeze(doc)
+            return
+        photo = ImageTk.PhotoImage(resized)
+        self._destroy_widgets(doc)
+        self._place_ghost(doc, photo, cached)
+
+    def _place_ghost(self, doc, photo, base_pil) -> None:
+        """Common tail of ``freeze`` / ``freeze_from_cache`` — places
+        the image item on the canvas, wires its click + hover bindings,
+        and registers the entry in ``self.ghosts``.
+        """
         zoom = self.workspace.zoom.canvas_scale
         pad = DOCUMENT_PADDING
         x1 = pad + int(doc.canvas_x * zoom)
@@ -67,12 +114,47 @@ class GhostManager:
             x1, y1, image=photo, anchor="nw", tags=(ghost_tag,),
         )
         self.canvas.tag_raise(ghost_tag)
+        # Click-anywhere-on-screenshot unghost — the statusbar is the
+        # primary toggle, this just makes the screenshot itself
+        # behave as a wake button so users who reach for the visible
+        # content first aren't forced to find the strip.
+        self.canvas.tag_bind(
+            ghost_tag, "<Button-1>",
+            lambda _e, did=doc.id: self._on_ghost_image_click(did),
+        )
+        self.canvas.tag_bind(
+            ghost_tag, "<Enter>",
+            lambda _e: self._set_canvas_cursor("hand2"),
+        )
+        self.canvas.tag_bind(
+            ghost_tag, "<Leave>",
+            lambda _e: self._set_canvas_cursor(""),
+        )
         self.ghosts[doc.id] = {
             "image_id": image_id,
             "photo": photo,
             "base_pil": base_pil,
             "base_zoom": zoom,
         }
+
+    def _on_ghost_image_click(self, doc_id: str) -> str:
+        """Two-step interaction. Unghosting rebuilds every live widget
+        in the doc, so a stray click while panning around shouldn't
+        trigger it. First click on a non-focused ghost just focuses;
+        the user has to click the same ghost again (now active) to
+        actually restore live widgets.
+        """
+        if self.project.active_document_id != doc_id:
+            self.project.set_active_document(doc_id)
+        else:
+            self.project.set_document_ghost(doc_id, False)
+        return "break"
+
+    def _set_canvas_cursor(self, cursor: str) -> None:
+        try:
+            self.canvas.configure(cursor=cursor)
+        except tk.TclError:
+            pass
 
     def unfreeze(self, doc) -> None:
         """Drop ghost image, rebuild live widgets."""
@@ -94,10 +176,26 @@ class GhostManager:
 
     def freeze_pending(self) -> None:
         """Apply ``_pending_ghost`` flags set by the loader. Called
-        once after ``load_project`` so widgets are built and visible
-        before we screenshot them. The active doc is skipped so the
-        user always lands on a live form."""
+        once after ``load_project``. The active doc is skipped so the
+        user always lands on a live form.
+
+        Uses ``freeze_from_cache`` instead of routing through
+        ``set_document_ghost`` — bus path defaults to live capture,
+        which races the startup paint and captures whatever is on the
+        screen at the moment (splash, partially-rendered UI, IDE
+        underneath). The persisted base64 PNG already carries the
+        exact image the user left, so we use it verbatim and skip
+        the screen-grab entirely.
+
+        The event bus is deliberately NOT pinged from here either —
+        ``document_ghost_changed`` triggers an auto-save subscriber on
+        main_window, which would re-write the just-loaded project
+        once per restored ghost. Instead we redraw the canvas once
+        at the end so the per-doc statusbar repaints in its new
+        colour without forcing N saves.
+        """
         active_id = self.project.active_document_id
+        any_frozen = False
         for doc in self.project.documents:
             pending = getattr(doc, "_pending_ghost", False)
             if not pending:
@@ -105,7 +203,14 @@ class GhostManager:
             doc._pending_ghost = False
             if doc.id == active_id:
                 continue
-            self.project.set_document_ghost(doc.id, True)
+            doc.ghosted = True
+            self.freeze_from_cache(doc)
+            any_frozen = True
+        if any_frozen:
+            try:
+                self.workspace._redraw_document()
+            except AttributeError:
+                pass
 
     # ------------------------------------------------------------------
     # Zoom hook — called from ZoomController via workspace

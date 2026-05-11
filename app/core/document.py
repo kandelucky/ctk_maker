@@ -139,6 +139,26 @@ class Document:
             result["collapsed"] = True
         if self.ghosted:
             result["ghosted"] = True
+            # Persist the desaturated PIL screenshot so the next
+            # session restores the exact frozen image instead of
+            # re-grabbing from the screen during load (which routinely
+            # captures the splash / partially-painted UI). Base64-PNG
+            # rides inside the .ctkproj JSON — ~30–80 KB per dialog.
+            cached = getattr(self, "_cached_ghost_pil", None)
+            if cached is not None:
+                try:
+                    import base64
+                    import io
+                    buf = io.BytesIO()
+                    cached.save(buf, format="PNG")
+                    result["ghost_image"] = base64.b64encode(
+                        buf.getvalue(),
+                    ).decode("ascii")
+                except Exception:
+                    # Encoding failure shouldn't break the whole save —
+                    # the ghost will fall back to live capture next
+                    # load (same path legacy files take).
+                    pass
         if self.description:
             result["description"] = self.description
         if self.local_variables:
@@ -175,6 +195,23 @@ class Document:
         # widgets are alive on the canvas.
         doc.ghosted = False
         doc._pending_ghost = bool(data.get("ghosted", False))
+        # Inflate the persisted screenshot if present — ``freeze_pending``
+        # picks it up via ``_cached_ghost_pil`` and skips the live grab.
+        raw_img = data.get("ghost_image")
+        if isinstance(raw_img, str) and raw_img:
+            try:
+                import base64
+                import io
+                from PIL import Image
+                buf = io.BytesIO(base64.b64decode(raw_img))
+                img = Image.open(buf)
+                # Force decode while the BytesIO is still alive —
+                # PIL.Image.open is lazy and the buffer goes out of
+                # scope as soon as we return.
+                img.load()
+                doc._cached_ghost_pil = img
+            except Exception:
+                pass
         raw_desc = data.get("description")
         if isinstance(raw_desc, str):
             doc.description = raw_desc

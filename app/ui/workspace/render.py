@@ -23,6 +23,7 @@ import tkinter as tk
 
 from app.ui.workspace.chrome import CHROME_TAG
 from app.ui.workspace.layout_overlay import LAYOUT_OVERLAY_TAG
+from app.ui.system_fonts import ui_font
 
 # Canvas layout constants — the surrounding ``core.py`` imports
 # these back so its ``_build_canvas`` can hand them to
@@ -36,6 +37,20 @@ GRID_SPACING = 20
 GRID_DOT_COLOR = "#555555"
 GRID_TAG = "grid_dot"
 DOC_TAG = "document_bg"
+
+# Ghost statusbar — strip rendered directly below every doc's
+# bottom edge. Always visible, click toggles ghost mode. Colour
+# is intentionally loud when ON so the user can spot ghosted
+# windows at a glance across a busy canvas.
+GHOST_STATUSBAR_HEIGHT = 20
+GHOST_STATUSBAR_OFF_BG = "#2a2a2c"
+GHOST_STATUSBAR_OFF_FG = "#9aa0a6"
+GHOST_STATUSBAR_OFF_HOVER = "#34343a"
+GHOST_STATUSBAR_ON_BG = "#b8682c"
+GHOST_STATUSBAR_ON_FG = "#ffffff"
+GHOST_STATUSBAR_ON_HOVER = "#d48a4c"
+GHOST_STATUSBAR_TAG = "ghost_statusbar"
+GHOST_STATUSBAR_TOOLTIP_DELAY_MS = 450
 
 
 class Renderer:
@@ -51,6 +66,10 @@ class Renderer:
         # Debounce id for the ``<Configure>``-triggered redraw so
         # resize bursts collapse into a single redraw pass.
         self._configure_after: str | None = None
+        # Statusbar tooltip state — single Toplevel reused across docs,
+        # debounced by ``GHOST_STATUSBAR_TOOLTIP_DELAY_MS``.
+        self._sb_tooltip: tk.Toplevel | None = None
+        self._sb_tooltip_after: str | None = None
 
     # ------------------------------------------------------------------
     # Convenience accessors
@@ -131,10 +150,15 @@ class Renderer:
                 canvas.tag_raise(f"ghost:{doc.id}")
             except tk.TclError:
                 pass
+            # Ghost statusbar — sits directly below the doc rect, drawn
+            # after the ghost image so it always reads as the topmost
+            # control surface (the statusbar is the primary toggle).
+            self._draw_ghost_statusbar(doc, x1, x2, y2)
+            sb_bottom = y2 + GHOST_STATUSBAR_HEIGHT
             if x2 > max_right:
                 max_right = x2
-            if y2 > max_bottom:
-                max_bottom = y2
+            if sb_bottom > max_bottom:
+                max_bottom = sb_bottom
         canvas.configure(
             scrollregion=(0, 0, max_right + pad, max_bottom + pad),
         )
@@ -330,6 +354,194 @@ class Renderer:
             wx1 < x2 and wx2 > x1 and wy1 < y2 and wy2 > y1
             for (x1, y1, x2, y2) in covering_bboxes
         )
+
+    # ------------------------------------------------------------------
+    # Ghost statusbar (per-doc bottom strip + click toggle + tooltip)
+    # ------------------------------------------------------------------
+    def _draw_ghost_statusbar(
+        self, doc, x1: int, x2: int, y2: int,
+    ) -> None:
+        """Paint the ``● Live`` / ``● GHOST`` strip below ``doc``.
+
+        The strip occupies a constant vertical slot just under the
+        document rect (so it doesn't fight any embedded widgets) and
+        carries three pieces of state:
+
+        * background colour — bright carrot when ghosted, neutral grey
+          when live, so a single glance across the canvas tells the
+          user which docs are paying widget-cost and which aren't.
+        * inline label — explicit verb (``click to ghost`` /
+          ``click to restore``) instead of an opaque icon.
+        * tooltip — surfaces the *why* on hover (performance gain +
+          where the live widgets go).
+
+        Click flips ``doc.ghosted`` through ``set_document_ghost`` —
+        same entry point the old chrome icon used.
+        """
+        canvas = self.canvas
+        is_ghost = doc.ghosted
+        bg = (
+            GHOST_STATUSBAR_ON_BG if is_ghost
+            else GHOST_STATUSBAR_OFF_BG
+        )
+        fg = (
+            GHOST_STATUSBAR_ON_FG if is_ghost
+            else GHOST_STATUSBAR_OFF_FG
+        )
+        label = (
+            "● GHOST  —  click to restore live widgets" if is_ghost
+            else "● Live  —  click to ghost (screenshot mode)"
+        )
+        sb_top = y2
+        sb_bot = y2 + GHOST_STATUSBAR_HEIGHT
+        sb_tag = f"ghost_statusbar:{doc.id}"
+        # ``DOC_TAG`` so the next redraw's blanket delete clears the
+        # strip too; ``chrome_doc:{doc.id}`` so chrome-drag's per-doc
+        # ``canvas.move`` slides the statusbar along with the title.
+        item_tags = (
+            DOC_TAG, GHOST_STATUSBAR_TAG, sb_tag,
+            f"chrome_doc:{doc.id}",
+        )
+        canvas.create_rectangle(
+            x1, sb_top, x2, sb_bot,
+            fill=bg, outline=bg, width=0,
+            tags=item_tags,
+        )
+        canvas.create_text(
+            (x1 + x2) // 2, (sb_top + sb_bot) // 2,
+            text=label, fill=fg,
+            font=ui_font(9, "bold" if is_ghost else "normal"),
+            tags=item_tags,
+        )
+        canvas.tag_bind(
+            sb_tag, "<Button-1>",
+            lambda _e, did=doc.id: self._on_statusbar_click(did),
+        )
+        canvas.tag_bind(
+            sb_tag, "<Enter>",
+            lambda e, did=doc.id, on=is_ghost:
+                self._on_statusbar_enter(e, did, on),
+        )
+        canvas.tag_bind(
+            sb_tag, "<Leave>",
+            lambda _e: self._on_statusbar_leave(),
+        )
+
+    def _on_statusbar_click(self, doc_id: str) -> str:
+        """Same two-step rule as the ghost-image click: unghosting is
+        expensive (full widget rebuild) so a click on a non-focused
+        ghost just focuses. Live → ghost stays one-click — that path
+        is cheap and is the action the user typically wants.
+        """
+        doc = self.project.get_document(doc_id)
+        if doc is None:
+            return "break"
+        self._cancel_statusbar_tooltip()
+        if doc.ghosted and self.project.active_document_id != doc_id:
+            self.project.set_active_document(doc_id)
+        else:
+            self.project.set_document_ghost(doc_id, not doc.ghosted)
+        return "break"
+
+    def _on_statusbar_enter(
+        self, event, doc_id: str, is_ghost: bool,
+    ) -> None:
+        try:
+            self.canvas.configure(cursor="hand2")
+        except tk.TclError:
+            pass
+        # Visual hover feedback — brighten the fill so it reads as
+        # interactive. Item tag covers both rect and text.
+        hover_bg = (
+            GHOST_STATUSBAR_ON_HOVER if is_ghost
+            else GHOST_STATUSBAR_OFF_HOVER
+        )
+        sb_tag = f"ghost_statusbar:{doc_id}"
+        try:
+            # itemconfigure(fill=) only affects rect items; text items
+            # interpret ``fill`` as foreground — pass both via the per-
+            # item type filter to avoid clobbering the label colour.
+            for item_id in self.canvas.find_withtag(sb_tag):
+                if self.canvas.type(item_id) == "rectangle":
+                    self.canvas.itemconfigure(
+                        item_id, fill=hover_bg, outline=hover_bg,
+                    )
+        except tk.TclError:
+            pass
+        self._schedule_statusbar_tooltip(event, is_ghost)
+
+    def _on_statusbar_leave(self) -> None:
+        try:
+            self.canvas.configure(cursor="")
+        except tk.TclError:
+            pass
+        # Tooltip cancel + force redraw to restore the resting fill —
+        # cheaper than reading the doc back and itemconfiguring the
+        # exact pair of items.
+        self._cancel_statusbar_tooltip()
+        self.redraw()
+
+    def _schedule_statusbar_tooltip(
+        self, event, is_ghost: bool,
+    ) -> None:
+        self._cancel_statusbar_tooltip()
+        x_root = event.x_root
+        y_root = event.y_root
+        self._sb_tooltip_after = self.workspace.after(
+            GHOST_STATUSBAR_TOOLTIP_DELAY_MS,
+            lambda: self._show_statusbar_tooltip(
+                x_root, y_root, is_ghost,
+            ),
+        )
+
+    def _show_statusbar_tooltip(
+        self, x_root: int, y_root: int, is_ghost: bool,
+    ) -> None:
+        self._sb_tooltip_after = None
+        if is_ghost:
+            text = (
+                "Window is currently a screenshot — live widgets are "
+                "destroyed.\nClick to rebuild the live widgets for "
+                "editing."
+            )
+        else:
+            text = (
+                "Switch this window to Ghost mode.\nLive widgets are "
+                "replaced by a desaturated screenshot — zoom and pan "
+                "stay smooth even with many windows on the canvas."
+            )
+        tip = tk.Toplevel(self.workspace)
+        tip.wm_overrideredirect(True)
+        try:
+            tip.wm_attributes("-topmost", True)
+        except tk.TclError:
+            pass
+        tip.configure(bg="#3c3c3c")
+        label = tk.Label(
+            tip, text=text,
+            bg="#252526", fg="#cccccc",
+            font=ui_font(9),
+            padx=8, pady=5, bd=0, justify="left",
+        )
+        label.pack(padx=1, pady=1)
+        tip.update_idletasks()
+        th = tip.winfo_height()
+        tip.geometry(f"+{x_root + 12}+{y_root - th - 8}")
+        self._sb_tooltip = tip
+
+    def _cancel_statusbar_tooltip(self) -> None:
+        if self._sb_tooltip_after is not None:
+            try:
+                self.workspace.after_cancel(self._sb_tooltip_after)
+            except (ValueError, tk.TclError):
+                pass
+            self._sb_tooltip_after = None
+        if self._sb_tooltip is not None:
+            try:
+                self._sb_tooltip.destroy()
+            except tk.TclError:
+                pass
+            self._sb_tooltip = None
 
     # ------------------------------------------------------------------
     # Event hooks
