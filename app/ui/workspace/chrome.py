@@ -273,7 +273,7 @@ class ChromeManager:
             fill=bg_fill, outline=bg_fill,
             tags=(CHROME_TAG, CHROME_BG_TAG, doc_bg_tag, doc_tag),
         )
-        self.canvas.create_text(
+        title_item_id = self.canvas.create_text(
             left + 14, mid,
             text=title_raw,
             anchor="w",
@@ -281,6 +281,24 @@ class ChromeManager:
             font=ui_font(10),
             tags=(CHROME_TAG, CHROME_TITLE_TAG, doc_title_tag, doc_tag),
         )
+        # Main-window marker: ``[my windows]`` in muted grey, placed
+        # after the title with a clear gap. Dialogs (CTkToplevel docs)
+        # don't carry this marker — its presence identifies the entry-
+        # point window of the user's app at a glance. Drawn as a
+        # separate canvas item because ``canvas.create_text`` is
+        # single-colour and the marker uses a different fill than the
+        # accent-coloured title.
+        if not doc.is_toplevel:
+            bbox = self.canvas.bbox(title_item_id)
+            x_marker = (bbox[2] if bbox else left + 14) + 12
+            self.canvas.create_text(
+                x_marker, mid,
+                text="[my windows]",
+                anchor="w",
+                fill="#888888",
+                font=ui_font(10),
+                tags=(CHROME_TAG, doc_tag),
+            )
         if self._settings_icon is not None:
             self._draw_icon_button(
                 right - SETTINGS_X_OFFSET, top, doc_top, mid, bg_fill,
