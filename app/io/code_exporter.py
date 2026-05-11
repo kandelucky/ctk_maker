@@ -587,17 +587,17 @@ def _font_props_at_default(props: dict) -> bool:
     ``<<RefreshFonts>>`` listener registration; on a 130-widget Showcase
     that's 130 listener calls per scaling/appearance change.
     """
-    if props.get("font_family"):
+    if _resolve_export_raw(props, "font_family"):
         return False
-    if int(props.get("font_size", 13) or 13) != 13:
+    if _safe_int(props.get("font_size", 13) or 13, 13) != 13:
         return False
-    if props.get("font_bold"):
+    if _resolve_export_raw(props, "font_bold"):
         return False
-    if props.get("font_italic"):
+    if _resolve_export_raw(props, "font_italic"):
         return False
-    if props.get("font_underline"):
+    if _resolve_export_raw(props, "font_underline"):
         return False
-    if props.get("font_overstrike"):
+    if _resolve_export_raw(props, "font_overstrike"):
         return False
     return True
 
@@ -620,14 +620,27 @@ def _is_non_textvariable_var_binding(
 
 def _project_needs_auto_trace_helper(scoped_widgets) -> bool:
     """True when at least one widget in the export scope has a var
-    binding to a property NOT covered by ``BINDING_WIRINGS``. Drives
-    the auto-trace helper-function emission so projects without any
-    such bindings keep their generated file lean.
+    binding that the auto-trace path will actually emit.
+
+    Mirrors the gate ``_emit_auto_trace_bindings`` applies: bindings
+    whose key isn't in the widget's CTk ``configure(...)`` signature
+    are skipped (they'd crash at runtime), so projects whose only
+    cosmetic bindings target Maker-only keys don't drag the helper
+    function in.
     """
     for w in scoped_widgets:
+        allowed = _ctk_configure_keys_for(w.widget_type)
         for key, val in (w.properties or {}).items():
-            if _is_non_textvariable_var_binding(w.widget_type, key, val):
-                return True
+            if not _is_non_textvariable_var_binding(w.widget_type, key, val):
+                continue
+            # Textbox content goes through ``_bind_var_to_textbox`` and
+            # has its own helper gate; here we only care about whether
+            # the configure-style helper is needed.
+            if w.widget_type == "CTkTextbox" and key == "initial_text":
+                continue
+            if allowed is not None and key not in allowed:
+                continue
+            return True
     return False
 
 
@@ -804,12 +817,57 @@ _PACK_BALANCE_HELPER = '''def _ctkmaker_balance_pack(container, axis):
 '''
 
 
+def _ctk_configure_keys_for(widget_type: str) -> frozenset[str] | None:
+    """Kwargs CTk's ``configure(...)`` accepts for the descriptor with
+    the given ``widget_type``, derived from its CTk class's
+    ``__init__`` signature.
+
+    Returns ``None`` for descriptors that don't resolve to a CTk
+    class (custom widgets like ``CircularProgress`` whose runtime
+    isn't a CTk subclass) — callers should fall through to the
+    pre-allowlist behaviour for those, since we have no
+    authoritative kwarg list.
+
+    Used by the auto-trace gate to skip Maker-only properties that
+    composite into the widget at construction time (font_* rolled
+    into ``CTkFont``, ``label_enabled`` → ``state=…``, ``image_color``
+    baked into a tinted ``CTkImage``, ``dropdown_*`` passed to
+    ``ScrollableDropdown.__init__``, …). CTk's runtime ``configure``
+    raises ``ValueError`` on those keys, so emitting an auto-trace
+    line for them turns into a guaranteed crash on first paint.
+    """
+    descriptor = get_descriptor(widget_type)
+    if descriptor is None:
+        return None
+    primary = getattr(descriptor, "ctk_class_name", "") or ""
+    defaults = _ctk_constructor_defaults(primary) if primary else {}
+    if not defaults:
+        fallback = getattr(descriptor, "type_name", "") or ""
+        if fallback and fallback != primary:
+            defaults = _ctk_constructor_defaults(fallback)
+    if not defaults:
+        return None
+    return frozenset(defaults.keys())
+
+
 def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
     """Phase 3 — produce ``_bind_var_to_widget`` / ``_bind_var_to_textbox``
     call lines for every property on ``node`` that's bound to a
     variable but NOT in ``BINDING_WIRINGS``. Each line wires a
     ``trace_add`` listener that mirrors ``var.set(…)`` calls into a
     runtime ``configure`` (or ``delete``+``insert`` for Textbox).
+
+    Keys NOT in CTk's ``__init__`` signature for this widget's class
+    (Maker-only composites like ``font_size`` / ``label_enabled`` /
+    ``font_autofit`` / ``dropdown_offset`` …) are skipped — CTk's
+    runtime ``configure`` rejects them, so the only honest semantic
+    is "use the variable's current value at construction time, no
+    live update". That construction-time value is already taken via
+    the per-key var resolution in ``_emit_widget``.
+
+    Custom widgets that don't resolve to a CTk class
+    (``_ctk_configure_keys_for`` returns ``None``) bypass the
+    allowlist — the v1.9.5 emit-everything behaviour holds for them.
 
     Returns an empty list when the widget has no qualifying
     bindings — preserves the pre-1.9.5 emit shape for widgets that
@@ -819,6 +877,7 @@ def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
     from app.core.variables import parse_var_token
     if _EXPORT_PROJECT is None:
         return []
+    allowed = _ctk_configure_keys_for(node.widget_type)
     out: list[str] = []
     for key, val in (node.properties or {}).items():
         if not _is_non_textvariable_var_binding(node.widget_type, key, val):
@@ -830,16 +889,19 @@ def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
         if var_attr is None:
             continue
         # Textbox content uses the delete+insert helper because the
-        # widget has no ``configure(text=…)`` slot. Other widgets +
-        # other Textbox properties go through the configure helper.
+        # widget has no ``configure(text=…)`` slot. The configure
+        # allowlist doesn't apply here — the helper's update path is
+        # ``tb.delete(...); tb.insert(...)``, not configure().
         if node.widget_type == "CTkTextbox" and key == "initial_text":
             out.append(
                 f"_bind_var_to_textbox({var_attr}, {full_name})",
             )
-        else:
-            out.append(
-                f'_bind_var_to_widget({var_attr}, {full_name}, "{key}")',
-            )
+            continue
+        if allowed is not None and key not in allowed:
+            continue
+        out.append(
+            f'_bind_var_to_widget({var_attr}, {full_name}, "{key}")',
+        )
     return out
 
 
@@ -868,6 +930,35 @@ def _resolve_var_tokens_to_values(properties: dict) -> dict:
             resolved = dict(properties)
         resolved[key] = replacement
     return resolved if resolved is not None else properties
+
+
+def _resolve_export_raw(props: dict, key: str, default=None):
+    """Read ``props[key]``, resolving any ``var:<uuid>`` token to its
+    bound variable's typed literal default.
+
+    Read-ahead helpers (``_font_props_at_default``, dropdown kwargs,
+    ``bool(props.get("button_enabled"))``, …) coerce property values
+    to int/bool/float outside the main loop in ``_emit_widget`` —
+    where the per-key var-resolution already runs. Without this
+    resolve step those helpers crash on ``int('var:<uuid>')`` or
+    silently treat a non-empty token string as ``True``.
+
+    Stale bindings (variable deleted) and missing project context
+    fall back to ``default`` so callers can keep their existing
+    ``... or fallback`` idioms.
+    """
+    from app.core.variables import parse_var_token
+    raw = props.get(key, default)
+    var_id = parse_var_token(raw)
+    if var_id is None:
+        return raw
+    entry = (
+        _EXPORT_PROJECT.get_variable(var_id)
+        if _EXPORT_PROJECT is not None else None
+    )
+    if entry is None:
+        return default
+    return _entry_default_as_value(entry)
 
 
 def _build_global_var_attrs(project) -> dict:
@@ -1001,6 +1092,33 @@ def _emit_class_variables(project, doc, force_main: bool) -> list[str]:
                 f"self.{attr} = {cls}(value={_format_var_value_lit(v)})",
             )
         out.append("")
+    return out
+
+
+def _preview_globals_on_host_lines(
+    project, host_var: str, indent: str,
+) -> list[str]:
+    """Mirror project-global vars onto a bare-CTk preview host.
+
+    The Toplevel-preview branch instantiates ``app = ctk.CTk()``
+    instead of the main window class, so the main class's
+    ``self.var_X`` declarations never run. A previewed Toplevel
+    referencing ``self.master.var_X`` would then crash on the
+    first var-bound widget — declare the same vars on ``app``
+    directly so the lookup chain resolves.
+    """
+    if not project or not project.variables:
+        return []
+    out: list[str] = [f"{indent}# Project variables for preview host."]
+    for v in project.variables:
+        attr = _GLOBAL_VAR_ATTR.get(v.id)
+        if attr is None:
+            continue
+        cls = _TYPE_TO_TK_CLASS.get(v.type, "tk.StringVar")
+        out.append(
+            f"{indent}{host_var}.{attr} = "
+            f"{cls}(value={_format_var_value_lit(v)})",
+        )
     return out
 
 
@@ -1342,8 +1460,11 @@ def _generate_code_inner(
     needs_text_alignment = any(
         w.widget_type in ("CTkCheckBox", "CTkRadioButton", "CTkSwitch")
         and (
-            (w.properties.get("text_position", "right") or "right") != "right"
-            or int(w.properties.get("text_spacing", 6) or 6) != 6
+            (_resolve_export_raw(w.properties, "text_position", "right")
+             or "right") != "right"
+            or _safe_int(
+                w.properties.get("text_spacing", 6) or 6, 6,
+            ) != 6
         )
         for w in scoped_widgets
     )
@@ -1550,6 +1671,13 @@ def _generate_code_inner(
         # builder canvas renders the same widget with the right family.
         if needs_font_register:
             lines.append(f"{INDENT}_register_project_fonts(app)")
+        # Bypassing the main class also skips its global-var
+        # declarations, so the previewed Toplevel's
+        # ``self.master.var_X`` lookup would fail. Mirror the
+        # declarations onto the bare host before instantiation.
+        lines.extend(
+            _preview_globals_on_host_lines(_EXPORT_PROJECT, "app", INDENT),
+        )
         lines.append(f"{INDENT}{var} = {preview_cls}(app)")
         if needs_text_clipboard:
             lines.append(f"{INDENT}_setup_text_clipboard(app)")
@@ -2436,19 +2564,13 @@ def _emit_subtree(
         # scrollregion. ``CTkScrollableFrame.configure`` is overridden
         # to retarget the outer viewport canvas, so go through
         # ``tk.Frame.configure`` to actually hit the inner frame.
-        try:
-            max_w = int(node.properties.get("width", 0) or 0)
-            max_h = int(node.properties.get("height", 0) or 0)
-        except (TypeError, ValueError):
-            max_w = max_h = 0
+        max_w = _safe_int(node.properties.get("width", 0) or 0, 0)
+        max_h = _safe_int(node.properties.get("height", 0) or 0, 0)
         for child in node.children:
-            try:
-                cx = int(child.properties.get("x", 0) or 0)
-                cy = int(child.properties.get("y", 0) or 0)
-                cw = int(child.properties.get("width", 0) or 0)
-                ch = int(child.properties.get("height", 0) or 0)
-            except (TypeError, ValueError):
-                continue
+            cx = _safe_int(child.properties.get("x", 0) or 0, 0)
+            cy = _safe_int(child.properties.get("y", 0) or 0, 0)
+            cw = _safe_int(child.properties.get("width", 0) or 0, 0)
+            ch = _safe_int(child.properties.get("height", 0) or 0, 0)
             if cx + cw > max_w:
                 max_w = cx + cw
             if cy + ch > max_h:
@@ -2470,15 +2592,13 @@ def _emit_subtree(
             )
             lines.append(f"{child_master}.pack_propagate(False)")
             lines.append("")
-    try:
-        child_spacing = int(
-            node.properties.get(
-                "layout_spacing",
-                LAYOUT_CONTAINER_DEFAULTS["layout_spacing"],
-            ) or 0,
-        )
-    except (TypeError, ValueError):
-        child_spacing = 0
+    child_spacing = _safe_int(
+        node.properties.get(
+            "layout_spacing",
+            LAYOUT_CONTAINER_DEFAULTS["layout_spacing"],
+        ) or 0,
+        0,
+    )
     is_tabview = node.widget_type == "CTkTabview"
     tab_names_for_fallback: list[str] = []
     if is_tabview:
@@ -2949,19 +3069,31 @@ def _emit_widget(
 
 
 def _scrollable_dropdown_lines(var_name: str, props: dict) -> list[str]:
-    bw = int(props.get("dropdown_border_width", 1))
-    if not props.get("dropdown_border_enabled", True):
+    bw = _safe_int(props.get("dropdown_border_width", 1), 1)
+    if not _resolve_export_raw(props, "dropdown_border_enabled", True):
         bw = 0
     kwargs = [
-        ("fg_color", props.get("dropdown_fg_color", "#2b2b2b")),
-        ("text_color", props.get("dropdown_text_color", "#dce4ee")),
-        ("hover_color", props.get("dropdown_hover_color", "#3a3a3a")),
-        ("offset", int(props.get("dropdown_offset", 4))),
-        ("button_align", props.get("dropdown_button_align", "center")),
-        ("max_visible", int(props.get("dropdown_max_visible", 8))),
+        ("fg_color", _resolve_export_raw(
+            props, "dropdown_fg_color", "#2b2b2b",
+        )),
+        ("text_color", _resolve_export_raw(
+            props, "dropdown_text_color", "#dce4ee",
+        )),
+        ("hover_color", _resolve_export_raw(
+            props, "dropdown_hover_color", "#3a3a3a",
+        )),
+        ("offset", _safe_int(props.get("dropdown_offset", 4), 4)),
+        ("button_align", _resolve_export_raw(
+            props, "dropdown_button_align", "center",
+        )),
+        ("max_visible", _safe_int(props.get("dropdown_max_visible", 8), 8)),
         ("border_width", bw),
-        ("border_color", props.get("dropdown_border_color", "#3c3c3c")),
-        ("corner_radius", int(props.get("dropdown_corner_radius", 6))),
+        ("border_color", _resolve_export_raw(
+            props, "dropdown_border_color", "#3c3c3c",
+        )),
+        ("corner_radius", _safe_int(
+            props.get("dropdown_corner_radius", 6), 6,
+        )),
     ]
     lines = [
         f"{var_name}._scrollable_dropdown = ScrollableDropdown(",
@@ -3061,12 +3193,17 @@ def _font_source(props: dict, family: str | None = None) -> str:
     # CTk's theme defaults instead of forcing 13/normal/roman.
     if "font_size" in props:
         size = _safe_int(props.get("font_size"), 13)
-        weight = '"bold"' if props.get("font_bold") else '"normal"'
-        slant = '"italic"' if props.get("font_italic") else '"roman"'
+        weight = (
+            '"bold"' if _resolve_export_raw(props, "font_bold") else '"normal"'
+        )
+        slant = (
+            '"italic"' if _resolve_export_raw(props, "font_italic")
+            else '"roman"'
+        )
         parts.extend([f"size={size}", f"weight={weight}", f"slant={slant}"])
-        if props.get("font_underline"):
+        if _resolve_export_raw(props, "font_underline"):
             parts.append("underline=True")
-        if props.get("font_overstrike"):
+        if _resolve_export_raw(props, "font_overstrike"):
             parts.append("overstrike=True")
     return f"ctk.CTkFont({', '.join(parts)})"
 
@@ -3167,16 +3304,16 @@ def _image_source(props: dict, image_path: str) -> str:
         return c if c and c != "transparent" else None
     if (
         ("button_enabled" in props
-         and not bool(props.get("button_enabled")))
+         and not bool(_resolve_export_raw(props, "button_enabled")))
         or ("label_enabled" in props
-            and not bool(props.get("label_enabled")))
+            and not bool(_resolve_export_raw(props, "label_enabled")))
     ):
         color = (
-            _active(props.get("image_color_disabled"))
-            or _active(props.get("image_color"))
+            _active(_resolve_export_raw(props, "image_color_disabled"))
+            or _active(_resolve_export_raw(props, "image_color"))
         )
     else:
-        color = _active(props.get("image_color"))
+        color = _active(_resolve_export_raw(props, "image_color"))
     if color:
         return (
             f"_tint_image({path_src}, {_py_literal(color)}, ({iw}, {ih}))"
@@ -3494,6 +3631,24 @@ def _py_literal(val) -> str:
 
 
 def _safe_int(val, default: int) -> int:
+    """Coerce ``val`` to int; fall back to ``default`` on failure.
+
+    Resolves a ``var:<uuid>`` token first — without this, every
+    ``_safe_int(props.get(key), default)`` callsite (font size,
+    image size, x/y, grid row/col) would silently fall back to the
+    default whenever the property was bound to an int/float
+    variable, instead of using the variable's current value.
+    """
+    from app.core.variables import parse_var_token
+    var_id = parse_var_token(val)
+    if var_id is not None:
+        entry = (
+            _EXPORT_PROJECT.get_variable(var_id)
+            if _EXPORT_PROJECT is not None else None
+        )
+        if entry is None:
+            return default
+        val = _entry_default_as_value(entry)
     try:
         return int(val)
     except (TypeError, ValueError):
