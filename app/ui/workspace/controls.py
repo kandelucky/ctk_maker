@@ -47,6 +47,11 @@ TOOL_BAR_BG = "#252526"
 TOOL_BAR_HEIGHT = 30
 TOOL_BTN_HOVER = "#3a3a3a"
 TOOL_BTN_ACTIVE = "#094771"
+PREVIEW_ICON_ON = "#bbf7d0"        # pastel green — Preview (project)
+PREVIEW_CURRENT_ICON_ON = "#bae6fd"  # pastel blue  — Preview Current (dialog) icon
+PREVIEW_ICON_OFF = "#555555"       # shared disabled icon tint
+PREVIEW_LABEL_ON = "#7590a8"       # active dialog name — muted slate so it reads softer than the icon
+PREVIEW_LABEL_OFF = "#3a3a3a"      # disabled label — darker so font hinting matches icon weight
 STATUS_BAR_BG = "#252526"
 STATUS_BAR_HEIGHT = 26
 
@@ -70,10 +75,11 @@ class WorkspaceControls:
         self._pan_state: dict | None = None
         self._btn_preview: ctk.CTkButton | None = None
         self._btn_preview_active: ctk.CTkButton | None = None
-        self._icon_play_on  = load_icon("play", size=16, color=self.ICON_ON)
-        self._icon_play_off = load_icon("play", size=16, color=self.ICON_OFF)
-        self._icon_sq_on    = load_icon("square-play", size=16, color=self.ICON_ON)
-        self._icon_sq_off   = load_icon("square-play", size=16, color=self.ICON_OFF)
+        self._lbl_preview_current: ctk.CTkLabel | None = None
+        self._icon_play_on  = load_icon("play", size=20, color=PREVIEW_ICON_ON)
+        self._icon_play_off = load_icon("play", size=20, color=PREVIEW_ICON_OFF)
+        self._icon_sq_on    = load_icon("square-play", size=20, color=PREVIEW_CURRENT_ICON_ON)
+        self._icon_sq_off   = load_icon("square-play", size=20, color=PREVIEW_ICON_OFF)
 
     # ------------------------------------------------------------------
     # Convenience accessors
@@ -136,36 +142,41 @@ class WorkspaceControls:
             self._tool_buttons[tool_id] = btn
             _attach_tooltip(btn, _tooltip)
 
-        # Centre — Preview + Preview Active
-        sq_play = load_icon("square-play", size=16)
+        # Centre — Preview + Preview Current (icon-only buttons + dialog name label)
         _btn_kw = dict(
-            text="", width=28, height=24, corner_radius=3,
+            text="", width=36, height=30, corner_radius=3,
             fg_color="transparent", hover_color=TOOL_BTN_HOVER,
         )
         center = ctk.CTkFrame(bar, fg_color="transparent")
         center.pack(side="left", expand=True, fill="x")
 
+        group = ctk.CTkFrame(center, fg_color="transparent")
+        group.pack(expand=True)
+
         self._btn_preview = ctk.CTkButton(
-            center, image=self._icon_play_off,
+            group, image=self._icon_play_off,
             command=lambda: self.project.event_bus.publish("request_preview"),
             **_btn_kw,
         )
-        self._btn_preview.pack(
-            side="left", expand=True, anchor="e", padx=(0, 2), pady=3,
-        )
+        self._btn_preview.pack(side="left", padx=(0, 2))
         _attach_tooltip(self._btn_preview, "Preview Project (Ctrl+R / F5)")
 
         self._btn_preview_active = ctk.CTkButton(
-            center, image=self._icon_sq_off,
+            group, image=self._icon_sq_off,
             command=lambda: self.project.event_bus.publish(
                 "request_preview_active",
             ),
             **_btn_kw,
         )
-        self._btn_preview_active.pack(
-            side="left", expand=True, anchor="w", padx=(2, 0), pady=3,
-        )
+        self._btn_preview_active.pack(side="left", padx=(8, 4))
         _attach_tooltip(self._btn_preview_active, "Preview Active Dialog (Ctrl+P)")
+
+        self._lbl_preview_current = ctk.CTkLabel(
+            group, text="No active dialog",
+            text_color=PREVIEW_LABEL_OFF,
+            font=ui_font(8),
+        )
+        self._lbl_preview_current.pack(side="left", padx=(0, 0))
 
         # Subscribe to project events to keep button states in sync
         bus = self.project.event_bus
@@ -297,8 +308,15 @@ class WorkspaceControls:
         if self._btn_preview is None:
             return
         doc = self.project.active_document
-        # Preview (main window) — active when any widget exists in project
-        main_has_widgets = bool(self.project.root_widgets)
+        # Preview (main window) — active state depends ONLY on the main
+        # window document's widgets, not the currently-active document.
+        # Otherwise switching to an empty dialog would deactivate the
+        # main preview button even though the main window has widgets.
+        main_doc = next(
+            (d for d in self.project.documents if not d.is_toplevel),
+            None,
+        )
+        main_has_widgets = bool(main_doc and main_doc.root_widgets)
         self._btn_preview.configure(
             image=self._icon_play_on if main_has_widgets else self._icon_play_off,
         )
@@ -308,6 +326,17 @@ class WorkspaceControls:
         self._btn_preview_active.configure(
             image=self._icon_sq_on if dialog_has_widgets else self._icon_sq_off,
         )
+        if self._lbl_preview_current is not None:
+            if is_dialog:
+                name = (doc.name or "Untitled").strip()
+                short = name if len(name) <= 22 else name[:21] + "…"
+                self._lbl_preview_current.configure(
+                    text=short, text_color=PREVIEW_LABEL_ON,
+                )
+            else:
+                self._lbl_preview_current.configure(
+                    text="No active dialog", text_color=PREVIEW_LABEL_OFF,
+                )
 
     def _refresh_tool_buttons(self) -> None:
         for tool_id, btn in self._tool_buttons.items():
