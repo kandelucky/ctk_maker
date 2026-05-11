@@ -666,6 +666,24 @@ def _project_needs_pack_balance(docs_to_emit, scoped_widgets) -> bool:
     return False
 
 
+def _project_needs_auto_trace_font_helper(scoped_widgets) -> bool:
+    """True when any widget in the export scope has a var binding on
+    a font composite key (``font_bold`` / ``font_italic`` /
+    ``font_size`` / ``font_family``). Mirrors the gate
+    ``_emit_auto_trace_bindings`` applies for those keys, so projects
+    without font-composite bindings don't drag in the helper.
+    """
+    for w in scoped_widgets:
+        for key, val in (w.properties or {}).items():
+            if key not in _FONT_COMPOSITE_TO_ATTR:
+                continue
+            if _is_non_textvariable_var_binding(
+                w.widget_type, key, val,
+            ):
+                return True
+    return False
+
+
 def _project_needs_auto_trace_textbox_helper(scoped_widgets) -> bool:
     """True when at least one CTkTextbox has a var binding on a
     property whose update path is delete-then-insert rather than
@@ -709,6 +727,57 @@ _AUTO_TRACE_TEXTBOX_HELPER = '''def _bind_var_to_textbox(var, tb):
     var.trace_add("write", _update)
     _update()
 '''
+
+# Phase 1 of the live composite bindings plan — Maker-only composite
+# keys (font_bold / font_italic / font_size / font_family) don't map
+# to CTk's ``configure(...)`` because Maker decomposes them into a
+# single ``CTkFont`` instance at construction. The helper rebuilds
+# the font when the var changes, preserving the other five font
+# attributes so a bold toggle doesn't also reset size / italic.
+_AUTO_TRACE_FONT_HELPER = '''def _bind_var_to_font(var, widget, attr):
+    """Rebuild ``widget``'s CTkFont when ``var`` changes — for
+    font_bold / font_italic / font_size / font_family bindings.
+    ``attr`` is the CTkFont kwarg to update ("weight", "slant",
+    "size", "family"); the other five font attributes are
+    preserved so a bold toggle doesn't also reset size or italic.
+    """
+    def _update(*_):
+        current = widget.cget("font")
+        kwargs = dict(
+            family=current.cget("family"),
+            size=current.cget("size"),
+            weight=current.cget("weight"),
+            slant=current.cget("slant"),
+            underline=current.cget("underline"),
+            overstrike=current.cget("overstrike"),
+        )
+        value = var.get()
+        if attr == "weight":
+            kwargs["weight"] = "bold" if value else "normal"
+        elif attr == "slant":
+            kwargs["slant"] = "italic" if value else "roman"
+        elif attr == "size":
+            kwargs["size"] = int(value)
+        elif attr == "family":
+            kwargs["family"] = str(value)
+        else:
+            return
+        widget.configure(font=ctk.CTkFont(**kwargs))
+    var.trace_add("write", _update)
+    _update()
+'''
+
+# Maker-only composite property keys that the font helper handles —
+# map each property to the corresponding CTkFont kwarg name. Used by
+# ``_emit_auto_trace_bindings`` to recognise font composites and
+# emit ``_bind_var_to_font`` calls instead of the (broken-for-them)
+# ``_bind_var_to_widget`` path.
+_FONT_COMPOSITE_TO_ATTR = {
+    "font_bold": "weight",
+    "font_italic": "slant",
+    "font_size": "size",
+    "font_family": "family",
+}
 
 _PACK_BALANCE_HELPER = '''def _ctkmaker_balance_pack(container, axis):
     """Flex-shrink pack children along ``axis`` ("width" or
@@ -852,18 +921,21 @@ def _ctk_configure_keys_for(widget_type: str) -> frozenset[str] | None:
 
 def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
     """Phase 3 — produce ``_bind_var_to_widget`` / ``_bind_var_to_textbox``
-    call lines for every property on ``node`` that's bound to a
-    variable but NOT in ``BINDING_WIRINGS``. Each line wires a
-    ``trace_add`` listener that mirrors ``var.set(…)`` calls into a
-    runtime ``configure`` (or ``delete``+``insert`` for Textbox).
+    / ``_bind_var_to_font`` call lines for every property on ``node``
+    that's bound to a variable but NOT in ``BINDING_WIRINGS``. Each
+    line wires a ``trace_add`` listener that mirrors ``var.set(…)``
+    calls into the appropriate Maker-side or CTk-side update path.
 
-    Keys NOT in CTk's ``__init__`` signature for this widget's class
-    (Maker-only composites like ``font_size`` / ``label_enabled`` /
-    ``font_autofit`` / ``dropdown_offset`` …) are skipped — CTk's
-    runtime ``configure`` rejects them, so the only honest semantic
-    is "use the variable's current value at construction time, no
-    live update". That construction-time value is already taken via
-    the per-key var resolution in ``_emit_widget``.
+    Font composites (``font_bold`` / ``font_italic`` / ``font_size``
+    / ``font_family``) route through ``_bind_var_to_font`` — Maker
+    decomposes them into a single ``CTkFont`` at construction, so
+    they aren't valid ``configure()`` kwargs but the helper rebuilds
+    the font in place.
+
+    Other Maker-only composites (``label_enabled`` / ``font_autofit``
+    / ``image_color`` / ``dropdown_*`` …) still fall through the
+    allowlist gate — they need their own per-composite rebuilders
+    (planned phases 2 / 3 of live composite bindings).
 
     Custom widgets that don't resolve to a CTk class
     (``_ctk_configure_keys_for`` returns ``None``) bypass the
@@ -895,6 +967,15 @@ def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
         if node.widget_type == "CTkTextbox" and key == "initial_text":
             out.append(
                 f"_bind_var_to_textbox({var_attr}, {full_name})",
+            )
+            continue
+        # Font composites route through their dedicated rebuilder —
+        # CTk's configure() doesn't accept these keys, but they live-
+        # update by rebuilding the widget's CTkFont in place.
+        font_attr = _FONT_COMPOSITE_TO_ATTR.get(key)
+        if font_attr is not None:
+            out.append(
+                f'_bind_var_to_font({var_attr}, {full_name}, "{font_attr}")',
             )
             continue
         if allowed is not None and key not in allowed:
@@ -1517,6 +1598,9 @@ def _generate_code_inner(
     needs_auto_trace_textbox = _project_needs_auto_trace_textbox_helper(
         scoped_widgets,
     )
+    needs_auto_trace_font = _project_needs_auto_trace_font_helper(
+        scoped_widgets,
+    )
     # v1.10.2: emit the flex-shrink runtime helper when any container
     # uses vbox/hbox with at least one child. Window-level layout
     # counts too — the document body may be the parent of the row.
@@ -1555,6 +1639,9 @@ def _generate_code_inner(
         lines.append("")
     if needs_auto_trace_textbox:
         lines.extend(_AUTO_TRACE_TEXTBOX_HELPER.splitlines())
+        lines.append("")
+    if needs_auto_trace_font:
+        lines.extend(_AUTO_TRACE_FONT_HELPER.splitlines())
         lines.append("")
     if needs_pack_balance:
         lines.extend(_PACK_BALANCE_HELPER.splitlines())

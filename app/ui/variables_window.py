@@ -878,7 +878,7 @@ class VariableEditDialog(ManagedToplevel):
         ).pack(side="left")
 
     def _build_default_row(self, row) -> None:
-        # The default editor surface depends on the current type. Both
+        # The default editor surface depends on the current type. All
         # widget sets are built up-front and packed/unpacked by
         # ``_apply_type_to_default_row``; building lazily would mean
         # rebuilding the row on every type swap, which flickers.
@@ -909,28 +909,49 @@ class VariableEditDialog(ManagedToplevel):
             font=ui_font(10),
         )
         self._color_hex_label.pack(side="left", padx=(10, 0))
+        # Bool editor: CTkSwitch + state label showing "True"/"False".
+        # _default_var stays the source of truth ("True"/"False" strings)
+        # — switch command writes it; trace reflects external writes
+        # (type-swap auto-fill, manual edits) back onto the switch.
+        self._bool_frame = tk.Frame(row, bg=PANEL_BG, highlightthickness=0)
+        self._bool_switch = ctk.CTkSwitch(
+            self._bool_frame, text="",
+            command=self._on_bool_toggle,
+            width=44, height=20,
+        )
+        self._bool_switch.pack(side="left", pady=4)
+        self._bool_state_label = tk.Label(
+            self._bool_frame,
+            text="False",
+            bg=PANEL_BG, fg=TREE_FG,
+            font=ui_font(10),
+        )
+        self._bool_state_label.pack(side="left", padx=(10, 0))
         # Keep the swatch fill in lock-step with the hex string —
         # picker writes the StringVar, swatch reads from the trace.
         self._default_var.trace_add("write", self._sync_color_swatch)
+        self._default_var.trace_add("write", self._sync_bool_surface)
         self._apply_type_to_default_row()
 
     def _apply_type_to_default_row(self) -> None:
-        """Show the entry for str/int/float/bool, the swatch+button
-        for color. Called on build and on every type swap.
+        """Show the entry for str/int/float, the switch for bool, the
+        swatch+button for color. Called on build and on every type swap.
         """
         var_type = LABEL_TO_TYPE.get(self._type_var.get(), "str")
-        if var_type == "color":
+        for frame in (
+            self._default_entry, self._color_frame, self._bool_frame,
+        ):
             try:
-                self._default_entry.pack_forget()
+                frame.pack_forget()
             except tk.TclError:
                 pass
+        if var_type == "color":
             self._color_frame.pack(side="left", fill="x", expand=True)
             self._sync_color_swatch()
+        elif var_type == "bool":
+            self._bool_frame.pack(side="left", fill="x", expand=True)
+            self._sync_bool_surface()
         else:
-            try:
-                self._color_frame.pack_forget()
-            except tk.TclError:
-                pass
             self._default_entry.pack(side="left", fill="x", expand=True)
 
     def _sync_color_swatch(self, *_args) -> None:
@@ -947,6 +968,35 @@ class VariableEditDialog(ManagedToplevel):
             self._color_swatch.configure(bg=hex_value)
         except tk.TclError:
             pass
+
+    def _sync_bool_surface(self, *_args) -> None:
+        """Reflect ``_default_var`` onto the bool switch + state label.
+        Skips redundant writes so the switch's own command callback
+        (which writes the StringVar) doesn't bounce back through the
+        trace and reset the widget mid-toggle.
+        """
+        text = self._default_var.get()
+        truthy = text.strip().lower() in ("true", "1", "yes", "on")
+        try:
+            self._bool_state_label.configure(
+                text="True" if truthy else "False",
+            )
+        except tk.TclError:
+            pass
+        current = bool(self._bool_switch.get())
+        if current != truthy:
+            try:
+                if truthy:
+                    self._bool_switch.select()
+                else:
+                    self._bool_switch.deselect()
+            except tk.TclError:
+                pass
+
+    def _on_bool_toggle(self) -> None:
+        new_val = "True" if self._bool_switch.get() else "False"
+        if new_val != self._default_var.get():
+            self._default_var.set(new_val)
 
     def _open_color_picker(self) -> None:
         """Launch the shared ``ColorPickerDialog`` seeded with the

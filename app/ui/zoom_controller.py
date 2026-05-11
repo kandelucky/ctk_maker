@@ -291,13 +291,12 @@ class ZoomController:
         `font_size` property. Leaves widgets without text (e.g.
         CTkFrame) untouched.
 
-        Family preservation: the descriptor's ``transform_properties``
-        runs first and resolves the effective family via the cascade,
-        so the widget's current ``_font`` already carries the right
-        family. Reading it back here keeps zoom-driven font swaps
-        from clobbering it with Tk's default — without this, every
-        property edit reset the family because zoom's configure ran
-        last in the apply chain.
+        Reads weight / slant / underline / overstrike / family from
+        the widget's current ``_font`` — ``transform_properties``
+        already resolved variable bindings and font composites by
+        the time zoom runs. Reading raw ``properties`` would see
+        the ``var:<uuid>`` token literally (truthy) and wrongly
+        force every var-bound font to bold/italic.
         """
         if "font_size" not in properties:
             return None
@@ -306,19 +305,23 @@ class ZoomController:
         except (TypeError, ValueError):
             return None
         scaled = max(6, int(round(logical_size * self.value)))
-        weight = "bold" if properties.get("font_bold") else "normal"
-        slant = "italic" if properties.get("font_italic") else "roman"
-        underline = bool(properties.get("font_underline"))
-        overstrike = bool(properties.get("font_overstrike"))
-        family = None
         existing = getattr(widget, "_font", None) if widget is not None else None
+        weight = "normal"
+        slant = "roman"
+        underline = False
+        overstrike = False
+        family = None
         if isinstance(existing, ctk.CTkFont):
             try:
+                weight = existing.cget("weight") or "normal"
+                slant = existing.cget("slant") or "roman"
+                underline = bool(existing.cget("underline"))
+                overstrike = bool(existing.cget("overstrike"))
                 fam = existing.cget("family")
                 if fam:
                     family = fam
             except Exception:
-                family = None
+                pass
         try:
             return ctk.CTkFont(
                 family=family,

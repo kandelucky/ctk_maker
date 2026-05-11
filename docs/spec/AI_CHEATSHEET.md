@@ -101,7 +101,11 @@ Bind from the Properties panel — click the ◇ chip next to a property.
 | `CTkOptionMenu` | `initial_value` | `variable=` |
 | `CTkComboBox` | `initial_value` | `variable=` |
 
-Other properties can bind cosmetically but won't auto-update.
+Other CTk-native properties (`fg_color`, `text_color`, `corner_radius`, `state`, …) auto-update at runtime via a `trace_add` → `widget.configure(...)` helper emitted by the exporter.
+
+Font composites (`font_bold`, `font_italic`, `font_size`, `font_family`) also auto-update — the exporter emits a `_bind_var_to_font` rebuilder per binding. Use them like any other variable: `self.var_is_bold.set(True)` flips every bound label's weight live.
+
+Maker-only composites without a rebuilder yet (`label_enabled`, `image_color`, `font_autofit`, `font_wrap`, `dropdown_*`) still bake the current value at construction — see [docs/plans/live_composite_bindings.md](../plans/live_composite_bindings.md) for the in-flight plan.
 
 In exported code:
 

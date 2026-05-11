@@ -409,11 +409,26 @@ Pipeline:
 3. Detect duplicates → suffix `_2`, `_3`, ...
 4. Collect every fallback in `_VAR_NAME_FALLBACKS` so the user can be warned.
 
+## Composite live bindings
+
+Maker-only composite property keys can't be passed straight to CTk's `configure(...)` — Maker decomposes them at construction time. The auto-trace path emits per-composite rebuilders that update the widget in place when the bound variable changes, so `self.var_X.set(...)` works the same way for these as it does for native CTk kwargs.
+
+**Phase 1 (v1.28.2):** font composites only.
+
+| Property | Variable type | Helper | Effect |
+|---|---|---|---|
+| `font_bold` | `bool` | `_bind_var_to_font(var, widget, "weight")` | Rebuilds `CTkFont` with `weight="bold"` / `"normal"`, other attributes preserved |
+| `font_italic` | `bool` | `_bind_var_to_font(var, widget, "slant")` | `slant="italic"` / `"roman"` |
+| `font_size` | `int` | `_bind_var_to_font(var, widget, "size")` | New font with the requested size |
+| `font_family` | `str` | `_bind_var_to_font(var, widget, "family")` | New font with the requested family |
+
+Phase 2+ (planned, see [docs/plans/live_composite_bindings.md](../plans/live_composite_bindings.md)): `label_enabled`, `image_color`, `font_autofit`, `font_wrap`, `dropdown_*`.
+
 ## Special-case helpers
 
 | Helper | Purpose |
 |---|---|
-| `_emit_auto_trace_bindings(...)` — [:751](../../app/io/code_exporter.py#L751) | Wire `Variable.trace_add("write", _update)` for properties bound to a non-textvariable variable (cosmetic bindings). |
+| `_emit_auto_trace_bindings(...)` — [:751](../../app/io/code_exporter.py#L751) | Wire `Variable.trace_add("write", _update)` for properties bound to a non-textvariable variable (cosmetic bindings). Routes font composites through `_bind_var_to_font`; other CTk-native cosmetic keys through `_bind_var_to_widget`. |
 | `_collect_radio_groups(...)` — [:1939](../../app/io/code_exporter.py#L1939) | Cluster `CTkRadioButton` widgets sharing a variable into one group for correct `value=` emission. |
 | `_resolve_var_tokens_to_values(...)` — [:790](../../app/io/code_exporter.py#L790) | Replace `var:<uuid>` tokens with the variable's current literal value (for tokens not in `BINDING_WIRINGS`). |
 | `_format_var_value_lit(v)` — [:880](../../app/io/code_exporter.py#L880) | Coerce a string-form variable default into a Python literal of the right type. |
