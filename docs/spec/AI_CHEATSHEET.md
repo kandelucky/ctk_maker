@@ -113,7 +113,10 @@ Font composites (`font_bold`, `font_italic`, `font_size`, `font_family`, `font_u
 `font_autofit` (CTkLabel) → `_bind_var_to_font_autofit` — bool → recompute best-fit size or restore original.
 `image_color` (CTkLabel / CTkButton / Image) → `_bind_var_to_image_color` — color/str → rebuilds tinted CTkImage.
 
-Only `dropdown_*` composites (CTkOptionMenu / CTkComboBox) still bake at construction; see [docs/plans/live_composite_bindings.md](../plans/live_composite_bindings.md) for Phase 3.
+`x` / `y` → `_bind_var_to_place_coord` — int/float → `widget.place_configure(x=…)` (place layout only).
+`image` / `image_width` / `image_height` / `preserve_aspect` → `_bind_var_to_image_path` / `_image_size` / `_preserve_aspect` — share `_maker_image_state` dict on the widget; each helper updates one key then rebuilds.
+
+Remaining frozen: `image_color_disabled` (label_enabled state pairing), `dropdown_*` composites. See [docs/plans/live_composite_bindings.md](../plans/live_composite_bindings.md) for Phase 4.
 
 In exported code:
 

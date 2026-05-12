@@ -766,6 +766,38 @@ def _project_needs_auto_trace_image_color_helper(scoped_widgets) -> bool:
     return False
 
 
+def _project_needs_auto_trace_place_coord_helper(scoped_widgets) -> bool:
+    """True when any widget in the export scope has ``x`` or ``y``
+    bound to a variable.
+    """
+    for w in scoped_widgets:
+        props = w.properties or {}
+        for key in _PLACE_COORD_KEYS:
+            if _is_non_textvariable_var_binding(
+                w.widget_type, key, props.get(key),
+            ):
+                return True
+    return False
+
+
+def _project_needs_auto_trace_image_rebuild_helper(scoped_widgets) -> bool:
+    """True when any widget has ``image`` / ``image_width`` /
+    ``image_height`` / ``preserve_aspect`` bound to a variable AND
+    has an image set. The single helper block covers all four
+    image-rebuild bindings (they share ``_rebuild_image_for_widget``).
+    """
+    for w in scoped_widgets:
+        props = w.properties or {}
+        if not props.get("image"):
+            continue
+        for key in _IMAGE_REBUILD_KEYS:
+            if _is_non_textvariable_var_binding(
+                w.widget_type, key, props.get(key),
+            ):
+                return True
+    return False
+
+
 def _project_needs_auto_trace_textbox_helper(scoped_widgets) -> bool:
     """True when at least one CTkTextbox has a var binding on a
     property whose update path is delete-then-insert rather than
@@ -867,6 +899,17 @@ _FONT_COMPOSITE_TO_ATTR = {
     "font_overstrike": "overstrike",
 }
 
+# Phase 3 — image-related Maker-only composites that all rebuild a
+# fresh CTkImage from the widget's ``_maker_image_state`` dict.
+# Membership is used by ``_emit_auto_trace_bindings`` to decide
+# whether the widget needs the state-dict init prelude.
+_IMAGE_REBUILD_KEYS = frozenset({
+    "image", "image_width", "image_height", "preserve_aspect",
+})
+
+# Phase 3 — geometry composites driven through ``place_configure``.
+_PLACE_COORD_KEYS = frozenset({"x", "y"})
+
 # Phase 2a of live composite bindings — ``button_enabled`` is a Maker-
 # only bool that maps to CTk's native ``state="normal"/"disabled"`` at
 # construction time. The auto-trace path can't use ``_bind_var_to_widget``
@@ -938,6 +981,132 @@ _AUTO_TRACE_FONT_WRAP_HELPER = '''def _bind_var_to_font_wrap(var, widget):
             widget.configure(wraplength=max(1, w - 8))
         else:
             widget.configure(wraplength=0)
+    var.trace_add("write", _update)
+    _update()
+'''
+
+# Phase 3 — ``x`` / ``y`` (geometry) are applied via ``widget.place()``
+# at construction; the rebuilder calls ``place_configure(x=…)`` /
+# ``place_configure(y=…)`` on var write so position can be driven
+# live from a variable. Only meaningful for widgets using the
+# ``place`` layout; widgets in pack / grid get no visible effect
+# (place_configure on a non-place widget silently does nothing).
+_AUTO_TRACE_PLACE_COORD_HELPER = '''def _bind_var_to_place_coord(var, widget, axis):
+    """Map ``var.get()`` (int / float) to ``widget.place_configure(x=…)``
+    or ``place_configure(y=…)`` depending on ``axis``. No-op for
+    widgets not using place layout.
+    """
+    def _update(*_):
+        try:
+            val = int(var.get())
+        except (TypeError, ValueError):
+            return
+        try:
+            widget.place_configure(**{axis: val})
+        except Exception:
+            pass
+    var.trace_add("write", _update)
+    _update()
+'''
+
+# Phase 3 — image rebuilders (path / width / height / preserve_aspect)
+# all converge on a single rebuild path that constructs a fresh
+# CTkImage from the widget's current ``_maker_image_state`` dict. The
+# state dict is populated at construction time and updated by each
+# helper before rebuild. The construction-time tint / size logic is
+# preserved so var-driven changes don't regress the static visual.
+_AUTO_TRACE_IMAGE_REBUILD_HELPER = '''def _rebuild_image_for_widget(widget):
+    """Rebuild ``widget``'s CTkImage from ``widget._maker_image_state``.
+    Called by the image-param bind helpers after they update the
+    relevant key. Honours ``preserve_aspect`` by fitting the image
+    inside (width, height) at native aspect ratio; otherwise stretches
+    to (width, height).
+    """
+    from PIL import Image as _PILImage
+    s = getattr(widget, "_maker_image_state", None)
+    if not s:
+        return
+    path = s.get("path") or ""
+    if not path:
+        return
+    try:
+        width = max(1, int(s.get("width") or 20))
+        height = max(1, int(s.get("height") or 20))
+    except (TypeError, ValueError):
+        width, height = 20, 20
+    color = s.get("color")
+    aspect = bool(s.get("aspect", False))
+    try:
+        if aspect:
+            base = _PILImage.open(path)
+            nw, nh = base.size
+            scale = min(width / nw, height / nh)
+            size = (max(1, int(nw * scale)), max(1, int(nh * scale)))
+        else:
+            size = (width, height)
+        if color and color != "transparent":
+            try:
+                widget.configure(image=_tint_image(path, color, size))
+            except NameError:
+                # _tint_image not in scope for projects that only need
+                # image rebuilds without tint. Fall back to untinted.
+                widget.configure(image=ctk.CTkImage(
+                    light_image=_PILImage.open(path),
+                    dark_image=_PILImage.open(path),
+                    size=size,
+                ))
+        else:
+            widget.configure(image=ctk.CTkImage(
+                light_image=_PILImage.open(path),
+                dark_image=_PILImage.open(path),
+                size=size,
+            ))
+    except Exception:
+        pass
+
+
+def _bind_var_to_image_path(var, widget):
+    """Map ``var.get()`` (str path) to the widget's image. Path is
+    looked up via ``widget._maker_image_state["path"]`` so the rebuild
+    helper reuses size + tint + aspect from the same dict.
+    """
+    def _update(*_):
+        s = getattr(widget, "_maker_image_state", None)
+        if s is not None:
+            s["path"] = var.get() or ""
+            _rebuild_image_for_widget(widget)
+    var.trace_add("write", _update)
+    _update()
+
+
+def _bind_var_to_image_size(var, widget, axis):
+    """Map ``var.get()`` (int) to one image dimension. ``axis`` is
+    ``"width"`` or ``"height"``; the other dimension and tint / aspect
+    are read from ``_maker_image_state``.
+    """
+    def _update(*_):
+        s = getattr(widget, "_maker_image_state", None)
+        if s is None:
+            return
+        try:
+            s[axis] = max(1, int(var.get()))
+        except (TypeError, ValueError):
+            return
+        _rebuild_image_for_widget(widget)
+    var.trace_add("write", _update)
+    _update()
+
+
+def _bind_var_to_preserve_aspect(var, widget):
+    """Map ``var.get()`` (bool) to whether the image preserves its
+    native aspect ratio inside (width, height) or stretches.
+    """
+    def _update(*_):
+        s = getattr(widget, "_maker_image_state", None)
+        if s is None:
+            return
+        s["aspect"] = bool(var.get())
+        _rebuild_image_for_widget(widget)
     var.trace_add("write", _update)
     _update()
 '''
@@ -1243,6 +1412,49 @@ def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
         return []
     allowed = _ctk_configure_keys_for(node.widget_type)
     out: list[str] = []
+    # Phase 3 — if any image-related composite has a var binding,
+    # emit a one-time ``_maker_image_state`` dict init right at the
+    # top so the per-key rebuilders share one state object. Static
+    # values (the ones NOT bound) come from the widget's properties
+    # at construction time.
+    props_for_state = node.properties or {}
+    has_image_rebuild_bind = any(
+        key in _IMAGE_REBUILD_KEYS
+        and _is_non_textvariable_var_binding(
+            node.widget_type, key, props_for_state.get(key),
+        )
+        for key in _IMAGE_REBUILD_KEYS
+    )
+    if has_image_rebuild_bind and props_for_state.get("image"):
+        try:
+            init_w = int(
+                _resolve_export_raw(props_for_state, "image_width", 20)
+                or 20
+            )
+            init_h = int(
+                _resolve_export_raw(props_for_state, "image_height", 20)
+                or 20
+            )
+        except (TypeError, ValueError):
+            init_w, init_h = 20, 20
+        init_path = _resolve_export_raw(
+            props_for_state, "image", ""
+        ) or ""
+        init_color = _resolve_export_raw(
+            props_for_state, "image_color", None,
+        )
+        init_aspect = bool(
+            _resolve_export_raw(
+                props_for_state, "preserve_aspect", False,
+            )
+        )
+        out.append(
+            f"{full_name}._maker_image_state = "
+            f"{{'path': {_py_literal(_path_for_export(init_path))}, "
+            f"'width': {init_w}, 'height': {init_h}, "
+            f"'color': {_py_literal(init_color)}, "
+            f"'aspect': {init_aspect!r}}}"
+        )
     for key, val in (node.properties or {}).items():
         if not _is_non_textvariable_var_binding(node.widget_type, key, val):
             continue
@@ -1343,6 +1555,39 @@ def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
                 f"_bind_var_to_image_color({var_attr}, {full_name}, "
                 f"{path_lit}, ({iw}, {ih}))",
             )
+            continue
+        # ``x`` / ``y`` — number var drives place_configure on that axis.
+        if key in _PLACE_COORD_KEYS:
+            out.append(
+                f'_bind_var_to_place_coord({var_attr}, {full_name}, "{key}")',
+            )
+            continue
+        # Image rebuild family (image path / width / height / preserve
+        # aspect) all share a single ``_maker_image_state`` dict on
+        # the widget. The dict is initialised once per widget in
+        # ``_emit_widget`` (after construction) when any of these keys
+        # has a var binding; here we emit only the per-key bind call.
+        if key in _IMAGE_REBUILD_KEYS:
+            props = node.properties or {}
+            if not props.get("image"):
+                # No image set — image rebuilds have nothing to load.
+                continue
+            if key == "image":
+                out.append(
+                    f"_bind_var_to_image_path({var_attr}, {full_name})",
+                )
+            elif key == "image_width":
+                out.append(
+                    f'_bind_var_to_image_size({var_attr}, {full_name}, "width")',
+                )
+            elif key == "image_height":
+                out.append(
+                    f'_bind_var_to_image_size({var_attr}, {full_name}, "height")',
+                )
+            elif key == "preserve_aspect":
+                out.append(
+                    f"_bind_var_to_preserve_aspect({var_attr}, {full_name})",
+                )
             continue
         if allowed is not None and key not in allowed:
             continue
@@ -1982,6 +2227,12 @@ def _generate_code_inner(
     needs_auto_trace_image_color = (
         _project_needs_auto_trace_image_color_helper(scoped_widgets)
     )
+    needs_auto_trace_place_coord = (
+        _project_needs_auto_trace_place_coord_helper(scoped_widgets)
+    )
+    needs_auto_trace_image_rebuild = (
+        _project_needs_auto_trace_image_rebuild_helper(scoped_widgets)
+    )
     # v1.10.2: emit the flex-shrink runtime helper when any container
     # uses vbox/hbox with at least one child. Window-level layout
     # counts too — the document body may be the parent of the row.
@@ -2038,6 +2289,12 @@ def _generate_code_inner(
         lines.append("")
     if needs_auto_trace_image_color:
         lines.extend(_AUTO_TRACE_IMAGE_COLOR_HELPER.splitlines())
+        lines.append("")
+    if needs_auto_trace_place_coord:
+        lines.extend(_AUTO_TRACE_PLACE_COORD_HELPER.splitlines())
+        lines.append("")
+    if needs_auto_trace_image_rebuild:
+        lines.extend(_AUTO_TRACE_IMAGE_REBUILD_HELPER.splitlines())
         lines.append("")
     if needs_pack_balance:
         lines.extend(_PACK_BALANCE_HELPER.splitlines())
