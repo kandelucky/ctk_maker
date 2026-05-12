@@ -2303,7 +2303,7 @@ class MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk):
                 self._transitions_demo_win = None
             else:
                 return
-        from app.ui.transitions_demo_window import TransitionsDemoWindow
+        from app.ui.transitions_demo import TransitionsDemoWindow
         self._transitions_demo_win = TransitionsDemoWindow(self)
 
     def _on_open_color_palette(self) -> None:
