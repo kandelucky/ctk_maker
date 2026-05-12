@@ -1,0 +1,221 @@
+"""Quick modal for Form → Add Dialog flow. Asks for name + size and
+returns ``(name, w, h)`` on OK, ``None`` on Cancel.
+"""
+
+from __future__ import annotations
+
+import tkinter as tk
+
+import customtkinter as ctk
+
+from app.ui import style
+from app.ui.managed_window import ManagedToplevel
+
+
+DIALOG_PRESETS: list[tuple[str, tuple[int, int] | None]] = [
+    ("Same as Main", None),       # resolves to main_w × main_h at init
+    ("Alert — 380 × 160", (380, 160)),
+    ("Compact — 420 × 280", (420, 280)),
+    ("Medium — 520 × 380", (520, 380)),
+    ("Settings — 640 × 480", (640, 480)),
+    ("Wizard — 720 × 520", (720, 520)),
+    ("Custom", None),             # user edits W/H directly
+]
+
+
+class AddDialogSizeDialog(ManagedToplevel):
+    """Quick modal for the Form → Add Dialog flow. Asks for a
+    name + width + height and returns ``(name, w, h)`` on OK, or
+    ``None`` on Cancel. Unlike NewProjectSizeDialog there's no
+    save path — the dialog lives inside the current project.
+    Includes a preset dropdown with standard sizes so users don't
+    have to guess common dimensions.
+    """
+
+    window_title = "Add dialog"
+    default_size = (300, 320)
+    min_size = (280, 300)
+    fg_color = style.BG
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
+
+    def __init__(
+        self,
+        parent,
+        default_name: str = "Dialog",
+        main_w: int = 800,
+        main_h: int = 600,
+    ):
+        self.result: tuple[str, int, int] | None = None
+        self._main_w = int(main_w)
+        self._main_h = int(main_h)
+        self._suspend_preset_sync = False
+        self._name_var = tk.StringVar(master=parent, value=default_name)
+        self._preset_var = tk.StringVar(
+            master=parent, value=DIALOG_PRESETS[0][0],
+        )
+        self._w_var = tk.StringVar(master=parent, value=str(main_w))
+        self._h_var = tk.StringVar(master=parent, value=str(main_h))
+        self._w_var.trace_add("write", self._on_size_edited)
+        self._h_var.trace_add("write", self._on_size_edited)
+        super().__init__(parent)
+        self.bind("<Return>", lambda e: self._on_ok())
+        self.after(80, self._focus_name_entry)
+
+    def default_offset(self, parent) -> tuple[int, int]:
+        try:
+            parent.update_idletasks()
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+            w, h = self.default_size
+            return (
+                max(0, px + (pw - w) // 2),
+                max(0, py + (ph - h) // 2),
+            )
+        except tk.TclError:
+            return (100, 100)
+
+    def _focus_name_entry(self) -> None:
+        try:
+            self._name_entry.focus_set()
+            self._name_entry.select_range(0, tk.END)
+        except tk.TclError:
+            pass
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+
+        body = ctk.CTkFrame(container, fg_color="transparent")
+        body.pack(padx=20, pady=(18, 10), fill="x")
+
+        style.styled_label(body, "Name").grid(
+            row=0, column=0, sticky="w", pady=(0, 4),
+        )
+        self._name_entry = style.styled_entry(
+            body, textvariable=self._name_var, width=220,
+        )
+        self._name_entry.grid(
+            row=1, column=0, columnspan=2, sticky="ew", pady=(0, 10),
+        )
+
+        style.styled_label(body, "Size Preset").grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(0, 4),
+        )
+        ctk.CTkOptionMenu(
+            body,
+            values=[label for label, _ in DIALOG_PRESETS],
+            variable=self._preset_var,
+            width=220, height=style.BUTTON_HEIGHT,
+            corner_radius=style.BUTTON_RADIUS,
+            fg_color=style.SECONDARY_BG, button_color=style.SECONDARY_BG,
+            button_hover_color=style.SECONDARY_HOVER,
+            text_color=style.TREE_FG,
+            dropdown_fg_color=style.HEADER_BG,
+            dropdown_hover_color=style.TREE_SELECTED_BG,
+            dropdown_text_color=style.TREE_FG,
+            command=self._on_preset_change,
+        ).grid(
+            row=3, column=0, columnspan=2, sticky="ew", pady=(0, 12),
+        )
+
+        style.styled_label(body, "Width").grid(
+            row=4, column=0, sticky="w", pady=(0, 4),
+        )
+        style.styled_label(body, "Height").grid(
+            row=4, column=1, sticky="w", pady=(0, 4), padx=(8, 0),
+        )
+        style.styled_entry(body, textvariable=self._w_var, width=106).grid(
+            row=5, column=0, sticky="w",
+        )
+        style.styled_entry(body, textvariable=self._h_var, width=106).grid(
+            row=5, column=1, sticky="w", padx=(8, 0),
+        )
+        body.grid_columnconfigure(0, weight=1)
+        body.grid_columnconfigure(1, weight=1)
+
+        footer = ctk.CTkFrame(container, fg_color="transparent")
+        footer.pack(fill="x", padx=20, pady=(4, 16))
+        footer.grid_columnconfigure(0, weight=1, uniform="btn")
+        footer.grid_columnconfigure(1, weight=1, uniform="btn")
+        style.secondary_button(
+            footer, "Cancel", command=self._on_cancel,
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        style.primary_button(
+            footer, "Add", command=self._on_ok,
+        ).grid(row=0, column=1, sticky="ew", padx=(4, 0))
+        return container
+
+    def _on_preset_change(self, label: str) -> None:
+        for name, size in DIALOG_PRESETS:
+            if name != label:
+                continue
+            if name == "Same as Main":
+                w, h = self._main_w, self._main_h
+            elif name == "Custom":
+                return  # keep the current W/H for editing
+            elif size is not None:
+                w, h = size
+            else:
+                return
+            self._suspend_preset_sync = True
+            try:
+                self._w_var.set(str(w))
+                self._h_var.set(str(h))
+            finally:
+                self._suspend_preset_sync = False
+            break
+
+    def _on_size_edited(self, *_args) -> None:
+        # Typing into W/H manually → flip the preset to "Custom" so
+        # the dropdown doesn't lie about the currently-shown size.
+        if self._suspend_preset_sync:
+            return
+        if self._preset_var.get() != "Custom":
+            self._preset_var.set("Custom")
+
+    # Match New Project clamp range — anything outside this gets
+    # bounced with a bell so the dialog can't ship absurd sizes
+    # (huge negatives crash tk; 4-digit numbers above 4000 exceed any
+    # real screen and silently break the preview launch).
+    _SIZE_MIN = 100
+    _SIZE_MAX = 4000
+
+    def _on_ok(self) -> None:
+        from tkinter import messagebox
+        name = self._name_var.get().strip()
+        if not name:
+            self.bell()
+            return
+        try:
+            w = int(self._w_var.get())
+            h = int(self._h_var.get())
+        except ValueError:
+            self.bell()
+            messagebox.showwarning(
+                "Invalid size",
+                f"Width and height must be whole numbers "
+                f"between {self._SIZE_MIN} and {self._SIZE_MAX}.",
+                parent=self,
+            )
+            return
+        if not (
+            self._SIZE_MIN <= w <= self._SIZE_MAX
+            and self._SIZE_MIN <= h <= self._SIZE_MAX
+        ):
+            self.bell()
+            messagebox.showwarning(
+                "Size out of range",
+                f"Dialog width and height must be between "
+                f"{self._SIZE_MIN} and {self._SIZE_MAX} pixels.",
+                parent=self,
+            )
+            return
+        self.result = (name, w, h)
+        self.destroy()
+
+    def _on_cancel(self) -> None:
+        self.result = None
+        self.destroy()
