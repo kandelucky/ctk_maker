@@ -358,6 +358,9 @@ class Workspace(ctk.CTkFrame):
     def _get_radio_init_kwargs(self, node) -> dict | None:
         return self.props.get_radio_init_kwargs(node)
 
+    def _sync_radio_initial(self, widget, node) -> None:
+        self.props.sync_radio_initial(widget, node)
+
     def _unbind_radio_group(self, widget_id: str) -> None:
         self.props.unbind_radio_group(widget_id)
 
