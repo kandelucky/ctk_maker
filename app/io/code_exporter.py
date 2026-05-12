@@ -749,23 +749,6 @@ def _project_needs_auto_trace_font_autofit_helper(scoped_widgets) -> bool:
     return False
 
 
-def _project_needs_auto_trace_image_color_helper(scoped_widgets) -> bool:
-    """True when any widget in the export scope has ``image_color``
-    bound to a variable AND has an image path set (no point wiring
-    a tint helper for a widget without an icon).
-    """
-    for w in scoped_widgets:
-        props = w.properties or {}
-        if not props.get("image"):
-            continue
-        val = props.get("image_color")
-        if _is_non_textvariable_var_binding(
-            w.widget_type, "image_color", val,
-        ):
-            return True
-    return False
-
-
 def _project_needs_auto_trace_place_coord_helper(scoped_widgets) -> bool:
     """True when any widget in the export scope has ``x`` or ``y``
     bound to a variable.
@@ -899,12 +882,13 @@ _FONT_COMPOSITE_TO_ATTR = {
     "font_overstrike": "overstrike",
 }
 
-# Phase 3 — image-related Maker-only composites that all rebuild a
-# fresh CTkImage from the widget's ``_maker_image_state`` dict.
+# Phase 3 + 4a — image-related Maker-only composites that all rebuild
+# a fresh CTkImage from the widget's ``_maker_image_state`` dict.
 # Membership is used by ``_emit_auto_trace_bindings`` to decide
 # whether the widget needs the state-dict init prelude.
 _IMAGE_REBUILD_KEYS = frozenset({
     "image", "image_width", "image_height", "preserve_aspect",
+    "image_color", "image_color_disabled",
 })
 
 # Phase 3 — geometry composites driven through ``place_configure``.
@@ -922,10 +906,17 @@ _AUTO_TRACE_STATE_HELPER = '''def _bind_var_to_state(var, widget):
     """Map ``var.get()`` (bool) to ``widget.configure(state=…)``.
     True → "normal", False → "disabled". Used for ``button_enabled``
     bindings where the variable type is bool but CTk's kwarg is a
-    string enum.
+    string enum. Also syncs ``widget._maker_image_state["enabled"]``
+    so an image-tint binding paired with this state binding switches
+    between ``color`` / ``color_disabled`` automatically.
     """
     def _update(*_):
-        widget.configure(state="normal" if var.get() else "disabled")
+        enabled = bool(var.get())
+        widget.configure(state="normal" if enabled else "disabled")
+        s = getattr(widget, "_maker_image_state", None)
+        if s is not None and s.get("enabled") != enabled:
+            s["enabled"] = enabled
+            _rebuild_image_for_widget(widget)
     var.trace_add("write", _update)
     _update()
 '''
@@ -950,10 +941,17 @@ _AUTO_TRACE_LABEL_ENABLED_HELPER = '''def _bind_var_to_label_enabled(var, widget
     True → ``color_on``, False → ``color_off``. Used for
     ``label_enabled`` bindings — Tk Label's native disabled rendering
     paints a stipple wash over ``image=``, so we don't use
-    ``state="disabled"``; we just swap colors.
+    ``state="disabled"``; we just swap colors. Also syncs
+    ``widget._maker_image_state["enabled"]`` so an icon tint paired
+    with ``image_color_disabled`` flips simultaneously.
     """
     def _update(*_):
-        widget.configure(text_color=color_on if var.get() else color_off)
+        enabled = bool(var.get())
+        widget.configure(text_color=color_on if enabled else color_off)
+        s = getattr(widget, "_maker_image_state", None)
+        if s is not None and s.get("enabled") != enabled:
+            s["enabled"] = enabled
+            _rebuild_image_for_widget(widget)
     var.trace_add("write", _update)
     _update()
 '''
@@ -1017,10 +1015,16 @@ _AUTO_TRACE_PLACE_COORD_HELPER = '''def _bind_var_to_place_coord(var, widget, ax
 # preserved so var-driven changes don't regress the static visual.
 _AUTO_TRACE_IMAGE_REBUILD_HELPER = '''def _rebuild_image_for_widget(widget):
     """Rebuild ``widget``'s CTkImage from ``widget._maker_image_state``.
-    Called by the image-param bind helpers after they update the
-    relevant key. Honours ``preserve_aspect`` by fitting the image
-    inside (width, height) at native aspect ratio; otherwise stretches
-    to (width, height).
+    Called by every image-param bind helper after it updates the
+    relevant key. State dict keys:
+        path                — file path (str)
+        width / height      — int
+        color               — normal tint hex (or None)
+        color_disabled      — disabled tint hex (or None) — Phase 4a
+        enabled             — bool (True → use color, False → use color_disabled)
+        aspect              — bool (preserve aspect inside width × height)
+    Honours ``preserve_aspect`` by fitting the image inside
+    (width, height); otherwise stretches to (width, height).
     """
     from PIL import Image as _PILImage
     s = getattr(widget, "_maker_image_state", None)
@@ -1034,7 +1038,10 @@ _AUTO_TRACE_IMAGE_REBUILD_HELPER = '''def _rebuild_image_for_widget(widget):
         height = max(1, int(s.get("height") or 20))
     except (TypeError, ValueError):
         width, height = 20, 20
-    color = s.get("color")
+    if not s.get("enabled", True) and s.get("color_disabled"):
+        active_color = s.get("color_disabled")
+    else:
+        active_color = s.get("color")
     aspect = bool(s.get("aspect", False))
     try:
         if aspect:
@@ -1044,9 +1051,11 @@ _AUTO_TRACE_IMAGE_REBUILD_HELPER = '''def _rebuild_image_for_widget(widget):
             size = (max(1, int(nw * scale)), max(1, int(nh * scale)))
         else:
             size = (width, height)
-        if color and color != "transparent":
+        if active_color and active_color != "transparent":
             try:
-                widget.configure(image=_tint_image(path, color, size))
+                widget.configure(
+                    image=_tint_image(path, active_color, size),
+                )
             except NameError:
                 # _tint_image not in scope for projects that only need
                 # image rebuilds without tint. Fall back to untinted.
@@ -1079,6 +1088,22 @@ def _bind_var_to_image_path(var, widget):
     _update()
 
 
+def _bind_var_to_image_color_state(var, widget, key):
+    """Phase 4a — map ``var.get()`` to ``_maker_image_state[key]``
+    (``"color"`` or ``"color_disabled"``) and trigger a rebuild.
+    Picks the right shared rebuild path so changing the normal
+    tint, the disabled tint, or the enabled flag all converge.
+    """
+    def _update(*_):
+        s = getattr(widget, "_maker_image_state", None)
+        if s is None:
+            return
+        s[key] = var.get() or None
+        _rebuild_image_for_widget(widget)
+    var.trace_add("write", _update)
+    _update()
+
+
 def _bind_var_to_image_size(var, widget, axis):
     """Map ``var.get()`` (int) to one image dimension. ``axis`` is
     ``"width"`` or ``"height"``; the other dimension and tint / aspect
@@ -1107,44 +1132,6 @@ def _bind_var_to_preserve_aspect(var, widget):
             return
         s["aspect"] = bool(var.get())
         _rebuild_image_for_widget(widget)
-    var.trace_add("write", _update)
-    _update()
-'''
-
-# Phase 2e — ``image_color`` (CTkLabel / CTkButton / Image) is a
-# PIL-side tint applied to the icon at construction time; CTk has no
-# native ``configure(image_color=…)`` because the tint is baked into
-# the PhotoImage. The runtime rebuilder reconstructs a fresh
-# ``CTkImage`` (tinted via ``_tint_image`` when the color is a hex,
-# untinted otherwise) and configures it onto the widget. The image
-# path and size are captured as literals at emit time; only the
-# colour changes dynamically. ``_tint_image`` is auto-emitted when
-# any widget in scope carries an ``image_color`` property, so this
-# helper has its dependency.
-_AUTO_TRACE_IMAGE_COLOR_HELPER = '''def _bind_var_to_image_color(var, widget, image_path, size):
-    """Rebuild ``widget``'s CTkImage with a fresh tint when ``var``
-    changes. ``var.get()`` returns a hex string (``#rrggbb`` or
-    ``#rgb``); ``""`` / ``"transparent"`` means "no tint". Depends
-    on the ``_tint_image`` helper and ``PIL.Image``, both of which
-    are auto-emitted whenever any widget needs them.
-    """
-    from PIL import Image as _PILImage
-
-    def _update(*_):
-        color = var.get()
-        try:
-            if color and color != "transparent":
-                widget.configure(
-                    image=_tint_image(image_path, color, size),
-                )
-            else:
-                widget.configure(image=ctk.CTkImage(
-                    light_image=_PILImage.open(image_path),
-                    dark_image=_PILImage.open(image_path),
-                    size=size,
-                ))
-        except Exception:
-            pass
     var.trace_add("write", _update)
     _update()
 '''
@@ -1425,7 +1412,22 @@ def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
         )
         for key in _IMAGE_REBUILD_KEYS
     )
-    if has_image_rebuild_bind and props_for_state.get("image"):
+    # Also init the state dict when ``label_enabled`` /
+    # ``button_enabled`` is bound and the widget has an image — so the
+    # enabled rebuilder can flip ``state["enabled"]`` and pick between
+    # ``color`` and ``color_disabled``. Without this, an enabled-only
+    # binding wouldn't trigger the state-dict init and the image
+    # rebuild path stays inactive.
+    has_enabled_with_image = (
+        props_for_state.get("image")
+        and any(
+            _is_non_textvariable_var_binding(
+                node.widget_type, key, props_for_state.get(key),
+            )
+            for key in ("label_enabled", "button_enabled")
+        )
+    )
+    if (has_image_rebuild_bind or has_enabled_with_image) and props_for_state.get("image"):
         try:
             init_w = int(
                 _resolve_export_raw(props_for_state, "image_width", 20)
@@ -1443,16 +1445,38 @@ def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
         init_color = _resolve_export_raw(
             props_for_state, "image_color", None,
         )
+        init_color_disabled = _resolve_export_raw(
+            props_for_state, "image_color_disabled", None,
+        )
         init_aspect = bool(
             _resolve_export_raw(
                 props_for_state, "preserve_aspect", False,
             )
         )
+        # Initial enabled state: prefer label_enabled if widget has it,
+        # else button_enabled, else True. Mirrors the existing
+        # ``_image_source`` color-pick logic.
+        if "label_enabled" in props_for_state:
+            init_enabled = bool(
+                _resolve_export_raw(
+                    props_for_state, "label_enabled", True,
+                )
+            )
+        elif "button_enabled" in props_for_state:
+            init_enabled = bool(
+                _resolve_export_raw(
+                    props_for_state, "button_enabled", True,
+                )
+            )
+        else:
+            init_enabled = True
         out.append(
             f"{full_name}._maker_image_state = "
             f"{{'path': {_py_literal(_path_for_export(init_path))}, "
             f"'width': {init_w}, 'height': {init_h}, "
             f"'color': {_py_literal(init_color)}, "
+            f"'color_disabled': {_py_literal(init_color_disabled)}, "
+            f"'enabled': {init_enabled!r}, "
             f"'aspect': {init_aspect!r}}}"
         )
     for key, val in (node.properties or {}).items():
@@ -1536,37 +1560,18 @@ def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
                 f"{size_off_int})",
             )
             continue
-        # ``image_color`` — color var drives the PIL tint of the
-        # widget's icon. The image path and size are captured as
-        # literals at emit time; only the colour changes dynamically.
-        # No-op if the widget has no image set.
-        if key == "image_color":
-            props = node.properties or {}
-            image_path = props.get("image")
-            if not image_path:
-                continue
-            try:
-                iw = int(props.get("image_width", 20) or 20)
-                ih = int(props.get("image_height", 20) or 20)
-            except (TypeError, ValueError):
-                iw, ih = 20, 20
-            path_lit = _py_literal(_path_for_export(image_path))
-            out.append(
-                f"_bind_var_to_image_color({var_attr}, {full_name}, "
-                f"{path_lit}, ({iw}, {ih}))",
-            )
-            continue
         # ``x`` / ``y`` — number var drives place_configure on that axis.
         if key in _PLACE_COORD_KEYS:
             out.append(
                 f'_bind_var_to_place_coord({var_attr}, {full_name}, "{key}")',
             )
             continue
-        # Image rebuild family (image path / width / height / preserve
-        # aspect) all share a single ``_maker_image_state`` dict on
-        # the widget. The dict is initialised once per widget in
-        # ``_emit_widget`` (after construction) when any of these keys
-        # has a var binding; here we emit only the per-key bind call.
+        # Image rebuild family (path / size / preserve_aspect / color
+        # / color_disabled) all share a single ``_maker_image_state``
+        # dict on the widget. The dict is initialised once per widget
+        # at the top of this function (the prelude above) when any of
+        # these keys has a var binding; here we emit only the per-key
+        # bind call.
         if key in _IMAGE_REBUILD_KEYS:
             props = node.properties or {}
             if not props.get("image"):
@@ -1587,6 +1592,14 @@ def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
             elif key == "preserve_aspect":
                 out.append(
                     f"_bind_var_to_preserve_aspect({var_attr}, {full_name})",
+                )
+            elif key == "image_color":
+                out.append(
+                    f'_bind_var_to_image_color_state({var_attr}, {full_name}, "color")',
+                )
+            elif key == "image_color_disabled":
+                out.append(
+                    f'_bind_var_to_image_color_state({var_attr}, {full_name}, "color_disabled")',
                 )
             continue
         if allowed is not None and key not in allowed:
@@ -2224,9 +2237,6 @@ def _generate_code_inner(
     needs_auto_trace_font_autofit = (
         _project_needs_auto_trace_font_autofit_helper(scoped_widgets)
     )
-    needs_auto_trace_image_color = (
-        _project_needs_auto_trace_image_color_helper(scoped_widgets)
-    )
     needs_auto_trace_place_coord = (
         _project_needs_auto_trace_place_coord_helper(scoped_widgets)
     )
@@ -2286,9 +2296,6 @@ def _generate_code_inner(
         lines.append("")
     if needs_auto_trace_font_autofit:
         lines.extend(_AUTO_TRACE_FONT_AUTOFIT_HELPER.splitlines())
-        lines.append("")
-    if needs_auto_trace_image_color:
-        lines.extend(_AUTO_TRACE_IMAGE_COLOR_HELPER.splitlines())
         lines.append("")
     if needs_auto_trace_place_coord:
         lines.extend(_AUTO_TRACE_PLACE_COORD_HELPER.splitlines())

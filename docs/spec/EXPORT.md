@@ -442,7 +442,7 @@ Maker-only composite property keys can't be passed straight to CTk's `configure(
 |---|---|---|---|
 | `font_wrap` (CTkLabel) | `bool` | `_bind_var_to_font_wrap(var, widget)` | True → wraplength derived from widget's current width; False → wraplength=0 (no wrap). |
 | `font_autofit` (CTkLabel) | `bool` | `_bind_var_to_font_autofit(var, widget, size_off)` | True → binary-search the largest font size that fits current text inside current width × height; False → restore original `size_off`. Inlines a port of `_compute_autofit_size` into the export. |
-| `image_color` (CTkLabel / CTkButton / Image) | `color` / `str` | `_bind_var_to_image_color(var, widget, image_path, size)` | Rebuilds `CTkImage` with a fresh PIL tint when `var` changes. Image path + size captured as literals at emit time; only the colour is dynamic. No-op if the widget has no image. Depends on `_tint_image` (auto-emitted). |
+| `image_color` (CTkLabel / CTkButton / Image) | `color` / `str` | `_bind_var_to_image_color_state(var, widget, "color")` | Updates `_maker_image_state["color"]` and triggers `_rebuild_image_for_widget`. Picks `color_disabled` instead when `enabled` is False (see Phase 4a). |
 
 **Phase 3:** geometry + image rebuilders.
 
@@ -453,9 +453,15 @@ Maker-only composite property keys can't be passed straight to CTk's `configure(
 | `image_width` / `image_height` | `int` / `float` | `_bind_var_to_image_size(var, widget, axis)` | Rebuilds CTkImage with new dimension; other axis from `_maker_image_state`. |
 | `preserve_aspect` | `bool` | `_bind_var_to_preserve_aspect(var, widget)` | Toggles between aspect-fit (scaled to contain) and stretch-to-fit modes. |
 
-All four image rebuilders share `_maker_image_state` — a dict initialised on the widget at construction time when any image-related binding is present. Keys: `path` / `width` / `height` / `color` / `aspect`. Each helper updates one key, then calls `_rebuild_image_for_widget`.
+All image rebuilders share `_maker_image_state` — a dict initialised on the widget when any image-related binding is present (including `label_enabled` / `button_enabled` on a widget that has an image). Keys: `path` / `width` / `height` / `color` / `color_disabled` / `enabled` / `aspect`. Each helper updates one key, then calls `_rebuild_image_for_widget`. The rebuild picks `color_disabled` when `enabled` is False (and a disabled color is set), else `color`.
 
-Phase 4 (planned): `image_color_disabled` (paired with `label_enabled` state coordination); `dropdown_*` (CTkOptionMenu / CTkComboBox dropdown styling).
+**Phase 4a:** `image_color_disabled` + enabled coordination.
+
+| Property | Variable type | Helper | Effect |
+|---|---|---|---|
+| `image_color_disabled` (CTkLabel / CTkButton / Image) | `color` / `str` | `_bind_var_to_image_color_state(var, widget, "color_disabled")` | Updates `_maker_image_state["color_disabled"]` and triggers rebuild. Visible only when the widget's `enabled` state is False — coordinated automatically with `_bind_var_to_label_enabled` and `_bind_var_to_state` (both extend to sync `_maker_image_state["enabled"]` when the widget has an image). |
+
+Phase 4b (planned): `dropdown_*` (CTkOptionMenu / CTkComboBox dropdown styling — niche; may be skipped if fork plan supersedes).
 
 ## Special-case helpers
 
