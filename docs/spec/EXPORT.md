@@ -413,7 +413,7 @@ Pipeline:
 
 Maker-only composite property keys can't be passed straight to CTk's `configure(...)` — Maker decomposes them at construction time. The auto-trace path emits per-composite rebuilders that update the widget in place when the bound variable changes, so `self.var_X.set(...)` works the same way for these as it does for native CTk kwargs.
 
-**Phase 1 (v1.28.4):** font composites.
+**Phase 1 (v1.28.4 + v1.28.6):** font composites.
 
 | Property | Variable type | Helper | Effect |
 |---|---|---|---|
@@ -421,6 +421,8 @@ Maker-only composite property keys can't be passed straight to CTk's `configure(
 | `font_italic` | `bool` | `_bind_var_to_font(var, widget, "slant")` | `slant="italic"` / `"roman"` |
 | `font_size` | `int` | `_bind_var_to_font(var, widget, "size")` | New font with the requested size |
 | `font_family` | `str` | `_bind_var_to_font(var, widget, "family")` | New font with the requested family |
+| `font_underline` | `bool` | `_bind_var_to_font(var, widget, "underline")` | Toggles underline |
+| `font_overstrike` | `bool` | `_bind_var_to_font(var, widget, "overstrike")` | Toggles strikethrough |
 
 **Phase 2a:** ``button_enabled`` (state).
 

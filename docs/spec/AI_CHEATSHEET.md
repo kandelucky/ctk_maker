@@ -103,7 +103,7 @@ Bind from the Properties panel — click the ◇ chip next to a property.
 
 Other CTk-native properties (`fg_color`, `text_color`, `corner_radius`, `state`, …) auto-update at runtime via a `trace_add` → `widget.configure(...)` helper emitted by the exporter.
 
-Font composites (`font_bold`, `font_italic`, `font_size`, `font_family`) also auto-update — the exporter emits a `_bind_var_to_font` rebuilder per binding. Use them like any other variable: `self.var_is_bold.set(True)` flips every bound label's weight live.
+Font composites (`font_bold`, `font_italic`, `font_size`, `font_family`, `font_underline`, `font_overstrike`) also auto-update — the exporter emits a `_bind_var_to_font` rebuilder per binding. Use them like any other variable: `self.var_is_bold.set(True)` flips every bound label's weight live.
 
 `button_enabled` (Button / Entry / ComboBox / OptionMenu / Switch / CheckBox / RadioButton / Slider / SegmentedButton / Textbox) auto-updates via `_bind_var_to_state` — bool → `state="normal"/"disabled"`.
 

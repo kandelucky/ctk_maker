@@ -842,6 +842,10 @@ _AUTO_TRACE_FONT_HELPER = '''def _bind_var_to_font(var, widget, attr):
             kwargs["size"] = int(value)
         elif attr == "family":
             kwargs["family"] = str(value)
+        elif attr == "underline":
+            kwargs["underline"] = bool(value)
+        elif attr == "overstrike":
+            kwargs["overstrike"] = bool(value)
         else:
             return
         widget.configure(font=ctk.CTkFont(**kwargs))
@@ -859,6 +863,8 @@ _FONT_COMPOSITE_TO_ATTR = {
     "font_italic": "slant",
     "font_size": "size",
     "font_family": "family",
+    "font_underline": "underline",
+    "font_overstrike": "overstrike",
 }
 
 # Phase 2a of live composite bindings — ``button_enabled`` is a Maker-
