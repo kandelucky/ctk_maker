@@ -684,6 +684,88 @@ def _project_needs_auto_trace_font_helper(scoped_widgets) -> bool:
     return False
 
 
+def _project_needs_auto_trace_state_helper(scoped_widgets) -> bool:
+    """True when any widget in the export scope has a var binding on
+    ``button_enabled`` (or any other Maker-only bool→state composite).
+    Mirrors ``_STATE_COMPOSITE_KEYS`` membership.
+    """
+    for w in scoped_widgets:
+        for key, val in (w.properties or {}).items():
+            if key not in _STATE_COMPOSITE_KEYS:
+                continue
+            if _is_non_textvariable_var_binding(
+                w.widget_type, key, val,
+            ):
+                return True
+    return False
+
+
+def _project_needs_auto_trace_label_enabled_helper(scoped_widgets) -> bool:
+    """True when any CTkLabel in the export scope has ``label_enabled``
+    bound to a variable. Distinct from the generic state helper because
+    Label doesn't use ``state="disabled"`` (Tk's native paints a stipple
+    wash over images) — it swaps ``text_color`` manually.
+    """
+    for w in scoped_widgets:
+        if w.widget_type != "CTkLabel":
+            continue
+        val = (w.properties or {}).get("label_enabled")
+        if _is_non_textvariable_var_binding(
+            w.widget_type, "label_enabled", val,
+        ):
+            return True
+    return False
+
+
+def _project_needs_auto_trace_font_wrap_helper(scoped_widgets) -> bool:
+    """True when any CTkLabel in the export scope has ``font_wrap``
+    bound to a variable. CTkButton has no wrap analogue, so this is
+    CTkLabel-only.
+    """
+    for w in scoped_widgets:
+        if w.widget_type != "CTkLabel":
+            continue
+        val = (w.properties or {}).get("font_wrap")
+        if _is_non_textvariable_var_binding(
+            w.widget_type, "font_wrap", val,
+        ):
+            return True
+    return False
+
+
+def _project_needs_auto_trace_font_autofit_helper(scoped_widgets) -> bool:
+    """True when any CTkLabel in the export scope has ``font_autofit``
+    bound to a variable. Brings the full autofit algorithm into the
+    runtime helper block.
+    """
+    for w in scoped_widgets:
+        if w.widget_type != "CTkLabel":
+            continue
+        val = (w.properties or {}).get("font_autofit")
+        if _is_non_textvariable_var_binding(
+            w.widget_type, "font_autofit", val,
+        ):
+            return True
+    return False
+
+
+def _project_needs_auto_trace_image_color_helper(scoped_widgets) -> bool:
+    """True when any widget in the export scope has ``image_color``
+    bound to a variable AND has an image path set (no point wiring
+    a tint helper for a widget without an icon).
+    """
+    for w in scoped_widgets:
+        props = w.properties or {}
+        if not props.get("image"):
+            continue
+        val = props.get("image_color")
+        if _is_non_textvariable_var_binding(
+            w.widget_type, "image_color", val,
+        ):
+            return True
+    return False
+
+
 def _project_needs_auto_trace_textbox_helper(scoped_widgets) -> bool:
     """True when at least one CTkTextbox has a var binding on a
     property whose update path is delete-then-insert rather than
@@ -778,6 +860,210 @@ _FONT_COMPOSITE_TO_ATTR = {
     "font_size": "size",
     "font_family": "family",
 }
+
+# Phase 2a of live composite bindings — ``button_enabled`` is a Maker-
+# only bool that maps to CTk's native ``state="normal"/"disabled"`` at
+# construction time. The auto-trace path can't use ``_bind_var_to_widget``
+# directly because the var holds True/False, not the string CTk wants;
+# this helper does the bool→state mapping on every var write. Applies
+# to ``CTkButton`` and every other CTk widget that exposes ``state=``
+# (Entry / ComboBox / OptionMenu / Switch / CheckBox / RadioButton /
+# Slider / SegmentedButton / Textbox / Card).
+_AUTO_TRACE_STATE_HELPER = '''def _bind_var_to_state(var, widget):
+    """Map ``var.get()`` (bool) to ``widget.configure(state=…)``.
+    True → "normal", False → "disabled". Used for ``button_enabled``
+    bindings where the variable type is bool but CTk's kwarg is a
+    string enum.
+    """
+    def _update(*_):
+        widget.configure(state="normal" if var.get() else "disabled")
+    var.trace_add("write", _update)
+    _update()
+'''
+
+# Maker-only bool composites that translate to CTk's ``state`` kwarg.
+# Currently just ``button_enabled``; ``label_enabled`` has its own
+# rebuilder (text_color swap) because Tk Label's native disabled
+# rendering paints a stipple wash over the image.
+_STATE_COMPOSITE_KEYS = frozenset({"button_enabled"})
+
+# Phase 2b of live composite bindings — ``label_enabled`` (CTkLabel)
+# doesn't use Tk's ``state="disabled"`` because the native disabled
+# render paints a stipple wash over ``image=``; instead, Maker swaps
+# ``text_color`` with ``text_color_disabled`` for the visual cue.
+# The runtime rebuilder mirrors the same swap on var write — both
+# colors are captured as literals at emit time and held in the
+# closure, so toggling back to enabled restores the original
+# ``text_color`` (rather than reading whatever the widget currently
+# has, which would be the disabled color after the first toggle).
+_AUTO_TRACE_LABEL_ENABLED_HELPER = '''def _bind_var_to_label_enabled(var, widget, color_on, color_off):
+    """Map ``var.get()`` (bool) to a CTkLabel text_color swap.
+    True → ``color_on``, False → ``color_off``. Used for
+    ``label_enabled`` bindings — Tk Label's native disabled rendering
+    paints a stipple wash over ``image=``, so we don't use
+    ``state="disabled"``; we just swap colors.
+    """
+    def _update(*_):
+        widget.configure(text_color=color_on if var.get() else color_off)
+    var.trace_add("write", _update)
+    _update()
+'''
+
+# Phase 2d — ``font_wrap`` (CTkLabel) drives whether the label wraps
+# text. Maker's convention: ``font_wrap=True`` with ``wraplength=0``
+# derives wraplength from the widget's current width minus 8px of
+# breathing room; ``font_wrap=False`` disables wrapping by setting
+# wraplength=0 (CTk's "don't wrap"). The rebuilder reads the widget's
+# current width on every var write, so a label that gets resized
+# between toggles still wraps to the right width.
+_AUTO_TRACE_FONT_WRAP_HELPER = '''def _bind_var_to_font_wrap(var, widget):
+    """Map ``var.get()`` (bool) to a CTkLabel wraplength swap.
+    True → derive ``wraplength`` from the widget's current width
+    (minus 8px breathing room); False → ``wraplength=0`` (no wrap).
+    Mirrors Maker's editor-time behavior for ``font_wrap`` on
+    CTkLabel; no analogue on CTkButton (which doesn't expose wrap).
+    """
+    def _update(*_):
+        if var.get():
+            try:
+                w = int(widget.cget("width") or 100)
+            except (TypeError, ValueError):
+                w = 100
+            widget.configure(wraplength=max(1, w - 8))
+        else:
+            widget.configure(wraplength=0)
+    var.trace_add("write", _update)
+    _update()
+'''
+
+# Phase 2e — ``image_color`` (CTkLabel / CTkButton / Image) is a
+# PIL-side tint applied to the icon at construction time; CTk has no
+# native ``configure(image_color=…)`` because the tint is baked into
+# the PhotoImage. The runtime rebuilder reconstructs a fresh
+# ``CTkImage`` (tinted via ``_tint_image`` when the color is a hex,
+# untinted otherwise) and configures it onto the widget. The image
+# path and size are captured as literals at emit time; only the
+# colour changes dynamically. ``_tint_image`` is auto-emitted when
+# any widget in scope carries an ``image_color`` property, so this
+# helper has its dependency.
+_AUTO_TRACE_IMAGE_COLOR_HELPER = '''def _bind_var_to_image_color(var, widget, image_path, size):
+    """Rebuild ``widget``'s CTkImage with a fresh tint when ``var``
+    changes. ``var.get()`` returns a hex string (``#rrggbb`` or
+    ``#rgb``); ``""`` / ``"transparent"`` means "no tint". Depends
+    on the ``_tint_image`` helper and ``PIL.Image``, both of which
+    are auto-emitted whenever any widget needs them.
+    """
+    from PIL import Image as _PILImage
+
+    def _update(*_):
+        color = var.get()
+        try:
+            if color and color != "transparent":
+                widget.configure(
+                    image=_tint_image(image_path, color, size),
+                )
+            else:
+                widget.configure(image=ctk.CTkImage(
+                    light_image=_PILImage.open(image_path),
+                    dark_image=_PILImage.open(image_path),
+                    size=size,
+                ))
+        except Exception:
+            pass
+    var.trace_add("write", _update)
+    _update()
+'''
+
+# Phase 2c — ``font_autofit`` (CTkLabel) drives whether the font size
+# is automatically chosen to fit the label's width/height. The
+# rebuilder ports Maker's binary-search autofit algorithm to runtime
+# so a toggle on a live label recomputes the best-fit size from the
+# widget's current text + width + height (so resizes after
+# construction still produce the right autofit). When the var
+# flips back to False, the font's size is restored to the original
+# captured at emit time.
+_AUTO_TRACE_FONT_AUTOFIT_HELPER = '''def _bind_var_to_font_autofit(var, widget, size_off):
+    """Map ``var.get()`` (bool) to CTkLabel font-size autofit.
+    True → binary-search the largest font size that fits the
+    widget's current text inside its current width/height (mirrors
+    the editor's autofit). False → restore the original ``size_off``
+    captured at construction.
+    """
+    import tkinter.font as _tkfont
+
+    def _wrap_lines(font, text, max_w):
+        lines = []
+        for paragraph in str(text).split("\\n"):
+            if not paragraph:
+                lines.append("")
+                continue
+            cur = ""
+            for word in paragraph.split(" "):
+                trial = word if not cur else cur + " " + word
+                if font.measure(trial) <= max_w:
+                    cur = trial
+                else:
+                    if cur:
+                        lines.append(cur)
+                    cur = word
+            if cur:
+                lines.append(cur)
+        return lines or [""]
+
+    def _compute(text, width, height, bold, wrap):
+        avail_w = max(10, int(width) - 12)
+        avail_h = max(10, int(height) - 4)
+        weight = "bold" if bold else "normal"
+        lo, hi, best = 6, 96, 6
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            try:
+                f = _tkfont.Font(size=mid, weight=weight)
+                line_h = f.metrics("linespace")
+                if wrap:
+                    lns = _wrap_lines(f, text, avail_w)
+                    tw = max((f.measure(L) for L in lns), default=0)
+                    th = line_h * len(lns)
+                else:
+                    tw = f.measure(text)
+                    th = line_h
+            except Exception:
+                return 13
+            if tw <= avail_w and th <= avail_h:
+                best = mid
+                lo = mid + 1
+            else:
+                hi = mid - 1
+        return best
+
+    def _rebuild_font(new_size):
+        current = widget.cget("font")
+        widget.configure(font=ctk.CTkFont(
+            family=current.cget("family"),
+            size=int(new_size),
+            weight=current.cget("weight"),
+            slant=current.cget("slant"),
+            underline=current.cget("underline"),
+            overstrike=current.cget("overstrike"),
+        ))
+
+    def _update(*_):
+        if var.get():
+            try:
+                text = widget.cget("text") or ""
+                width = int(widget.cget("width") or 100)
+                height = int(widget.cget("height") or 28)
+                current_font = widget.cget("font")
+                bold = current_font.cget("weight") == "bold"
+                wrap = int(widget.cget("wraplength") or 0) > 0
+            except Exception:
+                return
+            _rebuild_font(_compute(text, width, height, bold, wrap))
+        else:
+            _rebuild_font(size_off)
+    var.trace_add("write", _update)
+    _update()
+'''
 
 _PACK_BALANCE_HELPER = '''def _ctkmaker_balance_pack(container, axis):
     """Flex-shrink pack children along ``axis`` ("width" or
@@ -976,6 +1262,80 @@ def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
         if font_attr is not None:
             out.append(
                 f'_bind_var_to_font({var_attr}, {full_name}, "{font_attr}")',
+            )
+            continue
+        # ``button_enabled`` — bool var maps to CTk's ``state`` enum.
+        # Routed through the state helper because the var holds
+        # True/False, not "normal"/"disabled".
+        if key in _STATE_COMPOSITE_KEYS:
+            out.append(
+                f"_bind_var_to_state({var_attr}, {full_name})",
+            )
+            continue
+        # ``label_enabled`` (CTkLabel only) — bool var maps to a
+        # text_color swap. Both colors are captured as literals at
+        # emit time so toggling back to enabled restores the original
+        # text_color rather than reading whatever the widget currently
+        # has (which would be the disabled color after the first flip).
+        if key == "label_enabled" and node.widget_type == "CTkLabel":
+            props = node.properties or {}
+            on_val = (
+                _resolve_export_raw(props, "text_color", "#ffffff")
+                or "#ffffff"
+            )
+            off_val = (
+                _resolve_export_raw(
+                    props, "text_color_disabled", "#a0a0a0",
+                )
+                or "#a0a0a0"
+            )
+            out.append(
+                f"_bind_var_to_label_enabled({var_attr}, {full_name}, "
+                f"{_py_literal(on_val)}, {_py_literal(off_val)})",
+            )
+            continue
+        # ``font_wrap`` (CTkLabel only) — bool var drives wraplength
+        # derivation from the widget's current width.
+        if key == "font_wrap" and node.widget_type == "CTkLabel":
+            out.append(
+                f"_bind_var_to_font_wrap({var_attr}, {full_name})",
+            )
+            continue
+        # ``font_autofit`` (CTkLabel only) — bool var toggles binary-
+        # search font sizing. The "off" font size is captured at emit
+        # time as a literal so the helper can restore it on toggle.
+        if key == "font_autofit" and node.widget_type == "CTkLabel":
+            props = node.properties or {}
+            shadow_size = props.get("_font_size_pre_autofit")
+            base_size = props.get("font_size")
+            size_off = shadow_size if shadow_size else base_size
+            try:
+                size_off_int = int(size_off or 13)
+            except (TypeError, ValueError):
+                size_off_int = 13
+            out.append(
+                f"_bind_var_to_font_autofit({var_attr}, {full_name}, "
+                f"{size_off_int})",
+            )
+            continue
+        # ``image_color`` — color var drives the PIL tint of the
+        # widget's icon. The image path and size are captured as
+        # literals at emit time; only the colour changes dynamically.
+        # No-op if the widget has no image set.
+        if key == "image_color":
+            props = node.properties or {}
+            image_path = props.get("image")
+            if not image_path:
+                continue
+            try:
+                iw = int(props.get("image_width", 20) or 20)
+                ih = int(props.get("image_height", 20) or 20)
+            except (TypeError, ValueError):
+                iw, ih = 20, 20
+            path_lit = _py_literal(_path_for_export(image_path))
+            out.append(
+                f"_bind_var_to_image_color({var_attr}, {full_name}, "
+                f"{path_lit}, ({iw}, {ih}))",
             )
             continue
         if allowed is not None and key not in allowed:
@@ -1601,6 +1961,21 @@ def _generate_code_inner(
     needs_auto_trace_font = _project_needs_auto_trace_font_helper(
         scoped_widgets,
     )
+    needs_auto_trace_state = _project_needs_auto_trace_state_helper(
+        scoped_widgets,
+    )
+    needs_auto_trace_label_enabled = (
+        _project_needs_auto_trace_label_enabled_helper(scoped_widgets)
+    )
+    needs_auto_trace_font_wrap = (
+        _project_needs_auto_trace_font_wrap_helper(scoped_widgets)
+    )
+    needs_auto_trace_font_autofit = (
+        _project_needs_auto_trace_font_autofit_helper(scoped_widgets)
+    )
+    needs_auto_trace_image_color = (
+        _project_needs_auto_trace_image_color_helper(scoped_widgets)
+    )
     # v1.10.2: emit the flex-shrink runtime helper when any container
     # uses vbox/hbox with at least one child. Window-level layout
     # counts too — the document body may be the parent of the row.
@@ -1642,6 +2017,21 @@ def _generate_code_inner(
         lines.append("")
     if needs_auto_trace_font:
         lines.extend(_AUTO_TRACE_FONT_HELPER.splitlines())
+        lines.append("")
+    if needs_auto_trace_state:
+        lines.extend(_AUTO_TRACE_STATE_HELPER.splitlines())
+        lines.append("")
+    if needs_auto_trace_label_enabled:
+        lines.extend(_AUTO_TRACE_LABEL_ENABLED_HELPER.splitlines())
+        lines.append("")
+    if needs_auto_trace_font_wrap:
+        lines.extend(_AUTO_TRACE_FONT_WRAP_HELPER.splitlines())
+        lines.append("")
+    if needs_auto_trace_font_autofit:
+        lines.extend(_AUTO_TRACE_FONT_AUTOFIT_HELPER.splitlines())
+        lines.append("")
+    if needs_auto_trace_image_color:
+        lines.extend(_AUTO_TRACE_IMAGE_COLOR_HELPER.splitlines())
         lines.append("")
     if needs_pack_balance:
         lines.extend(_PACK_BALANCE_HELPER.splitlines())

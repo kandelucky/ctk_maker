@@ -413,7 +413,7 @@ Pipeline:
 
 Maker-only composite property keys can't be passed straight to CTk's `configure(...)` — Maker decomposes them at construction time. The auto-trace path emits per-composite rebuilders that update the widget in place when the bound variable changes, so `self.var_X.set(...)` works the same way for these as it does for native CTk kwargs.
 
-**Phase 1 (v1.28.2):** font composites only.
+**Phase 1 (v1.28.4):** font composites.
 
 | Property | Variable type | Helper | Effect |
 |---|---|---|---|
@@ -422,7 +422,27 @@ Maker-only composite property keys can't be passed straight to CTk's `configure(
 | `font_size` | `int` | `_bind_var_to_font(var, widget, "size")` | New font with the requested size |
 | `font_family` | `str` | `_bind_var_to_font(var, widget, "family")` | New font with the requested family |
 
-Phase 2+ (planned, see [docs/plans/live_composite_bindings.md](../plans/live_composite_bindings.md)): `label_enabled`, `image_color`, `font_autofit`, `font_wrap`, `dropdown_*`.
+**Phase 2a:** ``button_enabled`` (state).
+
+| Property | Variable type | Helper | Effect |
+|---|---|---|---|
+| `button_enabled` | `bool` | `_bind_var_to_state(var, widget)` | `widget.configure(state="normal"/"disabled")`. Applies to every CTk widget that exposes `state=` — Button, Entry, ComboBox, OptionMenu, Switch, CheckBox, RadioButton, Slider, SegmentedButton, Textbox. |
+
+**Phase 2b:** ``label_enabled`` (CTkLabel text-color swap).
+
+| Property | Variable type | Helper | Effect |
+|---|---|---|---|
+| `label_enabled` | `bool` | `_bind_var_to_label_enabled(var, widget, color_on, color_off)` | Swaps `text_color` between the construction-time `text_color` and `text_color_disabled` values. Both colors are captured as literals at emit time so the helper can restore the original on re-enable. Tk Label's native `state="disabled"` paints a stipple wash over `image=`, so we use manual color swap instead. |
+
+**Phase 2c–e:** font-shape + image composites.
+
+| Property | Variable type | Helper | Effect |
+|---|---|---|---|
+| `font_wrap` (CTkLabel) | `bool` | `_bind_var_to_font_wrap(var, widget)` | True → wraplength derived from widget's current width; False → wraplength=0 (no wrap). |
+| `font_autofit` (CTkLabel) | `bool` | `_bind_var_to_font_autofit(var, widget, size_off)` | True → binary-search the largest font size that fits current text inside current width × height; False → restore original `size_off`. Inlines a port of `_compute_autofit_size` into the export. |
+| `image_color` (CTkLabel / CTkButton / Image) | `color` / `str` | `_bind_var_to_image_color(var, widget, image_path, size)` | Rebuilds `CTkImage` with a fresh PIL tint when `var` changes. Image path + size captured as literals at emit time; only the colour is dynamic. No-op if the widget has no image. Depends on `_tint_image` (auto-emitted). |
+
+Phase 3 (planned): `dropdown_*` (CTkOptionMenu / CTkComboBox dropdown styling) — may need ScrollableDropdown reconstruction; investigate at the time.
 
 ## Special-case helpers
 

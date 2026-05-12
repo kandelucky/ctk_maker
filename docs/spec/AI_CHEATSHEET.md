@@ -105,7 +105,15 @@ Other CTk-native properties (`fg_color`, `text_color`, `corner_radius`, `state`,
 
 Font composites (`font_bold`, `font_italic`, `font_size`, `font_family`) also auto-update — the exporter emits a `_bind_var_to_font` rebuilder per binding. Use them like any other variable: `self.var_is_bold.set(True)` flips every bound label's weight live.
 
-Maker-only composites without a rebuilder yet (`label_enabled`, `image_color`, `font_autofit`, `font_wrap`, `dropdown_*`) still bake the current value at construction — see [docs/plans/live_composite_bindings.md](../plans/live_composite_bindings.md) for the in-flight plan.
+`button_enabled` (Button / Entry / ComboBox / OptionMenu / Switch / CheckBox / RadioButton / Slider / SegmentedButton / Textbox) auto-updates via `_bind_var_to_state` — bool → `state="normal"/"disabled"`.
+
+`label_enabled` (CTkLabel) auto-updates via `_bind_var_to_label_enabled` — bool → swaps `text_color` between the original and `text_color_disabled`.
+
+`font_wrap` (CTkLabel) → `_bind_var_to_font_wrap` — bool → wraplength derive/zero.
+`font_autofit` (CTkLabel) → `_bind_var_to_font_autofit` — bool → recompute best-fit size or restore original.
+`image_color` (CTkLabel / CTkButton / Image) → `_bind_var_to_image_color` — color/str → rebuilds tinted CTkImage.
+
+Only `dropdown_*` composites (CTkOptionMenu / CTkComboBox) still bake at construction; see [docs/plans/live_composite_bindings.md](../plans/live_composite_bindings.md) for Phase 3.
 
 In exported code:
 
