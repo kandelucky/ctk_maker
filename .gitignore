@@ -65,3 +65,50 @@ tools/gen_architecture_graph.py
 tools/test_transparent_png.py
 tools/test_icon_picker.py
 tools/test_output/
+
+# PyInstaller build artifacts (Phase 3 distribution)
+*.spec
+*.manifest
+
+# Inno Setup installer output
+installer/Output/
+*Setup.exe
+CTkMaker-*.exe
+
+# pip build leftovers
+.eggs/
+pip-wheel-metadata/
+pip-log.txt
+
+# CTkMaker user projects accidentally saved at repo root
+# (root-only — test fixtures in WidgetCatalog/ or tests/fixtures/ stay tracked)
+/*.ctkproj
+/*.ctkcomp
+/*.ctkproj.zip
+/*.ctkcomp.zip
+
+# F5 preview leftovers (if ever placed in repo)
+preview_*.py
+__preview__/
+
+# Pytest coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Merge / edit residue
+*.bak
+*.orig
+*.rej
+
+# AI editor artifacts (currently only .claude/ tracked)
+.cursor/
+.cursorrules
+.aider*
+.windsurfrules
+
+# Python version managers
+.python-version
+.tool-versions
+.envrc
