@@ -8,6 +8,18 @@ For full reference: [CONCEPTS.md](CONCEPTS.md), [WIDGETS.md](WIDGETS.md), [DATA_
 
 A visual designer for [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) Python GUIs. Users drag widgets onto a canvas, edit properties, attach event handlers, and export to runnable `.py` code. Visual design lives in `.ctkproj` files; behavior lives in hand-written Python alongside.
 
+## CustomTkinter is editable — this is a fork
+
+CTkMaker runs on **[ctkmaker-core](https://github.com/kandelucky/ctkmaker-core)** — a maintained CustomTkinter fork at `c:/Users/likak/Desktop/ctkmaker_core/` (editable install). `import customtkinter` in ctk_maker source resolves to the fork's `customtkinter/` folder directly.
+
+**When a CustomTkinter bug or missing feature blocks ctkmaker work:**
+1. Fix it in the fork (`Desktop/ctkmaker_core/customtkinter/...`)
+2. Test against ctk_maker — editable install picks up changes live
+3. Ship: commit + tag `ctkmaker-core-vX.Y.Z` + PyPI publish
+4. Bump `ctk_maker/requirements.txt` if minimum version needs raising
+
+**Do not** write monkey-patches, helper wrappers, or workaround layers in `app/` for problems that belong inside CustomTkinter. The fork is the right home for general CTk improvements that any user could benefit from. App-level workarounds belong in `app/widgets/runtime/` only for behavior that is intrinsically ctkmaker-specific (editor canvas, selection state, etc.) — not for upstream-style bug fixes.
+
 ## Project layout
 
 ```

@@ -5,6 +5,7 @@ Drag-and-drop visual designer for **[CustomTkinter](https://github.com/TomSchima
 **Community Hub:** [kandelucky.github.io/ctkmaker-hub](https://kandelucky.github.io/ctkmaker-hub/) — browse and share reusable components built in CTkMaker.
 
 > **Recent:**
+> - **v1.30.0** — Runtime now uses **ctkmaker-core 5.3.1** (maintained CustomTkinter fork) instead of upstream `customtkinter`. Drop-in compatible — exported `.py` files unchanged. Color picker (`ctk-tint-color-picker`) now bundled internally; no separate PyPI install.
 > - **v1.29.0** — Live composite variable bindings: font sub-properties (family, weight, slant, underline, overstrike) + image colour variants + x/y geometry / image rebuilds propagate live across composites
 > - **v1.28.1** — Variables + Object References are now page-scoped (each page owns its set, was project-wide). Legacy globals migrate to the active page on first load.
 > - **v1.28.0** — Ghost Mode v2: per-doc statusbar toggle (replaces chrome icon), base64-PNG persistence in `.ctkproj` (no startup re-grab), two-step click on ghost screenshots, reddish "N live windows" hint in the zoom bar
@@ -82,8 +83,8 @@ Found a bug or have an idea? Use **Help → Report a Bug** (or the toolbar butto
 ## Tech stack
 
 - **Python 3.12+** (tested on 3.14)
-- **CustomTkinter** 5.2.2+
-- **Pillow**, **tkextrafont**, **ctk-tint-color-picker**
+- **ctkmaker-core** 5.3.1+ — maintained [CustomTkinter fork](https://github.com/kandelucky/ctkmaker-core)
+- **Pillow**, **tkextrafont**, **Send2Trash**
 
 ## What's next
 
