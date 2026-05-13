@@ -452,7 +452,7 @@ class SettingsDialog(ManagedToplevel):
 
     def _pick_grid_color(self) -> None:
         try:
-            from ctk_color_picker import ColorPickerDialog
+            from app.ui.tint_color_picker import ColorPickerDialog
         except ImportError:
             return
         dlg = ColorPickerDialog(

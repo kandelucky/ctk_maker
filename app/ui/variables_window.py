@@ -1005,7 +1005,7 @@ class VariableEditDialog(ManagedToplevel):
         trace and the existing OK-coercion path.
         """
         try:
-            from ctk_color_picker import ColorPickerDialog
+            from app.ui.tint_color_picker import ColorPickerDialog
         except ImportError:
             return
         initial = self._default_var.get() or COLOR_DEFAULT

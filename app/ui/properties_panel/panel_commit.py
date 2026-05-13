@@ -23,7 +23,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
-from ctk_color_picker import ColorPickerDialog
+from app.ui.tint_color_picker import ColorPickerDialog
 
 from app.core.commands import (
     ChangePropertyCommand,

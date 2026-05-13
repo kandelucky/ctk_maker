@@ -517,7 +517,7 @@ class LucideIconPickerDialog(ManagedToplevel):
 
     def _open_color_picker(self) -> None:
         try:
-            from ctk_color_picker import ColorPickerDialog
+            from app.ui.tint_color_picker import ColorPickerDialog
         except ImportError:
             return
         dlg = ColorPickerDialog(self, initial_color=self._tint)
