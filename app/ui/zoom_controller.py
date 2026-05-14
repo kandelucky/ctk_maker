@@ -67,9 +67,10 @@ class ZoomController:
         # illusion on high-DPI displays where canvas coords are raw
         # physical pixels but CTk widgets render at logical × DPI.
         # DPI factor is the OS scaling multiplier (96 DPI → 1.0,
-        # 150 % → 1.5). Read from the central cache in ``screen.py``
-        # — awareness is set in ``main.main()`` before any Tk widget
-        # so the value is stable from process start.
+        # 150 % → 1.5). Read from the central cache in ``screen.py``.
+        # CTk activates process DPI awareness when the first ``CTk``
+        # window is created; ``MainWindow`` exists well before any
+        # ``ZoomController``, so the factor is already settled here.
         self._dpi_factor: float = get_dpi_factor()
         self._menu: ctk.CTkOptionMenu | None = None
         self._menu_var: tk.StringVar | None = None
