@@ -25,17 +25,16 @@ class CTkLabelDescriptor(WidgetDescriptor):
     type_name = "CTkLabel"
     display_name = "Label"
     prefers_fill_in_layout = True
-    # Live workspace + exported .py both render through ``CircleLabel``
-    # — a CTkLabel override that zeroes the rounded-corner padx
-    # reservation in ``_create_grid`` so full-circle / pill labels with
-    # text stop overflowing their nominal frame size. ``is_ctk_class =
-    # False`` + ``ctk_class_name = "CircleLabel"`` make the exporter
-    # emit a bare ``CircleLabel(...)`` constructor call (the class
-    # definition is inlined into the generated file by
-    # ``code_exporter``). Image descriptor still emits as
-    # ``ctk.CTkLabel(...)`` because its text is empty — no squeeze.
-    is_ctk_class = False
-    ctk_class_name = "CircleLabel"
+    # Live workspace + exported .py both render through the fork's
+    # native ``ctk.CTkLabel``. Composite-widget support — ``full_circle``
+    # layout + ``unified_bind`` event routing — lives in ctkmaker-core
+    # (>= 5.4.14) and is injected at construction (see ``create_widget``
+    # / ``export_kwarg_overrides``). The old editor-side ``CircleLabel``
+    # override is gone. Image descriptor emits as ``ctk.CTkLabel(...)``
+    # too but without those kwargs — its text is empty (no squeeze) and
+    # it takes no user ``bind()`` handlers.
+    is_ctk_class = True
+    ctk_class_name = "CTkLabel"
 
     default_properties = {
         # Geometry
@@ -231,6 +230,14 @@ class CTkLabelDescriptor(WidgetDescriptor):
     @classmethod
     def export_kwarg_overrides(cls, properties: dict) -> dict:
         overrides: dict = {}
+        # Fork-native composite-widget support, always on (matches the
+        # editor). ``full_circle`` (ctkmaker-core >= 5.4.12) keeps
+        # full-circle / pill labels from growing their outer Frame;
+        # ``unified_bind`` (>= 5.4.14) routes ``bind()`` as if the label
+        # were a single Tk widget. Injected as overrides because neither
+        # is a user-editable property.
+        overrides["full_circle"] = True
+        overrides["unified_bind"] = True
         # Mirror transform_properties' manual disabled-text swap. We
         # deliberately don't emit ``state="disabled"`` for labels (Tk
         # Label's native disabled rendering paints a stipple wash over
@@ -334,6 +341,11 @@ class CTkLabelDescriptor(WidgetDescriptor):
         kwargs = cls.transform_properties(properties)
         if init_kwargs:
             kwargs.update(init_kwargs)
-        from app.widgets.runtime.circle_label import CircleLabel
-        widget = CircleLabel(master, **kwargs)
+        # Fork-native composite-widget support — full_circle layout +
+        # unified bind() routing (ctkmaker-core >= 5.4.14). setdefault
+        # so an explicit init_kwargs override still wins; mirrors what
+        # the exporter injects via export_kwarg_overrides.
+        kwargs.setdefault("full_circle", True)
+        kwargs.setdefault("unified_bind", True)
+        widget = ctk.CTkLabel(master, **kwargs)
         return widget

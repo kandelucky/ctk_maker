@@ -58,8 +58,8 @@ For the descriptor system itself see [EXTENSION.md](EXTENSION.md). For user-faci
 
 | Attribute | Value |
 |---|---|
-| CTk class | `CircleLabel` |
-| Generated as | inline class (not from `customtkinter`) |
+| CTk class | `CTkLabel` |
+| Generated as | `ctk.CTkLabel(...)` with fork-native `full_circle` + `unified_bind` |
 | Layout default | fills parent (vbox/hbox/grid) |
 
 ### Text

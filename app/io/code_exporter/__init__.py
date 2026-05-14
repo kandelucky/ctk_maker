@@ -1198,22 +1198,11 @@ def _generate_code_inner(
     needs_circular_progress = any(
         w.widget_type == "CircularProgress" for w in scoped_widgets
     )
-    # CTkButton's old full-circle / pill layout crutch (CircleButton) is
-    # gone — the fork's native ``full_circle`` kwarg (ctkmaker-core >=
-    # 5.4.12) supersedes it, so a plain ``ctk.CTkButton(...)`` is emitted.
-    # Inlines CircleLabel for every project that contains a CTkLabel.
-    # Future improvement: tighten this gate. CircleLabel carries two
-    # fixes — a corner-radius padx fix (only observable when
-    # ``2*corner_radius >= width``) and a unified event router (only
-    # observable when the user calls ``bind()`` on the label). When a
-    # label is used as a passive visual element with neither
-    # condition met, ``ctk.CTkLabel(...)`` could be emitted directly
-    # to keep exported scripts smaller. Detecting "no events" needs
-    # static analysis of the user's behavior file, which today is a
-    # 1-handler bridge — non-trivial; deferred.
-    needs_circle_label = any(
-        w.widget_type == "CTkLabel" for w in scoped_widgets
-    )
+    # CTkButton's full-circle / pill layout and CTkLabel's full_circle +
+    # unified bind() routing are all fork-native now (ctkmaker-core >=
+    # 5.4.14), so both export as plain ``ctk.Ctk*(...)`` — no inlined
+    # CircleButton / CircleLabel class. The full_circle / unified_bind
+    # kwargs are injected by the descriptor's export_kwarg_overrides.
     needs_tk_import = (
         bool(project.variables)
         or has_local_vars
@@ -1321,10 +1310,6 @@ def _generate_code_inner(
 
     if needs_circular_progress:
         lines.extend(_circular_progress_class_lines())
-        lines.append("")
-
-    if needs_circle_label:
-        lines.extend(_circle_label_class_lines())
         lines.append("")
 
     used_class_names: set[str] = set()
@@ -2414,11 +2399,10 @@ def _emit_widget(
     # default. Resolution order:
     #   1. descriptor.ctk_class_name — direct CTk wrappers (CTkLabel,
     #      CTkSwitch, …) hit the catalog on the first try.
-    #   2. descriptor.type_name — custom subclasses like ``CircleLabel``
-    #      (a CTkLabel subclass set as ctk_class_name="CircleLabel")
-    #      miss the customtkinter module on lookup #1; falling back to
-    #      type_name="CTkLabel" pulls the parent's signature, which is
-    #      the right reference for the skip gate.
+    #   2. descriptor.type_name — fallback for when ctk_class_name names
+    #      a class not on the customtkinter module (a custom subclass):
+    #      type_name pulls the CTk parent's signature, the right
+    #      reference for the skip gate.
     #   3. None of the above resolves → ctk_defaults stays empty and
     #      _kwarg_matches_defaults short-circuits to False everywhere,
     #      preserving pre-v1.10.0 emit-everything behavior for fully
@@ -2981,7 +2965,6 @@ def _image_source(props: dict, image_path: str) -> str:
 
 
 from app.io.code_exporter.runtime_helpers import (
-    _circle_label_class_lines,
     _circular_progress_class_lines,
     _font_register_helper_lines,
 )

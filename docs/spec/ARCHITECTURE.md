@@ -180,12 +180,9 @@ These are intentionally large. Every one has a multi-paragraph module-level docs
 
 | Override | Fixes |
 |---|---|
-| [`CircleLabel.__init__`](../../app/widgets/runtime/circle_label.py) | Passes the fork's native `full_circle=True` (ctkmaker-core ≥ 5.4.12) so full-circle / pill labels don't grow their outer Frame — was a `_create_grid` override, now a one-line kwarg. Also: inner `CTkCanvas` defaults `takefocus=""`; Tk's heuristic admits it via Canvas's class-level key bindings, so `takefocus=True` labels need 2 Tab presses per move — sets `_canvas.configure(takefocus=0)` so only the inner `tk.Label` is in the cycle. Seeds the unified-event-routing state (lazy hover/motion handler lists) and mirrors the inner cursor onto the outer canvas. |
-| [`CircleLabel.bind`](../../app/widgets/runtime/circle_label.py) | Upstream `CTkLabel.bind` dual-routes to canvas + inner Label, so `<Enter>`/`<Leave>`/`<Configure>`/`<Map>` fire 2-3 times per logical transition. Override dispatches by event class — hover via state machine + `after_idle` debounce, geometry on outer Frame only (`tkinter.Misc.bind` to skip the dual-bind), focus/key on inner Label, click/wheel deduped by `event.time`. Internal handlers register lazily so zero-bind projects pay no runtime cost. **First instance of a generic event-routing problem affecting every CTk composite widget** — if it spreads to CTkButton/Switch/Slider, extract a shared `UnifiedBindMixin`. |
-| [`CircleLabel.configure`](../../app/widgets/runtime/circle_label.py) | `cursor=` kwarg only updates the inner `tk.Label`, leaving the outer canvas's rounded-corner area on the default cursor. Override mirrors the new cursor to the canvas after each `configure(cursor=...)` so `hand2` covers the full label area. |
 | [`CircularProgress`](../../app/widgets/runtime/circular_progress.py) | Custom ring-style progress widget — not present in `customtkinter`. |
 
-The `Image` widget uses raw `ctk.CTkLabel` (no override), so the takefocus quirk reappears there if the user enables it.
+`CircularProgress` is the only remaining runtime override — every CTk-widget crutch has migrated into the ctkmaker-core fork. CTkLabel's old `CircleLabel` override (full-circle layout + unified `bind()` event routing) is now the fork's native `full_circle` / `unified_bind` kwargs (ctkmaker-core ≥ 5.4.14), injected by `CTkLabelDescriptor`. The Image descriptor emits a plain `ctk.CTkLabel(...)` without those kwargs.
 
 ## Conventions
 

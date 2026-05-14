@@ -3,30 +3,15 @@
 Each `*_lines()` function returns a list of source lines spliced into
 the generated file's helper preamble. Two flavours:
 
-- Inline runtime classes (``CircleLabel`` / ``CircularProgress``) —
-  read live source via ``inspect.getsource`` so a single edit in
-  ``app/widgets/runtime/`` propagates to every export.
+- Inline runtime classes (``CircularProgress``) — read live source via
+  ``inspect.getsource`` so a single edit in ``app/widgets/runtime/``
+  propagates to every export.
 - Hand-written helpers (``_register_project_fonts``) — string literals
   kept here because the runtime they target doesn't need a builder-side
   equivalent.
 """
 
 from __future__ import annotations
-
-
-def _circle_label_class_lines() -> list[str]:
-    """Inline the ``CircleLabel`` runtime class (CTkLabel override
-    that zeroes the rounded-corner padx in ``_create_grid``) into
-    generated ``.py`` files. Source lives at
-    ``app/widgets/runtime/circle_label.py`` for builder use; reading
-    via ``inspect`` keeps a single edit propagating to every export.
-    The standard import block already covers ``customtkinter as ctk``.
-    """
-    import inspect
-
-    from app.widgets.runtime.circle_label import CircleLabel
-
-    return inspect.getsource(CircleLabel).splitlines()
 
 
 def _circular_progress_class_lines() -> list[str]:

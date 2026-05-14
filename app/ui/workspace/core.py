@@ -766,12 +766,11 @@ class Workspace(ctk.CTkFrame):
         # Always recurse — even if THIS widget is already bound, a
         # composite CTk widget may have spawned brand-new children
         # since the last walk that still need their handlers.
-        # Exception: CircleLabel.bind() dual-binds onto its inner
-        # canvas + label itself, so recursing here would stack a
-        # second binding on top of CircleLabel's already-routed one
-        # and every right-click would fire the handler twice.
-        from app.widgets.runtime.circle_label import CircleLabel
-        if isinstance(widget, CircleLabel):
+        # Exception: CTkLabel.bind() already reaches its inner canvas +
+        # label (routed when unified_bind=True, dual-bound otherwise),
+        # so recursing here would stack a second binding on those
+        # sub-widgets and every event would fire the handler twice.
+        if isinstance(widget, ctk.CTkLabel):
             return
         for child in widget.winfo_children():
             self._bind_widget_events(child, nid)
