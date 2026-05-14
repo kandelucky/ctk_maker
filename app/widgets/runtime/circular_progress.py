@@ -105,6 +105,18 @@ class CircularProgress(tk.Canvas, CTkScalingBaseClass):
             pass
         self._redraw()
 
+    def destroy(self) -> None:
+        """Unregister from CTk's ScalingTracker before the canvas is
+        torn down. tkinter's ``destroy`` isn't cooperative (it never
+        calls ``super().destroy()``), so ``CTkScalingBaseClass.destroy``
+        — the only path that removes the ``_set_scaling`` callback from
+        the tracker — must be invoked explicitly. Without this the
+        tracker keeps a strong reference to every destroyed instance,
+        leaking on each collapse / ghost / reparent cycle.
+        """
+        CTkScalingBaseClass.destroy(self)
+        tk.Canvas.destroy(self)
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
