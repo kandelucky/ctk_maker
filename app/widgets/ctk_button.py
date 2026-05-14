@@ -25,15 +25,14 @@ class CTkButtonDescriptor(WidgetDescriptor):
     type_name = "CTkButton"
     display_name = "Button"
     prefers_fill_in_layout = True
-    # Live workspace + exported .py both render through ``CircleButton``
-    # — a CTkButton override that lifts the rounded-corner reservation
-    # in ``_create_grid`` so full-circle / pill buttons with text stop
-    # overflowing their nominal frame size. ``is_ctk_class = False`` +
-    # ``ctk_class_name = "CircleButton"`` make the exporter emit a bare
-    # ``CircleButton(...)`` constructor call (the class definition is
-    # inlined into the generated file by ``code_exporter``).
-    is_ctk_class = False
-    ctk_class_name = "CircleButton"
+    # ``full_circle=True`` is passed unconditionally (see
+    # ``transform_properties`` / ``export_kwarg_overrides``). CTkButton's
+    # ``_create_grid`` reserves ``corner_radius`` worth of space on the
+    # outer columns, which makes full-circle / pill buttons with text
+    # overflow their nominal frame size. The fork's native ``full_circle``
+    # kwarg (ctkmaker-core >= 5.4.12) lifts that reservation — superseding
+    # the old inlined ``CircleButton`` override, so this descriptor maps
+    # 1:1 onto a plain ``ctk.CTkButton``.
 
     default_properties = {
         # Geometry
@@ -251,6 +250,10 @@ class CTkButtonDescriptor(WidgetDescriptor):
         def _active(c):
             return c if c and c != "transparent" else None
 
+        # Always-on: the fork's native pill / full-circle layout fix
+        # (ctkmaker-core >= 5.4.12), replacing the old CircleButton crutch.
+        result["full_circle"] = True
+
         result["state"] = (
             "normal" if properties.get("button_enabled", True)
             else "disabled"
@@ -337,19 +340,24 @@ class CTkButtonDescriptor(WidgetDescriptor):
 
     @classmethod
     def export_kwarg_overrides(cls, properties: dict) -> dict:
-        """text_hover (toggle) + text_hover_color → the native
-        text_color_hover kwarg in the exported constructor call.
-        Mirrors transform_properties(); emitted only when the toggle is
-        on and a colour is set — otherwise CTkButton's None default holds.
+        """Derived kwargs for the exported constructor call (mirrors
+        transform_properties(), since the exporter builds from raw
+        properties):
+
+        - full_circle: always True — the fork's native pill / full-circle
+          layout fix (ctkmaker-core >= 5.4.12), replacing the old inlined
+          CircleButton override.
+        - text_color_hover: emitted only when the text_hover toggle is on
+          and a colour is set — otherwise CTkButton's None default holds.
         """
+        overrides = {"full_circle": True}
         if properties.get("text_hover") and properties.get("text_hover_color"):
-            return {"text_color_hover": properties["text_hover_color"]}
-        return {}
+            overrides["text_color_hover"] = properties["text_hover_color"]
+        return overrides
 
     @classmethod
     def create_widget(cls, master, properties: dict, init_kwargs=None):
         kwargs = cls.transform_properties(properties)
         if init_kwargs:
             kwargs.update(init_kwargs)
-        from app.widgets.runtime.circle_button import CircleButton
-        return CircleButton(master, **kwargs)
+        return ctk.CTkButton(master, **kwargs)

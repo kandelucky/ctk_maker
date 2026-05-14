@@ -1,11 +1,12 @@
 """CTkLabel exports through the inlined ``CircleLabel`` class.
 
-Symmetric to ``test_var_name_threading``'s CircleButton coverage. Every
-CTkLabel routes through ``CircleLabel`` (a CTkLabel override that
-zeroes the rounded-corner padx in ``_create_grid``) so full-circle /
-pill labels with text stop overflowing their nominal frame size. The
-Image descriptor stays on raw ``ctk.CTkLabel(...)`` because its text
-is empty — no horizontal squeeze to fix.
+Every CTkLabel routes through ``CircleLabel`` — a CTkLabel override
+that still carries the unified event router (``bind()`` dispatch).
+Its old rounded-corner padx fix in ``_create_grid`` is now the fork's
+native ``full_circle`` kwarg, but the class stays inlined until the
+event router lands in the fork too. The Image descriptor stays on raw
+``ctk.CTkLabel(...)`` because its text is empty — no squeeze to fix,
+and Image widgets don't take user ``bind()`` handlers.
 """
 
 from __future__ import annotations
@@ -123,10 +124,11 @@ def test_label_and_image_coexist_correctly():
     assert source.count("class CircleLabel(ctk.CTkLabel):") == 1
 
 
-def test_button_and_label_inline_both_runtime_classes():
-    """Both CircleButton and CircleLabel inline cleanly when their
-    respective widget types appear together. Each class definition
-    emitted once.
+def test_button_emits_plain_ctkbutton_alongside_circlelabel():
+    """A CTkButton + a CTkLabel in the same project: the button emits a
+    plain ``ctk.CTkButton(...)`` (its full-circle layout fix is now the
+    fork's native ``full_circle`` kwarg, no inlined class), while the
+    label still routes through the inlined ``CircleLabel``.
     """
     project = Project()
     _add_default_label(project, "lbl")
@@ -135,9 +137,10 @@ def test_button_and_label_inline_both_runtime_classes():
     btn.properties = dict(get_descriptor("CTkButton").default_properties)
     project.active_document.root_widgets.append(btn)
     source = generate_code(project)
-    assert source.count("class CircleButton(ctk.CTkButton):") == 1
+    assert "class CircleButton" not in source
+    assert "self.btn = ctk.CTkButton(" in source
+    assert "full_circle=True" in source
     assert source.count("class CircleLabel(ctk.CTkLabel):") == 1
-    assert "self.btn = CircleButton(" in source
     assert "self.lbl = CircleLabel(" in source
 
 
@@ -148,16 +151,20 @@ def test_circle_label_helper_returns_class_source():
     lines = _circle_label_class_lines()
     joined = "\n".join(lines)
     # The helper feeds inspect.getsource on the runtime class — the
-    # class header + the override method must both be present.
+    # class header + the constructor must both be present.
     assert "class CircleLabel(ctk.CTkLabel):" in joined
-    assert "def _create_grid(self):" in joined
+    assert "def __init__(self, *args, **kwargs):" in joined
+    # The corner-radius fix is now the fork's native full_circle kwarg,
+    # passed in __init__ — the old _create_grid override is gone.
+    assert "def _create_grid(self):" not in joined
+    assert 'kwargs.setdefault("full_circle", True)' in joined
 
 
 def test_circle_label_helper_includes_unified_event_router():
     """v1.21.0 unified event routing layer — bind/configure overrides
-    plus the internal helpers must inline alongside the corner-radius
-    fix. Catches accidental method renames and ``inspect.getsource``
-    regressions that would silently strip the router from exports.
+    plus the internal helpers must inline. Catches accidental method
+    renames and ``inspect.getsource`` regressions that would silently
+    strip the router from exports.
     """
     joined = "\n".join(_circle_label_class_lines())
     # Public overrides

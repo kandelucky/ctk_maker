@@ -272,14 +272,13 @@ def test_generate_code_emits_user_set_var_name():
     }
     doc.root_widgets.append(btn)
     source = generate_code(project)
-    # v1.10.5: every CTkButton exports as ``CircleButton(...)`` for
-    # symmetry with the editor — the geometry-based downgrade was
-    # removed because it missed the icon-content contribution to
-    # ``_create_grid``'s inner column minsize.
-    assert "self.submit_btn = CircleButton(" in source
+    # Every CTkButton exports as a plain ``ctk.CTkButton(...)`` with the
+    # fork's native ``full_circle=True`` — the old inlined CircleButton
+    # override is gone.
+    assert "self.submit_btn = ctk.CTkButton(" in source
     # Legacy-shape attribute name must NOT appear when the user set
     # an explicit name — the whole point of the fix.
-    assert "self.button_1 = CircleButton(" not in source
+    assert "self.button_1 = ctk.CTkButton(" not in source
 
 
 def test_generate_code_falls_back_when_name_invalid():
@@ -291,8 +290,8 @@ def test_generate_code_falls_back_when_name_invalid():
     }
     doc.root_widgets.append(btn)
     source = generate_code(project)
-    # v1.10.5: every CTkButton exports as ``CircleButton(...)``.
-    assert "self.button_1 = CircleButton(" in source
+    # Every CTkButton exports as a plain ``ctk.CTkButton(...)``.
+    assert "self.button_1 = ctk.CTkButton(" in source
     fallbacks = get_var_name_fallbacks()
     assert any(
         intent == "class" and reason == "Python keyword"

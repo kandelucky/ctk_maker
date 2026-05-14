@@ -341,8 +341,8 @@ _(none yet)_
 
 | Attribute | Value |
 |---|---|
-| CTk class | `CircleButton` |
-| Generated as | inline class (not from `customtkinter`) |
+| CTk class | `CTkButton` |
+| Generated as | `ctk.CTkButton(...)` with `full_circle=True` (fork-native pill/full-circle layout fix) |
 | Layout default | fills parent (vbox/hbox/grid) |
 
 ### Text

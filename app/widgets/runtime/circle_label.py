@@ -1,8 +1,15 @@
-"""CircleLabel — CTkLabel override with two responsibilities:
+"""CircleLabel — CTkLabel subclass for full-circle / pill labels.
 
-1. Full-corner-radius layout fix — outer Frame doesn't grow past
-   its configured size when ``2 * corner_radius >= width`` (text
-   squeezed by the ``min(corner_radius, height/2)`` padx).
+It does two things:
+
+1. Full-corner-radius layout — passes the fork's native
+   ``full_circle=True`` kwarg (ctkmaker-core >= 5.4.12) so the outer
+   Frame doesn't grow past its configured size when
+   ``2 * corner_radius >= width``. The inner ``tk.Label``'s
+   ``min(corner_radius, height/2)`` padx would otherwise squeeze the
+   text and push the Frame wider, silently breaking ``place``-layout
+   neighbour spacing. This used to be a ``_create_grid`` override;
+   it is now a one-line kwarg.
 2. Unified event routing — public ``bind()`` behaves as if the
    widget were a single Tk widget, not a (canvas + inner tk.Label)
    composite. Without this, ``<Enter>`` / ``<Leave>`` /
@@ -10,33 +17,19 @@
    transition and ``cursor="hand2"`` only takes effect on the
    inner text/icon area.
 
-Note: this is the first instance of a generic event-routing
-problem that affects every CTk composite widget (CTkButton,
-CTkSwitch, CTkSlider, CTkProgressBar, ...). Upstream customtkinter
-routes ``bind()`` to every sub-widget unconditionally, which is the
-root cause. The fix here is scoped to CTkLabel only; if/when more
+Note: the event routing is the first instance of a generic problem
+that affects every CTk composite widget (CTkButton, CTkSwitch,
+CTkSlider, CTkProgressBar, ...). Upstream customtkinter routes
+``bind()`` to every sub-widget unconditionally, which is the root
+cause. The fix here is scoped to CTkLabel only; if/when more
 composite widgets need the same treatment, the routing dispatcher
 should be extracted into a shared mixin (e.g. ``UnifiedBindMixin``).
+Once that lands in the fork, this class can go away entirely — the
+``full_circle`` kwarg is already native.
 
 Pure standalone Python — no CTkMaker dependency — so the exporter
 can inline this module's source verbatim into generated ``.py``
 files.
-
-Why the corner-radius padx fix exists
--------------------------------------
-``customtkinter.CTkLabel._create_grid`` pads the inner ``tk.Label``
-horizontally by ``min(corner_radius, current_height/2)``. When
-``2 * corner_radius >= width`` (typical full-circle / pill labels)
-the left+right padx consume the entire label width and the inner
-label's natural text width pushes the outer ``tk.Frame`` to grow,
-silently breaking ``place``-layout neighbour spacing.
-
-``CircleLabel`` zeroes ``corner_radius`` only inside the padx
-calculation. The canvas's actual rounded-shape draw still uses the
-real value (``DrawEngine`` reads it directly), so the visible
-rounded shape is unchanged — the layout simply stops reserving the
-rounded-corner area as padding. Trade-off: very long text on a
-small label may visually extend into the rounded corner.
 
 Why unified event routing exists
 --------------------------------
@@ -90,6 +83,10 @@ class CircleLabel(ctk.CTkLabel):
     })
 
     def __init__(self, *args, **kwargs):
+        # Full-circle / pill layout fix — the fork's native kwarg
+        # (ctkmaker-core >= 5.4.12), replacing the old _create_grid
+        # override. setdefault so an explicit full_circle still wins.
+        kwargs.setdefault("full_circle", True)
         super().__init__(*args, **kwargs)
         # Take the inner CTkCanvas out of Tab traversal. Canvas's
         # default ``takefocus=""`` defers to Tk's heuristic, which
@@ -104,20 +101,6 @@ class CircleLabel(ctk.CTkLabel):
         self._unified_internal_hover_bound = False
         self._unified_internal_motion_bound = False
         self._mirror_cursor_to_canvas()
-
-    # --- Layout fix ---------------------------------------------------
-
-    def _create_grid(self):
-        # Temporarily zero ``_corner_radius`` so the parent's padx
-        # computation collapses to zero, leaving the label free to
-        # use the full inner width. The canvas's draw path reads
-        # ``_corner_radius`` later, so the rounded shape is intact.
-        saved = self._corner_radius
-        self._corner_radius = 0
-        try:
-            super()._create_grid()
-        finally:
-            self._corner_radius = saved
 
     # --- Cursor unification -------------------------------------------
 
