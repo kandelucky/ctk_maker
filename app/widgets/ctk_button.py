@@ -209,10 +209,9 @@ class CTkButtonDescriptor(WidgetDescriptor):
         "x", "y", "image_width", "image_height",
         "button_enabled", "border_enabled",
         "preserve_aspect", "image_color", "image_color_disabled",
-        # Builder-side text-hover effect — manually wires
-        # <Enter>/<Leave> to swap text_color, since CTk's native
-        # hover only retints the background. Neither key is a
-        # CTkButton kwarg.
+        # text_hover (toggle) + text_hover_color are consumed by
+        # transform_properties() into the native text_color_hover
+        # kwarg — the raw keys themselves are never CTkButton kwargs.
         "text_hover", "text_hover_color",
         # Legacy: migrated to button_enabled but may still appear in
         # old project files; never passed to CTkButton.
@@ -297,6 +296,14 @@ class CTkButtonDescriptor(WidgetDescriptor):
         result["state"] = (
             "normal" if properties.get("button_enabled", True)
             else "disabled"
+        )
+
+        # text_hover (toggle) + text_hover_color → CTkButton's native
+        # text_color_hover kwarg (fork >= 5.4.1). None when the toggle
+        # is off, so the button keeps its plain text_color on hover.
+        result["text_color_hover"] = (
+            properties.get("text_hover_color")
+            if properties.get("text_hover") else None
         )
 
         # Border off → zero the width so CTk draws no outline.
@@ -390,85 +397,20 @@ class CTkButtonDescriptor(WidgetDescriptor):
         return tinted
 
     @classmethod
+    def export_kwarg_overrides(cls, properties: dict) -> dict:
+        """text_hover (toggle) + text_hover_color → the native
+        text_color_hover kwarg in the exported constructor call.
+        Mirrors transform_properties(); emitted only when the toggle is
+        on and a colour is set — otherwise CTkButton's None default holds.
+        """
+        if properties.get("text_hover") and properties.get("text_hover_color"):
+            return {"text_color_hover": properties["text_hover_color"]}
+        return {}
+
+    @classmethod
     def create_widget(cls, master, properties: dict, init_kwargs=None):
         kwargs = cls.transform_properties(properties)
         if init_kwargs:
             kwargs.update(init_kwargs)
         from app.widgets.runtime.circle_button import CircleButton
-        widget = CircleButton(master, **kwargs)
-        cls.apply_state(widget, properties)
-        return widget
-
-    # ==================================================================
-    # Text-colour Hover Effect — manual hover colour swap on
-    # <Enter>/<Leave>
-    # ==================================================================
-    @classmethod
-    def apply_state(cls, widget, properties: dict) -> None:
-        # tkinter's ``unbind(seq, funcid)`` is famously buggy — it often
-        # wipes every binding for the sequence (or wipes nothing).
-        # Sidestep the issue: bind <Enter>/<Leave> ONCE per widget and
-        # have the handler consult live attributes that ``apply_state``
-        # updates in place. Toggling the property off just sets the
-        # flag to False; the handler stops mutating the label.
-        normal = properties.get("text_color") or "#dce4ee"
-        was_enabled = bool(getattr(widget, "_auto_hover_enabled", False))
-        is_enabled = bool(properties.get("text_hover"))
-        widget._auto_hover_enabled = is_enabled
-        widget._auto_hover_normal = normal
-        widget._auto_hover_hover = (
-            properties.get("text_hover_color") or normal
-        )
-
-        # If the toggle just flipped off while the cursor is over the
-        # button, the text would otherwise be stuck in the hover
-        # colour (no leave handler runs). Force-restore.
-        if was_enabled and not is_enabled:
-            try:
-                lbl = getattr(widget, "_text_label", None)
-                if lbl is not None:
-                    lbl.configure(fg=normal)
-            except Exception:
-                pass
-
-        if getattr(widget, "_auto_hover_bound", False):
-            return
-
-        # NEVER call ``widget.configure(text_color=...)`` from the
-        # hover handler — CTk's configure routes through ``_draw()``
-        # which resets the in-flight hover state (the temporary
-        # hover_color background snaps back to fg_color mid-hover).
-        # Reach into the inner ``_text_label`` directly so only the
-        # fg colour shifts and CTk's own hover bindings keep working.
-        def _set_text(colour: str) -> None:
-            try:
-                lbl = getattr(widget, "_text_label", None)
-                if lbl is not None:
-                    lbl.configure(fg=colour)
-            except Exception:
-                pass
-
-        def _on_enter(_e):
-            if getattr(widget, "_auto_hover_enabled", False):
-                _set_text(widget._auto_hover_hover)
-
-        def _on_leave(_e):
-            if getattr(widget, "_auto_hover_enabled", False):
-                _set_text(widget._auto_hover_normal)
-
-        try:
-            widget.bind("<Enter>", _on_enter, add="+")
-            widget.bind("<Leave>", _on_leave, add="+")
-            widget._auto_hover_bound = True
-        except Exception:
-            log_error("CTkButtonDescriptor.apply_state auto_hover")
-
-    @classmethod
-    def export_state(cls, var_name: str, properties: dict) -> list[str]:
-        if not properties.get("text_hover"):
-            return []
-        normal = properties.get("text_color") or "#dce4ee"
-        hover = properties.get("text_hover_color") or normal
-        return [
-            f'_auto_hover_text({var_name}, "{normal}", "{hover}")',
-        ]
+        return CircleButton(master, **kwargs)

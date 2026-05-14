@@ -8,10 +8,9 @@ the generated file's helper preamble. Two flavours:
   so a single edit in ``app/widgets/runtime/`` propagates to every
   export.
 - Hand-written helpers (``_wire_icon_state``, ``_align_text_label``,
-  ``_setup_text_clipboard``, ``_auto_hover_text``,
-  ``_register_project_fonts``, ``_tint_image``) — string literals
-  kept here because the runtime they target doesn't need a builder-
-  side equivalent.
+  ``_setup_text_clipboard``, ``_register_project_fonts``,
+  ``_tint_image``) — string literals kept here because the runtime
+  they target doesn't need a builder-side equivalent.
 """
 
 from __future__ import annotations
@@ -140,28 +139,6 @@ def _align_text_label_helper_lines() -> list[str]:
         '        if bg is not None: bg.grid(row=0, column=0, columnspan=3, sticky="nswe")',
         '        canvas.grid(row=0, column=0, sticky="e"); label.grid(row=0, column=2, sticky="w", padx=(s, 0))',
         '        label["anchor"] = "w"',
-    ]
-
-
-def _auto_hover_text_helper_lines() -> list[str]:
-    """Emit a tiny module-level helper that wires <Enter>/<Leave> on a
-    button to swap its text colour. CTk's native hover only retints
-    the background; this gives the label its own reactive feel.
-    Reaches into ``_text_label`` directly so it doesn't trip CTk's
-    full configure pipeline (which would reset the hover background
-    mid-hover).
-    """
-    return [
-        "def _auto_hover_text(button, normal, hover):",
-        '    """Bind <Enter>/<Leave> to swap text_color. Same lighten/darken',
-        "    direction CTkMaker uses at design time so the",
-        '    runtime feel matches the canvas preview."""',
-        "    def _set(colour):",
-        '        lbl = getattr(button, "_text_label", None)',
-        "        if lbl is not None:",
-        "            lbl.configure(fg=colour)",
-        '    button.bind("<Enter>", lambda e: _set(hover))',
-        '    button.bind("<Leave>", lambda e: _set(normal))',
     ]
 
 

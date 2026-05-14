@@ -1232,9 +1232,6 @@ def _generate_code_inner(
         and "button_enabled" in w.properties
         for w in scoped_widgets
     )
-    needs_auto_hover_text = any(
-        w.properties.get("text_hover") for w in scoped_widgets
-    )
     # ComboBox + OptionMenu wear our ScrollableDropdown helper for a
     # scrollable popup that matches the parent's pixel width.
     needs_scrollable_dropdown = any(
@@ -1406,10 +1403,6 @@ def _generate_code_inner(
 
     if needs_circle_label:
         lines.extend(_circle_label_class_lines())
-        lines.append("")
-
-    if needs_auto_hover_text:
-        lines.extend(_auto_hover_text_helper_lines())
         lines.append("")
 
     if needs_text_alignment:
@@ -3114,7 +3107,6 @@ from app.io.code_exporter.runtime_helpers import (
     _circular_progress_class_lines,
     _icon_state_helper_lines,
     _align_text_label_helper_lines,
-    _auto_hover_text_helper_lines,
     _font_register_helper_lines,
     _tint_helper_lines,
 )
