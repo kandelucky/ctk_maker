@@ -149,8 +149,6 @@ class CTkSwitchDescriptor(WidgetDescriptor):
     _NODE_ONLY_KEYS = {
         "x", "y",
         "button_enabled", "initially_checked",
-        # builder-only — re-grids CTk's internal layout with a gap.
-        "text_position", "text_spacing",
     }
     _FONT_KEYS = {
         "font_family",
@@ -203,6 +201,9 @@ class CTkSwitchDescriptor(WidgetDescriptor):
 
     @classmethod
     def apply_state(cls, widget, properties: dict) -> None:
+        # text_position / text_spacing are now native CTkSwitch kwargs
+        # (ctkmaker-core >= 5.4.2) — the generic configure path handles
+        # them, so apply_state only owns the on/off state.
         try:
             if properties.get("initially_checked"):
                 widget.select()
@@ -210,97 +211,10 @@ class CTkSwitchDescriptor(WidgetDescriptor):
                 widget.deselect()
         except Exception:
             log_error("CTkSwitchDescriptor.apply_state")
-        try:
-            spacing = int(properties.get("text_spacing", 6) or 0)
-        except (TypeError, ValueError):
-            spacing = 6
-        position = properties.get("text_position", "right") or "right"
-        # Gate the re-grid: only run when position/spacing actually
-        # change. Re-running grid_forget+grid on every property edit
-        # disturbs CTk's internal cursor state on the inner canvas
-        # and label, which the workspace selection chrome relies on.
-        last_pos = getattr(widget, "_last_text_position", None)
-        last_spacing = getattr(widget, "_last_text_spacing", None)
-        if position == last_pos and spacing == last_spacing:
-            return
-        cls._reposition_text(widget, position, spacing)
-        widget._last_text_position = position
-        widget._last_text_spacing = spacing
-
-    @classmethod
-    def _reposition_text(
-        cls, widget, position: str, spacing: int = 6,
-    ) -> None:
-        """Re-grid CTk's internal canvas + label so the label sits
-        on the chosen side of the switch track. Same shape and reach
-        as the CheckBox / RadioButton versions (CTk's CTkSwitch ships
-        with the same internal grid layout).
-        """
-        canvas = getattr(widget, "_canvas", None)
-        label = getattr(widget, "_text_label", None)
-        bg = getattr(widget, "_bg_canvas", None)
-        if canvas is None or label is None:
-            return
-        spacing = max(0, int(spacing))
-        try:
-            outer_cursor = str(widget.cget("cursor")) or ""
-        except Exception:
-            outer_cursor = ""
-        try:
-            canvas.grid_forget()
-            label.grid_forget()
-            if bg is not None:
-                bg.grid_forget()
-            if position == "left":
-                if bg is not None:
-                    bg.grid(row=0, column=0, columnspan=3, sticky="nswe")
-                label.grid(row=0, column=0, sticky="e", padx=(0, spacing))
-                canvas.grid(row=0, column=2, sticky="w")
-                label["anchor"] = "e"
-            elif position == "top":
-                if bg is not None:
-                    bg.grid(row=0, column=0, rowspan=3, columnspan=3,
-                            sticky="nswe")
-                label.grid(row=0, column=0, sticky="s", pady=(0, spacing))
-                canvas.grid(row=2, column=0, sticky="n")
-                label["anchor"] = "center"
-            elif position == "bottom":
-                if bg is not None:
-                    bg.grid(row=0, column=0, rowspan=3, columnspan=3,
-                            sticky="nswe")
-                canvas.grid(row=0, column=0, sticky="s")
-                label.grid(row=2, column=0, sticky="n", pady=(spacing, 0))
-                label["anchor"] = "center"
-            else:  # "right" — CTk default
-                if bg is not None:
-                    bg.grid(row=0, column=0, columnspan=3, sticky="nswe")
-                canvas.grid(row=0, column=0, sticky="")
-                label.grid(row=0, column=2, sticky="w", padx=(spacing, 0))
-                label["anchor"] = "w"
-        except Exception:
-            log_error("CTkSwitchDescriptor._reposition_text")
-            return
-        propagate = outer_cursor or "hand2"
-        for w in (canvas, label, bg):
-            if w is None:
-                continue
-            try:
-                w.configure(cursor=propagate)
-            except Exception:
-                pass
 
     @classmethod
     def export_state(cls, var_name: str, properties: dict) -> list[str]:
         lines: list[str] = []
         if properties.get("initially_checked"):
             lines.append(f"{var_name}.select()")
-        position = properties.get("text_position", "right") or "right"
-        try:
-            spacing = int(properties.get("text_spacing", 6) or 6)
-        except (TypeError, ValueError):
-            spacing = 6
-        if position != "right" or spacing != 6:
-            lines.append(
-                f'_align_text_label({var_name}, "{position}", {spacing})'
-            )
         return lines

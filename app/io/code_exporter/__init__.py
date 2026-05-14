@@ -1238,23 +1238,6 @@ def _generate_code_inner(
         w.widget_type in ("CTkComboBox", "CTkOptionMenu")
         for w in scoped_widgets
     )
-    # CTkCheckBox / CTkRadioButton / CTkSwitch grid the box + label
-    # in a hardcoded layout. ``text_position != "right"`` triggers
-    # the helper that re-grids them so the label sits anywhere.
-    # CTkCheckBox / CTkRadioButton (and later Switch) all share the
-    # same internal _canvas + _text_label grid layout — one helper
-    # handles the re-positioning for every one of them.
-    needs_text_alignment = any(
-        w.widget_type in ("CTkCheckBox", "CTkRadioButton", "CTkSwitch")
-        and (
-            (_resolve_export_raw(w.properties, "text_position", "right")
-             or "right") != "right"
-            or _safe_int(
-                w.properties.get("text_spacing", 6) or 6, 6,
-            ) != 6
-        )
-        for w in scoped_widgets
-    )
     # Any radio with a non-empty `group` triggers a tk.StringVar
     # import + per-group declaration so radios in the same group
     # actually deselect each other in the runtime app.
@@ -1403,10 +1386,6 @@ def _generate_code_inner(
 
     if needs_circle_label:
         lines.extend(_circle_label_class_lines())
-        lines.append("")
-
-    if needs_text_alignment:
-        lines.extend(_align_text_label_helper_lines())
         lines.append("")
 
     used_class_names: set[str] = set()
@@ -3106,7 +3085,6 @@ from app.io.code_exporter.runtime_helpers import (
     _circle_label_class_lines,
     _circular_progress_class_lines,
     _icon_state_helper_lines,
-    _align_text_label_helper_lines,
     _font_register_helper_lines,
     _tint_helper_lines,
 )

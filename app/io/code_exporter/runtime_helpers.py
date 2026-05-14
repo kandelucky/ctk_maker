@@ -7,7 +7,7 @@ the generated file's helper preamble. Two flavours:
   ``CircularProgress``) — read live source via ``inspect.getsource``
   so a single edit in ``app/widgets/runtime/`` propagates to every
   export.
-- Hand-written helpers (``_wire_icon_state``, ``_align_text_label``,
+- Hand-written helpers (``_wire_icon_state``,
   ``_setup_text_clipboard``, ``_register_project_fonts``,
   ``_tint_image``) — string literals kept here because the runtime
   they target doesn't need a builder-side equivalent.
@@ -99,46 +99,6 @@ def _icon_state_helper_lines() -> list[str]:
         "            )",
         "        return original_configure(*args, **kwargs)",
         "    button.configure = configure",
-    ]
-
-
-def _align_text_label_helper_lines() -> list[str]:
-    """Emit a helper that re-grids the internal `_canvas` (box / dot)
-    and `_text_label` of any compound widget that follows the
-    CheckBox / RadioButton / Switch grid layout. Lets the label sit
-    on any side (left / top / bottom — right is CTk's default and
-    a no-op). Same private-attr reach the builder uses at design
-    time so canvas = preview = exported runtime.
-    """
-    return [
-        "def _align_text_label(widget, position, spacing=6):",
-        '    """Re-grid the checkbox box + label so the label sits at',
-        "    `position` (left / right / top / bottom) with `spacing` px",
-        "    between them. Same private-attr reach the CTk Visual",
-        '    Builder uses at design time."""',
-        '    canvas = getattr(widget, "_canvas", None)',
-        '    label = getattr(widget, "_text_label", None)',
-        '    bg = getattr(widget, "_bg_canvas", None)',
-        "    if canvas is None or label is None: return",
-        "    s = max(0, int(spacing))",
-        "    canvas.grid_forget(); label.grid_forget()",
-        "    if bg is not None: bg.grid_forget()",
-        '    if position == "left":',
-        '        if bg is not None: bg.grid(row=0, column=0, columnspan=3, sticky="nswe")',
-        '        label.grid(row=0, column=0, sticky="e", padx=(0, s)); canvas.grid(row=0, column=2, sticky="w")',
-        '        label["anchor"] = "e"',
-        '    elif position == "top":',
-        '        if bg is not None: bg.grid(row=0, column=0, rowspan=3, columnspan=3, sticky="nswe")',
-        '        label.grid(row=0, column=0, sticky="s", pady=(0, s)); canvas.grid(row=2, column=0, sticky="n")',
-        '        label["anchor"] = "center"',
-        '    elif position == "bottom":',
-        '        if bg is not None: bg.grid(row=0, column=0, rowspan=3, columnspan=3, sticky="nswe")',
-        '        canvas.grid(row=0, column=0, sticky="s"); label.grid(row=2, column=0, sticky="n", pady=(s, 0))',
-        '        label["anchor"] = "center"',
-        "    else:",
-        '        if bg is not None: bg.grid(row=0, column=0, columnspan=3, sticky="nswe")',
-        '        canvas.grid(row=0, column=0, sticky="e"); label.grid(row=0, column=2, sticky="w", padx=(s, 0))',
-        '        label["anchor"] = "w"',
     ]
 
 
