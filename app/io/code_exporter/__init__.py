@@ -371,10 +371,10 @@ def _project_needs_auto_trace_place_coord_helper(scoped_widgets) -> bool:
 
 
 def _project_needs_auto_trace_image_rebuild_helper(scoped_widgets) -> bool:
-    """True when any widget has ``image`` / ``image_width`` /
-    ``image_height`` / ``preserve_aspect`` bound to a variable AND
-    has an image set. The single helper block covers all four
-    image-rebuild bindings (they share ``_rebuild_image_for_widget``).
+    """True when any widget has an image param (``image`` /
+    ``image_width`` / ``image_height`` / ``preserve_aspect`` /
+    ``image_color`` / ``image_color_disabled``) bound to a variable AND
+    has an image set. Gates the shared block of image bind helpers.
     """
     for w in scoped_widgets:
         props = w.properties or {}
@@ -491,86 +491,42 @@ def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
         return []
     allowed = _ctk_configure_keys_for(node.widget_type)
     out: list[str] = []
-    # Phase 3 — if any image-related composite has a var binding,
-    # emit a one-time ``_maker_image_state`` dict init right at the
-    # top so the per-key rebuilders share one state object. Static
-    # values (the ones NOT bound) come from the widget's properties
-    # at construction time.
+    # A CTkLabel with a tinted image has no native ``image_color_disabled``
+    # kwarg (Tk's disabled render washes the image, so the editor never
+    # sets ``state="disabled"``) — it gets a single resolved
+    # ``image_color``. When image_color / image_color_disabled /
+    # label_enabled is var-bound, emit a one-time ``_maker_label_tint``
+    # dict so the tint bind helpers can re-resolve the active colour.
+    # Button / Image widgets need no such dict — their tint bindings
+    # configure the native kwargs directly.
     props_for_state = node.properties or {}
-    has_image_rebuild_bind = any(
-        key in _IMAGE_REBUILD_KEYS
-        and _is_non_textvariable_var_binding(
-            node.widget_type, key, props_for_state.get(key),
-        )
-        for key in _IMAGE_REBUILD_KEYS
-    )
-    # Also init the state dict when ``label_enabled`` /
-    # ``button_enabled`` is bound and the widget has an image — so the
-    # enabled rebuilder can flip ``state["enabled"]`` and pick between
-    # ``color`` and ``color_disabled``. Without this, an enabled-only
-    # binding wouldn't trigger the state-dict init and the image
-    # rebuild path stays inactive.
-    has_enabled_with_image = (
-        props_for_state.get("image")
-        and any(
+    if node.widget_type == "CTkLabel" and props_for_state.get("image"):
+        if any(
             _is_non_textvariable_var_binding(
                 node.widget_type, key, props_for_state.get(key),
             )
-            for key in ("label_enabled", "button_enabled")
-        )
-    )
-    if (has_image_rebuild_bind or has_enabled_with_image) and props_for_state.get("image"):
-        try:
-            init_w = int(
-                _resolve_export_raw(props_for_state, "image_width", 20)
-                or 20
+            for key in ("image_color", "image_color_disabled",
+                        "label_enabled")
+        ):
+            _ic = _resolve_export_raw(props_for_state, "image_color", None)
+            _icd = _resolve_export_raw(
+                props_for_state, "image_color_disabled", None,
             )
-            init_h = int(
-                _resolve_export_raw(props_for_state, "image_height", 20)
-                or 20
+            init_color = _ic if (_ic and _ic != "transparent") else None
+            init_color_disabled = (
+                _icd if (_icd and _icd != "transparent") else None
             )
-        except (TypeError, ValueError):
-            init_w, init_h = 20, 20
-        init_path = _resolve_export_raw(
-            props_for_state, "image", ""
-        ) or ""
-        init_color = _resolve_export_raw(
-            props_for_state, "image_color", None,
-        )
-        init_color_disabled = _resolve_export_raw(
-            props_for_state, "image_color_disabled", None,
-        )
-        init_aspect = bool(
-            _resolve_export_raw(
-                props_for_state, "preserve_aspect", False,
-            )
-        )
-        # Initial enabled state: prefer label_enabled if widget has it,
-        # else button_enabled, else True. Mirrors the existing
-        # ``_image_source`` color-pick logic.
-        if "label_enabled" in props_for_state:
             init_enabled = bool(
                 _resolve_export_raw(
                     props_for_state, "label_enabled", True,
                 )
             )
-        elif "button_enabled" in props_for_state:
-            init_enabled = bool(
-                _resolve_export_raw(
-                    props_for_state, "button_enabled", True,
-                )
+            out.append(
+                f"{full_name}._maker_label_tint = "
+                f"{{'color': {_py_literal(init_color)}, "
+                f"'color_disabled': {_py_literal(init_color_disabled)}, "
+                f"'enabled': {init_enabled!r}}}"
             )
-        else:
-            init_enabled = True
-        out.append(
-            f"{full_name}._maker_image_state = "
-            f"{{'path': {_py_literal(_path_for_export(init_path))}, "
-            f"'width': {init_w}, 'height': {init_h}, "
-            f"'color': {_py_literal(init_color)}, "
-            f"'color_disabled': {_py_literal(init_color_disabled)}, "
-            f"'enabled': {init_enabled!r}, "
-            f"'aspect': {init_aspect!r}}}"
-        )
     for key, val in (node.properties or {}).items():
         if not _is_non_textvariable_var_binding(node.widget_type, key, val):
             continue
@@ -658,16 +614,15 @@ def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
                 f'_bind_var_to_place_coord({var_attr}, {full_name}, "{key}")',
             )
             continue
-        # Image rebuild family (path / size / preserve_aspect / color
-        # / color_disabled) all share a single ``_maker_image_state``
-        # dict on the widget. The dict is initialised once per widget
-        # at the top of this function (the prelude above) when any of
-        # these keys has a var binding; here we emit only the per-key
-        # bind call.
+        # Image params — when var-bound, drive a live update on the
+        # widget's native image kwargs or its CTkImage (fork >= 5.4.4-
+        # 5.4.5). CTkLabel routes its tint through ``_maker_label_tint``
+        # (it has no native ``image_color_disabled`` kwarg); CTkButton /
+        # Image configure the native kwargs directly.
         if key in _IMAGE_REBUILD_KEYS:
             props = node.properties or {}
             if not props.get("image"):
-                # No image set — image rebuilds have nothing to load.
+                # No image set — nothing to update.
                 continue
             if key == "image":
                 out.append(
@@ -686,13 +641,24 @@ def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
                     f"_bind_var_to_preserve_aspect({var_attr}, {full_name})",
                 )
             elif key == "image_color":
-                out.append(
-                    f'_bind_var_to_image_color_state({var_attr}, {full_name}, "color")',
-                )
+                if node.widget_type == "CTkLabel":
+                    out.append(
+                        f'_bind_var_to_label_image_tint({var_attr}, {full_name}, "color")',
+                    )
+                else:
+                    out.append(
+                        f"_bind_var_to_image_color({var_attr}, {full_name})",
+                    )
             elif key == "image_color_disabled":
-                out.append(
-                    f'_bind_var_to_image_color_state({var_attr}, {full_name}, "color_disabled")',
-                )
+                if node.widget_type == "CTkLabel":
+                    out.append(
+                        f'_bind_var_to_label_image_tint({var_attr}, {full_name}, "color_disabled")',
+                    )
+                elif "button_enabled" in props:
+                    out.append(
+                        f"_bind_var_to_image_color_disabled({var_attr}, {full_name})",
+                    )
+                # else: widget has no image_color_disabled kwarg — skip
             continue
         if allowed is not None and key not in allowed:
             continue
@@ -1217,17 +1183,6 @@ def _generate_code_inner(
 
     scoped_widgets = list(_doc_widgets(docs_to_emit))
     needs_pil = any(w.properties.get("image") for w in scoped_widgets)
-    # _tint_image is no longer used by the construction path (widgets
-    # tint natively via image_color now) — it survives only for the
-    # auto-trace image rebuilder, which still recolours on var write.
-    needs_tint = any(
-        w.properties.get("image")
-        and (
-            w.properties.get("image_color")
-            or w.properties.get("image_color_disabled")
-        )
-        for w in scoped_widgets
-    )
     # ComboBox + OptionMenu wear our ScrollableDropdown helper for a
     # scrollable popup that matches the parent's pixel width.
     needs_scrollable_dropdown = any(
@@ -1326,10 +1281,6 @@ def _generate_code_inner(
 
     if needs_font_register:
         lines.extend(_font_register_helper_lines())
-        lines.append("")
-
-    if needs_tint:
-        lines.extend(_tint_helper_lines())
         lines.append("")
 
     # Phase 3 — auto-trace helpers for var bindings that don't map
@@ -3009,6 +2960,9 @@ def _path_for_export(image_path: str) -> str:
 
 
 def _image_source(props: dict, image_path: str) -> str:
+    # ``image`` may itself be var-bound — emit the variable's current
+    # value as the static path; _bind_var_to_image_path swaps it live.
+    image_path = _resolve_export_raw(props, "image", image_path) or image_path
     if "image_width" in props or "image_height" in props:
         iw = _safe_int(props.get("image_width"), 20)
         ih = _safe_int(props.get("image_height"), 20)
@@ -3042,7 +2996,6 @@ from app.io.code_exporter.runtime_helpers import (
     _circle_label_class_lines,
     _circular_progress_class_lines,
     _font_register_helper_lines,
-    _tint_helper_lines,
 )
 
 

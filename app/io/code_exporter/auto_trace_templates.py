@@ -96,10 +96,10 @@ _FONT_COMPOSITE_TO_ATTR = {
     "font_overstrike": "overstrike",
 }
 
-# Phase 3 + 4a — image-related Maker-only composites that all rebuild
-# a fresh CTkImage from the widget's ``_maker_image_state`` dict.
-# Membership is used by ``_emit_auto_trace_bindings`` to decide
-# whether the widget needs the state-dict init prelude.
+# Image-related Maker-only composites that, when var-bound, drive a
+# live update on the widget's native image kwargs / its CTkImage.
+# Membership is used by ``_emit_auto_trace_bindings`` to route the
+# per-key bind call.
 _IMAGE_REBUILD_KEYS = frozenset({
     "image", "image_width", "image_height", "preserve_aspect",
     "image_color", "image_color_disabled",
@@ -108,29 +108,23 @@ _IMAGE_REBUILD_KEYS = frozenset({
 # Phase 3 — geometry composites driven through ``place_configure``.
 _PLACE_COORD_KEYS = frozenset({"x", "y"})
 
-# Phase 2a of live composite bindings — ``button_enabled`` is a Maker-
-# only bool that maps to CTk's native ``state="normal"/"disabled"`` at
-# construction time. The auto-trace path can't use ``_bind_var_to_widget``
-# directly because the var holds True/False, not the string CTk wants;
-# this helper does the bool→state mapping on every var write. Applies
-# to ``CTkButton`` and every other CTk widget that exposes ``state=``
-# (Entry / ComboBox / OptionMenu / Switch / CheckBox / RadioButton /
-# Slider / SegmentedButton / Textbox / Card).
+# ``button_enabled`` is a Maker-only bool that maps to CTk's native
+# ``state="normal"/"disabled"``. The auto-trace path can't use
+# ``_bind_var_to_widget`` directly because the var holds True/False,
+# not the string CTk wants; this helper does the bool→state mapping on
+# every var write. Applies to ``CTkButton`` and every other CTk widget
+# that exposes ``state=`` (Entry / ComboBox / OptionMenu / Switch /
+# CheckBox / RadioButton / Slider / SegmentedButton / Textbox / Card).
+# CTkButton swaps its image_color / image_color_disabled tint off the
+# state change natively, so no extra image bookkeeping is needed here.
 _AUTO_TRACE_STATE_HELPER = '''def _bind_var_to_state(var, widget):
     """Map ``var.get()`` (bool) to ``widget.configure(state=…)``.
     True → "normal", False → "disabled". Used for ``button_enabled``
     bindings where the variable type is bool but CTk's kwarg is a
-    string enum. Also syncs ``widget._maker_image_state["enabled"]``
-    so an image-tint binding paired with this state binding switches
-    between ``color`` / ``color_disabled`` automatically.
+    string enum.
     """
     def _update(*_):
-        enabled = bool(var.get())
-        widget.configure(state="normal" if enabled else "disabled")
-        s = getattr(widget, "_maker_image_state", None)
-        if s is not None and s.get("enabled") != enabled:
-            s["enabled"] = enabled
-            _rebuild_image_for_widget(widget)
+        widget.configure(state="normal" if bool(var.get()) else "disabled")
     var.trace_add("write", _update)
     _update()
 '''
@@ -141,31 +135,36 @@ _AUTO_TRACE_STATE_HELPER = '''def _bind_var_to_state(var, widget):
 # rendering paints a stipple wash over the image.
 _STATE_COMPOSITE_KEYS = frozenset({"button_enabled"})
 
-# Phase 2b of live composite bindings — ``label_enabled`` (CTkLabel)
-# doesn't use Tk's ``state="disabled"`` because the native disabled
-# render paints a stipple wash over ``image=``; instead, Maker swaps
-# ``text_color`` with ``text_color_disabled`` for the visual cue.
-# The runtime rebuilder mirrors the same swap on var write — both
-# colors are captured as literals at emit time and held in the
-# closure, so toggling back to enabled restores the original
-# ``text_color`` (rather than reading whatever the widget currently
-# has, which would be the disabled color after the first toggle).
+# ``label_enabled`` (CTkLabel) doesn't use Tk's ``state="disabled"``
+# because the native disabled render paints a stipple wash over
+# ``image=``; instead, Maker swaps ``text_color`` with
+# ``text_color_disabled`` for the visual cue. Both colors are captured
+# as literals at emit time and held in the closure, so toggling back to
+# enabled restores the original ``text_color``. When the label also
+# carries a tinted image, the helper re-resolves ``image_color`` from
+# the widget's ``_maker_label_tint`` dict — the label has no native
+# ``image_color_disabled`` kwarg, so it gets a single resolved tint.
 _AUTO_TRACE_LABEL_ENABLED_HELPER = '''def _bind_var_to_label_enabled(var, widget, color_on, color_off):
     """Map ``var.get()`` (bool) to a CTkLabel text_color swap.
-    True → ``color_on``, False → ``color_off``. Used for
-    ``label_enabled`` bindings — Tk Label's native disabled rendering
-    paints a stipple wash over ``image=``, so we don't use
-    ``state="disabled"``; we just swap colors. Also syncs
-    ``widget._maker_image_state["enabled"]`` so an icon tint paired
-    with ``image_color_disabled`` flips simultaneously.
+    True → ``color_on``, False → ``color_off``. Also re-resolves
+    ``image_color`` from ``widget._maker_label_tint`` when present so a
+    tinted icon follows the enabled flag.
     """
     def _update(*_):
         enabled = bool(var.get())
         widget.configure(text_color=color_on if enabled else color_off)
-        s = getattr(widget, "_maker_image_state", None)
-        if s is not None and s.get("enabled") != enabled:
+        s = getattr(widget, "_maker_label_tint", None)
+        if s is not None:
             s["enabled"] = enabled
-            _rebuild_image_for_widget(widget)
+            active = (
+                s["color_disabled"]
+                if (not enabled and s["color_disabled"])
+                else s["color"]
+            )
+            try:
+                widget.configure(image_color=active)
+            except Exception:
+                pass
     var.trace_add("write", _update)
     _update()
 '''
@@ -221,131 +220,128 @@ _AUTO_TRACE_PLACE_COORD_HELPER = '''def _bind_var_to_place_coord(var, widget, ax
     _update()
 '''
 
-# Phase 3 — image rebuilders (path / width / height / preserve_aspect)
-# all converge on a single rebuild path that constructs a fresh
-# CTkImage from the widget's current ``_maker_image_state`` dict. The
-# state dict is populated at construction time and updated by each
-# helper before rebuild. The construction-time tint / size logic is
-# preserved so var-driven changes don't regress the static visual.
-_AUTO_TRACE_IMAGE_REBUILD_HELPER = '''def _rebuild_image_for_widget(widget):
-    """Rebuild ``widget``'s CTkImage from ``widget._maker_image_state``.
-    Called by every image-param bind helper after it updates the
-    relevant key. State dict keys:
-        path                — file path (str)
-        width / height      — int
-        color               — normal tint hex (or None)
-        color_disabled      — disabled tint hex (or None) — Phase 4a
-        enabled             — bool (True → use color, False → use color_disabled)
-        aspect              — bool (preserve aspect inside width × height)
-    Honours ``preserve_aspect`` by fitting the image inside
-    (width, height); otherwise stretches to (width, height).
-    """
-    from PIL import Image as _PILImage
-    s = getattr(widget, "_maker_image_state", None)
-    if not s:
-        return
-    path = s.get("path") or ""
-    if not path:
-        return
+# Image params (path / size / preserve_aspect / tint), when var-bound,
+# drive a live update on the widget's native image kwargs or directly
+# on its CTkImage — no from-scratch rebuild. ``image_color`` /
+# ``preserve_aspect`` etc. are native as of ctkmaker-core 5.4.4-5.4.5.
+# CTkLabel is special: it has no native ``image_color_disabled`` kwarg
+# (Tk's disabled render washes the image, so the editor never sets
+# ``state="disabled"``), so its tint bindings re-resolve a single
+# ``image_color`` through the widget's ``_maker_label_tint`` dict.
+_AUTO_TRACE_IMAGE_REBUILD_HELPER = '''def _maker_ctkimage(widget):
+    """Return the widget's CTkImage, or None when it has no CTkImage."""
     try:
-        width = max(1, int(s.get("width") or 20))
-        height = max(1, int(s.get("height") or 20))
-    except (TypeError, ValueError):
-        width, height = 20, 20
-    if not s.get("enabled", True) and s.get("color_disabled"):
-        active_color = s.get("color_disabled")
-    else:
-        active_color = s.get("color")
-    aspect = bool(s.get("aspect", False))
-    try:
-        if aspect:
-            base = _PILImage.open(path)
-            nw, nh = base.size
-            scale = min(width / nw, height / nh)
-            size = (max(1, int(nw * scale)), max(1, int(nh * scale)))
-        else:
-            size = (width, height)
-        if active_color and active_color != "transparent":
-            try:
-                widget.configure(
-                    image=_tint_image(path, active_color, size),
-                )
-            except NameError:
-                # _tint_image not in scope for projects that only need
-                # image rebuilds without tint. Fall back to untinted.
-                widget.configure(image=ctk.CTkImage(
-                    light_image=_PILImage.open(path),
-                    dark_image=_PILImage.open(path),
-                    size=size,
-                ))
-        else:
-            widget.configure(image=ctk.CTkImage(
-                light_image=_PILImage.open(path),
-                dark_image=_PILImage.open(path),
-                size=size,
-            ))
+        img = widget.cget("image")
     except Exception:
-        pass
+        return None
+    return img if isinstance(img, ctk.CTkImage) else None
 
 
 def _bind_var_to_image_path(var, widget):
-    """Map ``var.get()`` (str path) to the widget's image. Path is
-    looked up via ``widget._maker_image_state["path"]`` so the rebuild
-    helper reuses size + tint + aspect from the same dict.
+    """Map ``var.get()`` (str path) to the widget's CTkImage source —
+    reopens the PIL file and swaps light/dark images on the existing
+    CTkImage, keeping its size + preserve_aspect.
     """
+    from PIL import Image as _PILImage
     def _update(*_):
-        s = getattr(widget, "_maker_image_state", None)
-        if s is not None:
-            s["path"] = var.get() or ""
-            _rebuild_image_for_widget(widget)
-    var.trace_add("write", _update)
-    _update()
-
-
-def _bind_var_to_image_color_state(var, widget, key):
-    """Phase 4a — map ``var.get()`` to ``_maker_image_state[key]``
-    (``"color"`` or ``"color_disabled"``) and trigger a rebuild.
-    Picks the right shared rebuild path so changing the normal
-    tint, the disabled tint, or the enabled flag all converge.
-    """
-    def _update(*_):
-        s = getattr(widget, "_maker_image_state", None)
-        if s is None:
+        img = _maker_ctkimage(widget)
+        path = var.get() or ""
+        if img is None or not path:
             return
-        s[key] = var.get() or None
-        _rebuild_image_for_widget(widget)
+        try:
+            src = _PILImage.open(path)
+            img.configure(light_image=src, dark_image=src)
+        except Exception:
+            pass
     var.trace_add("write", _update)
     _update()
 
 
 def _bind_var_to_image_size(var, widget, axis):
-    """Map ``var.get()`` (int) to one image dimension. ``axis`` is
-    ``"width"`` or ``"height"``; the other dimension and tint / aspect
-    are read from ``_maker_image_state``.
+    """Map ``var.get()`` (int) to one axis of the widget's CTkImage
+    size. ``axis`` is ``"width"`` or ``"height"``.
     """
     def _update(*_):
-        s = getattr(widget, "_maker_image_state", None)
-        if s is None:
+        img = _maker_ctkimage(widget)
+        if img is None:
             return
         try:
-            s[axis] = max(1, int(var.get()))
+            new = max(1, int(var.get()))
         except (TypeError, ValueError):
             return
-        _rebuild_image_for_widget(widget)
+        w, h = img.cget("size")
+        img.configure(size=(new, h) if axis == "width" else (w, new))
     var.trace_add("write", _update)
     _update()
 
 
 def _bind_var_to_preserve_aspect(var, widget):
-    """Map ``var.get()`` (bool) to whether the image preserves its
-    native aspect ratio inside (width, height) or stretches.
+    """Map ``var.get()`` (bool) to the widget's CTkImage
+    ``preserve_aspect`` — contain-fit vs stretch.
     """
     def _update(*_):
-        s = getattr(widget, "_maker_image_state", None)
+        img = _maker_ctkimage(widget)
+        if img is not None:
+            img.configure(preserve_aspect=bool(var.get()))
+    var.trace_add("write", _update)
+    _update()
+
+
+def _bind_var_to_image_color(var, widget):
+    """Map ``var.get()`` to the widget's native ``image_color`` kwarg.
+    "" / "transparent" clear the tint.
+    """
+    def _update(*_):
+        c = var.get() or None
+        if c == "transparent":
+            c = None
+        try:
+            widget.configure(image_color=c)
+        except Exception:
+            pass
+    var.trace_add("write", _update)
+    _update()
+
+
+def _bind_var_to_image_color_disabled(var, widget):
+    """Map ``var.get()`` to the widget's native ``image_color_disabled``
+    kwarg (CTkButton only — CTkLabel resolves its disabled tint
+    editor-side via _bind_var_to_label_image_tint).
+    """
+    def _update(*_):
+        c = var.get() or None
+        if c == "transparent":
+            c = None
+        try:
+            widget.configure(image_color_disabled=c)
+        except Exception:
+            pass
+    var.trace_add("write", _update)
+    _update()
+
+
+def _bind_var_to_label_image_tint(var, widget, key):
+    """CTkLabel-only — ``image_color`` / ``image_color_disabled`` bound
+    to a var. The label has no native ``image_color_disabled`` kwarg, so
+    re-resolve the active tint through ``widget._maker_label_tint``:
+    disabled + a disabled colour → that colour, else the normal colour.
+    ``key`` is ``"color"`` or ``"color_disabled"``.
+    """
+    def _update(*_):
+        s = getattr(widget, "_maker_label_tint", None)
         if s is None:
             return
-        s["aspect"] = bool(var.get())
-        _rebuild_image_for_widget(widget)
+        c = var.get() or None
+        s[key] = None if c == "transparent" else c
+        active = (
+            s["color_disabled"]
+            if (not s["enabled"] and s["color_disabled"])
+            else s["color"]
+        )
+        try:
+            widget.configure(image_color=active)
+        except Exception:
+            pass
     var.trace_add("write", _update)
     _update()
 '''

@@ -7,9 +7,9 @@ the generated file's helper preamble. Two flavours:
   ``CircularProgress``) — read live source via ``inspect.getsource``
   so a single edit in ``app/widgets/runtime/`` propagates to every
   export.
-- Hand-written helpers (``_register_project_fonts``, ``_tint_image``)
-  — string literals kept here because the runtime they target doesn't
-  need a builder-side equivalent.
+- Hand-written helpers (``_register_project_fonts``) — string literals
+  kept here because the runtime they target doesn't need a builder-side
+  equivalent.
 """
 
 from __future__ import annotations
@@ -105,29 +105,4 @@ def _font_register_helper_lines() -> list[str]:
         "                Font(root, file=str(f))",
         "            except Exception:",
         "                pass",
-    ]
-
-
-def _tint_helper_lines() -> list[str]:
-    """Emit a module-level helper that tints a PNG with an RGB hex
-    color while preserving the source alpha channel. Used by every
-    widget whose ``image_color`` is set (Image + CTkButton-style
-    icon tint). Matches the builder's preview tint so the exported
-    app renders identically.
-    """
-    return [
-        "def _tint_image(path, hex_color, size):",
-        '    """Return a CTkImage whose pixels are recoloured to `hex_color`',
-        "    while keeping the source PNG's alpha. Same tint logic the CTk",
-        '    Visual Builder uses at design time."""',
-        "    src = Image.open(path).convert(\"RGBA\")",
-        "    r = int(hex_color[1:3], 16)",
-        "    g = int(hex_color[3:5], 16)",
-        "    b = int(hex_color[5:7], 16)",
-        "    alpha = src.split()[-1]",
-        "    tinted = Image.new(\"RGBA\", src.size, (r, g, b, 255))",
-        "    tinted.putalpha(alpha)",
-        "    return ctk.CTkImage(",
-        "        light_image=tinted, dark_image=tinted, size=size,",
-        "    )",
     ]
