@@ -194,14 +194,21 @@ class CTkTabviewDescriptor(WidgetDescriptor):
 
     @classmethod
     def export_kwarg_overrides(cls, properties: dict) -> dict:
-        """``tab_stretch`` is derived from the node-only ``tab_anchor``
-        ("stretch" align). The exporter strips node-only keys, so inject
-        the native CTk kwarg here — the fork (>= 5.4.9) renders the
-        full-width tab strip itself.
+        """``anchor`` and ``tab_stretch`` are both derived from the
+        node-only ``tab_position`` / ``tab_anchor`` pair. The exporter
+        strips node-only keys, so inject the native CTk kwargs here —
+        sharing ``_TAB_ANCHOR_MAP`` with ``transform_properties`` keeps
+        the exported file's tab-bar placement in sync with the editor
+        preview (the fork >= 5.4.9 renders the full-width strip itself).
         """
-        if properties.get("tab_anchor") == "stretch":
-            return {"tab_stretch": True}
-        return {}
+        position = properties.get("tab_position", "top")
+        align = properties.get("tab_anchor", "center")
+        overrides: dict = {
+            "anchor": cls._TAB_ANCHOR_MAP.get((position, align), "center"),
+        }
+        if align == "stretch":
+            overrides["tab_stretch"] = True
+        return overrides
 
     @classmethod
     def _parse_tab_names(cls, properties: dict) -> list[str]:

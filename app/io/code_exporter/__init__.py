@@ -2531,18 +2531,11 @@ def _emit_widget(
             continue
         kwargs.append((key, _py_literal(val)))
 
-    # CTkTabview: map node-only `tab_anchor` ("left"/"center"/"right")
-    # onto CTk's `anchor` kwarg ("w"/"center"/"e"). Stored separately
-    # from the generic 3x3 `anchor` picker used by Button / Label so
-    # Tabview's simpler horizontal-only control gets its own dropdown.
-    if node.widget_type == "CTkTabview":
-        _tabview_anchor_map = {
-            "left": "w", "center": "center", "right": "e",
-        }
-        ta = _tabview_anchor_map.get(
-            props.get("tab_anchor", "center"), "center",
-        )
-        kwargs.append(("anchor", f'"{ta}"'))
+    # CTkTabview's `anchor` (and `tab_stretch`) are derived from the
+    # node-only `tab_position` / `tab_anchor` pair by the descriptor's
+    # `export_kwarg_overrides`, which the override fan-out above already
+    # emitted — so the exported tab-bar placement matches the editor
+    # preview (both share `_TAB_ANCHOR_MAP`).
 
     if "button_enabled" in props:
         # CTkEntry adds a `readonly` boolean that wins over disabled.
