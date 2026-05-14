@@ -5,7 +5,6 @@ import sys
 import tempfile
 import threading
 import tkinter as tk
-import tkinter.font as tkfont
 import webbrowser
 from datetime import datetime
 from pathlib import Path
@@ -516,23 +515,6 @@ class MainWindow(
         self.title(f"CTkMaker v{__version__}")
         self.minsize(900, 600)
         self.configure(fg_color="#252526")
-
-        # Reconfigure every named Tk font to Segoe UI so non-Latin
-        # scripts (Cyrillic, Greek, Arabic, CJK, ...) render instead of
-        # "?" placeholders. Empty-family tuples like ``font=("", 11)``
-        # resolve through these named fonts, so this single change
-        # covers most call sites.
-        if sys.platform == "win32":
-            for _font_name in (
-                "TkDefaultFont", "TkTextFont", "TkFixedFont",
-                "TkMenuFont", "TkHeadingFont", "TkCaptionFont",
-                "TkSmallCaptionFont", "TkIconFont", "TkTooltipFont",
-            ):
-                try:
-                    tkfont.nametofont(_font_name).configure(family="Segoe UI")
-                except tk.TclError:
-                    pass
-            self.option_add("*Font", "{Segoe UI} 11")
 
         # Non-Latin keyboard layouts remap the V/C/X/A keysyms, so
         # tk's default <Control-v> etc. never fire and clipboard

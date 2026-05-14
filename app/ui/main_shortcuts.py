@@ -53,6 +53,11 @@ class ShortcutsMixin(_MainWindowHost):
             return None
         kc = event.keycode
         widget = event.widget
+        # Text-field Copy/Cut/Paste/SelectAll is handled by ctkmaker-core's
+        # Entry/Text class binding — it returns "break" before this all-tag
+        # handler is reached. These rows route the workspace (canvas,
+        # object tree) clipboard + select-all for non-Latin layouts, where
+        # Tk's keysym-based <<Copy>> virtual-event mapping never fires.
         if kc == 86:  # V
             widget.event_generate("<<Paste>>")
             return "break"
@@ -63,14 +68,7 @@ class ShortcutsMixin(_MainWindowHost):
             widget.event_generate("<<Cut>>")
             return "break"
         if kc == 65:  # A
-            focused = self.focus_get()
-            if isinstance(focused, (tk.Entry, tk.Text)):
-                try:
-                    focused.event_generate("<<SelectAll>>")
-                except tk.TclError:
-                    pass
-            else:
-                self._on_menu_select_all()
+            self._on_menu_select_all()
             return "break"
         if kc == 83:  # S
             self._on_save()

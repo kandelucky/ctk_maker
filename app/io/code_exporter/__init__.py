@@ -1235,14 +1235,6 @@ def _generate_code_inner(
     needs_auto_hover_text = any(
         w.properties.get("text_hover") for w in scoped_widgets
     )
-    # Right-click + non-Latin Ctrl router for every text-editable
-    # widget. Triggered when the project includes any Entry, Textbox,
-    # or ComboBox — those are the CTk widgets backed by tk.Entry /
-    # tk.Text under the hood.
-    needs_text_clipboard = any(
-        w.widget_type in ("CTkEntry", "CTkTextbox", "CTkComboBox")
-        for w in scoped_widgets
-    )
     # ComboBox + OptionMenu wear our ScrollableDropdown helper for a
     # scrollable popup that matches the parent's pixel width.
     needs_scrollable_dropdown = any(
@@ -1420,10 +1412,6 @@ def _generate_code_inner(
         lines.extend(_auto_hover_text_helper_lines())
         lines.append("")
 
-    if needs_text_clipboard:
-        lines.extend(_text_clipboard_helper_lines())
-        lines.append("")
-
     if needs_text_alignment:
         lines.extend(_align_text_label_helper_lines())
         lines.append("")
@@ -1486,18 +1474,7 @@ def _generate_code_inner(
                 break
 
     lines.append('if __name__ == "__main__":')
-    lines.append(f"{INDENT}import sys")
     lines.append(f'{INDENT}ctk.set_appearance_mode("{DEFAULT_APPEARANCE_MODE}")')
-    # CTk ships only Roboto-Regular + Roboto-Medium (no Bold face), so
-    # CTkFont(weight="bold") silently falls back to synthetic bold —
-    # barely visible at large sizes. Mirror the editor's main.py patch
-    # so the exported app uses Segoe UI on Windows where a real bold
-    # face exists.
-    lines.append(f'{INDENT}if sys.platform == "win32":')
-    lines.append(
-        f'{INDENT}{INDENT}'
-        'ctk.ThemeManager.theme["CTkFont"]["family"] = "Segoe UI"'
-    )
 
     if preview_match is not None:
         preview_doc, preview_cls = preview_match
@@ -1519,16 +1496,12 @@ def _generate_code_inner(
             _preview_globals_on_host_lines(_EXPORT_PROJECT, "app", INDENT),
         )
         lines.append(f"{INDENT}{var} = {preview_cls}(app)")
-        if needs_text_clipboard:
-            lines.append(f"{INDENT}_setup_text_clipboard(app)")
         if inject_preview_screenshot:
             lines.extend(_preview_screenshot_lines(target=var))
         lines.append(f"{INDENT}app.wait_window({var})")
     else:
         first_doc, first_class = class_names[0]
         lines.append(f"{INDENT}app = {first_class}()")
-        if needs_text_clipboard:
-            lines.append(f"{INDENT}_setup_text_clipboard(app)")
         # Comment out the way to open any Toplevel dialogs so the user
         # can copy the line into an event handler when they want to.
         for doc, cls in class_names[1:]:
@@ -3141,7 +3114,6 @@ from app.io.code_exporter.runtime_helpers import (
     _circular_progress_class_lines,
     _icon_state_helper_lines,
     _align_text_label_helper_lines,
-    _text_clipboard_helper_lines,
     _auto_hover_text_helper_lines,
     _font_register_helper_lines,
     _tint_helper_lines,
