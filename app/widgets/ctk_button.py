@@ -205,12 +205,6 @@ class CTkButtonDescriptor(WidgetDescriptor):
          "group": "Button Interaction", "row_label": "Hover Effect"},
     ]
 
-    # Properties whose change should re-run `compute_derived` to update
-    # derived props (font_size via autofit).
-    derived_triggers = {
-        "text", "width", "height", "font_bold", "font_autofit",
-    }
-
     # Schema props that are NOT passed as kwargs to CTkButton directly.
     # They live only in the node (builder side), or are consumed to build
     # derived CTk kwargs (font, state, image).
@@ -230,58 +224,8 @@ class CTkButtonDescriptor(WidgetDescriptor):
     _FONT_KEYS = {
         "font_family",
         "font_size", "font_bold", "font_italic",
-        "font_underline", "font_overstrike", "font_autofit",
+        "font_underline", "font_overstrike",
     }
-
-    # ==================================================================
-    # Autofit (Auto Fit) — derives font_size from width/height/text
-    # ==================================================================
-    @classmethod
-    def compute_derived(cls, properties: dict) -> dict:
-        result: dict = {}
-
-        # --- Autofit font size ----------------------------------------
-        if properties.get("font_autofit"):
-            text = properties.get("text") or ""
-            if text:
-                try:
-                    width = int(properties.get("width", 140))
-                    height = int(properties.get("height", 32))
-                    bold = bool(properties.get("font_bold", False))
-                    new_size = cls._compute_autofit_size(
-                        text, width, height, bold,
-                    )
-                    if new_size > 0:
-                        result["font_size"] = new_size
-                except (ValueError, TypeError):
-                    pass
-
-        return result
-
-    @classmethod
-    def _compute_autofit_size(cls, text: str, width: int, height: int,
-                              bold: bool) -> int:
-        """Binary-search the largest font size whose rendered text fits."""
-        import tkinter.font as tkfont
-        avail_w = max(10, width - 20)
-        avail_h = max(10, height - 8)
-        weight = "bold" if bold else "normal"
-        lo, hi = 6, 96
-        best = 6
-        while lo <= hi:
-            mid = (lo + hi) // 2
-            try:
-                f = tkfont.Font(size=mid, weight=weight)
-                tw = f.measure(text)
-                th = f.metrics("linespace")
-            except Exception:
-                return 13
-            if tw <= avail_w and th <= avail_h:
-                best = mid
-                lo = mid + 1
-            else:
-                hi = mid - 1
-        return best
 
     # ==================================================================
     # Builder → CTkButton kwargs
