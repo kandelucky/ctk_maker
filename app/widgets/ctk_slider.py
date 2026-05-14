@@ -56,8 +56,11 @@ class CTkSliderDescriptor(WidgetDescriptor):
         "hover": True,
         # Main colors
         "fg_color": "#4a4d50",
+        "fg_color_disabled": None,
         "progress_color": "#aab0b5",
+        "progress_color_disabled": None,
         "button_color": "#6366f1",
+        "button_color_disabled": None,
         "button_hover_color": "#4f46e5",
     }
 
@@ -134,10 +137,19 @@ class CTkSliderDescriptor(WidgetDescriptor):
         # --- Main Colors -------------------------------------------------
         {"name": "fg_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Track"},
+        {"name": "fg_color_disabled", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Disabled Track",
+         "clearable": True},
         {"name": "progress_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Progress"},
+        {"name": "progress_color_disabled", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Disabled Progress",
+         "clearable": True},
         {"name": "button_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Button"},
+        {"name": "button_color_disabled", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Disabled Button",
+         "clearable": True},
         {"name": "button_hover_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Button Hover",
          "disabled_when": lambda p: not p.get("hover")},
@@ -155,15 +167,6 @@ class CTkSliderDescriptor(WidgetDescriptor):
     init_only_keys = {"orientation"}
     recreate_triggers = frozenset({"orientation"})
 
-    # Greyed-out colour overrides applied when the slider is set to
-    # disabled. CTk's own ``state="disabled"`` only blocks input; the
-    # widget keeps its full-colour look, which makes "interactable"
-    # off invisible at a glance. These match CTkButton's disabled
-    # text shade so the dim feel is consistent across widgets.
-    _DISABLED_TRACK = "#3a3a3a"
-    _DISABLED_PROGRESS = "#5a5a5a"
-    _DISABLED_BUTTON = "#6a6a6a"
-
     @classmethod
     def transform_properties(cls, properties: dict) -> dict:
         result = {
@@ -173,15 +176,18 @@ class CTkSliderDescriptor(WidgetDescriptor):
         }
         enabled = bool(properties.get("button_enabled", True))
         result["state"] = "normal" if enabled else "disabled"
-        if not enabled:
-            # Override the colour kwargs so CTk paints the slider in
-            # a clearly disabled palette. button_hover_color stays in
-            # sync with button_color so accidental hover doesn't
-            # flash a fresher shade on the dimmed knob.
-            result["fg_color"] = cls._DISABLED_TRACK
-            result["progress_color"] = cls._DISABLED_PROGRESS
-            result["button_color"] = cls._DISABLED_BUTTON
-            result["button_hover_color"] = cls._DISABLED_BUTTON
+        # Disabled-state colours → CTk's *_disabled kwargs (fork >= 5.4.6).
+        # The schema props flow through the comprehension above; normalise
+        # here so a cleared colour becomes None → the fork auto-derives a
+        # dimmed shade from the enabled colour, an explicit colour is used
+        # verbatim. Replaces the old hardcoded _DISABLED_* palette. The
+        # fork also gates hover while disabled, so the old
+        # button_hover_color sync is no longer needed.
+        def _active(c):
+            return c if c and c != "transparent" else None
+        result["fg_color_disabled"] = _active(properties.get("fg_color_disabled"))
+        result["progress_color_disabled"] = _active(properties.get("progress_color_disabled"))
+        result["button_color_disabled"] = _active(properties.get("button_color_disabled"))
         if not properties.get("border_enabled"):
             result["border_width"] = 0
         # Steps = 0 means "continuous" — pass None so CTk treats it
@@ -240,13 +246,6 @@ class CTkSliderDescriptor(WidgetDescriptor):
             steps = 0
         if steps <= 0:
             overrides["number_of_steps"] = None
-        # Mirror the runtime grey-out so the exported app shows the
-        # same disabled palette the builder canvas does.
-        if not properties.get("button_enabled", True):
-            overrides["fg_color"] = cls._DISABLED_TRACK
-            overrides["progress_color"] = cls._DISABLED_PROGRESS
-            overrides["button_color"] = cls._DISABLED_BUTTON
-            overrides["button_hover_color"] = cls._DISABLED_BUTTON
         return overrides
 
     @classmethod

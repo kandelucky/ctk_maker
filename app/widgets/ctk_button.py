@@ -46,11 +46,13 @@ class CTkButtonDescriptor(WidgetDescriptor):
         "border_enabled": False,
         "border_width": 1,
         "border_color": "#565b5e",
+        "border_color_disabled": None,
         "border_spacing": 2,
         # Button Interaction
         "button_enabled": True,
         # Main colors
         "fg_color": "#6366f1",
+        "fg_color_disabled": None,
         "hover": True,
         "hover_color": "#4f46e5",
         # Text content + style
@@ -175,6 +177,10 @@ class CTkButtonDescriptor(WidgetDescriptor):
          "group": "Rectangle", "subgroup": "Border",
          "row_label": "Color",
          "disabled_when": lambda p: not p.get("border_enabled")},
+        {"name": "border_color_disabled", "type": "color", "label": "",
+         "group": "Rectangle", "subgroup": "Border",
+         "row_label": "Disabled Color", "clearable": True,
+         "disabled_when": lambda p: not p.get("border_enabled")},
         {"name": "border_spacing", "type": "number", "label": "",
          "group": "Rectangle",
          "row_label": "Inner Padding", "min": 0, "max": 20},
@@ -185,6 +191,9 @@ class CTkButtonDescriptor(WidgetDescriptor):
         {"name": "fg_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Background",
          "clearable": True, "clear_value": "transparent"},
+        {"name": "fg_color_disabled", "type": "color", "label": "",
+         "group": "Main Colors", "row_label": "Disabled Background",
+         "clearable": True},
         {"name": "hover_color", "type": "color", "label": "",
          "group": "Main Colors", "row_label": "Hover Color",
          "disabled_when": lambda p: not p.get("hover", True)},
@@ -293,9 +302,23 @@ class CTkButtonDescriptor(WidgetDescriptor):
             if k not in cls._NODE_ONLY_KEYS and k not in cls._FONT_KEYS
         }
 
+        # Cleared colour-editor values arrive as "" / "transparent"; the
+        # *_disabled / image_* kwargs all treat that as "unset" (None).
+        def _active(c):
+            return c if c and c != "transparent" else None
+
         result["state"] = (
             "normal" if properties.get("button_enabled", True)
             else "disabled"
+        )
+
+        # Disabled-state background / border → CTk's *_disabled kwargs
+        # (fork >= 5.4.6). Cleared colour → None → the fork auto-derives a
+        # dimmed shade from the enabled colour; an explicit colour is used
+        # verbatim. (text_color_disabled stays a plain always-set prop.)
+        result["fg_color_disabled"] = _active(properties.get("fg_color_disabled"))
+        result["border_color_disabled"] = _active(
+            properties.get("border_color_disabled")
         )
 
         # text_hover (toggle) + text_hover_color → CTkButton's native
@@ -333,68 +356,40 @@ class CTkButtonDescriptor(WidgetDescriptor):
 
         if "image" in result:
             result["image"] = cls._build_image(properties, result["image"])
+            # image_color / image_color_disabled tint the button's image
+            # widget-side (fork >= 5.4.5); CTkButton swaps between them
+            # off the state= kwarg set above. "transparent" is the
+            # colour-editor's cleared sentinel — _active normalises it to
+            # None so CTkButton's _check_color_type doesn't reject it.
+            result["image_color"] = _active(properties.get("image_color"))
+            result["image_color_disabled"] = _active(
+                properties.get("image_color_disabled")
+            )
 
         return result
 
     @classmethod
     def _build_image(cls, properties: dict, image_path):
+        # The descriptor only loads the PNG and hands the icon box size
+        # + preserve_aspect flag to CTkImage — native contain-fit and
+        # native tint (image_color / image_color_disabled, applied
+        # widget-side in transform_properties) live in the fork
+        # (>= 5.4.4). Render-time so saved-state mismatches and live
+        # edits both render correctly without an OFF→ON toggle.
         if not image_path:
             return None
         try:
             from PIL import Image
             img = Image.open(image_path)
-            native_w, native_h = img.size
-            # ``transparent`` is the colour-editor's "cleared" sentinel
-            # — treat it as "no tint" alongside ``None`` so a cleared
-            # disabled colour falls through to the normal tint instead
-            # of being routed to ``_tint_image`` (whose ValueError
-            # catch would silently drop the tint without trying the
-            # fallback colour).
-            def _active(c):
-                return c if c and c != "transparent" else None
-            if not properties.get("button_enabled", True):
-                color = (
-                    _active(properties.get("image_color_disabled"))
-                    or _active(properties.get("image_color"))
-                )
-            else:
-                color = _active(properties.get("image_color"))
-            if color:
-                img = cls._tint_image(img, color)
             iw = int(properties.get("image_width", 20) or 20)
             ih = int(properties.get("image_height", 20) or 20)
-            # preserve_aspect=True → contain-fit the native image inside
-            # the (image_width, image_height) box: scale so the smaller
-            # side dictates and the longer axis leaves padding around the
-            # icon. Render-time so saved-state mismatches and live edits
-            # both render correctly without an OFF→ON toggle.
-            if (properties.get("preserve_aspect")
-                    and native_w > 0 and native_h > 0):
-                scale = min(iw / native_w, ih / native_h)
-                iw = max(1, int(round(native_w * scale)))
-                ih = max(1, int(round(native_h * scale)))
             return ctk.CTkImage(
                 light_image=img, dark_image=img, size=(iw, ih),
+                preserve_aspect=bool(properties.get("preserve_aspect")),
             )
         except Exception:
             log_error("CTkButtonDescriptor.transform_properties image")
             return None
-
-    @classmethod
-    def _tint_image(cls, img, hex_color: str):
-        """Icon-style tint: replace RGB with hex_color, keep alpha."""
-        from PIL import Image
-        try:
-            r = int(hex_color[1:3], 16)
-            g = int(hex_color[3:5], 16)
-            b = int(hex_color[5:7], 16)
-        except (ValueError, IndexError, TypeError):
-            return img
-        rgba = img.convert("RGBA")
-        alpha = rgba.split()[-1]
-        tinted = Image.new("RGBA", rgba.size, (r, g, b, 0))
-        tinted.putalpha(alpha)
-        return tinted
 
     @classmethod
     def export_kwarg_overrides(cls, properties: dict) -> dict:
