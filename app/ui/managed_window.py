@@ -7,11 +7,12 @@ needs in one place:
 - ``transient(parent)`` and ``minsize`` wiring
 - flicker-free open via the alpha-0 → build → alpha-1 trick
 - dark titlebar that paints dark on the *first* visible frame —
-  CTk + ``dark_titlebar.py`` set the DWM dark attribute, but on this
-  Windows version the visual NC paint is deferred until a user-driven
-  event (move/focus). We force it by withdrawing + deiconifying the
-  window once after reveal: the second map triggers a fresh NC paint
-  that picks up the dark attribute.
+  the ``ctkmaker-core`` fork's ``CTkToplevel`` sets + persists the DWM
+  dark attribute, but the visual NC paint is still deferred until a
+  user-driven event (move/focus). ``_kick_dark_remap`` forces it by
+  withdrawing + deiconifying once after reveal. Verified 2026-05-14:
+  the fork's one-shot ``SWP_FRAMECHANGED`` alone does *not* prevent
+  the first-frame light flash here — this remap is still required.
 - geometry that fits the screen and is remembered per ``window_key``
   across runs (debounced ``<Configure>`` save + clamp on load)
 
@@ -271,11 +272,12 @@ class ManagedToplevel(ctk.CTkToplevel):
                 pass
 
     def _kick_dark_remap(self) -> None:
-        # Withdraw + deiconify forces a fresh <Map> event. CTk and
-        # dark_titlebar.py set the DWM dark attribute on the first
-        # map, but Windows on this build defers the visual NC paint
-        # until a user event (move/focus). The second map paints
-        # with the attribute already in effect — dark from frame 1.
+        # Withdraw + deiconify forces a fresh <Map> event. The fork's
+        # CTkToplevel sets the DWM dark attribute on the first map, but
+        # Windows on this build defers the visual NC paint until a user
+        # event (move/focus). The second map paints with the attribute
+        # already in effect — dark from frame 1. Verified 2026-05-14:
+        # the fork's SWP_FRAMECHANGED alone is not enough here.
         try:
             if not self.winfo_exists():
                 return

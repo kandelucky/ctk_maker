@@ -5,7 +5,6 @@ import customtkinter as ctk
 
 from app.core.logger import log_error
 from app.ui.crash_dialog import show_crash_dialog
-from app.ui.dark_titlebar import install_dark_titlebar_persistence
 from app.ui.main_window import MainWindow
 
 
@@ -48,7 +47,6 @@ def _install_crash_handlers(app: tk.Misc) -> None:
 def main() -> None:
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("blue")
-    install_dark_titlebar_persistence()
     app = MainWindow()
     _install_crash_handlers(app)
     app.mainloop()

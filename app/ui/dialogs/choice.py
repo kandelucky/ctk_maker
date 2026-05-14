@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import tkinter as tk
 
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui.dialog_utils import safe_grab_set
+from app.ui.dialogs._base import DarkDialog
 from app.ui.dialogs._colors import _ABT_BG, _ABT_FG
 from app.ui.system_fonts import ui_font
 
 
-class ChoiceDialog(tk.Toplevel):
+class ChoiceDialog(DarkDialog):
     """Modal dialog with up to three custom-labelled buttons. Used by
     cascade-edit flows that need a richer prompt than a yes/no — e.g.
     "the new font replaces the type default. Apply to all widgets too,
@@ -29,23 +30,17 @@ class ChoiceDialog(tk.Toplevel):
         cancel_text: str = "Cancel",
     ) -> None:
         super().__init__(parent)
-        prepare_dialog(self)
         self.title(title)
-        self.configure(bg=_ABT_BG)
-        self.resizable(False, False)
-        self.transient(parent)
         self.result: str | None = None
         self._build(message, primary, secondary, cancel_text)
         self.update_idletasks()
         W = max(440, self.winfo_reqwidth())
         H = self.winfo_reqheight()
-        px = parent.winfo_rootx() + parent.winfo_width() // 2
-        py = parent.winfo_rooty() + parent.winfo_height() // 2
-        self.geometry(f"{W}x{H}+{px - W // 2}+{py - H // 2}")
+        self.place_centered(W, H, parent)
         self.lift()
         self.focus_set()
         safe_grab_set(self)
-        reveal_dialog(self)
+        self.reveal()
 
     def _build(
         self, message: str,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import tkinter as tk
 from typing import Any
 
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog
+from app.ui.dialogs._base import DarkDialog
 from app.ui.dialogs._colors import (
     _ABT_BG, _ABT_DIM, _ABT_FG, _ABT_LINK, _ABT_SEP,
 )
@@ -31,24 +31,18 @@ _BMC_FG = "#000000"
 _BMC_OUTLINE = "#000000"
 
 
-class AboutDialog(tk.Toplevel):
+class AboutDialog(DarkDialog):
     def __init__(self, parent, app_version: str = ""):
         super().__init__(parent)
-        prepare_dialog(self)
         self.title("About CTkMaker")
-        self.configure(bg=_ABT_BG)
-        self.resizable(False, False)
-        self.transient(parent)
         self._build(app_version)
         # Fixed size — height bumped to accommodate the new Links
         # section + Buy me a coffee button.
         W, H = 480, 540
-        px = parent.winfo_rootx() + parent.winfo_width() // 2
-        py = parent.winfo_rooty() + parent.winfo_height() // 2
-        self.geometry(f"{W}x{H}+{px - W // 2}+{py - H // 2}")
+        self.place_centered(W, H, parent)
         self.lift()
         self.focus_set()
-        reveal_dialog(self)
+        self.reveal()
 
     def _build(self, version: str) -> None:
         import webbrowser

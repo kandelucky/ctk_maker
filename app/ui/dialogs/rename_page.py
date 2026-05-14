@@ -6,13 +6,14 @@ import tkinter as tk
 from typing import Any
 
 from app.core.project_folder import slugify_page_name
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog, safe_grab_set
+from app.ui.dialog_utils import safe_grab_set
+from app.ui.dialogs._base import DarkDialog
 from app.ui.dialogs._colors import (
     _ABT_BG, _ABT_DIM, _ABT_FG, _ABT_LINK, _ABT_SEP,
 )
 
 
-class RenamePageDialog(tk.Toplevel):
+class RenamePageDialog(DarkDialog):
     """Modal page-rename dialog with explicit consequences + backup
     tip. Replaces the bare ``simpledialog.askstring`` so the user
     sees what the rename will touch (page file, scripts folder,
@@ -25,11 +26,7 @@ class RenamePageDialog(tk.Toplevel):
 
     def __init__(self, parent, current_name: str) -> None:
         super().__init__(parent)
-        prepare_dialog(self)
         self.title("Rename page")
-        self.configure(bg=_ABT_BG)
-        self.resizable(False, False)
-        self.transient(parent)
         self.result: str | None = None
         self._current = current_name
         self._current_slug = slugify_page_name(current_name)
@@ -41,16 +38,14 @@ class RenamePageDialog(tk.Toplevel):
         # also dispatches stale key events from the right-click menu
         # which destroyed the dialog mid-construction.
         W, H = 460, 380
-        px = parent.winfo_rootx() + parent.winfo_width() // 2
-        py = parent.winfo_rooty() + parent.winfo_height() // 2
-        self.geometry(f"{W}x{H}+{px - W // 2}+{py - H // 2}")
+        self.place_centered(W, H, parent)
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
         self.bind("<Escape>", lambda _e: self._on_cancel())
         self.bind("<Return>", lambda _e: self._on_ok())
         self.lift()
         self.focus_set()
         safe_grab_set(self)
-        reveal_dialog(self)
+        self.reveal()
         # Defer entry focus until the window is mapped + realized.
         # Otherwise focus_set on the entry can fire before Tk has
         # finished wiring the widget into its window manager, which

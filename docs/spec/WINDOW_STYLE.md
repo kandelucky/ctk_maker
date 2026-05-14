@@ -46,7 +46,7 @@ Subclass `ManagedToplevel`, declare class-level attrs, override `build_content`.
 2. `build_content` runs; the frame is packed with `panel_padding`.
 3. `_apply_initial_geometry` — load saved or fall back to `default_offset`, clamped to the screen.
 4. `_reveal` — `update_idletasks` → `attributes("-alpha", 1.0)` → 50ms later `_kick_dark_remap`.
-5. `_kick_dark_remap` (Windows only) — `withdraw + update_idletasks + deiconify` cycles the map. Without this the dark titlebar paints light on the first frame; CTk + `dark_titlebar.py` set the DWM attribute, but Windows defers the visual NC paint until the second map.
+5. `_kick_dark_remap` (Windows only) — `withdraw + update_idletasks + deiconify` cycles the map. Needed because the DWM attribute is set but Windows defers the visual NC paint until the second map. The `ctkmaker-core` fork sets + persists the attribute itself (`CTkToplevel._windows_reapply_titlebar_color`, with a one-shot `SWP_FRAMECHANGED`), but verified 2026-05-14 that does *not* prevent the first-frame light flash here — `_kick_dark_remap` is still required.
 6. `lift()` brings the window to Z-order top (no focus grab — `focus_force` is intermittently denied by Windows anti-focus-stealing).
 7. If `modal`, `wait_visibility + grab_set`.
 
