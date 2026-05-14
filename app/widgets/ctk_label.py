@@ -208,11 +208,6 @@ class CTkLabelDescriptor(WidgetDescriptor):
          "group": "Interaction", "row_label": "Take Focus"},
     ]
 
-    derived_triggers = {
-        "text", "width", "height", "font_bold",
-        "font_autofit", "font_wrap",
-    }
-
     _NODE_ONLY_KEYS = {
         "x", "y",
         "label_enabled",
@@ -223,110 +218,12 @@ class CTkLabelDescriptor(WidgetDescriptor):
     _FONT_KEYS = {
         "font_family",
         "font_size", "font_bold", "font_italic",
-        "font_underline", "font_overstrike", "font_autofit",
-        "font_wrap",
+        "font_underline", "font_overstrike",
     }
-    # Internal descriptor state persisted to JSON for runtime continuity
-    # (e.g. autofit OFF→ON→OFF restore) but never passed to CTk kwargs.
+    # Legacy descriptor state from the old editor-side autofit crutch;
+    # still filtered out of CTk kwargs so old project files that carry
+    # ``_font_size_pre_autofit`` don't leak it into the constructor.
     _SHADOW_KEYS = {"_font_size_pre_autofit"}
-
-    # ==================================================================
-    # Derived properties:
-    #   - Autofit (Auto Fit)        — derives font_size from box + text
-    # ==================================================================
-    @classmethod
-    def compute_derived(cls, properties: dict) -> dict:
-        result: dict = {}
-
-        # --- Autofit font size ----------------------------------------
-        prev_stash = properties.get("_font_size_pre_autofit")
-        if not properties.get("font_autofit"):
-            # Toggling Auto Fit off — restore the size we stashed when
-            # it turned on, so the user gets back their pre-autofit
-            # value instead of the autofit-derived one.
-            if prev_stash is not None:
-                result["font_size"] = prev_stash
-                result["_font_size_pre_autofit"] = None
-        else:
-            text = properties.get("text") or ""
-            if text:
-                try:
-                    width = int(properties.get("width", 100))
-                    height = int(properties.get("height", 28))
-                    bold = bool(properties.get("font_bold", False))
-                    wrap = bool(properties.get("font_wrap", False))
-                    new_size = cls._compute_autofit_size(
-                        text, width, height, bold, wrap,
-                    )
-                    if new_size > 0:
-                        # Stash the user's size on the OFF→ON transition
-                        # only. While autofit stays on, font_size already
-                        # holds a derived value, so re-stashing on
-                        # subsequent triggers (resize, bold toggle) would
-                        # clobber the original.
-                        if prev_stash is None:
-                            result["_font_size_pre_autofit"] = (
-                                properties.get("font_size", 13)
-                            )
-                        result["font_size"] = new_size
-                except (ValueError, TypeError):
-                    pass
-
-        return result
-
-    @classmethod
-    def _compute_autofit_size(cls, text: str, width: int, height: int,
-                              bold: bool, wrap: bool = False) -> int:
-        import tkinter.font as tkfont
-        avail_w = max(10, width - 12)
-        avail_h = max(10, height - 4)
-        weight = "bold" if bold else "normal"
-        lo, hi = 6, 96
-        best = 6
-        while lo <= hi:
-            mid = (lo + hi) // 2
-            try:
-                f = tkfont.Font(size=mid, weight=weight)
-                line_h = f.metrics("linespace")
-                if wrap:
-                    lines = cls._wrap_lines(f, text, avail_w)
-                    tw = max((f.measure(L) for L in lines), default=0)
-                    th = line_h * len(lines)
-                else:
-                    tw = f.measure(text)
-                    th = line_h
-            except Exception:
-                return 13
-            if tw <= avail_w and th <= avail_h:
-                best = mid
-                lo = mid + 1
-            else:
-                hi = mid - 1
-        return best
-
-    @staticmethod
-    def _wrap_lines(font, text: str, max_w: int) -> list[str]:
-        # Greedy word-wrap mimicking Tk's wraplength behavior. Used by
-        # autofit to estimate how many lines the text will occupy at a
-        # given font size.
-        lines: list[str] = []
-        for paragraph in text.split("\n"):
-            if not paragraph:
-                lines.append("")
-                continue
-            words = paragraph.split(" ")
-            cur = ""
-            for w in words:
-                trial = w if not cur else cur + " " + w
-                if font.measure(trial) <= max_w:
-                    cur = trial
-                else:
-                    if cur:
-                        lines.append(cur)
-                    cur = w
-            if cur:
-                lines.append(cur)
-        return lines or [""]
 
     # ==================================================================
     # Builder → CTkLabel kwargs
@@ -334,14 +231,6 @@ class CTkLabelDescriptor(WidgetDescriptor):
     @classmethod
     def export_kwarg_overrides(cls, properties: dict) -> dict:
         overrides: dict = {}
-        # Mirror transform_properties' "wrap on + length 0 → derive from
-        # width" rule so exported code wraps the same way the editor does.
-        if properties.get("font_wrap") and not properties.get("wraplength"):
-            try:
-                w = int(properties.get("width", 100))
-            except (ValueError, TypeError):
-                w = 100
-            overrides["wraplength"] = max(1, w - 8)
         # Mirror transform_properties' manual disabled-text swap. We
         # deliberately don't emit ``state="disabled"`` for labels (Tk
         # Label's native disabled rendering paints a stipple wash over
@@ -394,16 +283,6 @@ class CTkLabelDescriptor(WidgetDescriptor):
             )
         except Exception:
             log_error("CTkLabelDescriptor.transform_properties font")
-
-        # Wrap on + length 0 → fall back to widget width so Tk actually
-        # wraps. Tk's native wraplength=0 means "no wrap", which clashes
-        # with the user-facing "Wrap > Enabled" checkbox semantics.
-        if properties.get("font_wrap") and not properties.get("wraplength"):
-            try:
-                w = int(properties.get("width", 100))
-            except (ValueError, TypeError):
-                w = 100
-            result["wraplength"] = max(1, w - 8)
 
         if "image" in result:
             result["image"] = cls._build_image(properties, result["image"])
