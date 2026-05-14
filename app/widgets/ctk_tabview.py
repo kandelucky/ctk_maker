@@ -157,8 +157,9 @@ class CTkTabviewDescriptor(WidgetDescriptor):
     font_kwarg = None
 
     # (position, align) → CTk anchor value. `stretch` keeps the base
-    # anchor (center / s) and is re-gridded with sticky="nsew" via
-    # `_apply_tab_stretch` after widget creation.
+    # anchor (center / s); the full-width tab strip is the fork's
+    # native `tab_stretch` kwarg (derived in `transform_properties` /
+    # `export_kwarg_overrides`).
     _TAB_ANCHOR_MAP = {
         ("top", "left"):     "nw",
         ("top", "center"):   "center",
@@ -188,44 +189,19 @@ class CTkTabviewDescriptor(WidgetDescriptor):
         result["anchor"] = cls._TAB_ANCHOR_MAP.get(
             (position, align), "center",
         )
+        result["tab_stretch"] = align == "stretch"
         return result
 
     @classmethod
-    def _apply_tab_stretch(cls, widget, stretched: bool) -> None:
-        """Re-grid the internal ``_segmented_button`` with
-        ``sticky="nsew"`` when stretched; otherwise hand control back
-        to CTk's own ``_set_grid_segmented_button`` so the sticky
-        matches the current anchor (``ns`` / ``nsw`` / ``nse`` for
-        center / left / right). Without this bypass, setting ``ns``
-        blindly would overwrite the alignment-specific stickies and
-        leave left/right align visually identical to center.
+    def export_kwarg_overrides(cls, properties: dict) -> dict:
+        """``tab_stretch`` is derived from the node-only ``tab_anchor``
+        ("stretch" align). The exporter strips node-only keys, so inject
+        the native CTk kwarg here — the fork (>= 5.4.9) renders the
+        full-width tab strip itself.
         """
-        sb = getattr(widget, "_segmented_button", None)
-        if sb is None:
-            return
-        if stretched:
-            try:
-                info = sb.grid_info()
-            except Exception:
-                info = {}
-            try:
-                sb.grid(
-                    row=info.get("row", 1),
-                    column=info.get("column", 0),
-                    rowspan=info.get("rowspan", 2),
-                    columnspan=info.get("columnspan", 1),
-                    padx=info.get("padx", 0),
-                    sticky="nsew",
-                )
-            except Exception:
-                pass
-            return
-        restore = getattr(widget, "_set_grid_segmented_button", None)
-        if restore is not None:
-            try:
-                restore()
-            except Exception:
-                pass
+        if properties.get("tab_anchor") == "stretch":
+            return {"tab_stretch": True}
+        return {}
 
     @classmethod
     def _parse_tab_names(cls, properties: dict) -> list[str]:
@@ -348,9 +324,6 @@ class CTkTabviewDescriptor(WidgetDescriptor):
                 widget.set(initial)
             except Exception:
                 pass
-        cls._apply_tab_stretch(
-            widget, properties.get("tab_anchor") == "stretch",
-        )
         cls._apply_tab_font(widget, properties)
         # CTk bug workaround: `configure(anchor=...)` only re-grids the
         # segmented button — it skips `_set_grid_canvas` and
@@ -377,15 +350,6 @@ class CTkTabviewDescriptor(WidgetDescriptor):
         initial = (properties.get("initial_tab") or "").strip()
         if initial and initial in cls._parse_tab_names(properties):
             lines.append(f"{var_name}.set({initial!r})")
-        if properties.get("tab_anchor") == "stretch":
-            # Re-grid the internal segmented button with sticky="nsew"
-            # so the tab buttons fill the full bar width. The segmented
-            # button already weights its columns per tab, so stretching
-            # the container distributes buttons evenly.
-            lines.append(
-                f'{var_name}._segmented_button.grid('
-                f'row=1, rowspan=2, column=0, sticky="nsew")',
-            )
         # Cascade-resolved tab font lands on the inner segmented
         # button — Tabview's __init__ doesn't take a ``font`` kwarg.
         from app.core.fonts import resolve_effective_family
