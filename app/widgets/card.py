@@ -213,25 +213,6 @@ class CardDescriptor(WidgetDescriptor):
         return out
 
     @classmethod
-    def _tint_image(cls, img, hex_color: str):
-        """Replace RGB with ``hex_color`` while keeping the alpha
-        channel — the icon-style tint pattern shared with
-        ``ImageDescriptor``.
-        """
-        from PIL import Image as PILImage
-        try:
-            r = int(hex_color[1:3], 16)
-            g = int(hex_color[3:5], 16)
-            b = int(hex_color[5:7], 16)
-        except (ValueError, IndexError, TypeError):
-            return img
-        rgba = img.convert("RGBA")
-        alpha = rgba.split()[-1]
-        tinted = PILImage.new("RGBA", rgba.size, (r, g, b, 0))
-        tinted.putalpha(alpha)
-        return tinted
-
-    @classmethod
     def transform_properties(cls, properties: dict) -> dict:
         result = {
             k: v for k, v in properties.items()
@@ -273,22 +254,14 @@ class CardDescriptor(WidgetDescriptor):
             ih = max(4, int(properties.get("image_height", 48) or 48))
         except (TypeError, ValueError):
             iw = ih = 48
-        # Contain-fit when image_preserve_aspect=True so the exported
-        # code matches what ``_sync_image_label`` renders in the
-        # designer: scale the native image so it fits inside the
-        # (image_width, image_height) box with the smaller side
-        # dictating.
-        if properties.get("image_preserve_aspect"):
-            try:
-                from PIL import Image as PILImage
-                with PILImage.open(image_path) as probe:
-                    nw, nh = probe.size
-                if nw > 0 and nh > 0:
-                    scale = min(iw / nw, ih / nh)
-                    iw = max(1, int(round(nw * scale)))
-                    ih = max(1, int(round(nh * scale)))
-            except Exception:
-                pass
+        # Native contain-fit + tint (fork >= 5.4.4): CTkImage's
+        # preserve_aspect scales the icon inside the (image_width,
+        # image_height) box and the CTkLabel's image_color recolours
+        # it — the exported code carries the raw box size + flags, no
+        # emit-time PIL math.
+        aspect = bool(properties.get("image_preserve_aspect"))
+        tint = properties.get("image_color")
+        tint = tint if tint and tint != "transparent" else None
         anchor = properties.get("image_anchor") or "center"
         relx, rely = _ANCHOR_REL.get(anchor, (0.5, 0.5))
         try:
@@ -298,7 +271,6 @@ class CardDescriptor(WidgetDescriptor):
             padx = pady = 0
         x_off = padx if "w" in anchor else (-padx if "e" in anchor else 0)
         y_off = pady if "n" in anchor else (-pady if "s" in anchor else 0)
-        tint = properties.get("image_color")
         # ``var_name`` is the already-prefixed attribute reference
         # (e.g. ``self.card_1`` for a top-level node, or
         # ``self.frame_1.tab('Tab 1')`` inside a Tabview). Build the
@@ -308,23 +280,6 @@ class CardDescriptor(WidgetDescriptor):
         out_lines.append(
             f"_card_src = Image.open({path_lit}).convert('RGBA')",
         )
-        if tint and tint != "transparent":
-            try:
-                r = int(tint[1:3], 16)
-                g = int(tint[3:5], 16)
-                b = int(tint[5:7], 16)
-                out_lines.append(
-                    "_card_alpha = _card_src.split()[-1]",
-                )
-                out_lines.append(
-                    f"_card_src = Image.new('RGBA', _card_src.size, "
-                    f"({r}, {g}, {b}, 0))",
-                )
-                out_lines.append(
-                    "_card_src.putalpha(_card_alpha)",
-                )
-            except (ValueError, IndexError, TypeError):
-                pass
         out_lines.append(
             f"{img_attr} = ctk.CTkLabel(",
         )
@@ -333,8 +288,11 @@ class CardDescriptor(WidgetDescriptor):
         )
         out_lines.append(
             f"    image=ctk.CTkImage(light_image=_card_src, "
-            f"dark_image=_card_src, size=({iw}, {ih})),",
+            f"dark_image=_card_src, size=({iw}, {ih}), "
+            f"preserve_aspect={aspect}),",
         )
+        if tint is not None:
+            out_lines.append(f"    image_color={tint!r},")
         out_lines.append(")")
         out_lines.append(
             f"{img_attr}.place(relx={relx}, rely={rely}, "
@@ -371,34 +329,28 @@ class CardDescriptor(WidgetDescriptor):
             img = PILImage.open(image_path)
             if img.mode != "RGBA":
                 img = img.convert("RGBA")
-            native_w, native_h = img.size
-            tint = properties.get("image_color")
-            if tint and tint != "transparent":
-                img = cls._tint_image(img, tint)
             iw = max(4, int(properties.get("image_width", 48) or 48))
             ih = max(4, int(properties.get("image_height", 48) or 48))
-            # image_preserve_aspect=True → contain-fit the native image
-            # inside the (image_width, image_height) box: scale by the
-            # smaller side, longer axis leaves padding around the icon.
-            # Render-time so saved-state mismatches and live edits both
-            # render correctly without an OFF→ON toggle.
-            if (properties.get("image_preserve_aspect")
-                    and native_w > 0 and native_h > 0):
-                scale = min(iw / native_w, ih / native_h)
-                iw = max(1, int(round(native_w * scale)))
-                ih = max(1, int(round(native_h * scale)))
+            # Native contain-fit + tint (fork >= 5.4.4): CTkImage's
+            # preserve_aspect scales the icon inside (iw, ih) and the
+            # CTkLabel's image_color recolours it — no PIL math here.
             ctk_img = ctk.CTkImage(
                 light_image=img, dark_image=img, size=(iw, ih),
+                preserve_aspect=bool(
+                    properties.get("image_preserve_aspect")
+                ),
             )
         except Exception:
             log_error("CardDescriptor._sync_image_label open")
             return
+        tint = properties.get("image_color")
+        tint = tint if tint and tint != "transparent" else None
         label = existing
         if label is None:
             label = ctk.CTkLabel(frame, text="", fg_color="transparent")
             frame._card_image_label = label
         try:
-            label.configure(image=ctk_img)
+            label.configure(image=ctk_img, image_color=tint)
             # Hold a ref on the label so PIL+Tk don't garbage-collect
             # the underlying PhotoImage and blank the icon out.
             label.image = ctk_img  # type: ignore[attr-defined]

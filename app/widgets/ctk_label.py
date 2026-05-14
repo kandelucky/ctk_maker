@@ -407,69 +407,48 @@ class CTkLabelDescriptor(WidgetDescriptor):
 
         if "image" in result:
             result["image"] = cls._build_image(properties, result["image"])
+            # image_color tints the label's image widget-side (fork
+            # >= 5.4.5). The label never gets state="disabled" (Tk's
+            # native disabled render washes a stipple over image=), so
+            # unlike CTkButton we resolve the active tint here from
+            # label_enabled rather than handing the widget both colours.
+            # "transparent" is the colour-editor's cleared sentinel.
+            def _active(c):
+                return c if c and c != "transparent" else None
+            if not properties.get("label_enabled", True):
+                result["image_color"] = (
+                    _active(properties.get("image_color_disabled"))
+                    or _active(properties.get("image_color"))
+                )
+            else:
+                result["image_color"] = _active(
+                    properties.get("image_color")
+                )
 
         return result
 
     @classmethod
     def _build_image(cls, properties: dict, image_path):
+        # The descriptor only loads the PNG and hands the icon box size
+        # + preserve_aspect flag to CTkImage — native contain-fit and
+        # native tint (image_color, applied widget-side in
+        # transform_properties) live in the fork (>= 5.4.4). Render-time
+        # so saved-state mismatches and live edits both render correctly
+        # without needing an OFF→ON toggle.
         if not image_path:
             return None
         try:
             from PIL import Image
             img = Image.open(image_path)
-            native_w, native_h = img.size
-            # ``transparent`` is the colour-editor's "cleared" sentinel
-            # — treat it as "no tint" alongside ``None`` so a cleared
-            # disabled colour falls through to the normal tint instead
-            # of being passed to ``_tint_image`` (which would otherwise
-            # silently no-op via the ValueError catch but skip a valid
-            # ``image_color`` fallback).
-            def _active(c):
-                return c if c and c != "transparent" else None
-            if not properties.get("label_enabled", True):
-                color = (
-                    _active(properties.get("image_color_disabled"))
-                    or _active(properties.get("image_color"))
-                )
-            else:
-                color = _active(properties.get("image_color"))
-            if color:
-                img = cls._tint_image(img, color)
             iw = int(properties.get("image_width", 20) or 20)
             ih = int(properties.get("image_height", 20) or 20)
-            # preserve_aspect=True → contain-fit the native image inside
-            # the (image_width, image_height) box: scale so the smaller
-            # side dictates and the longer axis leaves padding around the
-            # icon (CTkLabel's compound + image_anchor handle placement).
-            # Render-time so saved-state mismatches and live edits both
-            # render correctly without needing an OFF→ON toggle.
-            if (properties.get("preserve_aspect")
-                    and native_w > 0 and native_h > 0):
-                scale = min(iw / native_w, ih / native_h)
-                iw = max(1, int(round(native_w * scale)))
-                ih = max(1, int(round(native_h * scale)))
             return ctk.CTkImage(
                 light_image=img, dark_image=img, size=(iw, ih),
+                preserve_aspect=bool(properties.get("preserve_aspect")),
             )
         except Exception:
             log_error("CTkLabelDescriptor.transform_properties image")
             return None
-
-    @classmethod
-    def _tint_image(cls, img, hex_color: str):
-        """Icon-style tint: replace RGB with hex_color, keep alpha."""
-        from PIL import Image
-        try:
-            r = int(hex_color[1:3], 16)
-            g = int(hex_color[3:5], 16)
-            b = int(hex_color[5:7], 16)
-        except (ValueError, IndexError, TypeError):
-            return img
-        rgba = img.convert("RGBA")
-        alpha = rgba.split()[-1]
-        tinted = Image.new("RGBA", rgba.size, (r, g, b, 0))
-        tinted.putalpha(alpha)
-        return tinted
 
     @classmethod
     def create_widget(cls, master, properties: dict, init_kwargs=None):
