@@ -45,7 +45,6 @@ DEFAULT_APPEARANCE_MODE = "dark"
 INDENT = "    "
 
 from app.io.code_exporter._utils import (
-    _aspect_corrected_size,
     _class_name_for,
     _py_literal,
     _slug,
@@ -1218,18 +1217,15 @@ def _generate_code_inner(
 
     scoped_widgets = list(_doc_widgets(docs_to_emit))
     needs_pil = any(w.properties.get("image") for w in scoped_widgets)
+    # _tint_image is no longer used by the construction path (widgets
+    # tint natively via image_color now) — it survives only for the
+    # auto-trace image rebuilder, which still recolours on var write.
     needs_tint = any(
         w.properties.get("image")
         and (
             w.properties.get("image_color")
             or w.properties.get("image_color_disabled")
         )
-        for w in scoped_widgets
-    )
-    needs_icon_state = any(
-        w.properties.get("image")
-        and w.properties.get("image_color_disabled")
-        and "button_enabled" in w.properties
         for w in scoped_widgets
     )
     # ComboBox + OptionMenu wear our ScrollableDropdown helper for a
@@ -1370,10 +1366,6 @@ def _generate_code_inner(
         lines.append("")
     if needs_pack_balance:
         lines.extend(_PACK_BALANCE_HELPER.splitlines())
-        lines.append("")
-
-    if needs_icon_state:
-        lines.extend(_icon_state_helper_lines())
         lines.append("")
 
     if needs_circular_progress:
@@ -2678,57 +2670,74 @@ def _emit_widget(
             )
 
     image_path = props.get("image")
+    # Generic pre-/post-constructor line hooks (currently unused by the
+    # image path — the native tint kwargs land inline below).
     pre_lines: list[str] = []
     post_image_lines: list[str] = []
-    # When a button has both an icon AND a disabled tint, emit TWO
-    # CTkImages + a one-shot _wire_icon_state(...) call so any future
-    # configure(state=...) auto-swaps the image. CTk's native state
-    # change doesn't touch the image, so without the wire a disabled
-    # tint variant would never appear at runtime.
-    has_disabled_tint = bool(
-        image_path
-        and props.get("image_color_disabled")
-        and "button_enabled" in props
-    )
     inline_image = getattr(descriptor, "image_inline_kwarg", True)
     if image_path and not inline_image:
-        # Descriptor builds the image off-band (e.g. Shape's inner
+        # Descriptor builds the image off-band (e.g. Card's inner
         # CTkLabel via ``export_state``) — don't auto-emit
         # ``image=`` / ``compound=`` to the constructor since the
         # underlying CTk class wouldn't accept them.
         image_path = None
     if image_path:
-        if has_disabled_tint:
-            on_attr = f"self.{var_name}_icon_on"
-            off_attr = f"self.{var_name}_icon_off"
-            # Normalise the colour-editor's "cleared" sentinel
-            # ("transparent") to the same fallback as ``None`` so a
-            # cleared field doesn't propagate ``"transparent"`` into
-            # ``_tint_image`` and crash the export at hex-parse time.
-            def _tint_or(c, fallback):
-                return c if c and c != "transparent" else fallback
-            on_src = _image_source_with_color(
-                props, image_path,
-                _tint_or(props.get("image_color"), "#ffffff"),
-            )
-            off_src = _image_source_with_color(
-                props, image_path,
-                _tint_or(props.get("image_color_disabled"), "#ffffff"),
-            )
-            pre_lines.append(f"{on_attr} = {on_src}")
-            pre_lines.append(f"{off_attr} = {off_src}")
-            start_attr = (
-                on_attr if props.get("button_enabled", True) else off_attr
-            )
-            kwargs.append(("image", start_attr))
-            post_image_lines.append(
-                f"_wire_icon_state(self.{var_name}, "
-                f"{on_attr}, {off_attr})",
-            )
-        else:
-            kwargs.append(("image", _image_source(props, image_path)))
+        kwargs.append(("image", _image_source(props, image_path)))
         if "compound" not in props:
             kwargs.append(("compound", '"left"'))
+        # image_color / image_color_disabled tint the widget's image
+        # natively (fork >= 5.4.5). ``transparent`` is the colour-
+        # editor's "cleared" sentinel — normalise it to None (no tint);
+        # emit only non-None values so an untinted widget keeps CTk's
+        # default.
+        def _active(c):
+            return c if c and c != "transparent" else None
+        if "button_enabled" in props:
+            # CTkButton emits ``state=`` (above), so hand the widget
+            # both colours and let the fork swap between them on state.
+            image_color = _active(
+                _resolve_export_raw(props, "image_color"),
+            )
+            image_color_disabled = _active(
+                _resolve_export_raw(props, "image_color_disabled"),
+            )
+        else:
+            # CTkLabel / Image never get ``state="disabled"`` (Tk's
+            # native disabled render washes a stipple over the image),
+            # so resolve the active tint here from label_enabled —
+            # mirrors what the editor descriptor does.
+            image_color_disabled = None
+            if (
+                "label_enabled" in props
+                and not bool(
+                    _resolve_export_raw(props, "label_enabled"),
+                )
+            ):
+                image_color = (
+                    _active(
+                        _resolve_export_raw(
+                            props, "image_color_disabled",
+                        ),
+                    )
+                    or _active(
+                        _resolve_export_raw(props, "image_color"),
+                    )
+                )
+            else:
+                image_color = _active(
+                    _resolve_export_raw(props, "image_color"),
+                )
+        if image_color:
+            kwargs.append(
+                ("image_color", _py_literal(image_color)),
+            )
+        if image_color_disabled:
+            kwargs.append(
+                (
+                    "image_color_disabled",
+                    _py_literal(image_color_disabled),
+                ),
+            )
 
     ctk_class = (
         getattr(descriptor, "ctk_class_name", "") or node.widget_type
@@ -3003,9 +3012,6 @@ def _image_source(props: dict, image_path: str) -> str:
     if "image_width" in props or "image_height" in props:
         iw = _safe_int(props.get("image_width"), 20)
         ih = _safe_int(props.get("image_height"), 20)
-        # Icon-mode contain-fit. Image-widget keeps its own width/height
-        # branch below — different semantic, handled separately.
-        iw, ih = _aspect_corrected_size(props, image_path, iw, ih)
     else:
         iw = _safe_int(props.get("width"), 64)
         ih = _safe_int(props.get("height"), 64)
@@ -3016,67 +3022,18 @@ def _image_source(props: dict, image_path: str) -> str:
     # sloppy and trips cross-platform readers.
     normalised_path = _path_for_export(image_path)
     path_src = _py_literal(normalised_path)
-    # image_color / image_color_disabled are builder-only PIL tints
-    # (CTk doesn't expose a native image tint param). Pick between the
-    # two based on the widget's enabled-flag — the builder's preview
-    # does the same, so the exported file matches what the designer
-    # saw. ``button_enabled`` (CTkButton et al.) and ``label_enabled``
-    # (CTkLabel) carry identical tint semantics here; widgets without
-    # either key fall through to the plain ``image_color``. Note: only
-    # the PIL tint side is shared. Label deliberately does NOT also
-    # emit ``state="disabled"`` (Tk Label's native disabled rendering
-    # paints a stipple wash over the image); the manual color swap
-    # below is what makes the label look disabled.
-    #
-    # ``transparent`` is the colour-editor's "cleared" sentinel — both
-    # ``None`` and ``"transparent"`` mean "no tint", so we normalise
-    # both away before falling through the OR chain. Without this, a
-    # cleared ``image_color_disabled`` would propagate ``"transparent"``
-    # into ``_tint_image`` and crash the export at hex-parse time.
-    def _active(c):
-        return c if c and c != "transparent" else None
-    if (
-        ("button_enabled" in props
-         and not bool(_resolve_export_raw(props, "button_enabled")))
-        or ("label_enabled" in props
-            and not bool(_resolve_export_raw(props, "label_enabled")))
-    ):
-        color = (
-            _active(_resolve_export_raw(props, "image_color_disabled"))
-            or _active(_resolve_export_raw(props, "image_color"))
-        )
-    else:
-        color = _active(_resolve_export_raw(props, "image_color"))
-    if color:
-        return (
-            f"_tint_image({path_src}, {_py_literal(color)}, ({iw}, {ih}))"
-        )
+    # preserve_aspect contain-fits the icon inside (iw, ih) natively
+    # (fork >= 5.4.4); image_color / image_color_disabled tint it
+    # widget-side — both are emitted as constructor kwargs by the
+    # caller, so this builds a plain CTkImage. Emit preserve_aspect
+    # only when True (CTkImage's default is False).
+    aspect = bool(_resolve_export_raw(props, "preserve_aspect"))
+    aspect_src = ", preserve_aspect=True" if aspect else ""
     return (
         f"ctk.CTkImage("
         f"light_image=Image.open({path_src}), "
         f"dark_image=Image.open({path_src}), "
-        f"size=({iw}, {ih}))"
-    )
-
-
-def _image_source_with_color(
-    props: dict, image_path: str, color: str,
-) -> str:
-    """Force a specific tint colour, regardless of ``button_enabled``.
-    Used when the exporter emits BOTH the normal + disabled icon
-    variants for a button that carries an ``image_color_disabled``.
-    """
-    if "image_width" in props or "image_height" in props:
-        iw = _safe_int(props.get("image_width"), 20)
-        ih = _safe_int(props.get("image_height"), 20)
-        iw, ih = _aspect_corrected_size(props, image_path, iw, ih)
-    else:
-        iw = _safe_int(props.get("width"), 64)
-        ih = _safe_int(props.get("height"), 64)
-    normalised_path = _path_for_export(image_path)
-    return (
-        f"_tint_image({_py_literal(normalised_path)}, "
-        f"{_py_literal(color)}, ({iw}, {ih}))"
+        f"size=({iw}, {ih}){aspect_src})"
     )
 
 
@@ -3084,7 +3041,6 @@ from app.io.code_exporter.runtime_helpers import (
     _circle_button_class_lines,
     _circle_label_class_lines,
     _circular_progress_class_lines,
-    _icon_state_helper_lines,
     _font_register_helper_lines,
     _tint_helper_lines,
 )

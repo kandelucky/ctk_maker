@@ -7,10 +7,9 @@ the generated file's helper preamble. Two flavours:
   ``CircularProgress``) — read live source via ``inspect.getsource``
   so a single edit in ``app/widgets/runtime/`` propagates to every
   export.
-- Hand-written helpers (``_wire_icon_state``,
-  ``_setup_text_clipboard``, ``_register_project_fonts``,
-  ``_tint_image``) — string literals kept here because the runtime
-  they target doesn't need a builder-side equivalent.
+- Hand-written helpers (``_register_project_fonts``, ``_tint_image``)
+  — string literals kept here because the runtime they target doesn't
+  need a builder-side equivalent.
 """
 
 from __future__ import annotations
@@ -76,30 +75,6 @@ def _circular_progress_class_lines() -> list[str]:
     lines.append("")
     lines.extend(inspect.getsource(CircularProgress).splitlines())
     return lines
-
-
-def _icon_state_helper_lines() -> list[str]:
-    """Emit ``_wire_icon_state`` — wraps ``button.configure`` so that
-    any later ``configure(state=...)`` also swaps the tinted image
-    variant. CTk's native state change doesn't touch the image, so
-    without this wrapper a disabled-tint icon never appears at runtime
-    even though the constructor emitted both variants.
-    """
-    return [
-        "def _wire_icon_state(button, icon_on, icon_off):",
-        '    """Auto-sync a CTkButton\'s icon with its state.',
-        "    After wiring, ``button.configure(state=...)`` swaps the",
-        "    tinted image variant automatically. An explicit ``image=``",
-        '    in the same call wins over the auto-pick."""',
-        "    original_configure = button.configure",
-        "    def configure(*args, **kwargs):",
-        '        if "state" in kwargs and "image" not in kwargs:',
-        '            kwargs["image"] = (',
-        '                icon_off if kwargs["state"] == "disabled" else icon_on',
-        "            )",
-        "        return original_configure(*args, **kwargs)",
-        "    button.configure = configure",
-    ]
 
 
 def _font_register_helper_lines() -> list[str]:
