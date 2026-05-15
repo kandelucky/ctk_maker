@@ -11,7 +11,7 @@ Groups shown in the Properties panel, in order
     Icon            — image picker, size, tint, compound, preserve aspect
     Geometry        — x/y, width/height
     Alignment       — content anchor + inner padding
-    Rectangle       — corner radius
+    Rectangle       — corner radius, optional border
     Main Colors     — background
     Interaction     — enabled flag, cursor, takefocus
 """
@@ -43,10 +43,19 @@ class CTkLabelDescriptor(WidgetDescriptor):
         "height": 28,
         # Rectangle
         "corner_radius": 0,
+        "border_enabled": False,
+        "border_width": 1,
+        "border_color": "#565b5e",
         # Alignment — inner Tk Label padding (advances the text +
-        # image block away from the widget edges). Note: italic /
-        # script fonts may clip their slant tail at padx=0; bump
-        # padx ≥ 4 to reserve room.
+        # image block away from the widget edges). Italic / script
+        # fonts have side-bearing overhang on the upper-right (the
+        # "ear" of italic f, trailing curl of j, swash capitals) so
+        # right-aligned italic text (anchor=e) clips against the
+        # widget edge — the threshold scales with font_size, not
+        # corner_radius. Empirical heuristic: padx ≥ font_size/8 is a
+        # safe margin (4 @ fs=32, 8 @ fs=64, 12 @ fs=96). See AI guide
+        # Rule №5 for the full rule; Labels_italic_clip fixture is the
+        # reference test (`Labels_aligments` neighbouring document).
         "padx": 0,
         "pady": 0,
         # Interaction
@@ -180,6 +189,21 @@ class CTkLabelDescriptor(WidgetDescriptor):
              0,
              min(int(p.get("width", 0)), int(p.get("height", 0))) // 2,
          )},
+        {"name": "border_enabled", "type": "boolean", "label": "",
+         "group": "Rectangle", "subgroup": "Border",
+         "row_label": "Enabled"},
+        {"name": "border_width", "type": "number", "label": "",
+         "group": "Rectangle", "subgroup": "Border",
+         "row_label": "Thickness", "min": 1,
+         "max": lambda p: max(
+             1,
+             min(int(p.get("width", 0)), int(p.get("height", 0))) // 2,
+         ),
+         "disabled_when": lambda p: not p.get("border_enabled")},
+        {"name": "border_color", "type": "color", "label": "",
+         "group": "Rectangle", "subgroup": "Border",
+         "row_label": "Color",
+         "disabled_when": lambda p: not p.get("border_enabled")},
 
         # --- Main Colors -------------------------------------------------
         # CTk semantics: `fg_color` = the label's filled body (the
@@ -209,6 +233,7 @@ class CTkLabelDescriptor(WidgetDescriptor):
     _NODE_ONLY_KEYS = {
         "x", "y",
         "label_enabled",
+        "border_enabled",
         "image_width", "image_height",
         "preserve_aspect",
         "image_color", "image_color_disabled",
@@ -218,9 +243,11 @@ class CTkLabelDescriptor(WidgetDescriptor):
         "font_size", "font_bold", "font_italic",
         "font_underline", "font_overstrike",
     }
-    # Legacy descriptor state from the old editor-side autofit crutch;
-    # still filtered out of CTk kwargs so old project files that carry
-    # ``_font_size_pre_autofit`` don't leak it into the constructor.
+    # Legacy descriptor state from the old editor-side autofit crutch.
+    # All known project fixtures under ``Documents/CTkMaker`` were cleaned
+    # 2026-05-15; the filter stays as insurance so external / backup
+    # copies that still carry the shadow key don't leak it into the
+    # ``CTkLabel`` constructor (which would raise on unknown kwargs).
     _SHADOW_KEYS = {"_font_size_pre_autofit"}
 
     # ==================================================================
@@ -268,6 +295,12 @@ class CTkLabelDescriptor(WidgetDescriptor):
             disabled_color = properties.get("text_color_disabled")
             if disabled_color:
                 result["text_color"] = disabled_color
+
+        # Border off → zero out the width. ``border_color`` still flows
+        # through (invisible at width 0) so toggling Border > Enabled back
+        # on in the panel restores the configured colour without losing it.
+        if not properties.get("border_enabled"):
+            result["border_width"] = 0
 
         try:
             size = int(properties.get("font_size") or 13)
