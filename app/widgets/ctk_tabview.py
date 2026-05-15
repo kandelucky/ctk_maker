@@ -336,21 +336,6 @@ class CTkTabviewDescriptor(WidgetDescriptor):
             except Exception:
                 pass
         cls._apply_tab_font(widget, properties)
-        # CTk bug workaround: `configure(anchor=...)` only re-grids the
-        # segmented button — it skips `_set_grid_canvas` and
-        # `_set_grid_current_tab`, so after a top→bottom flip the
-        # canvas + active tab stay in the top-layout rows. Call them
-        # explicitly here so a live anchor change actually moves the
-        # tab bar to the chosen side.
-        for method_name in (
-            "_set_grid_canvas", "_set_grid_current_tab",
-        ):
-            fn = getattr(widget, method_name, None)
-            if fn is not None:
-                try:
-                    fn()
-                except Exception:
-                    pass
 
     @classmethod
     def export_state(cls, var_name: str, properties: dict) -> list[str]:
