@@ -3,10 +3,10 @@ from pathlib import Path
 import pytest
 
 from app.core.script_paths import (
+    archive_dir,
     behavior_class_name,
     behavior_file_path,
     behavior_file_stem,
-    deleted_dir,
     ensure_scripts_root,
     page_scripts_dir,
     scripts_root,
@@ -169,33 +169,33 @@ def test_ensure_scripts_root_none_when_unsaved():
     assert ensure_scripts_root(None) is None
 
 
-# ---- deleted_dir ---------------------------------------------------------
+# ---- archive_dir ---------------------------------------------------------
 
-def test_deleted_dir_creates_subfolder(tmp_path):
+def test_archive_dir_creates_subfolder(tmp_path):
     project_file = tmp_path / "demo.ctkproj"
     project_file.write_text("{}", encoding="utf-8")
 
-    target = deleted_dir(project_file)
+    target = archive_dir(project_file)
 
     assert target == (
-        tmp_path / "assets" / "scripts" / "demo" / "_deleted"
+        tmp_path / "assets" / "scripts_archive" / "demo"
     )
     assert target.is_dir()
 
 
-def test_deleted_dir_idempotent(tmp_path):
+def test_archive_dir_idempotent(tmp_path):
     project_file = tmp_path / "demo.ctkproj"
     project_file.write_text("{}", encoding="utf-8")
 
-    first = deleted_dir(project_file)
+    first = archive_dir(project_file)
     sentinel = first / "marker.txt"
     sentinel.write_text("x", encoding="utf-8")
 
-    second = deleted_dir(project_file)
+    second = archive_dir(project_file)
 
     assert first == second
     assert sentinel.is_file()
 
 
-def test_deleted_dir_none_when_unsaved():
-    assert deleted_dir(None) is None
+def test_archive_dir_none_when_unsaved():
+    assert archive_dir(None) is None
