@@ -8,15 +8,19 @@ at render time via ``ctk.derive_state_colors`` (ctkmaker-core >= 5.4.20)
 and handed to CTkButton's per-state kwargs (``fg_color``, ``hover_color``,
 ``pressed_color``, ``fg_color_disabled``).
 
-Groups shown in the Properties panel, in order
-(Content → Layout → Visual → Behavior):
+Groups shown in the Properties panel, in order — visual identity first
+(``Color States`` → ``Button Interaction`` → content → layout). The
+visual-first ordering optimises for a styling-heavy workflow: state
+colours are what the user touches most often, so they sit at the top.
+``Color States`` is button-specific — non-interactive widgets like Label
+keep the conventional ``Content → Layout → Visual → Behavior`` order.
 
+    Color States        — normal + 3 tints + disabled fade
+    Button Interaction  — interactable, hover effect
     Text                — label, font style, alignment, text colour
     Icon                — image picker, size, tint, compound, preserve aspect
     Geometry            — x/y, width/height
     Rectangle           — corner radius, border (thickness + colour)
-    Color               — normal + 3 tints + disabled fade
-    Button Interaction  — interactable, hover effect
 """
 import customtkinter as ctk
 
@@ -82,6 +86,29 @@ class CTkButtonDescriptor(WidgetDescriptor):
     }
 
     property_schema = [
+        # --- Color (Unity ColorBlock) -----------------------------------
+        # ``Normal`` is the actual button colour; the three tints multiply
+        # onto it to produce hover / pressed / disabled. ``Disabled Fade``
+        # additionally blends the disabled state (bg + text + icon + border)
+        # toward the workspace surface so the dim effect is visible without
+        # users having to hand-pick a separate disabled palette.
+        {"name": "normal_color", "type": "color", "label": "",
+         "group": "Color States", "row_label": "Normal"},
+        {"name": "hover_tint", "type": "color", "label": "",
+         "group": "Color States", "row_label": "Hover Tint"},
+        {"name": "pressed_tint", "type": "color", "label": "",
+         "group": "Color States", "row_label": "Pressed Tint"},
+        {"name": "disabled_tint", "type": "color", "label": "",
+         "group": "Color States", "row_label": "Disabled Tint"},
+        {"name": "disabled_fade", "type": "boolean", "label": "",
+         "group": "Color States", "row_label": "Disabled Fade"},
+
+        # --- Button Interaction ------------------------------------------
+        {"name": "button_enabled", "type": "boolean", "label": "",
+         "group": "Button Interaction", "row_label": "Interactable"},
+        {"name": "hover", "type": "boolean", "label": "",
+         "group": "Button Interaction", "row_label": "Hover Effect"},
+
         # --- Text --------------------------------------------------------
         {"name": "text", "type": "multiline", "label": "",
          "group": "Text", "row_label": "Label"},
@@ -171,29 +198,6 @@ class CTkButtonDescriptor(WidgetDescriptor):
         {"name": "border_spacing", "type": "number", "label": "",
          "group": "Rectangle",
          "row_label": "Inner Padding", "min": 0, "max": 20},
-
-        # --- Color (Unity ColorBlock) -----------------------------------
-        # ``Normal`` is the actual button colour; the three tints multiply
-        # onto it to produce hover / pressed / disabled. ``Disabled Fade``
-        # additionally blends the disabled state (bg + text + icon + border)
-        # toward the workspace surface so the dim effect is visible without
-        # users having to hand-pick a separate disabled palette.
-        {"name": "normal_color", "type": "color", "label": "",
-         "group": "Color", "row_label": "Normal"},
-        {"name": "hover_tint", "type": "color", "label": "",
-         "group": "Color", "row_label": "Hover Tint"},
-        {"name": "pressed_tint", "type": "color", "label": "",
-         "group": "Color", "row_label": "Pressed Tint"},
-        {"name": "disabled_tint", "type": "color", "label": "",
-         "group": "Color", "row_label": "Disabled Tint"},
-        {"name": "disabled_fade", "type": "boolean", "label": "",
-         "group": "Color", "row_label": "Disabled Fade"},
-
-        # --- Button Interaction ------------------------------------------
-        {"name": "button_enabled", "type": "boolean", "label": "",
-         "group": "Button Interaction", "row_label": "Interactable"},
-        {"name": "hover", "type": "boolean", "label": "",
-         "group": "Button Interaction", "row_label": "Hover Effect"},
     ]
 
     # Schema props that are NOT passed as CTkButton kwargs directly.
