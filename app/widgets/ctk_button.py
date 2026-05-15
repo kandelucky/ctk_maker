@@ -25,14 +25,6 @@ class CTkButtonDescriptor(WidgetDescriptor):
     type_name = "CTkButton"
     display_name = "Button"
     prefers_fill_in_layout = True
-    # ``full_circle=True`` is passed unconditionally (see
-    # ``transform_properties`` / ``export_kwarg_overrides``). CTkButton's
-    # ``_create_grid`` reserves ``corner_radius`` worth of space on the
-    # outer columns, which makes full-circle / pill buttons with text
-    # overflow their nominal frame size. The fork's native ``full_circle``
-    # kwarg (ctkmaker-core >= 5.4.12) lifts that reservation — superseding
-    # the old inlined ``CircleButton`` override, so this descriptor maps
-    # 1:1 onto a plain ``ctk.CTkButton``.
 
     default_properties = {
         # Geometry
@@ -250,8 +242,7 @@ class CTkButtonDescriptor(WidgetDescriptor):
         def _active(c):
             return c if c and c != "transparent" else None
 
-        # Always-on: the fork's native pill / full-circle layout fix
-        # (ctkmaker-core >= 5.4.12), replacing the old CircleButton crutch.
+        # Always-on: the fork's native pill / full-circle layout fix.
         result["full_circle"] = True
 
         result["state"] = (
@@ -345,8 +336,7 @@ class CTkButtonDescriptor(WidgetDescriptor):
         properties):
 
         - full_circle: always True — the fork's native pill / full-circle
-          layout fix (ctkmaker-core >= 5.4.12), replacing the old inlined
-          CircleButton override.
+          layout fix.
         - text_color_hover: emitted only when the text_hover toggle is on
           and a colour is set — otherwise CTkButton's None default holds.
         """

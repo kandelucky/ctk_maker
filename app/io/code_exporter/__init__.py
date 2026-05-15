@@ -1198,11 +1198,6 @@ def _generate_code_inner(
     needs_circular_progress = any(
         w.widget_type == "CircularProgress" for w in scoped_widgets
     )
-    # CTkButton's full-circle / pill layout and CTkLabel's full_circle +
-    # unified bind() routing are all fork-native now (ctkmaker-core >=
-    # 5.4.14), so both export as plain ``ctk.Ctk*(...)`` — no inlined
-    # CircleButton / CircleLabel class. The full_circle / unified_bind
-    # kwargs are injected by the descriptor's export_kwarg_overrides.
     needs_tk_import = (
         bool(project.variables)
         or has_local_vars

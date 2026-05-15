@@ -29,10 +29,9 @@ class CTkLabelDescriptor(WidgetDescriptor):
     # native ``ctk.CTkLabel``. Composite-widget support — ``full_circle``
     # layout + ``unified_bind`` event routing — lives in ctkmaker-core
     # (>= 5.4.14) and is injected at construction (see ``create_widget``
-    # / ``export_kwarg_overrides``). The old editor-side ``CircleLabel``
-    # override is gone. Image descriptor emits as ``ctk.CTkLabel(...)``
-    # too but without those kwargs — its text is empty (no squeeze) and
-    # it takes no user ``bind()`` handlers.
+    # / ``export_kwarg_overrides``). Image descriptor emits as
+    # ``ctk.CTkLabel(...)`` too but without those kwargs — its text is
+    # empty (no squeeze) and it takes no user ``bind()`` handlers.
     is_ctk_class = True
     ctk_class_name = "CTkLabel"
 
