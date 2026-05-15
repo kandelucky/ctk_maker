@@ -211,6 +211,14 @@ def load_project(
     # round-trip cleanly.
     _migrate_layout_types(documents)
 
+    # CTkButton per-state colour fields → Unity ColorBlock model
+    # (CTkMaker descriptor rewrite, 2026-05-15). Older projects ship
+    # ``fg_color`` / ``hover_color`` / ``*_disabled`` / ``text_hover*``
+    # variants; the new descriptor consumes ``normal_color`` + three
+    # tints + a ``disabled_fade`` toggle and derives the per-state
+    # palette via ``ctk.derive_state_colors``.
+    _migrate_ctk_button_unity(documents)
+
     # Multi-page mode: project-level fields come from project.json
     # (authoritative). Legacy mode: they come from the .ctkproj.
     if multi_page_meta is not None:
@@ -536,6 +544,52 @@ def _documents_from_v2(data: dict) -> list[Document]:
                 f"documents[{i}] failed to load: {exc}"
             ) from exc
     return documents
+
+
+_CTK_BUTTON_LEGACY_KEYS = (
+    "fg_color_disabled",
+    "hover_color",
+    "text_color_disabled",
+    "text_color_hover",
+    "text_hover",
+    "text_hover_color",
+    "image_color_disabled",
+    "border_color_disabled",
+)
+
+
+def _migrate_ctk_button_unity(documents: list[Document]) -> None:
+    """Rewrite CTkButton nodes' per-state colour fields to the Unity
+    ColorBlock model. The old ``fg_color`` becomes ``normal_color``; the
+    other per-state legacy keys (``hover_color``, ``fg_color_disabled``,
+    ``text_color_hover``, …) are dropped — the new descriptor derives the
+    full palette from ``normal_color`` plus three tint multipliers. Tints
+    + ``disabled_fade`` are seeded with the descriptor's defaults so
+    migrated buttons render in the same visual register as freshly-built
+    ones."""
+    for doc in documents:
+        for root in doc.root_widgets:
+            _migrate_button_node(root)
+
+
+def _migrate_button_node(node: WidgetNode) -> None:
+    if node.widget_type == "CTkButton":
+        props = node.properties
+        if "normal_color" not in props and "fg_color" in props:
+            props["normal_color"] = props.pop("fg_color")
+        # Strip every legacy per-state key. The Unity tints replace them
+        # wholesale — keeping them around would let the old values leak
+        # back into transform_properties on the next round-trip.
+        for legacy in _CTK_BUTTON_LEGACY_KEYS:
+            props.pop(legacy, None)
+        # Seed Unity defaults for fields the new descriptor expects.
+        props.setdefault("normal_color", "#6366f1")
+        props.setdefault("hover_tint", "#f5f5f5")
+        props.setdefault("pressed_tint", "#c8c8c8")
+        props.setdefault("disabled_tint", "#c8c8c8")
+        props.setdefault("disabled_fade", True)
+    for child in node.children:
+        _migrate_button_node(child)
 
 
 def _migrate_layout_types(documents: list[Document]) -> None:

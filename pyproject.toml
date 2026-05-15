@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ctkmaker"
-version = "1.31.14"
+version = "1.32.0"
 description = "A free, professional visual UI designer for CustomTkinter — drag-and-drop canvas, multi-document workspace, asset system (fonts / images / 1700+ Lucide icons), enhanced and original widgets, and clean Python code export."
 readme = "PYPI_README.md"
 requires-python = ">=3.10"
@@ -37,7 +37,7 @@ classifiers = [
     "Topic :: Software Development :: Build Tools",
 ]
 dependencies = [
-    "ctkmaker-core>=5.4.17",
+    "ctkmaker-core>=5.4.20",
     "Pillow>=10.0.0",
     "Send2Trash>=1.8.0",
 ]

@@ -1,24 +1,38 @@
-﻿"""CTkButton widget descriptor.
+"""CTkButton widget descriptor — Unity ColorBlock model.
 
-Declares the full schema the Properties panel uses to render editors
-for a CTkButton, plus the bridge that converts the builder's
-property dict into the kwargs CTkButton actually accepts
-(`transform_properties`).
+Replaces the per-state colour fields (``fg_color``, ``fg_color_disabled``,
+``hover_color``, ``text_color_hover``, ``text_color_disabled``,
+``image_color_disabled``, ``border_color_disabled``) with a single base
+colour plus three Unity-style tints. The full per-state palette is derived
+at render time via ``ctk.derive_state_colors`` (ctkmaker-core >= 5.4.20)
+and handed to CTkButton's per-state kwargs (``fg_color``, ``hover_color``,
+``pressed_color``, ``fg_color_disabled``).
 
 Groups shown in the Properties panel, in order
 (Content → Layout → Visual → Behavior):
 
-    Text                — label, font style, alignment, text colors
+    Text                — label, font style, alignment, text colour
     Icon                — image picker, size, tint, compound, preserve aspect
     Geometry            — x/y, width/height
-    Rectangle           — corner radius, border (thickness + color)
-    Main Colors         — background, hover
+    Rectangle           — corner radius, border (thickness + colour)
+    Color               — normal + 3 tints + disabled fade
     Button Interaction  — interactable, hover effect
 """
 import customtkinter as ctk
 
 from app.core.logger import log_error
 from app.widgets.base import WidgetDescriptor
+
+
+# Unity Inspector defaults for the tint multipliers.
+_DEFAULT_NORMAL = "#6366f1"
+_DEFAULT_HOVER_TINT = "#f5f5f5"
+_DEFAULT_PRESSED_TINT = "#c8c8c8"
+_DEFAULT_DISABLED_TINT = "#c8c8c8"
+# Surface colour to blend toward when ``disabled_fade`` is on. CTkMaker
+# always renders on the dark workspace; if we ever support per-document
+# light mode we'll need to plumb the parent's bg in here.
+_SURFACE = "#252525"
 
 
 class CTkButtonDescriptor(WidgetDescriptor):
@@ -36,16 +50,17 @@ class CTkButtonDescriptor(WidgetDescriptor):
         "corner_radius": 6,
         "border_enabled": False,
         "border_width": 1,
-        "border_color": "#565b5e",
-        "border_color_disabled": None,
+        "border_color": "#efefef",
         "border_spacing": 2,
         # Button Interaction
         "button_enabled": True,
-        # Main colors
-        "fg_color": "#6366f1",
-        "fg_color_disabled": None,
         "hover": True,
-        "hover_color": "#4f46e5",
+        # Color (Unity ColorBlock — one base + three tints)
+        "normal_color": _DEFAULT_NORMAL,
+        "hover_tint": _DEFAULT_HOVER_TINT,
+        "pressed_tint": _DEFAULT_PRESSED_TINT,
+        "disabled_tint": _DEFAULT_DISABLED_TINT,
+        "disabled_fade": True,
         # Text content + style
         "text": "CTkButton",
         "font_family": None,
@@ -57,13 +72,9 @@ class CTkButtonDescriptor(WidgetDescriptor):
         "font_overstrike": False,
         "anchor": "center",
         "text_color": "#ffffff",
-        "text_color_disabled": "#a0a0a0",
-        "text_hover": False,
-        "text_hover_color": "#b2b2b2",
         # Image
         "image": None,
         "image_color": None,
-        "image_color_disabled": None,
         "image_width": 20,
         "image_height": 20,
         "compound": "left",
@@ -97,24 +108,13 @@ class CTkButtonDescriptor(WidgetDescriptor):
          "group": "Text", "row_label": "Alignment"},
 
         {"name": "text_color", "type": "color", "label": "",
-         "group": "Text", "row_label": "Normal Text Color"},
-        {"name": "text_color_disabled", "type": "color", "label": "",
-         "group": "Text", "row_label": "Disabled Text Color"},
-        {"name": "text_hover", "type": "boolean", "label": "",
-         "group": "Text", "row_label": "Hover Color Effect"},
-        {"name": "text_hover_color", "type": "color", "label": "",
-         "group": "Text", "row_label": "Hover Color",
-         "disabled_when": lambda p: not p.get("text_hover")},
+         "group": "Text", "row_label": "Text Color"},
 
         # --- Icon --------------------------------------------------------
         {"name": "image", "type": "image", "label": "",
          "group": "Icon", "row_label": "Icon"},
         {"name": "image_color", "type": "color", "label": "",
-         "group": "Icon", "row_label": "Normal Color",
-         "clearable": True, "clear_value": "transparent",
-         "disabled_when": lambda p: not p.get("image")},
-        {"name": "image_color_disabled", "type": "color", "label": "",
-         "group": "Icon", "row_label": "Disabled Color",
+         "group": "Icon", "row_label": "Icon Color",
          "clearable": True, "clear_value": "transparent",
          "disabled_when": lambda p: not p.get("image")},
         {"name": "image_width", "type": "number", "label": "W",
@@ -168,26 +168,26 @@ class CTkButtonDescriptor(WidgetDescriptor):
          "group": "Rectangle", "subgroup": "Border",
          "row_label": "Color",
          "disabled_when": lambda p: not p.get("border_enabled")},
-        {"name": "border_color_disabled", "type": "color", "label": "",
-         "group": "Rectangle", "subgroup": "Border",
-         "row_label": "Disabled Color", "clearable": True,
-         "disabled_when": lambda p: not p.get("border_enabled")},
         {"name": "border_spacing", "type": "number", "label": "",
          "group": "Rectangle",
          "row_label": "Inner Padding", "min": 0, "max": 20},
 
-        # --- Main Colors -------------------------------------------------
-        # Clearable — icon-only buttons usually want a transparent
-        # background that picks up the parent's fill.
-        {"name": "fg_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Background",
-         "clearable": True, "clear_value": "transparent"},
-        {"name": "fg_color_disabled", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Disabled Background",
-         "clearable": True},
-        {"name": "hover_color", "type": "color", "label": "",
-         "group": "Main Colors", "row_label": "Hover Color",
-         "disabled_when": lambda p: not p.get("hover", True)},
+        # --- Color (Unity ColorBlock) -----------------------------------
+        # ``Normal`` is the actual button colour; the three tints multiply
+        # onto it to produce hover / pressed / disabled. ``Disabled Fade``
+        # additionally blends the disabled state (bg + text + icon + border)
+        # toward the workspace surface so the dim effect is visible without
+        # users having to hand-pick a separate disabled palette.
+        {"name": "normal_color", "type": "color", "label": "",
+         "group": "Color", "row_label": "Normal"},
+        {"name": "hover_tint", "type": "color", "label": "",
+         "group": "Color", "row_label": "Hover Tint"},
+        {"name": "pressed_tint", "type": "color", "label": "",
+         "group": "Color", "row_label": "Pressed Tint"},
+        {"name": "disabled_tint", "type": "color", "label": "",
+         "group": "Color", "row_label": "Disabled Tint"},
+        {"name": "disabled_fade", "type": "boolean", "label": "",
+         "group": "Color", "row_label": "Disabled Fade"},
 
         # --- Button Interaction ------------------------------------------
         {"name": "button_enabled", "type": "boolean", "label": "",
@@ -196,20 +196,25 @@ class CTkButtonDescriptor(WidgetDescriptor):
          "group": "Button Interaction", "row_label": "Hover Effect"},
     ]
 
-    # Schema props that are NOT passed as kwargs to CTkButton directly.
-    # They live only in the node (builder side), or are consumed to build
-    # derived CTk kwargs (font, state, image).
+    # Schema props that are NOT passed as CTkButton kwargs directly.
+    # They live only in the node, or are consumed to build derived CTk
+    # kwargs (the four state colours, font, state, image).
     _NODE_ONLY_KEYS = {
         "x", "y", "image_width", "image_height",
         "button_enabled", "border_enabled",
-        "preserve_aspect", "image_color", "image_color_disabled",
-        # text_hover (toggle) + text_hover_color are consumed by
-        # transform_properties() into the native text_color_hover
-        # kwarg — the raw keys themselves are never CTkButton kwargs.
-        "text_hover", "text_hover_color",
-        # Legacy: migrated to button_enabled but may still appear in
-        # old project files; never passed to CTkButton.
+        "preserve_aspect", "image_color",
+        # Unity tint inputs are consumed by transform_properties() →
+        # CTkButton's per-state kwargs. None of these names are valid
+        # CTkButton kwargs themselves.
+        "normal_color", "hover_tint", "pressed_tint", "disabled_tint",
+        "disabled_fade",
+        # Legacy fields that may linger in old project files; never
+        # passed to CTkButton.
         "state_disabled",
+        "fg_color_disabled", "hover_color",
+        "text_color_disabled", "text_color_hover",
+        "text_hover", "text_hover_color",
+        "image_color_disabled", "border_color_disabled",
     }
 
     _FONT_KEYS = {
@@ -222,25 +227,70 @@ class CTkButtonDescriptor(WidgetDescriptor):
     # Builder → CTkButton kwargs
     # ==================================================================
     @classmethod
+    def _derive_palette(cls, properties: dict) -> dict:
+        """Compute the four-state bg palette + disabled fade for text /
+        image / border. Returned dict has ``fg_color``, ``hover_color``,
+        ``pressed_color``, ``fg_color_disabled``, and (when fade is on)
+        ``text_color_disabled``, ``image_color_disabled``,
+        ``border_color_disabled``."""
+        normal = properties.get("normal_color") or _DEFAULT_NORMAL
+        hover_tint = properties.get("hover_tint") or _DEFAULT_HOVER_TINT
+        pressed_tint = properties.get("pressed_tint") or _DEFAULT_PRESSED_TINT
+        disabled_tint = properties.get("disabled_tint") or _DEFAULT_DISABLED_TINT
+        disabled_fade = bool(properties.get("disabled_fade", False))
+
+        palette = ctk.derive_state_colors(
+            normal=normal,
+            hover_tint=hover_tint,
+            pressed_tint=pressed_tint,
+            disabled_tint=disabled_tint,
+            multiplier=1.0,
+            disabled_fade=disabled_fade,
+            surface=_SURFACE,
+        )
+
+        derived = {
+            "fg_color": palette["normal"],
+            "hover_color": palette["hover"],
+            "pressed_color": palette["pressed"],
+            "fg_color_disabled": palette["disabled"],
+        }
+
+        # Disabled fade also dims text / icon / border when enabled. Fork's
+        # CTkButton ``*_disabled`` kwargs accept None (auto-derive); we only
+        # set them explicitly when fade is on.
+        if disabled_fade:
+            text_color = properties.get("text_color") or "#ffffff"
+            derived["text_color_disabled"] = ctk.fade_color(text_color, 0.4, _SURFACE)
+
+            image_color = properties.get("image_color")
+            if image_color and image_color != "transparent":
+                derived["image_color_disabled"] = ctk.fade_color(image_color, 0.4, _SURFACE)
+
+            border_color = properties.get("border_color") or "#efefef"
+            derived["border_color_disabled"] = ctk.fade_color(border_color, 0.5, _SURFACE)
+
+        return derived
+
+    @classmethod
     def transform_properties(cls, properties: dict) -> dict:
         """Translate the builder's property dict into CTkButton kwargs.
 
-        - Strips builder-only keys (x/y, image_*, button_enabled, …).
-        - `button_enabled` bool → CTk `state="normal"/"disabled"`.
-        - `border_enabled` False → forces `border_width=0`.
+        - Strips builder-only keys (x/y, image_*, button_enabled, …,
+          plus all Unity inputs that have no CTkButton equivalent).
+        - ``button_enabled`` bool → CTk ``state="normal"/"disabled"``.
+        - ``border_enabled`` False → forces ``border_width=0``.
         - Builds a CTkFont from the font_* family.
-        - Loads `image` path into a CTkImage sized by image_width/height
-          with an optional tint from `image_color` (or disabled tint).
+        - Loads ``image`` path into a CTkImage sized by image_width/height.
+        - Derives the four-state bg palette via ``ctk.derive_state_colors``
+          (ctkmaker-core >= 5.4.20) and applies it to the per-state CTk
+          kwargs. Also applies an optional disabled fade to text / icon /
+          border when ``disabled_fade`` is on.
         """
         result = {
             k: v for k, v in properties.items()
             if k not in cls._NODE_ONLY_KEYS and k not in cls._FONT_KEYS
         }
-
-        # Cleared colour-editor values arrive as "" / "transparent"; the
-        # *_disabled / image_* kwargs all treat that as "unset" (None).
-        def _active(c):
-            return c if c and c != "transparent" else None
 
         # Always-on: the fork's native pill / full-circle layout fix.
         result["full_circle"] = True
@@ -250,26 +300,18 @@ class CTkButtonDescriptor(WidgetDescriptor):
             else "disabled"
         )
 
-        # Disabled-state background / border → CTk's *_disabled kwargs
-        # (fork >= 5.4.6). Cleared colour → None → the fork auto-derives a
-        # dimmed shade from the enabled colour; an explicit colour is used
-        # verbatim. (text_color_disabled stays a plain always-set prop.)
-        result["fg_color_disabled"] = _active(properties.get("fg_color_disabled"))
-        result["border_color_disabled"] = _active(
-            properties.get("border_color_disabled")
-        )
-
-        # text_hover (toggle) + text_hover_color → CTkButton's native
-        # text_color_hover kwarg (fork >= 5.4.1). None when the toggle
-        # is off, so the button keeps its plain text_color on hover.
-        result["text_color_hover"] = (
-            properties.get("text_hover_color")
-            if properties.get("text_hover") else None
-        )
-
         # Border off → zero the width so CTk draws no outline.
         if not properties.get("border_enabled"):
             result["border_width"] = 0
+
+        # Derived per-state palette
+        result.update(cls._derive_palette(properties))
+
+        # Cleared image_color comes through as "" or "transparent"; the
+        # CTkButton kwarg treats only None as "unset".
+        image_color = properties.get("image_color")
+        if image_color and image_color != "transparent":
+            result["image_color"] = image_color
 
         try:
             size = int(properties.get("font_size") or 13)
@@ -294,26 +336,11 @@ class CTkButtonDescriptor(WidgetDescriptor):
 
         if "image" in result:
             result["image"] = cls._build_image(properties, result["image"])
-            # image_color / image_color_disabled tint the button's image
-            # widget-side (fork >= 5.4.5); CTkButton swaps between them
-            # off the state= kwarg set above. "transparent" is the
-            # colour-editor's cleared sentinel — _active normalises it to
-            # None so CTkButton's _check_color_type doesn't reject it.
-            result["image_color"] = _active(properties.get("image_color"))
-            result["image_color_disabled"] = _active(
-                properties.get("image_color_disabled")
-            )
 
         return result
 
     @classmethod
     def _build_image(cls, properties: dict, image_path):
-        # The descriptor only loads the PNG and hands the icon box size
-        # + preserve_aspect flag to CTkImage — native contain-fit and
-        # native tint (image_color / image_color_disabled, applied
-        # widget-side in transform_properties) live in the fork
-        # (>= 5.4.4). Render-time so saved-state mismatches and live
-        # edits both render correctly without an OFF→ON toggle.
         if not image_path:
             return None
         try:
@@ -332,17 +359,18 @@ class CTkButtonDescriptor(WidgetDescriptor):
     @classmethod
     def export_kwarg_overrides(cls, properties: dict) -> dict:
         """Derived kwargs for the exported constructor call (mirrors
-        transform_properties(), since the exporter builds from raw
+        ``transform_properties``, since the exporter builds from raw
         properties):
 
-        - full_circle: always True — the fork's native pill / full-circle
-          layout fix.
-        - text_color_hover: emitted only when the text_hover toggle is on
-          and a colour is set — otherwise CTkButton's None default holds.
+        - ``full_circle``: always True.
+        - Four-state bg palette: ``fg_color``, ``hover_color``,
+          ``pressed_color``, ``fg_color_disabled`` — pre-computed so the
+          exported ``.py`` doesn't need to import the colour math at
+          runtime; the values are frozen at export time.
+        - Disabled fade for text / icon / border when toggled on.
         """
         overrides = {"full_circle": True}
-        if properties.get("text_hover") and properties.get("text_hover_color"):
-            overrides["text_color_hover"] = properties["text_hover_color"]
+        overrides.update(cls._derive_palette(properties))
         return overrides
 
     @classmethod
