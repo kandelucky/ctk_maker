@@ -40,6 +40,7 @@ class CTkTextboxDescriptor(WidgetDescriptor):
         "border_spacing": 3,
         # Content
         "initial_text": "",
+        "rich_text": False,
         "wrap": "char",
         "activate_scrollbars": True,
         # Button Interaction
@@ -62,6 +63,8 @@ class CTkTextboxDescriptor(WidgetDescriptor):
         # --- Content -----------------------------------------------------
         {"name": "initial_text", "type": "multiline", "label": "",
          "group": "Content", "row_label": "Initial Text"},
+        {"name": "rich_text", "type": "boolean", "label": "",
+         "group": "Content", "row_label": "Parse Rich-Text Tags"},
         {"name": "wrap", "type": "wrap", "label": "",
          "group": "Content", "row_label": "Wrap"},
         {"name": "activate_scrollbars", "type": "boolean", "label": "",
@@ -145,10 +148,14 @@ class CTkTextboxDescriptor(WidgetDescriptor):
         "font_underline", "font_overstrike",
     }
     # CTkTextbox accepts `activate_scrollbars` only in __init__ —
-    # configure(activate_scrollbars=…) raises ValueError. The editor
-    # reinjects it at construction; changing it at runtime triggers a
-    # full destroy + recreate via `recreate_triggers`.
-    init_only_keys = {"activate_scrollbars"}
+    # configure(activate_scrollbars=…) raises ValueError. ``rich_text``
+    # is also init-only (no configure-side handler in CTkTextbox);
+    # apply_state below calls ``set_rich_text_enabled`` for live toggle.
+    # The editor reinjects them at construction; changing
+    # ``activate_scrollbars`` triggers a destroy + recreate, but
+    # ``rich_text`` doesn't need that — apply_state re-renders the
+    # content cleanly via set_rich_text / plain insert branch.
+    init_only_keys = {"activate_scrollbars", "rich_text"}
     recreate_triggers = frozenset({"activate_scrollbars"})
 
     @classmethod
@@ -206,12 +213,18 @@ class CTkTextboxDescriptor(WidgetDescriptor):
         # configure. Temporarily go to "normal" so delete/insert work,
         # then restore whatever the user asked for.
         enabled = bool(properties.get("button_enabled", True))
+        rich = bool(properties.get("rich_text", False))
+        initial = str(properties.get("initial_text") or "")
         try:
             widget.configure(state="normal")
-            widget.delete("1.0", "end")
-            initial = properties.get("initial_text") or ""
-            if initial:
-                widget.insert("1.0", str(initial))
+            widget.set_rich_text_enabled(rich)
+            if rich:
+                # set_rich_text handles delete + parse + insert with tags.
+                widget.set_rich_text(initial)
+            else:
+                widget.delete("1.0", "end")
+                if initial:
+                    widget.insert("1.0", initial)
         except Exception:
             log_error("CTkTextboxDescriptor.apply_state insert")
         finally:
@@ -223,9 +236,13 @@ class CTkTextboxDescriptor(WidgetDescriptor):
     @classmethod
     def export_state(cls, var_name: str, properties: dict) -> list[str]:
         lines: list[str] = []
-        initial = properties.get("initial_text") or ""
+        initial = str(properties.get("initial_text") or "")
+        rich = bool(properties.get("rich_text", False))
         if initial:
-            lines.append(f'{var_name}.insert("1.0", {str(initial)!r})')
+            if rich:
+                lines.append(f'{var_name}.set_rich_text({initial!r})')
+            else:
+                lines.append(f'{var_name}.insert("1.0", {initial!r})')
         if not properties.get("button_enabled", True):
             lines.append(f'{var_name}.configure(state="disabled")')
         return lines
