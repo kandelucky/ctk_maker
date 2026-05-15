@@ -149,12 +149,12 @@ class CTkTabviewDescriptor(WidgetDescriptor):
         "initial_tab", "tab_anchor", "tab_position",
     }
     _FONT_KEYS = {"font_family"}
-    # CTkTabview's __init__ has no ``font`` kwarg — the tab labels
-    # live on an internal ``_segmented_button`` that we configure
-    # post-construction. ``None`` tells the exporter to skip the
-    # constructor font emission; ``export_state`` writes the
-    # ``_segmented_button.configure(font=...)`` line instead.
-    font_kwarg = None
+    # CTkTabview's tab labels live on an internal segmented button.
+    # The fork (>= 5.2.2.1) exposes ``segmented_button_font`` on the
+    # constructor + ``configure()`` so the kwarg flows through the
+    # standard descriptor path; no ``_segmented_button`` internals
+    # access needed.
+    font_kwarg = "segmented_button_font"
 
     # (position, align) → CTk anchor value. `stretch` keeps the base
     # anchor (center / s); the full-width tab strip is the fork's
@@ -190,6 +190,12 @@ class CTkTabviewDescriptor(WidgetDescriptor):
             (position, align), "center",
         )
         result["tab_stretch"] = align == "stretch"
+        from app.core.fonts import resolve_effective_family
+        family = resolve_effective_family(
+            cls.type_name, properties.get("font_family"),
+        )
+        if family:
+            result["segmented_button_font"] = ctk.CTkFont(family=family)
         return result
 
     @classmethod
@@ -275,11 +281,10 @@ class CTkTabviewDescriptor(WidgetDescriptor):
 
     @classmethod
     def _apply_tab_font(cls, widget, properties: dict) -> None:
-        """Push the cascade-resolved font onto the inner segmented
-        button so tab labels follow the project / type / widget font
-        cascade. CTk bakes the segmented button's font as a tuple
-        from its theme; we replace it with a CTkFont so the family
-        actually changes — passing a tuple would only override size.
+        """Push the cascade-resolved font onto the segmented button
+        so tab labels follow the project / type / widget font cascade.
+        Routes through the fork-native ``segmented_button_font`` kwarg
+        (no inner-widget internals access).
         """
         from app.core.fonts import resolve_effective_family
         family = resolve_effective_family(
@@ -287,11 +292,10 @@ class CTkTabviewDescriptor(WidgetDescriptor):
         )
         if not family:
             return
-        sb = getattr(widget, "_segmented_button", None)
-        if sb is None:
-            return
         try:
-            sb.configure(font=ctk.CTkFont(family=family))
+            widget.configure(
+                segmented_button_font=ctk.CTkFont(family=family),
+            )
         except Exception:
             log_error("CTkTabviewDescriptor._apply_tab_font")
 
@@ -357,15 +361,4 @@ class CTkTabviewDescriptor(WidgetDescriptor):
         initial = (properties.get("initial_tab") or "").strip()
         if initial and initial in cls._parse_tab_names(properties):
             lines.append(f"{var_name}.set({initial!r})")
-        # Cascade-resolved tab font lands on the inner segmented
-        # button — Tabview's __init__ doesn't take a ``font`` kwarg.
-        from app.core.fonts import resolve_effective_family
-        family = resolve_effective_family(
-            cls.type_name, properties.get("font_family"),
-        )
-        if family:
-            lines.append(
-                f"{var_name}._segmented_button.configure("
-                f"font=ctk.CTkFont(family={family!r}))",
-            )
         return lines
