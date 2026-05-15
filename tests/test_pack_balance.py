@@ -8,8 +8,10 @@ on layout-type swaps, not on fresh add/remove. This module covers:
   - ``content_min_axis``: per-widget content-derived min size
   - exporter emission: ``_ctkmaker_min`` / ``_ctkmaker_fixed`` attrs
     on every pack child + a ``<Configure>`` bind on the container
-  - ``_PACK_BALANCE_HELPER``: only emitted when an hbox/vbox container
-    actually exists in the export scope
+  - ``ctk.balance_pack(...)`` call: emitted only when an hbox/vbox
+    container actually exists in the export scope. The helper body
+    lives in ctkmaker-core 5.4.17 (``customtkinter.bindings``); the
+    exporter only emits the call.
 """
 from __future__ import annotations
 
@@ -111,16 +113,17 @@ def _make_project_with_doc(doc_layout="place", child_count=0):
 def test_pack_balance_skipped_for_pure_place_project():
     project, doc = _make_project_with_doc(doc_layout="place", child_count=0)
     code = generate_code(project)
-    assert "_ctkmaker_balance_pack" not in code
+    assert "ctk.balance_pack" not in code
 
 
 def test_pack_balance_emitted_for_hbox_window():
     project, doc = _make_project_with_doc(doc_layout="hbox", child_count=2)
     code = generate_code(project)
-    # Helper definition + bind call.
-    assert "def _ctkmaker_balance_pack" in code
+    # Helper body lives in ctkmaker-core (customtkinter.bindings); the
+    # exporter just wires the bind + call to the fork API.
+    assert "def _ctkmaker_balance_pack" not in code  # no inline helper
     assert 'self.bind("<Configure>"' in code
-    assert "_ctkmaker_balance_pack(self," in code
+    assert "ctk.balance_pack(self," in code
 
 
 def test_pack_balance_emitted_for_nested_hbox_frame():
@@ -141,7 +144,9 @@ def test_pack_balance_emitted_for_nested_hbox_frame():
         btn = _make_button(text=f"B{i}")
         project.add_widget(btn, parent_id=frame.id, document_id=doc.id)
     code = generate_code(project)
-    assert "def _ctkmaker_balance_pack" in code
+    # Fork API call site, not inline helper definition.
+    assert "ctk.balance_pack(" in code
+    assert "def _ctkmaker_balance_pack" not in code
     # Each button gets its content-min attr.
     assert "._ctkmaker_min = " in code
 

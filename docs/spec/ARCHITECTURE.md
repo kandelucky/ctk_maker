@@ -31,7 +31,11 @@ The PyPI package at [ctkmaker/](../../ctkmaker/) is a name-reservation stub. Run
 
 `import customtkinter as ctk` in ctk_maker source resolves to **[ctkmaker-core](https://github.com/kandelucky/ctkmaker-core)**, a maintained CustomTkinter fork at `c:/Users/likak/Desktop/ctkmaker_core/` (installed editable, so source changes are picked up live).
 
-This means CustomTkinter is **not a sealed dependency** — when a CTk bug or missing kwarg blocks ctkmaker work, fix it at fork source level. App-level monkey-patches and helper wrappers should be reserved for ctkmaker-specific behavior (editor canvas, selection state, etc.), not for upstream-style fixes that belong in CustomTkinter itself. See [AI_CHEATSHEET.md](AI_CHEATSHEET.md) for the fix → ship workflow.
+This means CustomTkinter is **not a sealed dependency** — when a CTk bug or missing kwarg blocks ctkmaker work, fix it at fork source level.
+
+**The fork's primary purpose is export cleanliness.** Anything an exported `.py` script needs at runtime — runtime widget classes, font registration helpers, bind-fan-out machinery — lives in the fork, so exports `import customtkinter` and reach those APIs natively instead of CTkMaker inlining them via `inspect.getsource` or string-literal emission. App-level workarounds in `app/widgets/runtime/` and `app/io/code_exporter/runtime_helpers.py` are an anti-pattern when the body lands in exported files; that work belongs in `customtkinter/` (the fork). `app/widgets/runtime/` is reserved for behavior that is editor-only (selection state, editor canvas integration, etc.) and therefore never reaches exports.
+
+See [AI_CHEATSHEET.md](AI_CHEATSHEET.md) "CustomTkinter is editable" for the decision rule on new additions and the fix → ship workflow.
 
 ## Module map
 

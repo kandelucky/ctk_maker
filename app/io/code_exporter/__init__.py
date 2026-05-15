@@ -409,20 +409,10 @@ def _project_needs_auto_trace_textbox_helper(scoped_widgets) -> bool:
 
 
 from app.io.code_exporter.auto_trace_templates import (
-    _AUTO_TRACE_WIDGET_HELPER,
-    _AUTO_TRACE_TEXTBOX_HELPER,
-    _AUTO_TRACE_FONT_HELPER,
     _FONT_COMPOSITE_TO_ATTR,
     _IMAGE_REBUILD_KEYS,
     _PLACE_COORD_KEYS,
-    _AUTO_TRACE_STATE_HELPER,
     _STATE_COMPOSITE_KEYS,
-    _AUTO_TRACE_LABEL_ENABLED_HELPER,
-    _AUTO_TRACE_FONT_WRAP_HELPER,
-    _AUTO_TRACE_PLACE_COORD_HELPER,
-    _AUTO_TRACE_IMAGE_REBUILD_HELPER,
-    _AUTO_TRACE_FONT_AUTOFIT_HELPER,
-    _PACK_BALANCE_HELPER,
 )
 
 
@@ -542,7 +532,7 @@ def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
         # ``tb.delete(...); tb.insert(...)``, not configure().
         if node.widget_type == "CTkTextbox" and key == "initial_text":
             out.append(
-                f"_bind_var_to_textbox({var_attr}, {full_name})",
+                f"ctk.bind_var_to_textbox({var_attr}, {full_name})",
             )
             continue
         # Font composites route through their dedicated rebuilder —
@@ -551,7 +541,7 @@ def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
         font_attr = _FONT_COMPOSITE_TO_ATTR.get(key)
         if font_attr is not None:
             out.append(
-                f'_bind_var_to_font({var_attr}, {full_name}, "{font_attr}")',
+                f'ctk.bind_var_to_font({var_attr}, {full_name}, "{font_attr}")',
             )
             continue
         # ``button_enabled`` — bool var maps to CTk's ``state`` enum.
@@ -559,7 +549,7 @@ def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
         # True/False, not "normal"/"disabled".
         if key in _STATE_COMPOSITE_KEYS:
             out.append(
-                f"_bind_var_to_state({var_attr}, {full_name})",
+                f"ctk.bind_var_to_state({var_attr}, {full_name})",
             )
             continue
         # ``label_enabled`` (CTkLabel only) — bool var maps to a
@@ -580,7 +570,7 @@ def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
                 or "#a0a0a0"
             )
             out.append(
-                f"_bind_var_to_label_enabled({var_attr}, {full_name}, "
+                f"ctk.bind_var_to_label_enabled({var_attr}, {full_name}, "
                 f"{_py_literal(on_val)}, {_py_literal(off_val)})",
             )
             continue
@@ -588,7 +578,7 @@ def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
         # derivation from the widget's current width.
         if key == "font_wrap" and node.widget_type == "CTkLabel":
             out.append(
-                f"_bind_var_to_font_wrap({var_attr}, {full_name})",
+                f"ctk.bind_var_to_font_wrap({var_attr}, {full_name})",
             )
             continue
         # ``font_autofit`` (CTkLabel only) — bool var toggles binary-
@@ -604,14 +594,14 @@ def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
             except (TypeError, ValueError):
                 size_off_int = 13
             out.append(
-                f"_bind_var_to_font_autofit({var_attr}, {full_name}, "
+                f"ctk.bind_var_to_font_autofit({var_attr}, {full_name}, "
                 f"{size_off_int})",
             )
             continue
         # ``x`` / ``y`` — number var drives place_configure on that axis.
         if key in _PLACE_COORD_KEYS:
             out.append(
-                f'_bind_var_to_place_coord({var_attr}, {full_name}, "{key}")',
+                f'ctk.bind_var_to_place_coord({var_attr}, {full_name}, "{key}")',
             )
             continue
         # Image params — when var-bound, drive a live update on the
@@ -626,44 +616,44 @@ def _emit_auto_trace_bindings(node, full_name: str) -> list[str]:
                 continue
             if key == "image":
                 out.append(
-                    f"_bind_var_to_image_path({var_attr}, {full_name})",
+                    f"ctk.bind_var_to_image_path({var_attr}, {full_name})",
                 )
             elif key == "image_width":
                 out.append(
-                    f'_bind_var_to_image_size({var_attr}, {full_name}, "width")',
+                    f'ctk.bind_var_to_image_size({var_attr}, {full_name}, "width")',
                 )
             elif key == "image_height":
                 out.append(
-                    f'_bind_var_to_image_size({var_attr}, {full_name}, "height")',
+                    f'ctk.bind_var_to_image_size({var_attr}, {full_name}, "height")',
                 )
             elif key == "preserve_aspect":
                 out.append(
-                    f"_bind_var_to_preserve_aspect({var_attr}, {full_name})",
+                    f"ctk.bind_var_to_preserve_aspect({var_attr}, {full_name})",
                 )
             elif key == "image_color":
                 if node.widget_type == "CTkLabel":
                     out.append(
-                        f'_bind_var_to_label_image_tint({var_attr}, {full_name}, "color")',
+                        f'ctk.bind_var_to_label_image_tint({var_attr}, {full_name}, "color")',
                     )
                 else:
                     out.append(
-                        f"_bind_var_to_image_color({var_attr}, {full_name})",
+                        f"ctk.bind_var_to_image_color({var_attr}, {full_name})",
                     )
             elif key == "image_color_disabled":
                 if node.widget_type == "CTkLabel":
                     out.append(
-                        f'_bind_var_to_label_image_tint({var_attr}, {full_name}, "color_disabled")',
+                        f'ctk.bind_var_to_label_image_tint({var_attr}, {full_name}, "color_disabled")',
                     )
                 elif "button_enabled" in props:
                     out.append(
-                        f"_bind_var_to_image_color_disabled({var_attr}, {full_name})",
+                        f"ctk.bind_var_to_image_color_disabled({var_attr}, {full_name})",
                     )
                 # else: widget has no image_color_disabled kwarg — skip
             continue
         if allowed is not None and key not in allowed:
             continue
         out.append(
-            f'_bind_var_to_widget({var_attr}, {full_name}, "{key}")',
+            f'ctk.bind_var_to_widget({var_attr}, {full_name}, "{key}")',
         )
     return out
 
@@ -1261,47 +1251,16 @@ def _generate_code_inner(
         lines.append("from PIL import Image")
     if needs_scrollable_dropdown:
         lines.append("from scrollable_dropdown import ScrollableDropdown")
+    if needs_font_register:
+        lines.append("from pathlib import Path")
     lines.append("")
 
-    if needs_font_register:
-        lines.extend(_font_register_helper_lines())
-        lines.append("")
-
-    # Phase 3 — auto-trace helpers for var bindings that don't map
-    # to Tk's native ``textvariable=``/``variable=`` (e.g. CTkButton.
-    # text, CTkButton.fg_color, CTkTextbox content). One helper per
-    # update strategy, emitted only when the project actually needs
-    # it so pure Phase 1.5 projects stay lean.
-    if needs_auto_trace_helper:
-        lines.extend(_AUTO_TRACE_WIDGET_HELPER.splitlines())
-        lines.append("")
-    if needs_auto_trace_textbox:
-        lines.extend(_AUTO_TRACE_TEXTBOX_HELPER.splitlines())
-        lines.append("")
-    if needs_auto_trace_font:
-        lines.extend(_AUTO_TRACE_FONT_HELPER.splitlines())
-        lines.append("")
-    if needs_auto_trace_state:
-        lines.extend(_AUTO_TRACE_STATE_HELPER.splitlines())
-        lines.append("")
-    if needs_auto_trace_label_enabled:
-        lines.extend(_AUTO_TRACE_LABEL_ENABLED_HELPER.splitlines())
-        lines.append("")
-    if needs_auto_trace_font_wrap:
-        lines.extend(_AUTO_TRACE_FONT_WRAP_HELPER.splitlines())
-        lines.append("")
-    if needs_auto_trace_font_autofit:
-        lines.extend(_AUTO_TRACE_FONT_AUTOFIT_HELPER.splitlines())
-        lines.append("")
-    if needs_auto_trace_place_coord:
-        lines.extend(_AUTO_TRACE_PLACE_COORD_HELPER.splitlines())
-        lines.append("")
-    if needs_auto_trace_image_rebuild:
-        lines.extend(_AUTO_TRACE_IMAGE_REBUILD_HELPER.splitlines())
-        lines.append("")
-    if needs_pack_balance:
-        lines.extend(_PACK_BALANCE_HELPER.splitlines())
-        lines.append("")
+    # Phase 3 — auto-trace helpers for var bindings that don't map to
+    # Tk's native ``textvariable=``/``variable=``. As of CTkMaker
+    # v1.31.14 + ctkmaker-core 5.4.17, the helper bodies live in the
+    # fork at ``customtkinter.bindings``; exports just call
+    # ``ctk.bind_var_to_*(...)`` and ``ctk.balance_pack(...)``. No
+    # per-helper preamble is needed here.
 
     if needs_circular_progress:
         lines.extend(_circular_progress_class_lines())
@@ -1378,7 +1337,10 @@ def _generate_code_inner(
         # this the dialog falls back to Tk defaults even though the
         # builder canvas renders the same widget with the right family.
         if needs_font_register:
-            lines.append(f"{INDENT}_register_project_fonts(app)")
+            lines.append(
+                f"{INDENT}ctk.register_project_fonts("
+                f'app, Path(__file__).resolve().parent / "assets" / "fonts")'
+            )
         # Bypassing the main class also skips its global-var
         # declarations, so the previewed Toplevel's
         # ``self.master.var_X`` lookup would fail. Mirror the
@@ -2042,7 +2004,8 @@ def _emit_class_body(
         # parent root so they don't repeat the call.
         if register_fonts:
             lines.append(
-                f"{INDENT}{INDENT}_register_project_fonts(self)",
+                f"{INDENT}{INDENT}ctk.register_project_fonts("
+                f'self, Path(__file__).resolve().parent / "assets" / "fonts")',
             )
 
     # Phase 2 — instantiate the per-window behavior class. Done
@@ -2186,7 +2149,7 @@ def _emit_class_body(
                 f"self.bind("
                 f"\"<Configure>\", "
                 f"lambda _e: "
-                f"_ctkmaker_balance_pack(self, {_balance_axis!r}))",
+                f"ctk.balance_pack(self, {_balance_axis!r}))",
             )
     for line in body_lines:
         lines.append(f"{INDENT}{INDENT}{line}" if line else "")
@@ -2358,7 +2321,7 @@ def _emit_subtree(
             f"{child_master}.bind("
             f"\"<Configure>\", "
             f"lambda _e, _c={child_master}: "
-            f"_ctkmaker_balance_pack(_c, {_balance_axis!r})"
+            f"ctk.balance_pack(_c, {_balance_axis!r})"
             f"{_bind_extra})",
         )
         lines.append("")
@@ -2961,7 +2924,6 @@ def _image_source(props: dict, image_path: str) -> str:
 
 from app.io.code_exporter.runtime_helpers import (
     _circular_progress_class_lines,
-    _font_register_helper_lines,
 )
 
 

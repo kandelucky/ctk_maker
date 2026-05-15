@@ -10,7 +10,15 @@ A visual designer for [CustomTkinter](https://github.com/TomSchimansky/CustomTki
 
 ## CustomTkinter is editable — this is a fork
 
-CTkMaker runs on **[ctkmaker-core](https://github.com/kandelucky/ctkmaker-core)** — a maintained CustomTkinter fork at `c:/Users/likak/Desktop/ctkmaker_core/` (editable install). `import customtkinter` in ctk_maker source resolves to the fork's `customtkinter/` folder directly.
+CTkMaker runs on **[ctkmaker-core](https://github.com/kandelucky/ctkmaker-core)** — a CustomTkinter fork at `c:/Users/likak/Desktop/ctkmaker_core/` (editable install). `import customtkinter` in ctk_maker source resolves to the fork's `customtkinter/` folder directly.
+
+**Design axis — export cleanliness.** The fork exists to keep exported `.py` scripts clean. **Anything an exported CTkMaker script needs at runtime lives in the fork** — runtime widget classes, runtime helpers, monkey-patches, font registration. Exports `import customtkinter` and reach those APIs natively, instead of CTkMaker inlining them via `inspect.getsource` or string-literal emission.
+
+**When adding a new runtime entity (widget, helper) for CTkMaker:**
+
+1. Does exported code use it at runtime? → **fork**, at `customtkinter/windows/widgets/ctk_<name>.py` or `customtkinter/contrib/`. Then a CTkMaker descriptor (`app/widgets/ctk_<name>.py`) wraps it.
+2. Editor-only (selection state, canvas drag, undo, statusbar tooltip)? → **stays in `app/`**
+3. Property name translation at export time (`border_enabled` → `border_width=0`)? → **stays in the exporter**
 
 **When a CustomTkinter bug or missing feature blocks ctkmaker work:**
 1. Fix it in the fork (`Desktop/ctkmaker_core/customtkinter/...`)
@@ -18,7 +26,7 @@ CTkMaker runs on **[ctkmaker-core](https://github.com/kandelucky/ctkmaker-core)*
 3. Ship: commit + tag `ctkmaker-core-vX.Y.Z` + PyPI publish
 4. Bump `ctk_maker/requirements.txt` if minimum version needs raising
 
-**Do not** write monkey-patches, helper wrappers, or workaround layers in `app/` for problems that belong inside CustomTkinter. The fork is the right home for general CTk improvements that any user could benefit from. App-level workarounds belong in `app/widgets/runtime/` only for behavior that is intrinsically ctkmaker-specific (editor canvas, selection state, etc.) — not for upstream-style bug fixes.
+**Do not** write monkey-patches, helper wrappers, or runtime workaround layers in `app/` for things exported code uses. `app/widgets/runtime/` should hold editor-only behavior (selection state, canvas integration), not new widgets or runtime helpers that exports will then have to inline.
 
 ## Project layout
 
