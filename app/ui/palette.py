@@ -78,6 +78,7 @@ class WidgetGroup:
 CATALOG: tuple[WidgetGroup, ...] = (
     WidgetGroup("Display", (
         WidgetEntry("CTkLabel", "Label", "type"),
+        WidgetEntry("CTkRichLabel", "Rich Label", "letter-text"),
         WidgetEntry("Image", "Image", "image"),
         WidgetEntry("Card", "Card", "circle-stop"),
     )),

@@ -4,13 +4,12 @@ Drag-and-drop visual designer for **[CustomTkinter](https://github.com/TomSchima
 
 **Community Hub:** [kandelucky.github.io/ctkmaker-hub](https://kandelucky.github.io/ctkmaker-hub/) — browse and share reusable components built in CTkMaker.
 
-> **Recent:**
-> - **v1.30.0** — Runtime now uses **ctkmaker-core 5.3.1** (maintained CustomTkinter fork) instead of upstream `customtkinter`. Drop-in compatible — exported `.py` files unchanged. Color picker (`ctk-tint-color-picker`) now bundled internally; no separate PyPI install.
-> - **v1.29.0** — Live composite variable bindings: font sub-properties (family, weight, slant, underline, overstrike) + image colour variants + x/y geometry / image rebuilds propagate live across composites
-> - **v1.28.1** — Variables + Object References are now page-scoped (each page owns its set, was project-wide). Legacy globals migrate to the active page on first load.
-> - **v1.28.0** — Ghost Mode v2: per-doc statusbar toggle (replaces chrome icon), base64-PNG persistence in `.ctkproj` (no startup re-grab), two-step click on ghost screenshots, reddish "N live windows" hint in the zoom bar
-> - **v1.27.11** — Toolbar: bigger Preview buttons + active dialog label
-> - **v1.27.10** — Color picker edits variable on bound rows + bound swatch
+> **What changed since v1.30.0:**
+> - **v1.33.0** — Added **CTkRichLabel** — read-only label with inline Unity-style rich-text tags (`<b>`, `<i>`, `<u>`, `<color=…>`, `<bg=…>`, `<size=N>`, `<size=+N|-N>`, `<noparse>`); widget + parser live in ctkmaker-core 5.5.0 so exports stay clean.
+> - **v1.32.0** — **CTkButton Unity ColorBlock** state-colour model — one base colour + Hover / Pressed / Disabled tint multipliers replace eight per-state fields; full palette derived at render via `ctk.derive_state_colors()` (ctkmaker-core 5.4.20).
+> - **v1.31.7** — Plain-tk dialogs migrated to **CTkToplevel** with native dark titlebar — every dialog now matches the canvas theme without the editor-side dark-titlebar workaround.
+> - **v1.31.0** — Editable **disabled-state colors** for CTkEntry / CTkSlider / CTkButton (`fg_color_disabled`, `text_color_disabled`, …) — first-class properties instead of CTk's auto-derive.
+> - **v1.30.4 → v1.31.14** — **Fork crutch migration plan closed** — image tint / aspect, font composites, `font_autofit` / `font_wrap`, `full_circle` layout, `UnifiedBindMixin`, segmented-button font, tab_stretch, dialog dark titlebar all now native in ctkmaker-core 5.4.x.
 >
 > ⚠️ **Tested on Windows only.** macOS and Linux are not verified — see [issue #5](https://github.com/kandelucky/ctk_maker/issues/5) for the running list of known incompatibilities + how to help.
 

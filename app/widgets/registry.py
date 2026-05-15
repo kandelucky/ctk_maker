@@ -14,6 +14,7 @@ from app.widgets.ctk_slider import CTkSliderDescriptor
 from app.widgets.ctk_switch import CTkSwitchDescriptor
 from app.widgets.ctk_tabview import CTkTabviewDescriptor
 from app.widgets.ctk_textbox import CTkTextboxDescriptor
+from app.widgets.ctk_rich_label import CTkRichLabelDescriptor
 from app.widgets.card import CardDescriptor
 from app.widgets.circular_progress import CircularProgressDescriptor
 from app.widgets.image import ImageDescriptor
@@ -37,6 +38,7 @@ _REGISTRY: dict[str, type[WidgetDescriptor]] = {
     CTkSwitchDescriptor.type_name: CTkSwitchDescriptor,
     CTkTabviewDescriptor.type_name: CTkTabviewDescriptor,
     CTkTextboxDescriptor.type_name: CTkTextboxDescriptor,
+    CTkRichLabelDescriptor.type_name: CTkRichLabelDescriptor,
     ImageDescriptor.type_name: ImageDescriptor,
     CardDescriptor.type_name: CardDescriptor,
     CircularProgressDescriptor.type_name: CircularProgressDescriptor,
