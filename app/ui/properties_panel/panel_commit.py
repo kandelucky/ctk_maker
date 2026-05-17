@@ -40,7 +40,12 @@ from app.widgets.layout_schema import (
 )
 from tools.text_editor_dialog import TextEditorDialog
 
-from .constants import ANCHOR_LABEL_TO_CODE, VALUE_BG, menu_style
+from .constants import (
+    ANCHOR_LABEL_TO_CODE,
+    CURSOR_ADVANCED_SENTINEL,
+    VALUE_BG,
+    menu_style,
+)
 from .editors import get_editor
 from .format_utils import coerce_value, enum_options_for
 from .overlays import SLOT_TEXT_VALUE
@@ -104,10 +109,13 @@ class CommitMixin:
                     icon_image = load_tk_icon(icon_name, size=14)
                     if icon_image is not None:
                         icon_refs.append(icon_image)
+            if ptype == "cursor" and opt == CURSOR_ADVANCED_SENTINEL:
+                cmd = lambda p=pname: self._open_cursor_advanced(p)
+            else:
+                cmd = lambda v=commit_val, p=pname: self._commit_prop(p, v)
             kwargs = {
                 "label": f"{prefix}{label_text}",
-                "command": lambda v=commit_val, p=pname:
-                    self._commit_prop(p, v),
+                "command": cmd,
             }
             if icon_image is not None:
                 kwargs["image"] = icon_image
@@ -118,6 +126,13 @@ class CommitMixin:
             menu.tk_popup(x_root, y_root)
         finally:
             menu.grab_release()
+
+    def _open_cursor_advanced(self, pname: str) -> None:
+        from app.ui.dialogs.cursor_advanced import CursorAdvancedDialog
+        dialog = CursorAdvancedDialog(self.winfo_toplevel())
+        self.wait_window(dialog)
+        if dialog.result:
+            self._commit_prop(pname, dialog.result)
 
     # ------------------------------------------------------------------
     # Text inline edit (fast single-line)
@@ -177,7 +192,26 @@ class CommitMixin:
         if col != "#1":
             return
         iid = self.tree.identify_row(event.y)
-        if not iid or not iid.startswith("p:"):
+        if not iid:
+            return
+        # Events group — single click on a ``<param>:`` value cell
+        # starts an inline edit. Function-row picking uses the ``▾``
+        # button overlay (same affordance as Cursor / Anchor enum
+        # editors), not single-click on the value cell.
+        meta_entry = self._event_row_meta.get(iid)
+        if meta_entry is not None:
+            kind = meta_entry[0]
+            if (
+                kind == "param"
+                and len(meta_entry) == 4
+                and self.current_id is not None
+            ):
+                _, event_key, m_idx, p_idx = meta_entry
+                self._begin_param_edit(
+                    self.current_id, event_key, m_idx, p_idx, iid,
+                )
+                return
+        if not iid.startswith("p:"):
             return
         pname = iid[2:]
         if self._disabled_states.get(pname):
