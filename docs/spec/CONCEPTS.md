@@ -16,6 +16,7 @@ Project
 ├── Object References (Global)
 ├── Assets (images, fonts, icons, scripts, components)
 ├── Behavior files (one .py per Window — hand-written code)
+├── Library scripts (per-page shared .py modules)
 └── Components (reusable widget bundles)
 ```
 
@@ -34,9 +35,13 @@ MyProject/
     ├── images/                     Shared image pool
     ├── fonts/                      Shared font files
     ├── icons/                      Lucide icons used in this project
-    ├── scripts/                    Per-window behavior files (one folder per page)
+    ├── scripts/                    Per-window behavior files + per-page library scripts (one folder per page)
     │   ├── login/
-    │   │   └── login.py
+    │   │   ├── login.py               Behavior file for the Login window
+    │   │   ├── forgot_password.py     Behavior file for the Forgot Password dialog
+    │   │   ├── helpers.py             Library script (shared across login's behavior files)
+    │   │   └── services/
+    │   │       └── auth.py            Library script (sub-package)
     │   └── dashboard/
     │       └── dashboard.py
     └── components/                 .ctkcomp library
@@ -230,6 +235,48 @@ self.button_submit = ctk.CTkButton(
 )
 ```
 
+## Library scripts
+
+A **Library script** is a user-authored `.py` module that lives alongside the per-window behavior files at `<project>/assets/scripts/<page>/`. Behavior files run handler bodies for one window; library scripts hold shared utilities (`helpers.py`, `api.py`, sub-packages like `services/auth.py`) that any behavior file in the same page can import.
+
+### Scope
+
+Page-scoped, mirroring Variables' Global scope. Cross-page sharing is intentionally out of scope — pages export as independent `.py` files, so a project-wide layer would break the per-page export invariant. If two pages need the same utility today, duplicate it.
+
+### Import pattern
+
+Behavior files reach library scripts via relative import:
+
+```python
+# assets/scripts/login/login.py  (behavior)
+from . import helpers
+from .services import auth
+
+class LoginPage:
+    def on_submit(self):
+        if helpers.validate_email(self.email_entry.get()):
+            auth.sign_in(...)
+```
+
+Survives export: the entire `assets/scripts/<page>/` subtree is copied next to the output `.py` (see [EXPORT.md](EXPORT.md) `_copy_behavior_assets_for_filter`), so the same import resolves at runtime.
+
+### Scripts panel (F6 / View → Scripts / workspace strip → Scripts button)
+
+Floating window listing every `.py` under the active page's scripts folder, plus sub-folders. Entries fall into two kinds:
+
+| Kind | Visual | Available actions |
+|---|---|---|
+| Behavior file (matches a window slug) | orange `🪟` color + ``(window)`` suffix | Open in editor only |
+| Library file | default color | Open in editor / Rename / Delete (recycle bin) |
+
+Behavior files are managed via the window chrome (rename = window rename, delete = window delete); the panel surfaces them as a read-mostly view so the user can find and edit the file without leaving the builder. Library files are fully editable from the panel.
+
+Sub-folders display read-only — folder creation / deletion / renaming lives in the Assets panel (F10), not here. The Scripts panel mirrors whatever folder structure exists there.
+
+Panel auto-refreshes on `FocusIn` so external-editor changes (VS Code Save As, file explorer copy, etc.) appear as soon as the user clicks back into the builder. No manual refresh button.
+
+Backed by [`app/io/library_scripts.py`](../../app/io/library_scripts.py); UI in [`app/ui/scripts_window.py`](../../app/ui/scripts_window.py).
+
 ## Assets
 
 Files referenced by widgets but stored separately:
@@ -277,6 +324,7 @@ To share: **Publish to Community** → MIT agreement form → post in the repo's
 | Global Object Reference | Page | Every behavior file in that one page (cross-window references within the page) |
 | Handler | WidgetNode | One method on the window's behavior class |
 | Behavior file | `assets/scripts/<page>/<window>.py` | One class per window |
+| Library script | `assets/scripts/<page>/*.py` (non-window stems) | Every behavior file in the same page — imported via relative import |
 | Component | `<project>/components/*.ctkcomp` | All projects (after import) |
 | Asset | `<project>/assets/{images,fonts,icons}/` | Every page in this project |
 

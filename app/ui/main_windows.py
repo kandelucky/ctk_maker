@@ -32,6 +32,7 @@ from app.ui.console_window import ConsolePanel, ConsoleWindow
 from app.ui.history_window import HistoryWindow
 from app.ui.object_tree_window import ObjectTreeWindow
 from app.ui.project_window import ProjectWindow
+from app.ui.scripts_window import ScriptsWindow
 from app.ui.variables_window import VariablesWindow
 
 # Matches the ``logging.basicConfig`` default-ish ``LEVEL | name |
@@ -287,6 +288,63 @@ class WindowsMixin(_MainWindowHost):
     def _on_f11_variables_window(self) -> None:
         self._variables_var.set(not self._variables_var.get())
         self._on_toggle_variables_window()
+
+    # ------------------------------------------------------------------
+    # Scripts (per-page library .py files)
+    # ------------------------------------------------------------------
+    def _on_toggle_scripts_window(self) -> None:
+        want_open = bool(self._scripts_var.get())
+        alive = (
+            self._scripts_window is not None
+            and self._scripts_window.winfo_exists()
+        )
+        if want_open and not alive:
+            self._scripts_window = ScriptsWindow(
+                self, self.project,
+                path_provider=lambda: self._current_path,
+                on_close=self._on_scripts_window_closed,
+            )
+            self._refresh_scripts_window_title()
+        elif not want_open and alive:
+            if self._scripts_window is not None:
+                try:
+                    self._scripts_window.destroy()
+                except tk.TclError:
+                    pass
+            self._scripts_window = None
+
+    def _on_scripts_window_closed(self) -> None:
+        self._scripts_window = None
+        self._scripts_var.set(False)
+
+    def _on_f6_scripts_window(self) -> None:
+        self._scripts_var.set(not self._scripts_var.get())
+        self._on_toggle_scripts_window()
+
+    def _refresh_scripts_window(self) -> None:
+        """Called by ``_switch_to_page`` after a page load. The panel
+        re-reads the active page's folder so the listing updates."""
+        if (
+            self._scripts_window is not None
+            and self._scripts_window.winfo_exists()
+        ):
+            self._scripts_window.refresh()
+            self._refresh_scripts_window_title()
+
+    def _refresh_scripts_window_title(self) -> None:
+        if (
+            self._scripts_window is None
+            or not self._scripts_window.winfo_exists()
+        ):
+            return
+        page_name = None
+        try:
+            if self._current_path:
+                from pathlib import Path
+                page_name = Path(self._current_path).stem
+        except Exception:
+            page_name = None
+        self._scripts_window.update_title(page_name)
 
     # ------------------------------------------------------------------
     # Project

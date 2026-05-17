@@ -143,6 +143,10 @@ class FilesMixin(_MainWindowHost):
         # Canvas chrome + anything else that mirrors project.name
         # needs a poke — New, Open and Save As all flow through here.
         self.project.event_bus.publish("project_renamed", self.project.name)
+        try:
+            self._refresh_scripts_window()
+        except AttributeError:
+            pass
 
     def _open_path(self, path: str) -> None:
         if not Path(path).exists():
@@ -601,6 +605,10 @@ class FilesMixin(_MainWindowHost):
         )
         self._open_path(str(target))
         self._show_toast(f"Switched to: {switched_name}")
+        try:
+            self._refresh_scripts_window()
+        except AttributeError:
+            pass
         return True
 
     # ------------------------------------------------------------------

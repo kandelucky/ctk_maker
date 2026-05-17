@@ -117,6 +117,7 @@ No event introspection, no priority, no async. If an event fires no one cares ab
 | `request_close_project` | `()` | chrome.py:683 | MainWindow close flow |
 | `request_export_document` | `(doc_id)` | chrome.py:621 | Export single document |
 | `request_open_variables_window` | `(scope, doc_id, variable_id=None)` | chrome.py:654, controls.py:287, panel.py:1811, panel_commit.py:192/203, panel_commit.py:_on_double_click (bound row) | F11 Variables window. `scope` ∈ `"global" / "local" / "objrefs"`. Optional `variable_id` pre-selects that row in the panel — used when the user double-clicks a variable-bound property. |
+| `request_open_scripts_window` | `()` | controls.py (Scripts toolbar button) | F6 / View → Scripts / workspace strip → toggles the per-page Scripts panel. No payload — caller wants the panel open, that's it. |
 | `palette_drop_request` | `(...)` | palette.py:450 | Workspace canvas — handles dropped widget type |
 | `component_drop_request` | `(...)` | components_panel.py | Workspace canvas — handles dropped `.ctkcomp` |
 

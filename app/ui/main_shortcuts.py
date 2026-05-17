@@ -147,6 +147,7 @@ class ShortcutsMixin(_MainWindowHost):
         self.bind_all(f"<{MOD_KEY}-r>", lambda e: self._on_preview())
         self.bind_all("<F5>", lambda e: self._on_preview())
         self.bind_all(f"<{MOD_KEY}-w>", lambda e: self._on_close_project())
+        self.bind_all("<F6>", lambda e: self._on_f6_scripts_window())
         self.bind_all("<F7>", lambda e: self._on_f7_edit_behavior_file())
         self.bind_all("<F8>", lambda e: self._on_f8_object_tree())
         self.bind_all("<F9>", lambda e: self._on_f9_history_window())
