@@ -15,6 +15,7 @@ user ghosts enough docs to fall under the threshold.
 """
 from __future__ import annotations
 
+import logging
 import tkinter as tk
 from typing import Callable
 
@@ -36,9 +37,13 @@ ZOOM_MENU_LABELS = [
 
 ZOOM_WARNING_FG = "#d4a340"
 ZOOM_WARNING_TEXT = "      ⚠  Not actual size — set 100% for real preview"
-# Reddish hue — visually distinct from the carrot "not actual size"
-# warning so the two reads as separate concerns.
-GHOST_HINT_FG = "#e06c5e"
+# Three-tier ghost-hint palette — escalates with live-doc count so the
+# colour does the talking before the user reads the number. Info grey
+# matches the live ghost-statusbar text (``render.py``) so 2 windows
+# reads as "FYI, here's a tool" rather than "something is broken".
+GHOST_HINT_INFO_FG = "#9aa0a6"
+GHOST_HINT_WARN_FG = ZOOM_WARNING_FG
+GHOST_HINT_DANGER_FG = "#e06c5e"
 
 
 class ZoomController:
@@ -49,12 +54,14 @@ class ZoomController:
         project,
         document_padding: int,
         on_zoom_changed: Callable[[], None],
+        on_ghost_hint_clicked: Callable[[], None] | None = None,
     ):
         self.canvas = canvas
         self.widget_views = widget_views
         self.project = project
         self.document_padding = document_padding
         self._on_zoom_changed = on_zoom_changed
+        self._on_ghost_hint_clicked = on_ghost_hint_clicked
 
         self.value: float = 1.0
         # Canvas-side drawing (doc rect, grid, top-level widget
@@ -76,6 +83,12 @@ class ZoomController:
         self._menu_var: tk.StringVar | None = None
         self._warning: ctk.CTkLabel | None = None
         self._ghost_hint: ctk.CTkLabel | None = None
+        # Set by ``begin_batch`` / ``end_batch`` from ``bulk_ghost``.
+        # While True, ``refresh_ghost_hint`` returns early so bus
+        # events fired during a capture pass don't stomp on the
+        # progress text, and the hint click is ignored so a stray
+        # second click can't recurse into another batch.
+        self._batch_in_progress: bool = False
 
     @property
     def canvas_scale(self) -> float:
@@ -339,34 +352,93 @@ class ZoomController:
     def _count_live_docs(self) -> int:
         """Docs that pay full widget-cost during apply_all — neither
         ghosted (replaced by a single canvas image) nor collapsed
-        (drawn as tabs, widgets destroyed). 2+ is when ghost mode
-        starts to matter; below that the user has nothing to ghost.
+        (drawn as tabs, widgets destroyed), and carrying at least one
+        widget so ``apply_all`` has actual work to do. Empty docs cost
+        nothing live and would freeze into indistinguishable empty
+        screenshots, so they neither inflate the count nor warrant
+        ghosting.
         """
         try:
             return sum(
                 1 for d in self.project.documents
-                if not d.ghosted and not d.collapsed
+                if not d.ghosted and not d.collapsed and d.root_widgets
             )
         except Exception:
             return 0
 
     def refresh_ghost_hint(self) -> None:
-        """Show / hide the reddish "use ghost mode" label next to the
-        zoom percentage. Drives off ``_count_live_docs()`` — purely
+        """Show / hide the "use ghost mode" label next to the zoom
+        percentage. Drives off ``_count_live_docs()`` — purely
         state-based, no timing. Safe to call before ``mount_controls``
-        (no-op until the label exists).
+        (no-op until the label exists). Three escalating tiers —
+        info / warn / danger — so the colour signals severity before
+        the user reads the count.
+        """
+        if self._ghost_hint is None or self._batch_in_progress:
+            return
+        live = self._count_live_docs()
+        if live >= 10:
+            icon, colour = "⚠", GHOST_HINT_DANGER_FG
+        elif live >= 3:
+            icon, colour = "⚠", GHOST_HINT_WARN_FG
+        elif live >= 2:
+            icon, colour = "ⓘ", GHOST_HINT_INFO_FG
+        else:
+            self._ghost_hint.configure(text="")
+            return
+        text = (
+            f"      {icon}  {live} live windows — "
+            f"click the ● Live strip to ghost"
+        )
+        self._ghost_hint.configure(text=text, text_color=colour)
+
+    def _on_ghost_hint_click(self) -> None:
+        """Delegates to the workspace-supplied callback (typically the
+        bulk-ghost batch). Ignored while a batch is already running so
+        a stray second click can't recurse into a nested run. Falls
+        back to a log line if no callback was wired so the click never
+        silently does nothing.
+        """
+        if self._batch_in_progress:
+            return
+        if self._on_ghost_hint_clicked is not None:
+            self._on_ghost_hint_clicked()
+        else:
+            logging.info("[ghost-hint] clicked — no handler wired")
+
+    def begin_batch(self, text: str, colour: str) -> None:
+        """Take over the ghost-hint label for a bulk operation —
+        suppresses bus-driven refreshes and swaps the cursor off
+        ``hand2`` so the label no longer reads as clickable while the
+        batch is running.
+        """
+        self._batch_in_progress = True
+        if self._ghost_hint is not None:
+            self._ghost_hint.configure(
+                text=text, text_color=colour, cursor="watch",
+            )
+
+    def set_batch_text(self, text: str, colour: str | None = None) -> None:
+        """Update the ghost-hint label mid-batch — text only, or text
+        plus colour. No-op if the label hasn't been mounted yet.
         """
         if self._ghost_hint is None:
             return
-        live = self._count_live_docs()
-        if live >= 2:
-            text = (
-                f"      ⚠  {live} live windows — "
-                f"click the ● Live strip to ghost"
-            )
+        if colour is None:
             self._ghost_hint.configure(text=text)
         else:
-            self._ghost_hint.configure(text="")
+            self._ghost_hint.configure(text=text, text_color=colour)
+
+    def end_batch(self) -> None:
+        """Release the label back to ``refresh_ghost_hint`` and restore
+        the click-cursor. Always followed by a refresh so the label
+        reflects the post-batch state (typically empty — every live
+        doc just got ghosted).
+        """
+        self._batch_in_progress = False
+        if self._ghost_hint is not None:
+            self._ghost_hint.configure(cursor="hand2")
+        self.refresh_ghost_hint()
 
     # ------------------------------------------------------------------
     # Status-bar UI
@@ -434,10 +506,13 @@ class ZoomController:
         # without ever popping a modal.
         self._ghost_hint = ctk.CTkLabel(
             bar, text="",
-            font=ui_font(10), text_color=GHOST_HINT_FG,
-            anchor="w",
+            font=ui_font(10), text_color=GHOST_HINT_INFO_FG,
+            anchor="w", cursor="hand2",
         )
         self._ghost_hint.pack(side="left", padx=(4, 0), pady=3)
+        self._ghost_hint.bind(
+            "<Button-1>", lambda _e: self._on_ghost_hint_click(),
+        )
         # Subscribe to every event that changes the live-doc count so
         # the hint stays in sync without leaning on the zoom callback
         # (the user may add or ghost docs without touching zoom).
@@ -451,6 +526,12 @@ class ZoomController:
                 "document_removed",
                 "document_ghost_changed",
                 "document_collapsed_changed",
+                # Project loader appends docs directly to
+                # ``project.documents`` without firing per-doc
+                # ``document_added`` — only ``active_document_changed``
+                # at the very end. Subscribing here is what lets the
+                # hint appear on cold-start project loads.
+                "active_document_changed",
             ):
                 bus.subscribe(
                     evt, lambda *_a, **_k: self.refresh_ghost_hint(),

@@ -213,6 +213,7 @@ class Workspace(ctk.CTkFrame):
             self.canvas, self.widget_views, self.project,
             document_padding=DOCUMENT_PADDING,
             on_zoom_changed=self._after_zoom_changed,
+            on_ghost_hint_clicked=self._on_ghost_hint_clicked,
         )
 
         from app.ui.workspace.controls import TOOL_EDIT
@@ -571,6 +572,14 @@ class Workspace(ctk.CTkFrame):
     def _on_document_resized(self, *args) -> None:
         if self.renderer is not None:
             self.renderer.on_document_resized(*args)
+
+    def _on_ghost_hint_clicked(self) -> None:
+        """Wired from ``ZoomController._on_ghost_hint_click`` — fires the
+        bulk-ghost batch over every live doc. Imported lazily so the
+        Workspace module doesn't pull in the overlay code at boot.
+        """
+        from app.ui.workspace.bulk_ghost import ghost_all_live_docs
+        ghost_all_live_docs(self)
 
     def focus_document(self, doc_id: str) -> None:
         """Scroll the canvas so ``doc_id``'s rectangle lands roughly
