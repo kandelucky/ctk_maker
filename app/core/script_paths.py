@@ -92,11 +92,19 @@ def ensure_scripts_root(
     The two ``__init__.py`` files make ``assets.scripts.<page>`` an
     importable package so the exporter can emit
     ``from assets.scripts.<page>.<window> import <Class>Page``.
+
+    When a digit-start ``.ctkproj`` filename gains the underscore
+    prefix from [[behavior_file_stem]], any pre-existing folder at the
+    raw (digit-start) location is silently migrated to the new
+    underscored name so older projects keep their hand-written
+    behavior intact.
     """
     root = scripts_root(project_file_path)
     if root is None:
         return None
-    page_dir = root / behavior_file_stem(project_file_path)
+    new_stem = behavior_file_stem(project_file_path)
+    _migrate_digit_prefix_dir(root, project_file_path, new_stem)
+    page_dir = root / new_stem
     try:
         page_dir.mkdir(parents=True, exist_ok=True)
     except OSError:
@@ -113,19 +121,62 @@ def ensure_scripts_root(
     return page_dir
 
 
+def _migrate_digit_prefix_dir(
+    root: Path,
+    project_file_path: str | Path | None,
+    new_stem: str,
+) -> None:
+    """Rename ``assets/scripts/<digit-start-stem>/`` to
+    ``assets/scripts/_<digit-start-stem>/`` when the new naming rule
+    would target the prefixed form. Silent no-op when:
+
+    - the .ctkproj filename doesn't start with a digit
+    - the source folder is missing (no behavior to migrate)
+    - the destination already exists with content (refuse to clobber
+      hand-written code; caller will see the destination and use it)
+
+    Same for the archive folder so historic exports stay readable.
+    """
+    if not project_file_path:
+        return
+    raw_stem = (Path(project_file_path).stem.lower() or "page")
+    if raw_stem == new_stem or not raw_stem[:1].isdigit():
+        return
+    # archive parent lives a sibling away from ``scripts_root`` —
+    # reuse the existing migrator which already handles both sides.
+    project_folder = root.parent.parent
+    try:
+        migrate_page_scripts_folders(project_folder, raw_stem, new_stem)
+    except ScriptsMigrationConflict:
+        # Destination already has real content — keep the old folder
+        # in place; ``ensure_scripts_root`` will create the new one
+        # next to it. User can merge manually.
+        pass
+
+
 def behavior_file_stem(project_file_path: str | Path | None) -> str:
     """Stem of the page filename (the ``.ctkproj`` basename),
-    lowercased.
+    lowercased and made into a valid Python identifier.
+
+    The stem becomes both the directory name (``assets/scripts/<stem>/``)
+    and a path component in the exporter's ``from assets.scripts.<stem>
+    .<window> import ...`` statement. Python rejects digit-start module
+    names as a ``SyntaxError`` (``001.foo`` is the literal ``0.01``
+    followed by ``.foo``), so a leading-underscore fix is applied — the
+    same rule [[slugify_window_name]] already uses for window slugs.
 
     ``"login.ctkproj"`` → ``"login"``
     ``"Dashboard.ctkproj"`` → ``"dashboard"``
+    ``"001.ctkproj"`` → ``"_001"``
 
     Falls back to ``"page"`` when no path is available.
     """
     if not project_file_path:
         return "page"
-    stem = Path(project_file_path).stem
-    return (stem.lower() or "page")
+    stem = (Path(project_file_path).stem.lower() or "page")
+    if stem[0].isdigit():
+        stem = "_" + stem
+    return stem
 
 
 def slugify_window_name(name: str | None) -> str:
@@ -173,6 +224,8 @@ def behavior_class_name(document=None) -> str:
 
     ``"Main Window"`` → ``"MainWindowPage"``
     ``"confirm_dialog"`` → ``"ConfirmDialogPage"``
+    ``"001Doc"`` → ``"_001docPage"``  (digit-start gets ``_`` prefix
+    so the class is a valid Python identifier)
 
     Per-window (Decision #13) — every Document gets its own class.
     Empty / missing name falls back to ``"WindowPage"``.
@@ -180,10 +233,16 @@ def behavior_class_name(document=None) -> str:
     if document is None:
         return "WindowPage"
     slug = slugify_window_name(getattr(document, "name", None))
-    parts = [p for p in slug.lstrip("_").split("_") if p]
+    # Keep the leading-underscore guard from ``slugify_window_name``
+    # (lstrip would discard the digit-start fix and produce an invalid
+    # class name like ``001Page``).
+    parts = [p for p in slug.split("_") if p]
     if not parts:
         return "WindowPage"
-    return "".join(p.capitalize() for p in parts) + "Page"
+    joined = "".join(p.capitalize() for p in parts)
+    if joined[0].isdigit():
+        joined = "_" + joined
+    return joined + "Page"
 
 
 def archive_dir(
