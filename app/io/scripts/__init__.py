@@ -20,6 +20,10 @@ the public surface so existing callers can keep importing from
 ``app.io.scripts``.
 """
 
+from app.core.script_paths import (
+    behavior_class_name,
+    behavior_file_path,
+)
 from app.io.scripts.ast_scan import (
     FieldSpec,
     existing_object_reference_names,
@@ -53,6 +57,9 @@ from app.io.scripts.paths import (
 from app.io.scripts.runtime import ensure_runtime_helpers
 
 __all__ = [
+    # core/script_paths (re-exported)
+    "behavior_class_name",
+    "behavior_file_path",
     # ast_scan
     "FieldSpec",
     "existing_object_reference_names",
