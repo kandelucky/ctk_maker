@@ -319,10 +319,10 @@ class WorkspaceControls:
         self.workspace.focus_document(doc_id)
 
     # Horizontal / vertical gap between arranged docs. Matches the
-    # 120 px gap used by Add Dialog placement and the auto-shift on
+    # 50 px gap used by Add Dialog placement and the auto-shift on
     # delete — keeps the visual rhythm consistent across all the
     # ways a doc lands at a particular coord.
-    _ARRANGE_GAP = 120
+    _ARRANGE_GAP = 50
 
     def _arrange_documents(self, axis: str) -> None:
         """Sort visible dialogs alphabetically by name and line them

@@ -18,10 +18,10 @@ from __future__ import annotations
 
 
 # Horizontal gap between docs after an auto-shift. Matches the
-# 120 px gap MainWindow._add_document / Project._shift_if_position
+# 50 px gap MainWindow._add_document / Project._shift_if_position
 # _occluded use when placing new docs to the right of existing
 # ones — keeps the visual rhythm consistent.
-_DOC_AUTO_SHIFT_GAP = 120
+_DOC_AUTO_SHIFT_GAP = 50
 
 
 class ChromeRemoval:

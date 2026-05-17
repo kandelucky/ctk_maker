@@ -410,7 +410,7 @@ class Project:
             # Smart restore — if the saved position now collides with
             # another visible doc (user moved something into the gap
             # while this one was minimised), shift the restored doc to
-            # the right of all visible docs. Same +120 gap as Add
+            # the right of all visible docs. Same +50 gap as Add
             # Dialog so the spacing reads consistent.
             self._shift_if_position_occluded(doc)
             if self.active_document_id != document_id:
@@ -497,9 +497,9 @@ class Project:
                 and my_top < ob and my_bottom > ot
             ):
                 # Overlap — shift to the right of the rightmost other,
-                # +120 gap (matches MainWindow._add_document).
+                # +50 gap (matches MainWindow._add_document).
                 max_right = max(o.canvas_x + o.width for o in others)
-                doc.canvas_x = max_right + 120
+                doc.canvas_x = max_right + 50
                 doc.canvas_y = 0
                 return
 

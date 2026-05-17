@@ -137,7 +137,7 @@ class DocumentsMixin(_MainWindowHost):
             name=name,
             width=width,
             height=height,
-            canvas_x=max_right + 120,
+            canvas_x=max_right + 50,
             canvas_y=0,
             is_toplevel=is_toplevel,
         )
