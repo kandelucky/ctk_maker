@@ -185,6 +185,21 @@ class GhostManager:
         except tk.TclError:
             pass
 
+    def clear_all(self) -> None:
+        """Wipe every ghost image + state entry. Called before a
+        project load replaces ``project.documents`` wholesale — the
+        loader bypasses ``document_removed`` (to avoid trashing
+        behavior .py files via ``send2trash`` and other per-doc side
+        effects), so the canvas-side ``ghost:<id>`` items would
+        otherwise survive into the next project and overlay its docs.
+        """
+        for entry in self.ghosts.values():
+            try:
+                self.canvas.delete(entry["image_id"])
+            except tk.TclError:
+                pass
+        self.ghosts.clear()
+
     def is_ghosted(self, doc_id: str) -> bool:
         return doc_id in self.ghosts
 

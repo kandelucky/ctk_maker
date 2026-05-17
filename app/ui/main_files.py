@@ -153,6 +153,14 @@ class FilesMixin(_MainWindowHost):
         # closed without saving) — offer to restore from it instead
         # of loading the older saved copy.
         load_target = self._maybe_swap_for_autosave(path)
+        # Wipe ghost canvas items from the outgoing project — the
+        # loader replaces ``project.documents`` wholesale without
+        # firing ``document_removed`` (which would trash behavior
+        # .py files), so the per-doc ``ghost:<id>`` images would
+        # otherwise survive and overlay the new project's docs.
+        gm = getattr(self.workspace, "ghost_manager", None)
+        if gm is not None:
+            gm.clear_all()
         try:
             load_project(self.project, load_target, root=self)
         except ProjectLoadError as exc:
@@ -268,6 +276,9 @@ class FilesMixin(_MainWindowHost):
         if dialog.result is None:
             return
         name, path, w, h = dialog.result
+        gm = getattr(self.workspace, "ghost_manager", None)
+        if gm is not None:
+            gm.clear_all()
         self.project.clear()
         self.project.resize_document(w, h)
         self.project.name = name
@@ -335,6 +346,9 @@ class FilesMixin(_MainWindowHost):
                 parent=self,
             )
             return
+        gm = getattr(self.workspace, "ghost_manager", None)
+        if gm is not None:
+            gm.clear_all()
         try:
             load_project(self.project, path, root=self)
         except ProjectLoadError as exc:
