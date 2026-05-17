@@ -218,7 +218,7 @@ class Workspace(ctk.CTkFrame):
         from app.ui.workspace.controls import TOOL_EDIT
         self.selection = SelectionController(
             self.canvas, self.project, self.widget_views,
-            zoom_provider=lambda: self.zoom.value,
+            zoom_provider=lambda: self.zoom.canvas_scale,
             anchor_views=self._anchor_views,
             handles_enabled=lambda: self._tool == TOOL_EDIT,
         )
