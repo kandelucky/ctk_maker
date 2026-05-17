@@ -20,6 +20,7 @@ callback flips the var back to False so the menubar stays in sync.
 from __future__ import annotations
 
 import queue
+import re
 import subprocess
 import threading
 import tkinter as tk
@@ -32,6 +33,57 @@ from app.ui.history_window import HistoryWindow
 from app.ui.object_tree_window import ObjectTreeWindow
 from app.ui.project_window import ProjectWindow
 from app.ui.variables_window import VariablesWindow
+
+# Matches the ``logging.basicConfig`` default-ish ``LEVEL | name |
+# message`` prefix the in-app preview runner installs, plus common
+# variants users might emit themselves (bare ``ERROR:`` / ``WARN -``).
+# Case-insensitive; alternation handles short forms (WARN, CRIT, FATAL).
+_LEVEL_RE = re.compile(
+    r"^\s*(DEBUG|INFO|WARN(?:ING)?|ERROR|CRIT(?:ICAL)?|FATAL)\b",
+    re.IGNORECASE,
+)
+
+
+def _classify_stream(stream: str, line: str) -> str:
+    """Rewrite a preview ``stdout`` / ``stderr`` stream into a
+    ``preview-<level>`` form if the line starts with a recognised
+    ``logging`` level prefix. Editor and separator streams pass through
+    unchanged (``_push_editor_line`` already tags them).
+    """
+    if stream.startswith("editor-") or stream == "separator":
+        return stream
+    m = _LEVEL_RE.match(line)
+    if m is None:
+        return stream
+    raw = m.group(1).lower()
+    if raw == "warn":
+        raw = "warning"
+    elif raw in ("crit", "fatal"):
+        raw = "critical"
+    return f"preview-{raw}"
+
+
+def _stream_level(stream: str) -> str:
+    """Extract the severity word from a classified stream — ``info``,
+    ``warning``, ``error``, ``critical``, ``debug``, or ``""`` for
+    streams that don't carry an explicit severity. Critical folds
+    into ``error`` for the counter dimension; debug has no counter.
+
+    Plain ``stderr`` returns ``""`` deliberately: a multi-line
+    traceback would otherwise count each frame as a separate error
+    (a 13-line traceback inflates the badge to 13). Only lines that
+    arrived with an explicit logger-level prefix — i.e. real
+    ``logging.error(...)`` calls — bump the error counter. The red
+    stderr colour still applies via the tag layer.
+    """
+    if "-" not in stream:
+        return ""
+    level = stream.rsplit("-", 1)[1]
+    if level == "critical":
+        return "error"
+    if level in ("info", "warning", "error", "debug"):
+        return level
+    return ""
 
 
 def _console_reader(
@@ -292,13 +344,16 @@ class WindowsMixin(_MainWindowHost):
                 on_stop=self._on_console_stop,
                 on_close=self._on_console_dock_close,
                 clear_on_preview_var=self._console_clear_on_preview_var,
+                filter_vars=self._console_filter_vars,
             )
             self.paned_outer.add(
                 self._console_panel,
                 stretch="never", minsize=80, height=200,
             )
-            if self._console_buffer:
-                self._console_panel.replay(self._console_buffer)
+            merged = self._merged_console_buffer()
+            if merged:
+                self._console_panel.replay(merged)
+            self._console_panel.refresh_counters(self._console_counts)
         elif not want_open and alive:
             if self._console_panel is not None:
                 try:
@@ -350,9 +405,12 @@ class WindowsMixin(_MainWindowHost):
                 on_clear=self._on_console_clear,
                 on_stop=self._on_console_stop,
                 clear_on_preview_var=self._console_clear_on_preview_var,
+                filter_vars=self._console_filter_vars,
             )
-            if self._console_buffer:
-                self._console_window.replay(self._console_buffer)
+            merged = self._merged_console_buffer()
+            if merged:
+                self._console_window.replay(merged)
+            self._console_window.refresh_counters(self._console_counts)
         elif not want_open and alive:
             if self._console_window is not None:
                 try:
@@ -367,16 +425,44 @@ class WindowsMixin(_MainWindowHost):
 
     def _on_console_clear(self) -> None:
         # User pressed Clear inside one of the console forms — also
-        # drop the main-window-side buffer so a later reopen doesn't
+        # drop the main-window-side buffers so a later reopen doesn't
         # replay everything they just cleared, and clear the OTHER
         # form so the two views stay in sync (otherwise clearing the
         # docked panel would leave the floating window with stale
-        # output, or vice versa).
-        self._console_buffer.clear()
+        # output, or vice versa). Explicit Clear wipes both preview
+        # and editor; the auto-clear-on-preview path is narrower.
+        self._preview_buffer.clear()
+        self._editor_buffer.clear()
+        self._console_counts = {"info": 0, "warning": 0, "error": 0}
         for console in (self._console_panel, self._console_window):
             if console is not None:
                 try:
                     console.clear()
+                except tk.TclError:
+                    pass
+
+    def _on_console_auto_clear_preview(self) -> None:
+        """Narrow clear: wipe only the preview half of the buffer (so
+        an Editor warning that pre-dates the preview run survives).
+        Called from ``_attach_console_capture`` when the user has
+        Auto-clear on preview enabled. The visible Text widget gets a
+        full clear + replay of the surviving editor lines.
+        """
+        self._preview_buffer.clear()
+        # Counters are split between sources but tracked as a single
+        # severity total. Recompute from the editor deque so the badges
+        # show only the surviving (editor-side) entries.
+        self._console_counts = {"info": 0, "warning": 0, "error": 0}
+        for stream, _ts, _line in self._editor_buffer:
+            level = _stream_level(stream)
+            if level in self._console_counts:
+                self._console_counts[level] += 1
+        for console in (self._console_panel, self._console_window):
+            if console is not None:
+                try:
+                    console.clear()
+                    if self._editor_buffer:
+                        console.replay(list(self._editor_buffer))
                 except tk.TclError:
                     pass
 
@@ -419,7 +505,7 @@ class WindowsMixin(_MainWindowHost):
         if proc.stdout is None and proc.stderr is None:
             return  # not inapp mode (devnull or new-console path)
         if bool(self._console_clear_on_preview_var.get()):
-            self._on_console_clear()
+            self._on_console_auto_clear_preview()
         self._console_queue.put(("separator", "─── preview started ───"))
         for stream_name, fp in (("stdout", proc.stdout), ("stderr", proc.stderr)):
             if fp is None:
@@ -433,12 +519,28 @@ class WindowsMixin(_MainWindowHost):
 
     def _drain_console_queue(self) -> None:
         """Main-thread poller: pull (stream, line) tuples out of the
-        thread-safe queue, stamp an HH:MM:SS timestamp, append a
-        (stream, ts, line) entry to the persistent buffer, and forward
-        to the live console window if one is open. Capped at 200 lines
-        per tick so a flood doesn't stall the Tk event loop.
+        thread-safe queue, classify by severity, append to the matching
+        persistent deque, and forward to every live console form.
+
+        Severity classification:
+        - ``editor-*`` streams arrive pre-tagged from ``_push_editor_line``
+          and keep their level.
+        - ``stdout`` / ``stderr`` from a preview subprocess get the first
+          token sniffed against the ``logging``-default format
+          (``LEVEL | name | message``) — recognised ``DEBUG / INFO /
+          WARN(ING) / ERROR / CRIT(ICAL) / FATAL`` rewrites the stream to
+          ``preview-<level>`` so the console can colour and filter it.
+          Raw ``stdout`` / ``stderr`` survives as the fallback when no
+          level prefix matches (plain ``print()``).
+
+        Capped at 200 entries per tick. If the queue still has work
+        when the cap is hit, reschedule **immediately** (1ms) instead
+        of waiting the full 50ms poll — keeps the UI responsive under
+        burst (e.g. an exception storm) without single-threaded
+        starvation.
         """
         drained = 0
+        backlog = False
         try:
             while drained < 200:
                 stream, line = self._console_queue.get_nowait()
@@ -447,24 +549,117 @@ class WindowsMixin(_MainWindowHost):
                 # order a flood arriving in the same second without
                 # bloating every line by 4 extra characters.
                 ts = datetime.now().strftime("%H:%M:%S.%f")[:-4]
+                stream = _classify_stream(stream, line)
                 entry = (stream, ts, line)
-                self._console_buffer.append(entry)
-                # Cap the persistent buffer so a long-running preview
-                # with chatty print() doesn't eat unbounded memory.
-                if len(self._console_buffer) > 5000:
-                    del self._console_buffer[:500]
+                if stream.startswith("editor-"):
+                    self._editor_buffer.append(entry)
+                else:
+                    self._preview_buffer.append(entry)
+                level = _stream_level(stream)
+                if level in self._console_counts:
+                    self._console_counts[level] += 1
                 for console in (self._console_panel, self._console_window):
                     if console is not None:
                         try:
                             console.append_line(*entry)
+                            console.refresh_counters(self._console_counts)
                         except tk.TclError:
                             pass
                 drained += 1
         except queue.Empty:
             pass
+        else:
+            backlog = not self._console_queue.empty()
         try:
             self._console_poller_id = self.after(
-                50, self._drain_console_queue,
+                1 if backlog else 50, self._drain_console_queue,
             )
         except tk.TclError:
             self._console_poller_id = None
+
+    # ------------------------------------------------------------------
+    # Buffer merge for replay (two-pointer; both deques are ts-sorted)
+
+    def _merged_console_buffer(
+        self,
+    ) -> list[tuple[str, str, str]]:
+        """Yield the union of preview + editor buffers, ordered by the
+        ts string. ts is ``HH:MM:SS.cc`` — lexicographic compare is the
+        same as chronological compare within a day, so a plain string
+        compare drives the merge without parsing.
+        """
+        pv = list(self._preview_buffer)
+        ed = list(self._editor_buffer)
+        if not pv:
+            return ed
+        if not ed:
+            return pv
+        out: list[tuple[str, str, str]] = []
+        i = j = 0
+        while i < len(pv) and j < len(ed):
+            if pv[i][1] <= ed[j][1]:
+                out.append(pv[i])
+                i += 1
+            else:
+                out.append(ed[j])
+                j += 1
+        if i < len(pv):
+            out.extend(pv[i:])
+        if j < len(ed):
+            out.extend(ed[j:])
+        return out
+
+    # ------------------------------------------------------------------
+    # Editor-side log entry point (thread-safe — queue routed)
+
+    def _push_editor_line(self, level: str, message: str) -> None:
+        """Append an editor-side log line to the same console pipeline
+        the preview subprocess uses.
+
+        This is the **only** function module-level code should call to
+        feed the console from the editor process (`logging` handlers,
+        `log_error`, autosave threads, etc.). Routing goes through the
+        thread-safe ``_console_queue`` so callers can fire from any
+        thread without touching Tk state directly — the main-thread
+        drainer turns the entry into a buffer append + widget update.
+        """
+        normalized = (level or "info").lower()
+        if normalized == "warn":
+            normalized = "warning"
+        elif normalized in ("crit", "fatal"):
+            normalized = "critical"
+        try:
+            self._console_queue.put_nowait(
+                (f"editor-{normalized}", message),
+            )
+        except (queue.Full, AttributeError):
+            # ``queue.Full`` is impossible for an unbounded Queue but
+            # guard anyway. ``AttributeError`` covers very-early boot
+            # where the attribute may not be wired yet.
+            pass
+
+    # ------------------------------------------------------------------
+    # Filter change → toggle elide on the live text widgets
+
+    def _on_console_filter_changed(self, key: str) -> None:
+        """Persist the new filter state and push it into every live
+        console form so the matching tag's ``elide`` flips immediately
+        without re-rendering the buffer.
+        """
+        try:
+            save_setting(
+                "console_filters",
+                {
+                    k: bool(v.get())
+                    for k, v in self._console_filter_vars.items()
+                },
+            )
+        except Exception:
+            pass
+        show = bool(self._console_filter_vars[key].get())
+        for console in (self._console_panel, self._console_window):
+            if console is not None:
+                try:
+                    console.apply_filter(key, show)
+                except tk.TclError:
+                    pass
