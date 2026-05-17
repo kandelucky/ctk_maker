@@ -567,8 +567,14 @@ class CommitMixin:
             return
         current = node.properties.get(pname) or ""
         label = prop.get("row_label") or prop.get("label") or pname
+        is_rich = (
+            (node.widget_type == "CTkRichLabel" and pname == "text")
+            or (node.widget_type == "CTkTextbox"
+                and pname == "initial_text")
+        )
         dialog = TextEditorDialog(
             self.winfo_toplevel(), f"Edit: {label}", str(current),
+            rich_text=is_rich,
         )
         dialog.wait_window()
         if dialog.result is not None:
