@@ -119,12 +119,24 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         # Subgroup iids we recompute previews for (e.g. Corners, Border)
         self._subgroup_preview_iids: dict[str, str] = {}
         # Phase 2 visual scripting — Events group row metadata. Maps
-        # tree iid → ``(kind, event_key, method_index)`` so right-
-        # click handlers can resolve which event / method a row
-        # represents without parsing the iid string itself.
-        # ``kind`` is ``"group" | "header" | "method"``;
-        # ``method_index`` is ``None`` for non-method rows.
-        self._event_row_meta: dict[str, tuple[str, str, int | None]] = {}
+        # tree iid → shape varies by row kind so the click router
+        # can dispatch without re-parsing the iid string itself.
+        # Shapes:
+        #   ("group", None, None)
+        #   ("header", event_key, None)
+        #   ("method", event_key, method_index)       # parent row
+        #   ("function", event_key, method_index)     # Function child
+        #   ("param", event_key, method_index, p_idx) # parameter child
+        #   ("pending", event_key, None)              # placeholder
+        self._event_row_meta: dict[str, tuple] = {}
+        # Unity-style pending event rows — count of "Add target"
+        # placeholders per ``(widget_id, event_key)``. Each gets
+        # rendered after the committed handler entries; the inner
+        # ``[+]`` opens the cascade picker, which commits via
+        # ``on_commit`` callback that decrements the count.
+        # Cleared on widget selection change so pending rows don't
+        # haunt unrelated widgets.
+        self._pending_event_rows: dict[tuple[str, str], int] = {}
         # Cached disabled_when results — diffed on every property change
         # so we can flip the "disabled" tag on the affected rows only.
         self._disabled_states: dict[str, bool] = {}
@@ -689,6 +701,11 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         self._rebuild()
 
     def _on_selection(self, widget_id: str | None) -> None:
+        # Discard pending event rows when the user moves to a
+        # different widget — incomplete placeholders are scoped to
+        # the editing session for the widget that spawned them.
+        if widget_id != self.current_id:
+            self._pending_event_rows.clear()
         self.current_id = widget_id
         self._rebuild()
         # Release keyboard focus so arrow keys nudge the newly selected
@@ -1167,26 +1184,28 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         node = self.project.get_widget(self.current_id)
         if node is None:
             return
-        menu = tk.Menu(self.tree, tearoff=0)
+        from app.ui.properties_panel.constants import menu_style
+        menu = tk.Menu(self.tree, tearoff=0, **menu_style())
         if kind == "header":
-            menu.add_command(
-                label="Add action",
-                command=lambda: self._add_event_action(
-                    self.current_id, event_key,
-                ),
+            from app.ui.event_bind_menu import populate_event_bind_menu
+            populate_event_bind_menu(
+                menu, self.project, self.current_id, event_key,
             )
         elif kind == "method":
             methods = list(node.handlers.get(event_key, []) or [])
             if method_index is None or method_index >= len(methods):
                 return
             method_name = methods[method_index]
-            menu.add_command(
-                label="Open in editor",
-                command=lambda: self._open_event_method(
-                    self.current_id, method_name,
-                ),
-            )
-            menu.add_separator()
+            # ref_call dicts have no behavior-file def to open —
+            # the right-click menu skips "Open in editor" for them.
+            if isinstance(method_name, str):
+                menu.add_command(
+                    label="Open in editor",
+                    command=lambda: self._open_event_method(
+                        self.current_id, method_name,
+                    ),
+                )
+                menu.add_separator()
             menu.add_command(
                 label="Move up",
                 command=lambda: self._reorder_event_method(
@@ -1219,72 +1238,386 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         finally:
             menu.grab_release()
 
-    def _add_event_action(
+    def _add_pending_event_row(
         self, widget_id: str, event_key: str,
     ) -> None:
-        """Materialise the per-window behavior file, append a fresh
-        stub, push the bind command, and open the editor. Mirrors
-        ``Workspace._attach_event_handler`` — duplicated rather than
-        cross-imported because the panel doesn't otherwise depend on
-        the workspace, and these two paths are the only ones that
-        attach handlers.
+        """Outer ``[+]`` on an event header — adds a pending UI row
+        with the ``Add target`` placeholder. The row only commits
+        to ``WidgetNode.handlers`` once the user picks a target via
+        its inner ``[+]``; until then it lives in
+        ``self._pending_event_rows`` so unrelated rebuilds don't
+        wipe it.
         """
-        from tkinter import messagebox
-        from app.core.commands import BindHandlerCommand
-        from app.io.scripts import (
-            add_handler_stub, behavior_class_name,
-            load_or_create_behavior_file,
-            suggest_method_name,
+        key = (widget_id, event_key)
+        self._pending_event_rows[key] = (
+            self._pending_event_rows.get(key, 0) + 1
         )
-        from app.widgets.event_registry import event_by_key
+        self._rebuild()
 
+    def _remove_pending_event_row(
+        self, widget_id: str, event_key: str,
+    ) -> None:
+        """Inner ``[✕]`` on a pending row — discards one placeholder.
+        Idempotent: removing past zero is a no-op so duplicate clicks
+        don't break the panel state.
+        """
+        key = (widget_id, event_key)
+        remaining = self._pending_event_rows.get(key, 0) - 1
+        if remaining > 0:
+            self._pending_event_rows[key] = remaining
+        else:
+            self._pending_event_rows.pop(key, None)
+        self._rebuild()
+
+    def _open_pending_target_picker(
+        self, widget_id: str, event_key: str,
+    ) -> None:
+        """Inner ``[+]`` on a pending row — opens the flat target
+        picker (Page Script + Object References, no method cascade)
+        at the cursor. Pick commits the entry with an empty method
+        and the user fills it next via the Function row ``▾``. The
+        picker's ``on_commit`` decrements the pending count so the
+        placeholder vanishes as the committed entry takes its place
+        on the next rebuild.
+        """
+        from app.ui.event_bind_menu import show_target_only_menu_at_cursor
+        show_target_only_menu_at_cursor(
+            self.tree, self.project, widget_id, event_key,
+            on_commit=lambda: self._remove_pending_event_row(
+                widget_id, event_key,
+            ),
+        )
+
+    def _open_target_retarget_picker(
+        self, widget_id: str, event_key: str, m_idx: int,
+    ) -> None:
+        """``▾`` on a committed entry's parent row — opens the
+        target picker. Picking REPLACES the entry's target in place
+        (rather than appending a new one) and resets method+args
+        since the new target has its own pool of compatible
+        functions. Same Page Script / Object References cascade
+        the outer ``[+]`` flow uses.
+        """
         node = self.project.get_widget(widget_id)
         if node is None:
             return
-        entry = event_by_key(node.widget_type, event_key)
-        if entry is None:
-            return
-        if not getattr(self.project, "path", None):
-            messagebox.showinfo(
-                "Save first",
-                "Save the project before adding event handlers — the "
-                "behavior file lives in assets/scripts/ in the project "
-                "folder.",
-                parent=self.winfo_toplevel(),
-            )
+        entries = node.handlers.get(event_key, []) or []
+        if m_idx >= len(entries):
             return
         document = self.project.find_document_for_widget(widget_id)
         if document is None:
             return
-        method_name = suggest_method_name(node, entry, document)
-        file_path = load_or_create_behavior_file(
-            self.project.path, document,
+        from app.widgets.action_registry import actions_for
+        from app.ui.properties_panel.constants import menu_style
+        menu = tk.Menu(self.tree, tearoff=0, **menu_style())
+        menu.add_command(
+            label="Page Script",
+            command=lambda: self._retarget_to_page(
+                widget_id, event_key, m_idx,
+            ),
         )
-        if file_path is None:
-            messagebox.showerror(
-                "Couldn't write behavior file",
-                "Failed to create assets/scripts/ folder. Check folder "
-                "permissions on the project directory.",
-                parent=self.winfo_toplevel(),
+        refs_with_actions: list = []
+        for ref in document.local_object_references:
+            if not ref.target_id:
+                continue
+            target = self.project.get_widget(ref.target_id)
+            if target is None:
+                continue
+            if actions_for(target.widget_type):
+                refs_with_actions.append((ref, target))
+        if refs_with_actions:
+            refs_menu = tk.Menu(menu, tearoff=0)
+            for ref, target in refs_with_actions:
+                refs_menu.add_command(
+                    label=f"{ref.name} ({target.widget_type})",
+                    command=lambda r=ref: self._retarget_to_ref(
+                        widget_id, event_key, m_idx, r.name,
+                    ),
+                )
+            menu.add_cascade(
+                label="Object References", menu=refs_menu,
             )
+        try:
+            menu.tk_popup(
+                self.tree.winfo_pointerx(),
+                self.tree.winfo_pointery(),
+            )
+        finally:
+            menu.grab_release()
+
+    def _retarget_to_page(
+        self, widget_id: str, event_key: str, m_idx: int,
+    ) -> None:
+        """Replace the entry at ``m_idx`` with an empty page-method
+        string. The Function row's picker then exposes the per-doc
+        public methods so the user picks one. Direct mutation —
+        same no-undo policy as ``_set_handler_method_*``.
+        """
+        node = self.project.get_widget(widget_id)
+        if node is None:
             return
-        class_name = behavior_class_name(document)
-        add_handler_stub(
-            file_path, class_name, method_name, entry.signature,
+        entries = node.handlers.get(event_key)
+        if entries is None or m_idx >= len(entries):
+            return
+        entries[m_idx] = ""
+        self.project.event_bus.publish(
+            "widget_handler_changed", widget_id, event_key, "",
         )
-        methods = node.handlers.setdefault(event_key, [])
-        methods.append(method_name)
-        appended_index = len(methods) - 1
-        cmd = BindHandlerCommand(widget_id, event_key, method_name)
-        cmd._appended_index = appended_index
-        self.project.history.push(cmd)
+
+    def _retarget_to_ref(
+        self, widget_id: str, event_key: str,
+        m_idx: int, ref_name: str,
+    ) -> None:
+        """Replace the entry at ``m_idx`` with a ref_call dict
+        targeting ``ref_name``, method/args empty until the user
+        picks via the Function picker.
+        """
+        node = self.project.get_widget(widget_id)
+        if node is None:
+            return
+        entries = node.handlers.get(event_key)
+        if entries is None or m_idx >= len(entries):
+            return
+        entries[m_idx] = {
+            "kind": "ref_call",
+            "ref": ref_name,
+            "method": "",
+            "args": [],
+        }
+        self.project.event_bus.publish(
+            "widget_handler_changed", widget_id, event_key, "",
+        )
+
+    def _open_function_picker(
+        self, widget_id: str, event_key: str, m_idx: int,
+    ) -> None:
+        """Single-click on the ``Function:`` child row opens a
+        cascade menu of compatible functions. Page-script targets
+        list public methods filtered by ``parse_handler_methods_compatible``;
+        Object Reference targets list ``WIDGET_ACTION_METHODS``
+        actions for the ref's widget type. Picking replaces the
+        entry's method in place — no auto-stub creation, no
+        rebind plumbing.
+        """
+        node = self.project.get_widget(widget_id)
+        if node is None:
+            return
+        entries = node.handlers.get(event_key, []) or []
+        if m_idx >= len(entries):
+            return
+        entry = entries[m_idx]
+        from app.ui.properties_panel.constants import menu_style
+        menu = tk.Menu(self.tree, tearoff=0, **menu_style())
+        is_ref_call = (
+            isinstance(entry, dict) and entry.get("kind") == "ref_call"
+        )
+        if is_ref_call:
+            ref_name = entry.get("ref", "")
+            document = self.project.find_document_for_widget(widget_id)
+            ref_widget = None
+            if document is not None:
+                ref_entry = next(
+                    (
+                        r for r in document.local_object_references
+                        if r.name == ref_name
+                    ),
+                    None,
+                )
+                if ref_entry is not None and ref_entry.target_id:
+                    ref_widget = self.project.get_widget(ref_entry.target_id)
+            if ref_widget is None:
+                menu.add_command(
+                    label="Object reference unbound", state="disabled",
+                )
+            else:
+                from app.widgets.action_registry import actions_for
+                allowed = actions_for(ref_widget.widget_type)
+                if not allowed:
+                    menu.add_command(
+                        label=(
+                            f"No actions for {ref_widget.widget_type}"
+                        ),
+                        state="disabled",
+                    )
+                for action in allowed:
+                    menu.add_command(
+                        label=action.label,
+                        command=lambda a=action:
+                        self._set_handler_method_ref(
+                            widget_id, event_key, m_idx, a,
+                        ),
+                    )
+        else:
+            from app.io.scripts import parse_handler_methods_compatible
+            from app.core.script_paths import (
+                behavior_class_name, behavior_file_path,
+            )
+            from app.widgets.event_registry import event_by_key
+            ev = event_by_key(node.widget_type, event_key)
+            methods_list: list[str] = []
+            if (
+                ev is not None
+                and getattr(self.project, "path", None)
+            ):
+                document = self.project.find_document_for_widget(widget_id)
+                if document is not None:
+                    file_path = behavior_file_path(
+                        self.project.path, document,
+                    )
+                    if file_path is not None and file_path.exists():
+                        methods_list = parse_handler_methods_compatible(
+                            file_path, behavior_class_name(document),
+                            ev.wiring_kind,
+                        )
+            if not methods_list:
+                menu.add_command(
+                    label="No public methods. Open behavior file (F7)…",
+                    state="disabled",
+                )
+            for method_name in methods_list:
+                menu.add_command(
+                    label=method_name,
+                    command=lambda m=method_name:
+                    self._set_handler_method_str(
+                        widget_id, event_key, m_idx, m,
+                    ),
+                )
+        try:
+            menu.tk_popup(
+                self.tree.winfo_pointerx(),
+                self.tree.winfo_pointery(),
+            )
+        finally:
+            menu.grab_release()
+
+    def _set_handler_method_str(
+        self, widget_id: str, event_key: str,
+        m_idx: int, method_name: str,
+    ) -> None:
+        """Replace a page-script entry's method in place. Direct
+        mutation (no command — undo support deferred to a later
+        iteration); publishes ``widget_handler_changed`` to drive
+        the rebuild + Object Tree marker repaint.
+        """
+        node = self.project.get_widget(widget_id)
+        if node is None:
+            return
+        entries = node.handlers.get(event_key)
+        if entries is None or m_idx >= len(entries):
+            return
+        entries[m_idx] = method_name
         self.project.event_bus.publish(
             "widget_handler_changed", widget_id, event_key, method_name,
         )
-        # Editor launch is intentionally NOT chained here — the
-        # user kept losing focus to a flashing VS Code window every
-        # time they added an action. Double-clicking the row, F7,
-        # or right-click → "Open in editor" is the explicit jump.
+
+    def _set_handler_method_ref(
+        self, widget_id: str, event_key: str,
+        m_idx: int, action,
+    ) -> None:
+        """Replace a ref_call entry's method (and reset args from
+        the action's defaults) in place. Direct mutation; publishes
+        ``widget_handler_changed``.
+        """
+        node = self.project.get_widget(widget_id)
+        if node is None:
+            return
+        entries = node.handlers.get(event_key)
+        if entries is None or m_idx >= len(entries):
+            return
+        entry = entries[m_idx]
+        if not isinstance(entry, dict):
+            return
+        entry["method"] = action.name
+        entry["args"] = [
+            {
+                "name": p.name,
+                "type": p.type,
+                "value": p.default,
+                "kwarg": p.kwarg,
+            }
+            for p in action.params
+        ]
+        self.project.event_bus.publish(
+            "widget_handler_changed", widget_id, event_key, action.name,
+        )
+
+    def _begin_param_edit(
+        self, widget_id: str, event_key: str,
+        m_idx: int, p_idx: int, target_iid: str,
+    ) -> None:
+        """Single-click on a ``<param>:`` child row opens an inline
+        Entry editor over the value cell. Tab / Enter commit the new
+        value into the ref_call's ``args[p_idx]["value"]``; Escape
+        cancels. Type-coerced on commit (int / float / bool); empty
+        strings stay empty. ``target_iid`` is the clicked row's iid
+        (passed by the click router so we don't search the meta map
+        for it again).
+        """
+        node = self.project.get_widget(widget_id)
+        if node is None:
+            return
+        entries = node.handlers.get(event_key)
+        if entries is None or m_idx >= len(entries):
+            return
+        entry = entries[m_idx]
+        if not isinstance(entry, dict):
+            return
+        args = entry.get("args", []) or []
+        if p_idx >= len(args):
+            return
+        try:
+            bbox = self.tree.bbox(target_iid, "value")
+        except tk.TclError:
+            return
+        if not bbox:
+            return
+        x, y, w, h = bbox
+        editor = tk.Entry(
+            self.tree, borderwidth=0,
+            highlightthickness=1,
+            highlightbackground="#3b3b3b",
+            highlightcolor="#5b5b5b",
+        )
+        current = args[p_idx].get("value", "")
+        editor.insert(0, str(current))
+        editor.place(x=x, y=y, width=w, height=h)
+        editor.focus_set()
+        editor.select_range(0, "end")
+
+        def _commit(_event=None):
+            text = editor.get()
+            arg_type = args[p_idx].get("type", "str")
+            try:
+                if arg_type == "int":
+                    args[p_idx]["value"] = int(text) if text else 0
+                elif arg_type == "float":
+                    args[p_idx]["value"] = float(text) if text else 0.0
+                elif arg_type == "bool":
+                    args[p_idx]["value"] = text.strip().lower() in (
+                        "true", "1", "yes",
+                    )
+                else:
+                    args[p_idx]["value"] = text
+            except ValueError:
+                args[p_idx]["value"] = text
+            try:
+                editor.destroy()
+            except tk.TclError:
+                pass
+            self.project.event_bus.publish(
+                "widget_handler_changed", widget_id, event_key, "",
+            )
+
+        def _cancel(_event=None):
+            try:
+                editor.destroy()
+            except tk.TclError:
+                pass
+
+        editor.bind("<Return>", _commit)
+        editor.bind("<Tab>", _commit)
+        editor.bind("<FocusOut>", _commit)
+        editor.bind("<Escape>", _cancel)
 
     def _open_event_method(
         self, widget_id: str, method_name: str,
@@ -1339,19 +1672,15 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
 
     def _delete_event_action(
         self, widget_id: str, event_key: str,
-        index: int, method_name: str,
+        index: int, method_name,
     ) -> None:
-        """Phase 2 Step 3 (revised) — every delete now routes through
-        ``ActionDeleteDialog``. Choices: Cancel (no-op),
-        ``open_editor`` (jump to method, leave binding alone), or
-        ``delete`` (unbind + remove ``def`` from .py via the
-        text-based ``delete_method_from_file`` so blank lines and
-        comments survive). The "Unbind keep method" path is gone —
-        the active scripts folder always reflects what's actually
-        bound, matching the user's "working code only" principle.
+        """Drop one handler entry — direct unbind, undoable in one
+        step. No dialog, no file mutation; the behavior file is the
+        user's source of truth, so a ``def`` they wrote stays put
+        even if no widget binds it. Re-bind via ``[+]`` puts it
+        back.
         """
         from app.core.commands import UnbindHandlerCommand
-        from app.ui.handler_delete_dialogs import run_action_delete_flow
         node = self.project.get_widget(widget_id)
         if node is None:
             return
@@ -1360,77 +1689,11 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             return
         if methods[index] != method_name:
             return
-        decision = run_action_delete_flow(
-            self.winfo_toplevel(), self.project,
-            widget_id, event_key, index, method_name,
-        )
-        if decision is None:
-            return
-        if decision == "open_editor":
-            self._open_event_method(widget_id, method_name)
-            return
-        # decision == "delete" — drop the def from the .py first,
-        # then push the unbind command so undo restores the binding
-        # (the file write itself isn't undoable; this matches how
-        # ``BindHandlerCommand`` treats the stub-add path).
-        also_bound = self._method_used_elsewhere(
-            widget_id, event_key, index, method_name,
-        )
-        if not also_bound:
-            self._delete_method_def_from_file(widget_id, method_name)
         cmd = UnbindHandlerCommand(
             widget_id, event_key, method_name, index,
         )
         cmd.redo(self.project)
         self.project.history.push(cmd)
-
-    def _method_used_elsewhere(
-        self, widget_id: str, current_event_key: str,
-        current_index: int, method_name: str,
-    ) -> bool:
-        """True when ``method_name`` is bound to at least one OTHER
-        ``(event_key, index)`` slot in the same document. Guards
-        the ``delete_method_from_file`` step — if other rows still
-        reference the def, dropping it would silently break them.
-        """
-        doc = self.project.find_document_for_widget(widget_id)
-        if doc is None:
-            return False
-        stack = list(doc.root_widgets)
-        while stack:
-            node = stack.pop()
-            for ev_key, names in (node.handlers or {}).items():
-                for idx, name in enumerate(names):
-                    if name != method_name:
-                        continue
-                    if (
-                        node.id == widget_id
-                        and ev_key == current_event_key
-                        and idx == current_index
-                    ):
-                        continue
-                    return True
-            stack.extend(node.children)
-        return False
-
-    def _delete_method_def_from_file(
-        self, widget_id: str, method_name: str,
-    ) -> None:
-        if not getattr(self.project, "path", None):
-            return
-        document = self.project.find_document_for_widget(widget_id)
-        if document is None:
-            return
-        from app.core.script_paths import (
-            behavior_class_name, behavior_file_path,
-        )
-        from app.io.scripts import delete_method_from_file
-        path = behavior_file_path(self.project.path, document)
-        if path is None or not path.exists():
-            return
-        delete_method_from_file(
-            path, behavior_class_name(document), method_name,
-        )
 
     # ------------------------------------------------------------------
     # v1.10.8 — Object Reference toggle handlers

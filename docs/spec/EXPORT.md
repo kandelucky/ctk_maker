@@ -219,26 +219,40 @@ class MainWindow(ctk.CTk):
         self._behavior.setup(self)
 ```
 
-Widget handlers wire as constructor kwargs (single method) or `lambda` chains (multi-method):
+Widget handlers wire as constructor kwargs (single page method) or `lambda` chains (multi-entry or `ref_call`):
 
 ```python
-# Single method on "command" event
+# Single page method on "command" event
 command=self._behavior.on_submit
 
-# Multiple methods — fan-out via lambda
+# Multiple page methods — fan-out via lambda
 command=lambda: (self._behavior.validate(), self._behavior.on_submit())
 
-# Tk bind-style — repeated .bind(seq, fn, add="+")
+# ref_call entry (widget-to-widget direct call via Object Reference)
+command=lambda: self._behavior.status_label.configure(text='Submitted')
+
+# Mixed list — page method + ref_call
+command=lambda: (
+    self._behavior.on_submit(),
+    self._behavior.status_label.configure(text='Submitted'),
+)
+
+# Tk bind-style — page method routes as a bare bound method
 self.entry_email.bind("<Return>", self._behavior.on_email_enter, add="+")
+
+# Tk bind-style — ref_call wrapped in a lambda that swallows the event arg
+self.label_status.bind("<Button-1>", lambda e: self._behavior.lbl.configure(text='Hit'), add="+")
 ```
 
 Helpers:
 
-- `_emit_handler_lines(...)` — [:1580](../../app/io/code_exporter.py#L1580)
-- `_format_method_chain(methods)` — [:1636](../../app/io/code_exporter.py#L1636) — multi-method lambda body
-- `_doc_has_handlers(doc)` / `_node_has_handlers(node)` / `_doc_needs_behavior(doc)` — [:1648-1669](../../app/io/code_exporter.py#L1648)
-- `_scan_behavior_methods_for_export(project)` — [:1497](../../app/io/code_exporter.py#L1497) — AST scan; populates `_BEHAVIOR_METHODS_BY_DOC_ID`
-- `_filter_handlers_to_existing_methods(...)` — [:1527](../../app/io/code_exporter.py#L1527) — drop handler entries pointing at a missing `def`
+- `_emit_handler_lines(...)` — resolves a widget's `handlers` mapping into the constructor `command=` kwarg and post-construction `.bind()` lines.
+- `_format_handler_entries(entries)` — renders a mixed list of page-method strings and `ref_call` dicts as the `command=` source (bare reference for a single page-method, tuple-style lambda otherwise).
+- `_format_ref_call(entry)` / `_format_ref_arg(arg)` — render a single `ref_call` dict and its typed args as the Python expression that invokes it.
+- `_doc_has_handlers(doc)` / `_node_has_handlers(node)` / `_doc_needs_behavior(doc)` — gate the per-doc behavior-class plumbing.
+- `_scan_behavior_methods_for_export(project)` — AST scan; populates `_BEHAVIOR_METHODS_BY_DOC_ID`.
+- `_filter_handlers_to_existing_methods(node, event_label, entries)` — drop handler entries the exporter can't resolve. Validates page-method strings against the per-doc AST and `ref_call` dicts against the Object Reference list + [`WIDGET_ACTION_METHODS`](../../app/widgets/action_registry.py).
+- `_validate_ref_call(doc, entry)` — returns the pre-formatted reason string when a `ref_call` doesn't resolve, or `None` when it does.
 
 ### Phase 3 — Object References
 
@@ -328,7 +342,7 @@ The exporter uses module-level globals as a per-export context (alternative to t
 | `_CURRENT_PROJECT_PATH` | Active project disk path — for `_path_for_export` (image asset rewrites) |
 | `_EXPORT_PROJECT` | Active `Project` reference — for descriptor helpers that need it |
 | `_BEHAVIOR_METHODS_BY_DOC_ID` | `{doc_id → set of method names}` from AST scan |
-| `_MISSING_BEHAVIOR_METHODS` | List of `(doc_name, method_name)` whose `def` couldn't be resolved |
+| `_MISSING_BEHAVIOR_METHODS` | List of `(widget_label, event_label, method_name)` whose `def` couldn't be resolved — consumed by `_prepend_missing_handler_warnings` when `inject_missing_handler_warnings=True` (preview only) |
 | `_GLOBAL_VAR_ATTR` | `{var_id → "var_<name>"}` for all global variables |
 | `_VAR_ID_TO_ATTR` | `{var_id → "self.var_X" | "self.master.var_X"}` for current class — swapped per `_emit_class` |
 | `_DOC_ID_TO_CLASS` | `{doc_id → generated class name}` for object reference target resolution |
@@ -475,14 +489,12 @@ Phase 4b (planned): `dropdown_*` (CTkOptionMenu / CTkComboBox dropdown styling �
 
 ## Error reporting back to the UI
 
-The export reports issues via two module-level lists (read by the UI after `export_project` returns):
+`export_project` reports issues via:
 
-| Function | Returns |
-|---|---|
-| `get_missing_behavior_methods()` — [:1557](../../app/io/code_exporter.py#L1557) | `list[(doc_name, method_name)]` — handlers that point at a `def` that doesn't exist in the behavior file |
-| `get_var_name_fallbacks()` — [:1567](../../app/io/code_exporter.py#L1567) | `list[(doc_name, widget_label, requested_name, actual_name)]` — names that had to be rewritten |
-
-UI surfaces these in a post-export status toast / dialog so the user knows what to fix in their behavior file.
+| Mechanism | Trigger | Notes |
+|---|---|---|
+| `_MISSING_BEHAVIOR_METHODS` (internal) | Handler entry can't be resolved (missing page method, unknown Object Reference, action not in `WIDGET_ACTION_METHODS`) | When called with `inject_missing_handler_warnings=True` (preview only), `_prepend_missing_handler_warnings` emits one `WARNING <reason> (<widget> > <event>)` line per entry at the top of the generated source — reasons include `Method not found: '<name>'`, `Object reference not found: '<name>'`, `Action not allowed: '<method>' on <widget_type>`. The Console panel's log-level sniffer tags these `preview-warning` → yellow. See [event_binding.md](../plans/event_binding.md). |
+| `get_var_name_fallbacks()` | User-set widget name had to be rewritten | Returns `list[(doc_name, widget_label, requested_name, actual_name)]`. UI surfaces in a post-export status toast / dialog. |
 
 ## What does NOT export
 

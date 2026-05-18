@@ -46,6 +46,71 @@ def parse_handler_methods(
     return names
 
 
+def parse_handler_methods_compatible(
+    file_path: str | Path,
+    class_name: str,
+    wiring_kind: str,
+) -> list[str]:
+    """Return method names suitable for binding to an event of the
+    given ``wiring_kind`` (``"command"`` or ``"bind"``).
+
+    Two filters apply:
+
+    * **Visibility** — only public methods (name doesn't start with
+      ``_``). Mirrors the Unity Inspector convention; private and
+      dunder helpers stay out of the dropdown.
+    * **Signature compatibility** — the method must accept the
+      argument shape the runtime invocation passes:
+        * ``command`` events call ``method()`` (no args after self).
+          Required arg count after ``self`` must equal 0.
+        * ``bind`` events call ``method(event)`` (one arg after
+          self). The method must accept at least one positional
+          slot after ``self`` (either required or with a default);
+          required arg count after ``self`` must be 1 or 0 (with
+          a slot reserved for ``event``).
+
+    Empty list on missing file / syntax error / unknown
+    ``wiring_kind`` — same robustness contract as
+    ``parse_handler_methods``.
+    """
+    source = _read_source(file_path)
+    if source is None:
+        return []
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    target = _find_class(tree, class_name)
+    if target is None:
+        return []
+    names: list[str] = []
+    for stmt in target.body:
+        if not isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if stmt.name.startswith("_"):
+            continue
+        if _signature_matches_event(stmt, wiring_kind):
+            names.append(stmt.name)
+    return names
+
+
+def _signature_matches_event(
+    fn: ast.FunctionDef | ast.AsyncFunctionDef, wiring_kind: str,
+) -> bool:
+    pos = list(fn.args.args)
+    if not pos:
+        return False
+    # Drop ``self`` — instance methods on a behavior class always
+    # have it as the first positional arg.
+    pos = pos[1:]
+    required = max(0, len(pos) - len(fn.args.defaults))
+    if wiring_kind == "command":
+        return required == 0
+    if wiring_kind == "bind":
+        return len(pos) >= 1 and required <= 1
+    return False
+
+
 # ---------------------------------------------------------------------
 # Object Reference annotation parser (v1.10.8+)
 #

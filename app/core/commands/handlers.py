@@ -12,21 +12,24 @@ if TYPE_CHECKING:
 
 
 class BindHandlerCommand(Command):
-    """Phase 2 visual scripting — append a method to a widget's
-    event handler list. ``event_key`` is the storage key
+    """Phase 2 visual scripting — append a handler entry to a
+    widget's event list. ``event_key`` is the storage key
     (``"command"`` or ``"bind:<seq>"``); ``method_name`` is the
-    method on the window's behavior class that the runtime /
-    exporter will resolve. Multi-method-per-event (Decision #10) —
-    each invocation appends another row, undo pops the row that
-    was added (matched by index, so duplicate names don't confuse
-    the undo stack).
+    handler entry — either a string (page method name on the
+    window's behavior class) or a ``ref_call`` dict (direct
+    widget-to-widget call routed through an Object Reference, v3).
+    Both shapes share the multi-method-per-event semantics —
+    invocation appends a row, undo pops the row that was added
+    (matched by index so duplicates don't confuse the undo stack).
 
-    The actual ``.py`` file mutation happens at the call site (the
-    command only carries undo/redo for the model field).
+    The actual ``.py`` file mutation (stub creation for string
+    entries) happens at the call site; the command only carries
+    undo/redo for the model field.
     """
 
     def __init__(
-        self, widget_id: str, event_key: str, method_name: str,
+        self, widget_id: str, event_key: str,
+        method_name: "str | dict",
     ):
         self.widget_id = widget_id
         self.event_key = event_key
@@ -131,16 +134,19 @@ class ReorderHandlerCommand(Command):
 
 
 class UnbindHandlerCommand(Command):
-    """Remove one method from a widget's event handler list. Captures
+    """Remove one handler entry from a widget's event list. Captures
     the row's index at construction so undo restores it at the same
-    position (sibling order matters for execution order).
+    position (sibling order matters for execution order). The
+    ``previous_method`` argument accepts either a page-method
+    string or a ``ref_call`` dict — list comparison stays correct
+    for both shapes (Python equality is per-element / per-key).
     """
 
     def __init__(
         self,
         widget_id: str,
         event_key: str,
-        previous_method: str,
+        previous_method: "str | dict",
         index: int,
     ):
         self.widget_id = widget_id

@@ -190,6 +190,7 @@ SLOT_BIND_CLEAR = "bind_clear"
 # Phase 2 visual scripting — inline buttons on Events group rows.
 SLOT_EVENT_ADD = "event_add"
 SLOT_EVENT_UNBIND = "event_unbind"
+SLOT_EVENT_DROPDOWN = "event_dropdown"
 
 
 def place_bind_clear(
@@ -248,6 +249,32 @@ def place_event_unbind(
     elsewhere in the panel.
     """
     _place_value_cell_right(tree, widget, iid, width=14, pad_y=4)
+
+
+def place_event_dropdown(
+    tree: tk.Widget, widget: tk.Widget, iid: str,
+) -> None:
+    """``▾`` dropdown button on a target / function row. Sits left
+    of the ``[✕]`` unbind button (when one is present on the same
+    row) so both fit at the right edge — 20px wide + 4px gap from
+    the 14px ✕ + 4px right margin = 22px offset reserved.
+    """
+    try:
+        bbox = tree.bbox(iid, "value")
+    except tk.TclError:
+        bbox = ()
+    if not bbox:
+        widget.place_forget()
+        return
+    x, y, w, h = bbox
+    BTN_W = 20
+    RIGHT_OFFSET = 22
+    pad_y = 4
+    widget.place(
+        x=x + w - BTN_W - RIGHT_OFFSET, y=y + pad_y,
+        width=BTN_W, height=max(1, h - pad_y * 2),
+    )
+    widget.lift()
 
 
 # v1.10.8 — Object Reference toggle button slot. Wider than the

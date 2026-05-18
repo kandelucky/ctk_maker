@@ -181,7 +181,7 @@ Tree node — one widget on the canvas. 129 lines.
 | `locked` | `bool` | `False` | Builder-only edit lock. Cascades through descendants. |
 | `group_id` | `str \| None` | `None` | Group membership (Ctrl+G). Skipped from export. |
 | `description` | `str` | `""` | AI-bridge — emitted as comment above the widget's constructor. |
-| `handlers` | `dict[str, list[str]]` | `{}` | **Phase 2.** Event → ordered list of method names on the window's behavior class. |
+| `handlers` | `dict[str, list]` | `{}` | **Phase 2.** Event → ordered list of handler entries. Each entry is a method-name string OR a `ref_call` dict (see schema below). |
 
 ### `handlers` schema
 
@@ -190,9 +190,19 @@ Keys are event identifiers:
 - `"command"` — click-style (Button, Switch, CheckBox, Slider, OptionMenu, ComboBox, SegmentedButton)
 - `"bind:<sequence>"` — Tk bind (`"bind:<Button-1>"`, `"bind:<Return>"`, etc.)
 
-Values are ordered lists of method names. Empty list = unbound. Multi-method binding fans out via `lambda` chain (constructor kwarg) or repeated `.bind(seq, fn, add="+")` (Tk bind).
+Values are ordered lists of handler **entries**. Empty list = unbound. Multi-entry binding fans out via `lambda` chain (constructor kwarg) or repeated `.bind(seq, fn, add="+")` (Tk bind).
 
-The behavior file lives at `<project>/assets/scripts/<page_slug>/<window_slug>.py`. Method names without a corresponding `def` in that file get a stub appended on save / handler attach.
+Each entry is one of:
+
+| Shape | Meaning |
+|---|---|
+| `str` (non-empty) | Method name on the window's behavior class. The exporter resolves it to `self._behavior.<name>`. The file is the user's source of truth: no auto-stub creation, no auto-delete on unbind — the Function picker only lists `def`s actually present in the file. |
+| `str` (empty `""`) | Page Script target picked, function not chosen yet. The Properties panel renders this with the Function row showing `Pick function…`; the exporter filters it out and emits a Console warning (`Method not found: ''`). |
+| `dict` with `{"kind": "ref_call", "ref": <ref_name>, "method": <method_name>, "args": [...]}` | Direct widget-to-widget call routed through an Object Reference (v3). `args` is a list of `{"name": str, "type": "str"\|"int"\|"float"\|"bool", "value": Any, "kwarg": bool}` dicts. Method must be in [`WIDGET_ACTION_METHODS`](../../app/widgets/action_registry.py) for the referenced widget's type — out-of-allowlist entries get dropped at export with the same warning surface as missing behavior methods. Empty `method` = ref picked, function not chosen yet (same pending state as the empty-string page entry). |
+
+The behavior file lives at `<project>/assets/scripts/<page_slug>/<window_slug>.py`.
+
+**Pending UI rows are NOT stored here.** The Unity-style "Add target" placeholder (outer `[+]` click on the event header before any target is picked) lives in `PropertiesPanel._pending_event_rows`, scoped per `(widget_id, event_key)`. Pending rows clear when the user switches widget — they exist only as transient editing state, not as model data. As soon as the user picks a target, the entry commits to ``handlers`` (with empty method, since the Function picker is a separate step).
 
 ### Backwards-compat — type renames
 
@@ -208,7 +218,13 @@ Loader silently maps old names to current ones.
 
 ### Backwards-compat — handler shape
 
-`from_dict` accepts both `{event: "method"}` (v1) and `{event: ["m1", "m2"]}` (v2). Bare strings are wrapped into single-element lists.
+`from_dict` accepts three shapes:
+
+- v1: `{event: "method"}` (single string) — wrapped into a one-element list at load.
+- v2: `{event: ["m1", "m2"]}` (multi-method list of strings).
+- v3: `{event: ["m1", {"kind": "ref_call", ...}]}` (mixed list — string entries are page methods, dict entries are widget-to-widget calls via Object Reference).
+
+Dict entries without `"kind": "ref_call"` are dropped at load to keep the live model strict.
 
 ## VariableEntry — [app/core/variables.py:31](../../app/core/variables.py#L31)
 

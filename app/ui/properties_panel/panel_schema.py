@@ -46,11 +46,14 @@ from .overlays import (
     SLOT_BIND_BUTTON,
     SLOT_BIND_CLEAR,
     SLOT_EVENT_ADD,
+    SLOT_EVENT_DROPDOWN,
     SLOT_EVENT_UNBIND,
     SLOT_OBJECT_REFERENCE_TOGGLE,
     place_bind_button,
     place_bind_clear,
+    place_enum_button,
     place_event_add,
+    place_event_dropdown,
     place_event_unbind,
     place_object_reference_toggle,
 )
@@ -597,49 +600,269 @@ class SchemaMixin:
         self._attach_event_add_button(
             header_iid, widget_id, entry.key,
         )
-        for m_idx, method in enumerate(methods):
-            method_iid = f"events:m:{ev_idx}:{m_idx}"
-            # Docstring (when the user wrote one) reads as the
-            # primary label. Otherwise we surface ``Action N`` —
-            # the auto-generated ``on_button_click_3`` method
-            # name carries no useful information for someone
-            # browsing the panel and reads as visual noise. The
-            # bare method name still lives on disk; the user
-            # sees it in the editor when they jump there.
-            doc_text = docs.get(method)
-            if doc_text:
-                row_label = doc_text
-            else:
-                row_label = f"Action {m_idx + 1}"
-            missing = (
-                scanned_existing
-                and method not in (existing_methods or set())
+        for m_idx, handler_entry in enumerate(methods):
+            self._render_handler_entry(
+                ev_idx, m_idx, handler_entry, header_iid, entry,
+                node, docs, existing_methods, scanned_existing,
+                widget_id, meta,
             )
-            # ``❌`` glyph + red row tag for orphan bindings —
-            # method name is recorded on the model but the
-            # behavior file's class doesn't define it. Caught
-            # here so the user spots the break in the panel
-            # before F5 surfaces it as an AttributeError.
-            if missing:
-                row_label = f"❌ {row_label}"
-                value_text = f"{method} (missing in file)"
-                row_tags: tuple[str, ...] = ("missing_method",)
-            else:
-                value_text = method
-                row_tags = ()
-            # Method name in the value column as quiet metadata —
-            # useful when the user can't remember which action
-            # is which, but stays out of the primary label.
-            self.tree.insert(
-                header_iid, "end", iid=method_iid,
-                text=row_label, values=(value_text,),
-                tags=row_tags,
-            )
-            meta[method_iid] = ("method", entry.key, m_idx)
-            self._attach_event_unbind_button(
-                method_iid, widget_id, entry.key, m_idx, method,
+        # Unity-style placeholder rows for outer ``[+]`` clicks that
+        # haven't picked a target yet. Each shows ``Add target``
+        # with an inner ``[+]`` that opens the cascade picker.
+        pending = self._pending_event_rows.get(
+            (widget_id, entry.key), 0,
+        )
+        for p_idx in range(pending):
+            self._render_pending_event_row(
+                ev_idx, len(methods) + p_idx, header_iid, entry,
+                widget_id, meta,
             )
         return ev_idx + 1
+
+    def _render_pending_event_row(
+        self, ev_idx: int, m_idx: int, header_iid: str,
+        event_entry, widget_id: str, meta: dict,
+    ) -> None:
+        """Placeholder row for a pending event binding — ``Add target``
+        with an inner ``[+]`` that opens the cascade picker. Lives
+        only in panel state; the entry doesn't reach
+        ``WidgetNode.handlers`` until the user commits a target.
+        """
+        parent_iid = f"events:m:{ev_idx}:{m_idx}"
+        # Pending placeholder follows the same primary-column-label
+        # / value-cell-content split as committed rows. ``Target:``
+        # is the neutral umbrella — once the user picks, it
+        # resolves to ``Script:`` or ``Object:`` on rebuild.
+        self.tree.insert(
+            header_iid, "end", iid=parent_iid,
+            text="Target:", values=("Add target",),
+            open=True,
+        )
+        meta[parent_iid] = ("pending", event_entry.key, None)
+        self._attach_pending_picker_button(
+            parent_iid, widget_id, event_entry.key,
+        )
+
+    def _render_handler_entry(
+        self, ev_idx: int, m_idx: int, handler_entry,
+        header_iid: str, event_entry, node, docs: dict,
+        existing_methods, scanned_existing: bool,
+        widget_id: str, meta: dict,
+    ) -> None:
+        """Emit one handler entry as a Unity-style block: the parent
+        row IS the target (``dialog.py`` for a page script,
+        ``result (CTkLabel)`` for an Object Reference); the
+        ``Function:`` child row appears only once a target is
+        picked; ``<param>:`` child rows surface one per
+        allowlisted argument when the function carries any.
+
+        Missing bindings (target or method unresolvable) render in
+        red on whatever row the breakage lives on — no glyph, just
+        the colour cue.
+        """
+        parent_iid = f"events:m:{ev_idx}:{m_idx}"
+        target_prefix, target_value, target_missing, target_picked = (
+            self._target_label_for_entry(handler_entry, node)
+        )
+        method_label, method_missing, param_pairs = (
+            self._method_and_params_for_entry(
+                handler_entry, existing_methods, scanned_existing,
+            )
+        )
+        # Parent row carries the target. Layout mirrors the
+        # ``Function:`` child below — primary column is the
+        # category prefix (``Script:`` / ``Widget:`` /
+        # ``Script/Object:`` for pending), value cell holds the
+        # picked target name. Missing tag applies if target itself
+        # is unresolvable; a missing method colours only the
+        # Function child below.
+        parent_tags: tuple[str, ...] = (
+            ("missing_method",) if target_missing else ()
+        )
+        parent_value = target_value
+        if target_missing:
+            parent_value = f"{parent_value} ({target_missing})"
+        self.tree.insert(
+            header_iid, "end", iid=parent_iid,
+            text=target_prefix, values=(parent_value,),
+            open=True, tags=parent_tags,
+        )
+        meta[parent_iid] = ("method", event_entry.key, m_idx)
+        # ▾ dropdown for retargeting (sits left of [✕]) + [✕] unbind
+        # at the right edge — same two-button pattern Unity uses for
+        # the target / runtime-only cells.
+        self._attach_target_dropdown_button(
+            parent_iid, widget_id, event_entry.key, m_idx,
+        )
+        self._attach_event_unbind_button(
+            parent_iid, widget_id, event_entry.key, m_idx, handler_entry,
+        )
+        # Function child row — only when a target is actually
+        # picked. Hidden in the "target picker pending" state to
+        # match the user's Unity-like layout.
+        if target_picked:
+            function_iid = f"{parent_iid}:function"
+            function_value = method_label
+            function_tags: tuple[str, ...] = (
+                ("missing_method",) if method_missing else ()
+            )
+            if method_missing:
+                function_value = f"{function_value} ({method_missing})"
+            self.tree.insert(
+                parent_iid, "end", iid=function_iid,
+                text="Function:", values=(function_value,),
+                tags=function_tags,
+            )
+            meta[function_iid] = ("function", event_entry.key, m_idx)
+            self._attach_function_dropdown_button(
+                function_iid, widget_id, event_entry.key, m_idx,
+            )
+            # Parameter rows — only when a method is picked and the
+            # allowlist entry carries args.
+            for p_idx, (pname, pvalue) in enumerate(param_pairs):
+                param_iid = f"{parent_iid}:p{p_idx}"
+                self.tree.insert(
+                    parent_iid, "end",
+                    iid=param_iid,
+                    text=f"{pname}:", values=(pvalue,),
+                )
+                meta[param_iid] = (
+                    "param", event_entry.key, m_idx, p_idx,
+                )
+
+    def _target_label_for_entry(
+        self, handler_entry, node,
+    ) -> tuple[str, str, str | None, bool]:
+        """Return ``(label_prefix, target_display,
+        missing_reason_or_None, target_picked)``.
+
+        ``label_prefix`` is the primary-column text — varies by
+        target kind so the user reads the row as a category:
+
+        * ``"Script:"`` — page-method entry (behavior file).
+        * ``"Object:"`` — ref_call to a widget or window (Object
+          umbrellas both — widget refs today, Window refs later).
+        * ``"Target:"`` — pending placeholder (no target picked
+          yet); the value cell carries the ``Add target`` prompt.
+
+        ``target_picked`` controls whether the Function / param
+        child rows render at all — ``False`` for the placeholder
+        state. Value column drops the widget-type suffix now that
+        the prefix carries the category — "Object: result" beats
+        "Object: result (CTkLabel)" for scanability.
+        """
+        if isinstance(handler_entry, dict) and (
+            handler_entry.get("kind") == "ref_call"
+        ):
+            ref_name = handler_entry.get("ref", "")
+            if not ref_name:
+                return "Target:", "Add target", None, False
+            document = self.project.find_document_for_widget(node.id)
+            if document is None:
+                return "Object:", ref_name, None, True
+            ref_entry = next(
+                (
+                    r for r in document.local_object_references
+                    if r.name == ref_name
+                ),
+                None,
+            )
+            if ref_entry is None:
+                return "Object:", ref_name, "reference not found", True
+            target = self.project.get_widget(ref_entry.target_id)
+            if target is None:
+                return "Object:", ref_name, "reference unbound", True
+            return "Object:", ref_name, None, True
+        # Page-method string entry — display as the behavior file
+        # name (``dialog.py`` style) so the parent reads as the
+        # source the method lives in.
+        return "Script:", self._page_script_target_label(node), None, True
+
+    def _page_script_target_label(self, node) -> str:
+        """Behavior-file name for the document the widget lives in.
+        Falls back to ``"Page Script"`` when the project isn't saved
+        yet (no path → no file name to surface).
+        """
+        if not getattr(self.project, "path", None):
+            return "Page Script"
+        document = self.project.find_document_for_widget(node.id)
+        if document is None:
+            return "Page Script"
+        from app.core.script_paths import behavior_file_path
+        path = behavior_file_path(self.project.path, document)
+        if path is None:
+            return "Page Script"
+        return path.name
+
+    def _method_and_params_for_entry(
+        self, handler_entry, existing_methods,
+        scanned_existing: bool,
+    ) -> tuple[str, str | None, list[tuple[str, str]]]:
+        """Return ``(method_display, missing_reason_or_None,
+        [(param_name, param_value_text), ...])``. Empty-method
+        entries (target picked, function not chosen yet) render
+        with the ``Pick function…`` placeholder; the caller decides
+        whether to highlight that as missing or just as pending.
+        """
+        if isinstance(handler_entry, dict) and (
+            handler_entry.get("kind") == "ref_call"
+        ):
+            method = handler_entry.get("method", "")
+            if not method:
+                return "Pick function…", None, []
+            action = self._action_entry_for_ref_call(handler_entry)
+            if action is None:
+                return method, "action not allowed", []
+            param_pairs: list[tuple[str, str]] = []
+            for arg in handler_entry.get("args", []) or []:
+                pname = arg.get("name", "")
+                pvalue = arg.get("value", "")
+                param_pairs.append(
+                    (pname, str(pvalue) if pvalue != "" else "—"),
+                )
+            return action.label, None, param_pairs
+        # Page method — bare string entry. Empty string = target
+        # picked but function not chosen yet.
+        method = handler_entry
+        if not method:
+            return "Pick function…", None, []
+        missing = None
+        if (
+            scanned_existing
+            and method not in (existing_methods or set())
+        ):
+            missing = "missing in file"
+        return method, missing, []
+
+    def _action_entry_for_ref_call(self, handler_entry: dict):
+        """Look up the ``ActionEntry`` for a ref_call's
+        ``(ref → target_widget_type, method)`` so the renderer can
+        surface the friendly label instead of the raw method name.
+        Returns ``None`` when the ref doesn't resolve or the action
+        isn't allowlisted — caller treats that as missing.
+        """
+        from app.widgets.action_registry import find_action
+        ref_name = handler_entry.get("ref", "")
+        method_name = handler_entry.get("method", "")
+        if not ref_name or not method_name or self.project is None:
+            return None
+        doc = self.project.active_document
+        if doc is None:
+            return None
+        ref_entry = next(
+            (
+                r for r in doc.local_object_references
+                if r.name == ref_name
+            ),
+            None,
+        )
+        if ref_entry is None or not ref_entry.target_id:
+            return None
+        target = self.project.get_widget(ref_entry.target_id)
+        if target is None:
+            return None
+        return find_action(target.widget_type, method_name)
+
 
     def _lookup_existing_method_names(self, node) -> set[str] | None:
         """Phase 3 — return the set of method names defined on the
@@ -693,9 +916,9 @@ class SchemaMixin:
         self, header_iid: str, widget_id: str, event_key: str,
     ) -> None:
         """Inline ``[+]`` next to the event-header row preview.
-        Click delegates to ``_add_event_action`` (same path the
-        right-click "Add action" entry uses) so the cascade flow
-        stays single-source.
+        Click adds a pending "Add target" placeholder row; the
+        target picker opens from THAT row's inner ``[+]`` rather
+        than from this header button.
         """
         btn = tk.Label(
             self.tree,
@@ -714,22 +937,125 @@ class SchemaMixin:
         btn.bind(
             "<Button-1>",
             lambda _e, wid=widget_id, k=event_key:
-            self._add_event_action(wid, k),
+            self._add_pending_event_row(wid, k),
         )
         if self.overlays is not None:
             self.overlays.add(
                 header_iid, SLOT_EVENT_ADD, btn, place_event_add,
             )
 
+    def _attach_pending_picker_button(
+        self, parent_iid: str, widget_id: str, event_key: str,
+    ) -> None:
+        """Inline ``[+]`` on a pending "Add target" placeholder row.
+        Click opens the cascade target picker; picking commits the
+        entry to ``handlers`` and decrements the pending count via
+        ``_open_pending_target_picker``'s ``on_commit`` hook.
+        """
+        btn = tk.Label(
+            self.tree,
+            text="+", bg=TREE_BG, fg="#7dd3fc",
+            font=ui_font(11, "bold"),
+            cursor="hand2", borderwidth=0, padx=0, pady=0,
+        )
+        btn.bind(
+            "<Enter>",
+            lambda _e, b=btn: b.configure(fg="#ffffff"),
+        )
+        btn.bind(
+            "<Leave>",
+            lambda _e, b=btn: b.configure(fg="#7dd3fc"),
+        )
+        btn.bind(
+            "<Button-1>",
+            lambda _e, wid=widget_id, k=event_key:
+            self._open_pending_target_picker(wid, k),
+        )
+        if self.overlays is not None:
+            self.overlays.add(
+                parent_iid, SLOT_EVENT_ADD, btn, place_event_add,
+            )
+
+    def _attach_target_dropdown_button(
+        self, parent_iid: str, widget_id: str,
+        event_key: str, m_idx: int,
+    ) -> None:
+        """``▾`` dropdown on a committed handler entry's parent row
+        — opens the target retarget picker (same Page Script /
+        Object References cascade the outer ``[+]`` uses, but
+        replacing the entry's target in place rather than appending
+        a new one). Sits left of the row's ``[✕]`` button via the
+        offset ``place_event_dropdown`` placer.
+        """
+        btn = tk.Label(
+            self.tree,
+            text="▾", bg=TREE_BG, fg="#aaaaaa",
+            font=ui_font(12, "bold"),
+            cursor="hand2", borderwidth=0,
+        )
+        btn.bind(
+            "<Enter>",
+            lambda _e, b=btn: b.configure(fg="#ffffff"),
+        )
+        btn.bind(
+            "<Leave>",
+            lambda _e, b=btn: b.configure(fg="#aaaaaa"),
+        )
+        btn.bind(
+            "<Button-1>",
+            lambda _e, wid=widget_id, k=event_key, i=m_idx:
+            self._open_target_retarget_picker(wid, k, i),
+        )
+        if self.overlays is not None:
+            self.overlays.add(
+                parent_iid, SLOT_EVENT_DROPDOWN,
+                btn, place_event_dropdown,
+            )
+
+    def _attach_function_dropdown_button(
+        self, function_iid: str, widget_id: str,
+        event_key: str, m_idx: int,
+    ) -> None:
+        """``▾`` dropdown on the ``Function:`` child row — opens
+        the function picker. Sits at the right edge of the value
+        cell (no ``[✕]`` to dodge on this row) so the standard
+        ``place_enum_button`` geometry applies — same visual
+        rhythm as the Cursor / Anchor enum editors elsewhere on
+        the panel.
+        """
+        btn = tk.Label(
+            self.tree,
+            text="▾", bg=TREE_BG, fg="#aaaaaa",
+            font=ui_font(12, "bold"),
+            cursor="hand2", borderwidth=0,
+        )
+        btn.bind(
+            "<Enter>",
+            lambda _e, b=btn: b.configure(fg="#ffffff"),
+        )
+        btn.bind(
+            "<Leave>",
+            lambda _e, b=btn: b.configure(fg="#aaaaaa"),
+        )
+        btn.bind(
+            "<Button-1>",
+            lambda _e, wid=widget_id, k=event_key, i=m_idx:
+            self._open_function_picker(wid, k, i),
+        )
+        if self.overlays is not None:
+            self.overlays.add(
+                function_iid, SLOT_EVENT_DROPDOWN,
+                btn, place_enum_button,
+            )
+
     def _attach_event_unbind_button(
         self, method_iid: str, widget_id: str,
         event_key: str, index: int, method_name: str,
     ) -> None:
-        """Inline ``[✕]`` on bound-method rows. Routes through the
-        same ``_delete_event_action`` flow as the right-click
-        "Delete action…" entry so the user sees the
-        ``ActionDeleteDialog`` (Cancel / Open in editor / Delete)
-        regardless of which surface they clicked.
+        """Inline ``[✕]`` on bound-method rows — direct unbind via
+        ``_delete_event_action``. No confirmation dialog: the
+        behavior file's ``def`` is untouched, so re-binding restores
+        the entry without losing user code.
         """
         btn = tk.Label(
             self.tree,

@@ -29,6 +29,7 @@ from app.io.scripts.ast_scan import (
     existing_object_reference_names,
     find_handler_method,
     parse_handler_methods,
+    parse_handler_methods_compatible,
     parse_method_docstrings,
     parse_object_reference_fields,
 )
@@ -65,6 +66,7 @@ __all__ = [
     "existing_object_reference_names",
     "find_handler_method",
     "parse_handler_methods",
+    "parse_handler_methods_compatible",
     "parse_method_docstrings",
     "parse_object_reference_fields",
     # editor

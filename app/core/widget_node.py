@@ -1,3 +1,4 @@
+import copy
 import uuid
 
 # Backwards-compat widget type renames. Older ``.ctkproj`` files
@@ -44,13 +45,22 @@ class WidgetNode:
         self.description: str = ""
         # Phase 2 visual scripting — event handler bindings. Maps an
         # event key (``"command"`` for click-style; ``"bind:<seq>"`` for
-        # Tk bind-style) to an ordered list of method names on the
-        # window's behavior class. Order is execution order — multi-
-        # method binding fans out via lambda chain (constructor kwarg)
-        # or repeated ``.bind(seq, fn, add="+")`` (Tk bind). Empty list
-        # = unbound. The behavior file lives at
-        # ``<project>/assets/scripts/<page>/<window>.py``.
-        self.handlers: dict[str, list[str]] = {}
+        # Tk bind-style) to an ordered list of handler entries. Order
+        # is execution order — multi-entry binding fans out via lambda
+        # chain (constructor kwarg) or repeated ``.bind(seq, fn,
+        # add="+")`` (Tk bind). Empty list = unbound. The behavior file
+        # lives at ``<project>/assets/scripts/<page>/<window>.py``.
+        #
+        # Each entry is one of:
+        #   * ``str`` — name of a method on the window's behavior class
+        #     (v1 / v2 shape, still supported).
+        #   * ``dict`` with ``{"kind": "ref_call", "ref": <ref_name>,
+        #     "method": <method_name>, "args": [...]}`` — direct
+        #     widget-to-widget call routed through an Object Reference
+        #     (v3 addition). ``args`` is a list of
+        #     ``{"name": str, "type": "str"|"int"|"float"|"bool",
+        #     "value": Any, "kwarg": bool}`` dicts.
+        self.handlers: dict[str, list] = {}
 
     def to_dict(self) -> dict:
         # Shallow-copy ``properties`` so callers (project_saver
@@ -76,9 +86,17 @@ class WidgetNode:
             result["description"] = self.description
         # Drop empty lists so the .ctkproj stays compact for projects
         # that haven't bound anything; serialised handlers are always
-        # ``{event: [m1, m2, ...]}`` lists, never strings.
+        # ``{event: [entry, entry, ...]}`` lists, never strings.
+        # Each entry is either a method-name string OR a ref_call dict
+        # — deep-copy dicts so callers (tokeniser, undo recorder,
+        # clipboard) can mutate the returned snapshot without aliasing
+        # back into the live widget.
         emitted = {
-            k: list(v) for k, v in self.handlers.items()
+            k: [
+                copy.deepcopy(e) if isinstance(e, dict) else e
+                for e in v
+            ]
+            for k, v in self.handlers.items()
             if v
         }
         if emitted:
@@ -100,26 +118,42 @@ class WidgetNode:
         node.parent_slot = data.get("parent_slot")
         node.group_id = data.get("group_id")
         node.description = data.get("description", "")
-        # Accept both shapes for forward-compat with v1 .ctkproj files
-        # written before the multi-method migration. v1 wrote
-        # ``{event: "method_name"}`` (single string); v2 writes
-        # ``{event: ["m1", "m2"]}``. A bare string is wrapped into a
-        # one-element list. Empty / non-string entries are dropped.
+        # Accept three shapes for forward-compat:
+        #   v1: ``{event: "method"}`` (single string)
+        #   v2: ``{event: ["m1", "m2"]}`` (multi-method list of strings)
+        #   v3: ``{event: ["m1", {"kind": "ref_call", ...}]}`` (mixed
+        #       list — string entries are page methods, dict entries
+        #       are direct widget-to-widget calls routed through an
+        #       Object Reference). A bare string is wrapped into a
+        #       one-element list. Empty entries are dropped; dict
+        #       entries without ``"kind": "ref_call"`` are also
+        #       dropped to keep the live model strict.
         raw_handlers = data.get("handlers")
         if isinstance(raw_handlers, dict):
-            normalised: dict[str, list[str]] = {}
+            normalised: dict[str, list] = {}
             for k, v in raw_handlers.items():
                 key = str(k)
                 if isinstance(v, str):
                     if v:
                         normalised[key] = [v]
                 elif isinstance(v, list):
-                    methods = [
-                        str(m) for m in v
-                        if isinstance(m, str) and m
-                    ]
-                    if methods:
-                        normalised[key] = methods
+                    entries: list = []
+                    for raw in v:
+                        if isinstance(raw, str):
+                            # Empty strings represent "target picked
+                            # (Page Script) but method not chosen yet".
+                            # The Properties panel renders them with
+                            # the Function picker shown but no value;
+                            # the exporter filters them as missing
+                            # methods.
+                            entries.append(raw)
+                        elif (
+                            isinstance(raw, dict)
+                            and raw.get("kind") == "ref_call"
+                        ):
+                            entries.append(copy.deepcopy(raw))
+                    if entries:
+                        normalised[key] = entries
             node.handlers = normalised
         for child_data in data.get("children", []):
             child = cls.from_dict(child_data)

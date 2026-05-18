@@ -26,7 +26,6 @@ import tkinter as tk
 from tkinter import messagebox
 
 from app.core.commands import (
-    BindHandlerCommand,
     BulkAddCommand,
     RenameCommand,
     build_bulk_add_entries,
@@ -505,31 +504,16 @@ class ContextMenu:
         return sub
 
     def _attach_event_handler(self, widget_id: str, event_key: str) -> None:
-        """Right-click → "+ <event>" / "+ Add another …" flow:
-        1. Validate the project's saved (we need
-           ``<project>/assets/scripts/``).
-        2. Resolve a method name (per-window collision check —
-           Decision #15 — auto-suffix ``_2`` / ``_3``).
-        3. Materialise the per-window behavior file + append a stub
-           to the window's class.
-        4. Push a ``BindHandlerCommand`` (multi-method append) so
-           undo pops the row that was just added.
-        5. Open the editor at the new method.
-        """
-        ws = self.workspace
-        from app.io.scripts import (
-            add_handler_stub, behavior_class_name,
-            load_or_create_behavior_file,
-            suggest_method_name,
-        )
-        from app.widgets.event_registry import event_by_key
+        """Right-click → "+ <event>" / "+ Add another …" — opens
+        the shared bind dropdown at the cursor.
 
-        node = ws.project.get_widget(widget_id)
-        if node is None:
-            return
-        entry = event_by_key(node.widget_type, event_key)
-        if entry is None:
-            return
+        No auto-stub creation: the user picks an existing public
+        method (Page Script group) or an Object Reference action
+        (Object References group). Empty state surfaces a hint
+        pointing at F7 for behavior-file editing.
+        """
+        from app.ui.event_bind_menu import show_event_bind_menu_at_cursor
+        ws = self.workspace
         if not getattr(ws.project, "path", None):
             messagebox.showinfo(
                 "Save first",
@@ -539,42 +523,9 @@ class ContextMenu:
                 parent=ws.winfo_toplevel(),
             )
             return
-        document = ws.project.find_document_for_widget(widget_id)
-        if document is None:
-            return
-        method_name = suggest_method_name(node, entry, document)
-        file_path = load_or_create_behavior_file(
-            ws.project.path, document,
+        show_event_bind_menu_at_cursor(
+            ws, ws.project, widget_id, event_key,
         )
-        if file_path is None:
-            messagebox.showerror(
-                "Couldn't write behavior file",
-                "Failed to create assets/scripts/ folder. Check folder "
-                "permissions on the project directory.",
-                parent=ws.winfo_toplevel(),
-            )
-            return
-        class_name = behavior_class_name(document)
-        add_handler_stub(
-            file_path, class_name, method_name, entry.signature,
-        )
-        # Apply the binding before pushing the command so undo can
-        # locate the appended row by index. ``BindHandlerCommand``
-        # records the index it appended at; mirroring that here keeps
-        # do/redo paths consistent.
-        methods = node.handlers.setdefault(event_key, [])
-        methods.append(method_name)
-        appended_index = len(methods) - 1
-        cmd = BindHandlerCommand(widget_id, event_key, method_name)
-        cmd._appended_index = appended_index
-        ws.project.history.push(cmd)
-        ws.project.event_bus.publish(
-            "widget_handler_changed", widget_id, event_key, method_name,
-        )
-        # Editor doesn't auto-open on action creation — the flash
-        # of a VS Code window every right-click was disruptive.
-        # Double-click the row, F7, or right-click → "Open in
-        # editor" is the explicit jump path.
 
     def _jump_to_handler_method(
         self, widget_id: str, method_name: str,

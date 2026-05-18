@@ -70,6 +70,7 @@ class PreviewMixin(_MainWindowHost):
             export_project(
                 self.project, tmp_path,
                 inject_preview_screenshot=_preview_show_floater(),
+                inject_missing_handler_warnings=True,
             )
         except OSError:
             log_error("preview export")
@@ -126,6 +127,7 @@ class PreviewMixin(_MainWindowHost):
             export_project(
                 self.project, tmp_path, preview_dialog_id=doc_id,
                 inject_preview_screenshot=_preview_show_floater(),
+                inject_missing_handler_warnings=True,
             )
         except OSError:
             log_error("preview dialog export")

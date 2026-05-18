@@ -88,11 +88,16 @@ _EXPORT_PROJECT = None
 # pre-1.8.3 behaviour so projects without behavior files still
 # export cleanly).
 _BEHAVIOR_METHODS_BY_DOC_ID: dict[str, set[str]] = {}
-# Logged for the export caller — list of ``(doc_name, method_name)``
-# tuples that the exporter skipped because the method wasn't found
-# in the file. Caller can surface these as a warning before
-# launching the subprocess.
-_MISSING_BEHAVIOR_METHODS: list[tuple[str, str]] = []
+# Logged for the export caller — list of
+# ``(widget_label, event_label, message_body)`` tuples that the
+# exporter skipped because the handler entry couldn't be resolved.
+# ``message_body`` is the pre-formatted reason string
+# (``"Method not found: 'open_setings'"``,
+# ``"Object reference not found: 'my_label'"``,
+# ``"Action not allowed: 'set_text' on CTkLabel"``).
+# ``inject_missing_handler_warnings=True`` consumes these and
+# emits one ``WARNING`` line per entry at the top of preview.py.
+_MISSING_BEHAVIOR_METHODS: list[tuple[str, str, str]] = []
 _GLOBAL_VAR_ATTR: dict = {}
 _VAR_ID_TO_ATTR: dict = {}
 # v1.10.8 — doc.id → class name emitted in this generate_code run.
@@ -906,6 +911,7 @@ def export_project(
     asset_filter: set[Path] | None = None,
     inject_preview_screenshot: bool = False,
     include_descriptions: bool = True,
+    inject_missing_handler_warnings: bool = False,
 ) -> None:
     """Generate a runnable .py from ``project`` at ``path``.
 
@@ -913,6 +919,13 @@ def export_project(
     are copied next to the .py — useful for per-page exports where
     the rest of the shared asset pool shouldn't ship. ``None``
     keeps the legacy behaviour (whole ``assets/`` copied).
+
+    ``inject_missing_handler_warnings``: when True and the export
+    skipped handler bindings whose methods don't exist in the
+    behavior file, prepend one ``print()`` per skipped binding to
+    the generated source so the in-app Console panel surfaces them
+    when the preview subprocess runs. Set True only by preview
+    launchers — distribution exports keep clean output.
     """
     if as_zip:
         # Run the normal export into a tempdir, then zip the whole
@@ -959,6 +972,10 @@ def export_project(
         )
     finally:
         _CURRENT_PROJECT_PATH = None
+    if inject_missing_handler_warnings and _MISSING_BEHAVIOR_METHODS:
+        source = _prepend_missing_handler_warnings(
+            source, list(_MISSING_BEHAVIOR_METHODS),
+        )
     out = Path(path)
     out.write_text(source, encoding="utf-8")
     # Copy the project's `assets/` folder next to the exported file
@@ -1404,12 +1421,23 @@ def _scan_behavior_methods_for_export(project: Project) -> None:
 
 
 def _filter_handlers_to_existing_methods(
-    node: WidgetNode, methods: list[str],
-) -> list[str]:
-    """Drop method names that the per-doc scanner couldn't find on
-    the behavior class. Each drop appends to
-    ``_MISSING_BEHAVIOR_METHODS`` so the caller can surface a "your
-    behavior file is out of sync" warning to the user.
+    node: WidgetNode, event_label: str, entries: list,
+) -> list:
+    """Drop handler entries the exporter can't resolve. Each drop
+    appends a ``(widget_label, event_label, message_body)`` triple
+    to ``_MISSING_BEHAVIOR_METHODS`` so the preview-warning injector
+    can surface the broken binding in the Console.
+
+    Two entry shapes:
+      * ``str`` — page method on the window's behavior class. Dropped
+        when the per-doc AST scan didn't find a matching ``def``.
+      * ``dict`` with ``"kind": "ref_call"`` — widget-to-widget call
+        routed through an Object Reference. Dropped when the ref name
+        doesn't resolve, the target is unbound, or the method isn't
+        in ``WIDGET_ACTION_METHODS`` for the target's widget type.
+
+    ``widget_label`` is ``node.name`` if set, otherwise
+    ``"<unnamed <widget_type>>"``.
 
     No-op when no scan data exists for the doc — happens for
     unsaved projects or docs whose .py never materialised; in that
@@ -1417,30 +1445,98 @@ def _filter_handlers_to_existing_methods(
     don't break exports that worked before.
     """
     if _EXPORT_PROJECT is None:
-        return methods
+        return entries
     doc = _EXPORT_PROJECT.find_document_for_widget(node.id)
     if doc is None:
-        return methods
+        return entries
     available = _BEHAVIOR_METHODS_BY_DOC_ID.get(doc.id)
     if available is None:
-        return methods
-    kept: list[str] = []
-    for m in methods:
-        if m in available:
-            kept.append(m)
-        else:
-            _MISSING_BEHAVIOR_METHODS.append((doc.name, m))
+        return entries
+    widget_label = node.name or f"<unnamed {node.widget_type}>"
+    kept: list = []
+    for entry in entries:
+        if isinstance(entry, str):
+            if entry in available:
+                kept.append(entry)
+            else:
+                _MISSING_BEHAVIOR_METHODS.append((
+                    widget_label, event_label,
+                    f"Method not found: {entry!r}",
+                ))
+            continue
+        if isinstance(entry, dict) and entry.get("kind") == "ref_call":
+            reason = _validate_ref_call(doc, entry)
+            if reason is None:
+                kept.append(entry)
+            else:
+                _MISSING_BEHAVIOR_METHODS.append((
+                    widget_label, event_label, reason,
+                ))
+            continue
+        # Unknown shape — defensive drop with a generic message.
+        _MISSING_BEHAVIOR_METHODS.append((
+            widget_label, event_label,
+            "Handler entry has unrecognised shape",
+        ))
     return kept
 
 
-def get_missing_behavior_methods() -> list[tuple[str, str]]:
-    """Return the list of ``(doc_name, method_name)`` pairs the most
-    recent export had to skip because the methods didn't exist in
-    the behavior file. Read by the preview launchers to show a
-    pre-spawn warning so the user knows why their button no longer
-    fires what they bound.
+def _validate_ref_call(doc: Document, entry: dict) -> str | None:
+    """Return ``None`` when a ``ref_call`` entry resolves cleanly, or
+    a pre-formatted reason string when it doesn't. Reason strings
+    drive the warning message in ``_prepend_missing_handler_warnings``.
     """
-    return list(_MISSING_BEHAVIOR_METHODS)
+    from app.widgets.action_registry import find_action
+    ref_name = entry.get("ref", "")
+    method_name = entry.get("method", "")
+    if not ref_name or not method_name:
+        return f"Object reference call missing ref or method: {entry!r}"
+    if _EXPORT_PROJECT is None:
+        return None
+    ref_entry = next(
+        (r for r in doc.local_object_references if r.name == ref_name),
+        None,
+    )
+    if ref_entry is None:
+        return f"Object reference not found: {ref_name!r}"
+    target = _EXPORT_PROJECT.get_widget(ref_entry.target_id)
+    if target is None:
+        return f"Object reference unbound: {ref_name!r}"
+    if find_action(target.widget_type, method_name) is None:
+        return (
+            f"Action not allowed: {method_name!r} on {target.widget_type}"
+        )
+    return None
+
+
+def _prepend_missing_handler_warnings(
+    source: str, missing: list[tuple[str, str, str]],
+) -> str:
+    """Insert one ``print()`` per
+    ``(widget_label, event_label, method_name)`` near the top of the
+    generated source — before the first ``class`` / ``def`` so it
+    lands after any future imports and module-level imports but
+    still runs at module load.
+
+    Each line starts with ``WARNING`` so the in-app Console's
+    log-level sniffer (``_classify_stream``) tags it
+    ``preview-warning`` → yellow. Used by preview exports so the
+    Console surfaces dropped bindings via subprocess stdout capture.
+    """
+    lines = source.split("\n")
+    insert_at = len(lines)
+    for i, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped.startswith("class ") or stripped.startswith("def "):
+            insert_at = i
+            break
+    warning_lines: list[str] = []
+    for widget_label, event_label, body in missing:
+        message = f"WARNING {body} ({widget_label} > {event_label})"
+        warning_lines.append(f"print({message!r})")
+    return "\n".join(
+        lines[:insert_at] + warning_lines + [""] + lines[insert_at:]
+    )
 
 
 def get_var_name_fallbacks() -> list[tuple[str, str, str, str]]:
@@ -1584,18 +1680,12 @@ def _emit_handler_lines(
     command_kwarg: tuple[str, str] | None = None
     post_lines: list[str] = []
     for key in node.handlers:
-        methods = [m for m in node.handlers.get(key, []) if m]
-        if not methods:
-            continue
-        # Phase 3 — drop handler entries whose methods don't exist
-        # in the behavior file. Pre-1.8.3 these emitted as
-        # ``self._behavior.<missing>`` and crashed the preview at
-        # widget construction with AttributeError. Now the
-        # exporter filters them; the binding silently disappears
-        # for this run and the caller can warn the user via
-        # ``get_missing_behavior_methods()``.
-        methods = _filter_handlers_to_existing_methods(node, methods)
-        if not methods:
+        entries = [
+            e for e in node.handlers.get(key, [])
+            if (isinstance(e, str) and e)
+            or (isinstance(e, dict) and e.get("kind") == "ref_call")
+        ]
+        if not entries:
             continue
         entry = event_by_key(node.widget_type, key)
         if entry is None:
@@ -1603,28 +1693,90 @@ def _emit_handler_lines(
             # widget any more. Skip silently rather than emit broken
             # code; the Properties panel surfaces the dangling row.
             continue
+        # Phase 3 — drop handler entries the exporter can't resolve
+        # (page methods missing from the behavior file, ref_calls
+        # whose ref disappeared, etc.). Pre-1.8.3 these emitted as
+        # ``self._behavior.<missing>`` and crashed the preview at
+        # widget construction with AttributeError. Now the exporter
+        # filters them and records the drop in
+        # ``_MISSING_BEHAVIOR_METHODS`` for the preview-warning
+        # injector to surface in the Console.
+        entries = _filter_handlers_to_existing_methods(
+            node, entry.label, entries,
+        )
+        if not entries:
+            continue
         if entry.wiring_kind == "command":
-            command_kwarg = ("command", _format_method_chain(methods))
+            command_kwarg = (
+                "command", _format_handler_entries(entries),
+            )
         elif entry.wiring_kind == "bind":
             seq = key.split(":", 1)[1] if ":" in key else key
-            for method in methods:
-                post_lines.append(
-                    f'{full_name}.bind('
-                    f'"{seq}", self._behavior.{method}, add="+")',
-                )
+            for ent in entries:
+                if isinstance(ent, str):
+                    post_lines.append(
+                        f'{full_name}.bind('
+                        f'"{seq}", self._behavior.{ent}, add="+")',
+                    )
+                else:
+                    call = _format_ref_call(ent)
+                    post_lines.append(
+                        f'{full_name}.bind('
+                        f'"{seq}", lambda e: {call}, add="+")',
+                    )
     return command_kwarg, post_lines
 
 
-def _format_method_chain(methods: list[str]) -> str:
-    """Render an ordered list of behavior methods as the source for
-    a ``command=`` kwarg. One method becomes a bare reference;
-    several get wrapped in a lambda that calls each in turn so the
-    fan-out is visible at the call site (no hidden registration).
+def _format_handler_entries(entries: list) -> str:
+    """Render an ordered list of handler entries as the source for
+    a ``command=`` kwarg.
+
+    A single page-method (str) entry becomes a bare reference so the
+    constructor kwarg reads ``command=self._behavior.foo``. Anything
+    else (multi-entry, or a single ref_call which is always a call
+    expression) wraps in a tuple-style lambda so fan-out is visible
+    at the call site — no hidden registration.
     """
-    if len(methods) == 1:
-        return f"self._behavior.{methods[0]}"
-    calls = ", ".join(f"self._behavior.{m}()" for m in methods)
-    return f"lambda: ({calls})"
+    if len(entries) == 1 and isinstance(entries[0], str):
+        return f"self._behavior.{entries[0]}"
+    parts: list[str] = []
+    for entry in entries:
+        if isinstance(entry, str):
+            parts.append(f"self._behavior.{entry}()")
+        else:
+            parts.append(_format_ref_call(entry))
+    return f"lambda: ({', '.join(parts)})"
+
+
+def _format_ref_call(entry: dict) -> str:
+    """Render a single ``ref_call`` entry as the Python expression
+    that invokes it — e.g.
+    ``self._behavior.my_label.configure(text='Submitted')``.
+    Argument literals are typed: ``str`` becomes a quoted string,
+    ``int`` / ``float`` pass through, ``bool`` renders as
+    ``True`` / ``False``.
+    """
+    ref = entry["ref"]
+    method = entry["method"]
+    args_src = ", ".join(
+        _format_ref_arg(a) for a in entry.get("args", [])
+    )
+    return f"self._behavior.{ref}.{method}({args_src})"
+
+
+def _format_ref_arg(arg: dict) -> str:
+    name = arg.get("name", "")
+    type_ = arg.get("type", "str")
+    value = arg.get("value", "")
+    if type_ == "bool":
+        literal = "True" if value else "False"
+    elif type_ in ("int", "float"):
+        literal = str(value)
+    else:
+        literal = repr(str(value))
+    if arg.get("kwarg") and name:
+        return f"{name}={literal}"
+    return literal
 
 
 def _doc_has_handlers(doc: Document) -> bool:
