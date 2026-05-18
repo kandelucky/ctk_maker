@@ -203,6 +203,14 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             "object_reference_target_changed",
         ):
             bus.subscribe(ev, self._on_object_reference_changed)
+        # v1.38 — Scripts panel toggles the attached_scripts list and
+        # publishes this; mirror it into the Attached Scripts group so
+        # the user doesn't have to reselect the Window to see the row
+        # appear / disappear.
+        bus.subscribe(
+            "document_attached_scripts_changed",
+            self._on_attached_scripts_changed,
+        )
 
         self._show_empty()
 
@@ -2037,6 +2045,20 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         """
         if self.current_id is not None:
             self._rebuild()
+
+    def _on_attached_scripts_changed(
+        self, doc_id: str | None = None, *_args, **_kwargs,
+    ) -> None:
+        """Repaint the Window panel after the Scripts panel toggles
+        ``attached_scripts``. Filter on ``doc_id == active_document``
+        so mutations on inactive documents don't churn the UI.
+        """
+        if self.project is None or self.current_id is None:
+            return
+        active = getattr(self.project, "active_document", None)
+        if active is None or getattr(active, "id", None) != doc_id:
+            return
+        self._rebuild()
 
     def _show_local_var_menu(self, event) -> None:
         """Right-click on a Local Variables row → "Open Variables
