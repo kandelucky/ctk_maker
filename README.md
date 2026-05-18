@@ -4,13 +4,12 @@ Drag-and-drop visual designer for **[CustomTkinter](https://github.com/TomSchima
 
 **Community Hub:** [kandelucky.github.io/ctkmaker-hub](https://kandelucky.github.io/ctkmaker-hub/) — browse and share reusable components built in CTkMaker.
 
-> **What changed since v1.30.0:**
-> - **v1.35.0** — **Rich-text toolbar in the Edit Rich Text dialog** — **B / I / U / size / color / bg** buttons wrap the selection or insert tag pairs at the caret. Color + bg are dropdowns with the full parser-known named-colour list plus custom hex; double-click word selection stops at tag delimiters. Reachable from both CTkRichLabel and CTkTextbox with `rich_text=True`.
-> - **v1.34.7** — Live-window hint becomes clickable: one tap fires a sequential ImageGrab batch that ghosts every doc except the active one (Esc cancels). Three-tier palette (info @ 2 / warn @ 3–9 / danger @ 10+ docs) makes runaway live-window counts visible at a glance.
-> - **v1.34.6** — Console upgrade — per-level colours, **Info / Warn / Error / Debug** filter checkboxes with badge counters, word-wrap with 10000-char per-line cap, and a `logging.Handler` sink so every editor-side `log.info(...)` lands in the in-app console.
-> - **v1.33.0 / v1.33.1** — **CTkRichLabel** + opt-in **rich_text** mode on CTkTextbox — read-only label and editable textbox both render inline Unity-style tags (`<b>`, `<i>`, `<u>`, `<color=…>`, `<bg=…>`, `<size=N>`, `<size=+N|-N>`, `<noparse>`) via the shared parser in ctkmaker-core 5.5.x.
-> - **v1.32.0** — **CTkButton Unity ColorBlock** state-colour model — one base colour + Hover / Pressed / Disabled tint multipliers replace eight per-state fields; full palette derived at render via `ctk.derive_state_colors()` (ctkmaker-core 5.4.20).
-> - **v1.30.4 → v1.31.14** — **Fork crutch migration plan closed** — image tint / aspect, font composites, `font_autofit` / `font_wrap`, `full_circle` layout, `UnifiedBindMixin`, segmented-button font, tab_stretch, dialog dark titlebar all now native in ctkmaker-core 5.4.x.
+> **What changed since v1.36.0:**
+> - **v1.41.0** — **Window properties surface — Attached Scripts group + Object References flat list with Win/Dlg/Btn/Lbl chips + Local Variables 3-letter type chip + color swatch + Edit tool click on focused window opens Properties.**
+> - **v1.40.0** — **Scripts panel folder UI** — folder creation, Attached column with per-window cascade + drag-and-drop between folders.
+> - **v1.39.0** — **Library scripts as event handler targets** — picker shows attached scripts, bindings export as `from assets.scripts.<page>... import <module>` plus the call site.
+> - **v1.38.0** — **Event binding Unity-style row layout** — parent row is the target, Function child appears once target is picked, param children appear with function args.
+> - **v1.36.0** — **Scripts panel** — per-page library `.py` files under `assets/scripts/<page>/`, opens via F6 / View → Scripts.
 >
 > ⚠️ **Tested on Windows only.** macOS and Linux are not verified — see [issue #5](https://github.com/kandelucky/ctk_maker/issues/5) for the running list of known incompatibilities + how to help.
 
