@@ -287,6 +287,17 @@ _PTYPE_VAR_COMPAT = {
 
 The Properties panel uses this to decide which variables to offer in the bind menu for a given property.
 
+### Type short labels — [variables.py:36](../../app/core/variables.py#L36)
+
+`VAR_TYPE_SHORT` maps each variable type to a 3-letter chip the Window Properties panel renders next to the variable's name (mirrors `TYPE_SHORT_LABELS` for widget refs):
+
+```python
+"str" → "str"     "int" → "int"     "float" → "flt"
+"bool" → "bol"    "color" → "col"
+```
+
+Color rows additionally get a hue swatch in the value column next to the hex code.
+
 ## ObjectReferenceEntry — [app/core/object_references.py:73](../../app/core/object_references.py#L73)
 
 v1.10.8. Replaces "Behavior Fields". Dataclass.

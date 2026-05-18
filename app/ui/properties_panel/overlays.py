@@ -283,6 +283,54 @@ def place_event_dropdown(
 SLOT_OBJECT_REFERENCE_TOGGLE = "object_reference_toggle"
 
 
+# v1.38 — Variable type chip slot. Used by the Local Variables read-
+# only list in the Window properties panel to surface the 3-letter
+# type abbreviation (``str`` / ``flt`` / ``bol`` / ``col``…) at the
+# left edge of the value cell, dimmed so it reads as a label not a
+# value. The actual value text in the cell is padded with leading
+# spaces so it lands clear of this chip.
+SLOT_VAR_TYPE_CHIP = "var_type_chip"
+
+
+def place_var_type_chip(
+    tree: tk.Widget, widget: tk.Widget, iid: str,
+) -> None:
+    """Right-edge dim chip on a Variables-list row — sits at the
+    right side of the tree column (``#0``), directly next to the
+    variable name. Fixed ~30 px so every chip column-aligns
+    regardless of the row's name length.
+    """
+    try:
+        bbox = tree.bbox(iid, "#0")
+    except tk.TclError:
+        bbox = ()
+    if not bbox:
+        widget.place_forget()
+        return
+    x, y, w, h = bbox
+    WIDTH = 30
+    pad_y = 3
+    widget.place(
+        x=x + w - WIDTH - 4, y=y + pad_y,
+        width=WIDTH, height=max(1, h - pad_y * 2),
+    )
+    widget.lift()
+
+
+# v1.38 — Color swatch slot on the Variables list. Color rows wear
+# the ``col`` chip in the name column same as the other types AND a
+# real-hue swatch at the left of the value column, followed by the
+# hex code text. ``values`` is padded with leading spaces so the hex
+# lands clear of the swatch.
+SLOT_VAR_COLOR_SWATCH = "var_color_swatch"
+
+
+def place_var_color_swatch(
+    tree: tk.Widget, widget: tk.Widget, iid: str,
+) -> None:
+    _place_value_cell_left(tree, widget, iid, width=24, pad_y=3)
+
+
 def place_object_reference_toggle(
     tree: tk.Widget, widget: tk.Widget, iid: str,
 ) -> None:

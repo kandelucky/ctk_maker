@@ -33,6 +33,18 @@ from typing import Literal
 VAR_TYPES = ("str", "int", "float", "bool", "color")
 VarType = Literal["str", "int", "float", "bool", "color"]
 
+# 3-letter chip used in Properties-panel Local Variables list — mirrors
+# ``TYPE_SHORT_LABELS`` for widget refs. Python-natural where the form
+# is already 3 chars (``str`` / ``int``); ``flt`` / ``bol`` / ``col``
+# for the rest.
+VAR_TYPE_SHORT = {
+    "str":   "str",
+    "int":   "int",
+    "float": "flt",
+    "bool":  "bol",
+    "color": "col",
+}
+
 COLOR_DEFAULT = "#000000"
 _HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
 

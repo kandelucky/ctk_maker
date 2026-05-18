@@ -173,6 +173,8 @@ From the Properties panel: click the **+** button next to a widget's name in the
 
 For window-level references: Window / Dialog panel has a global toggle in the Properties header.
 
+The Window properties panel's `Object References` group lists every reference visible from that window: the document's own locals plus every project-level global pointing at another window or widget. Each row carries a 3-letter chip (`Win` / `Dlg` / `Btn` / `Lbl` / …) next to the ref name. Double-clicking a `Win`/`Dlg` row switches the canvas to that document; right-click → `Open` does the same. The current window's own global entry is not duplicated here — the per-Window toggle row at the top of the panel already surfaces it.
+
 Name match is verbatim — the `ref[<Type>]` annotation name in the behavior file must equal the Properties-panel ref name exactly. CTkMaker keeps the annotation in sync on create / rename / delete; if you edit the behavior file by hand and drift, the next export warns before the runtime hits `AttributeError`.
 
 ## Event Handlers
@@ -336,6 +338,7 @@ UX layered on top of the model — runtime-only, never persisted to the export.
 
 - **Single click** sets the primary selection. **Marquee** — drag a rectangle on empty canvas to add to the selection.
 - **Groups (Ctrl+G / Ctrl+Shift+G)** bind a same-parent selection together. Clicking any member targets the whole group; a fast follow-up click drills to one member. Object Tree shows them as a virtual `◆ Group (n)` parent with members nested in soft orange. Group invariant lives in [SelectionController](../../app/ui/selection_controller.py).
+- **Edit tool + click on the focused window's empty area** (chrome bg or body, no widget under the cursor) opens that window's Properties panel — same destination as the ⚙ icon. The click must land on the window that's already focused: clicking a non-focused window only focuses it (and exits ghost mode if it's ghosted) per the two-step rule. Drag-past-`DRAG_THRESHOLD` still kicks off a marquee / move gesture instead.
 
 ### Drag and snap
 

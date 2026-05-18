@@ -60,6 +60,7 @@ No event introspection, no priority, no async. If an event fires no one cares ab
 | `active_document_changed` | `(doc_id)` | project.py:360, project.py:372, project.py:403, commands.py:1275, project_loader.py:329, chrome.py:711 | Switches workspace + properties focus. |
 | `document_collapsed_changed` | `(doc_id, collapsed: bool)` | [project.py](../../app/core/project.py) `set_document_collapsed` | Toggle ON destroys widgets via lifecycle + adds chip to the bottom tabs bar. Toggle OFF rebuilds widgets at the saved canvas position; an auto-shift moves the doc clear of any other doc that crept into its slot while it was minimised. |
 | `document_ghost_changed` | `(doc_id, ghost: bool)` | [project.py](../../app/core/project.py) `set_document_ghost` | Toggle ON captures the doc's rect as a desaturated PIL screenshot via `GhostManager.freeze`, caches it on `Document._cached_ghost_pil`, destroys widgets, places a single canvas image item. Toggle OFF deletes the image and rebuilds widgets via `lifecycle.create_widget_subtree`. Two subscribers: workspace `_on_document_ghost_changed` redraws so the ghost statusbar repaints; main_window `_on_ghost_toggled_save` writes `.ctkproj` immediately so the base64 screenshot survives close-without-save. Load-time `freeze_pending` deliberately bypasses this event (uses `freeze_from_cache` + direct redraw) so restoring N ghosts doesn't trigger N re-saves. UI entry point: click the strip below the doc rect, or click anywhere on the screenshot when ghosted (two-step: first click focuses, second click unghosts). |
+| `document_attached_scripts_changed` | `(doc_id)` | [scripts_window.py](../../app/ui/scripts_window.py) `_toggle_attachment` + `_sweep_attached_paths` | v1.40. Fires after the Scripts panel adds, removes, or path-rewrites an entry in `Document.attached_scripts`. Properties panel rebuilds the Attached Scripts group live so the user doesn't have to reselect the Window to see the row appear / disappear. |
 
 ### Variables
 
@@ -146,10 +147,11 @@ documents_reordered           → reorder document chrome strip
 ### Properties panel — [app/ui/properties_panel/panel.py:148](../../app/ui/properties_panel/panel.py#L148)
 
 ```
-selection_changed             → repopulate tree
-tool_changed                  → enable/disable scope-based rows
-property_changed              → refresh affected row's overlay
-widget_renamed                → update header label
+selection_changed                    → repopulate tree
+tool_changed                         → enable/disable scope-based rows
+property_changed                     → refresh affected row's overlay
+widget_renamed                       → update header label
+document_attached_scripts_changed    → rebuild Attached Scripts group
 ```
 
 ### Object Tree — `app/ui/object_tree_window.py`
@@ -163,6 +165,10 @@ Subscribes to all `variable_*` and `object_reference_*` events plus `active_docu
 ### History panel — `app/ui/history_window.py`
 
 Subscribes to `history_changed`. Repaints the timeline.
+
+### Scripts panel — `app/ui/scripts_window.py`
+
+Subscribes to `document_added`, `document_removed`, `document_renamed`, `document_attached_scripts_changed`. Each callback coalesces to one `after_idle(refresh)` so a burst of document_* events during project load doesn't redraw N times.
 
 ### Main window title — [main_window.py:627](../../app/ui/main_window.py#L627)
 

@@ -47,6 +47,13 @@ class ChromeDrag:
         doc = chrome.project.get_document(doc_id)
         if doc is None:
             return "break"
+        # v1.38 — capture pre-press active state so a click-without-
+        # drag on an already-focused doc's chrome (Edit tool only)
+        # can open the Window properties panel on release. Sampling
+        # AFTER ``set_active_document`` would always be True and the
+        # branch could never tell focus-switch clicks apart from
+        # already-focused ones.
+        was_active = chrome.project.active_document_id == doc_id
         chrome._drag = {
             "doc_id": doc_id,
             "start_canvas_x": doc.canvas_x,
@@ -54,6 +61,7 @@ class ChromeDrag:
             "press_x_root": event.x_root,
             "press_y_root": event.y_root,
             "moved": False,
+            "was_active": was_active,
         }
         # Activate the clicked document up front so the title bar
         # immediately reflects focus during the drag.
@@ -243,6 +251,18 @@ class ChromeDrag:
             # Click without drag → activate the document (settings
             # icon handles the "open Properties" case separately).
             chrome.project.set_active_document(doc_id)
+            # v1.38 — Edit tool + click on chrome bg / title of an
+            # already-focused doc → open the Window properties panel
+            # (same destination as the ⚙ icon). The first click on a
+            # non-focused doc just focuses; the user has to click a
+            # second time on the now-focused chrome to open params.
+            from app.core.project import WINDOW_ID
+            from app.ui.workspace.controls import TOOL_EDIT
+            if (
+                drag.get("was_active", False)
+                and chrome.workspace.controls.tool == TOOL_EDIT
+            ):
+                chrome.project.select_widget(WINDOW_ID)
             chrome.workspace._redraw_document()
             return "break"
         doc = chrome.project.get_document(doc_id)

@@ -64,6 +64,15 @@ class MarqueeSelection:
         # tap the title bar to change focus.
         cx, cy = ws._screen_to_canvas(event.x_root, event.y_root)
         doc = ws._find_document_at_canvas(cx, cy)
+        # v1.38 — pre-press active state for the Edit-tool "click
+        # empty area of the focused doc → open Properties" gesture.
+        # Sampled BEFORE the focus-switch below so we can tell a
+        # focus-changing click apart from a same-doc click.
+        was_active_window = (
+            doc is not None
+            and doc.id == ws.project.active_document_id
+            and ws._tool == TOOL_EDIT
+        )
         if doc is not None and doc.id != ws.project.active_document_id:
             ws.project.set_active_document(doc.id)
         # Marquee selection on either Select or Edit tool. Don't
@@ -76,6 +85,7 @@ class MarqueeSelection:
                 "shift": bool(event.state & 0x0001),
                 "rect_id": None,
                 "active": False,
+                "was_active_window": was_active_window,
             }
             return None
         ws.project.select_widget(None)
@@ -156,9 +166,15 @@ class MarqueeSelection:
             except tk.TclError:
                 pass
         if not was_drag:
-            # Plain click on empty area — match legacy behaviour:
-            # clear the selection (Shift-click on empty preserves
-            # the existing set so the user can keep building it).
+            # v1.38 — Edit tool + click on the body of the focused
+            # doc with no drag → open Window properties (same
+            # destination as the ⚙ icon). Otherwise fall through to
+            # the legacy clear-selection behaviour (Shift preserves
+            # the existing set).
+            if state.get("was_active_window") and not state["shift"]:
+                from app.core.project import WINDOW_ID
+                ws.project.select_widget(WINDOW_ID)
+                return None
             if not state["shift"]:
                 ws.project.select_widget(None)
             return None

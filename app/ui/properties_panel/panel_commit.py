@@ -231,6 +231,24 @@ class CommitMixin:
                 "request_open_variables_window", "local", doc_id,
             )
             return "break"
+        # v1.38 — double-click a global Object Reference whose target
+        # is a Document switches to that document. Window targets are
+        # the only entries with this behavior; widget-target globals
+        # and locals fall through to the F11 jump below.
+        if iid and iid.startswith("objref:g:"):
+            ref_id = iid.split(":", 2)[2]
+            entry = next(
+                (
+                    r for r in (self.project.object_references or [])
+                    if r.id == ref_id
+                ),
+                None,
+            )
+            if entry is not None and entry.target_id:
+                target_doc = self.project.get_document(entry.target_id)
+                if target_doc is not None:
+                    self.project.set_active_document(target_doc.id)
+                    return "break"
         # v1.10.8 — double-click an Object Reference row on the
         # Window panel jumps to the Variables window's Object
         # References tab. Mirrors the localvar branch above.

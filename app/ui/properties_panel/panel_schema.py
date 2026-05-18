@@ -49,6 +49,8 @@ from .overlays import (
     SLOT_EVENT_DROPDOWN,
     SLOT_EVENT_UNBIND,
     SLOT_OBJECT_REFERENCE_TOGGLE,
+    SLOT_VAR_COLOR_SWATCH,
+    SLOT_VAR_TYPE_CHIP,
     place_bind_button,
     place_bind_clear,
     place_enum_button,
@@ -56,6 +58,8 @@ from .overlays import (
     place_event_dropdown,
     place_event_unbind,
     place_object_reference_toggle,
+    place_var_color_swatch,
+    place_var_type_chip,
 )
 
 
@@ -198,6 +202,10 @@ class SchemaMixin:
             self._populate_local_variables_group()
             # Local refs of this doc — read-only list.
             self._populate_object_references_group()
+            # v1.38 — Library scripts attached to this window. Sits
+            # last so the user reads it as a peer of the variables /
+            # refs declarations.
+            self._populate_attached_scripts_group()
 
         # Phase 2 visual scripting — Events group for event-capable
         # widgets (button, slider, entry, …). Renders below every
@@ -241,15 +249,93 @@ class SchemaMixin:
                 tags=("disabled",),
             )
             return
+        from app.core.variables import VAR_TYPE_SHORT
         for entry in locals_list:
             default_str = str(entry.default or "")
             if len(default_str) > 30:
                 default_str = default_str[:29] + "…"
+            iid = f"localvar:{entry.id}"
+            # v1.38 — Layout: name + right-edge type chip in the tree
+            # column. Value column carries the default; colour rows
+            # additionally get a left-edge swatch overlay in the value
+            # cell, so the row reads ``Name [chip] | [swatch] hex``.
+            if entry.type == "color":
+                row_value = f"        {default_str}"
+            else:
+                row_value = default_str
             self.tree.insert(
-                group_iid, "end", iid=f"localvar:{entry.id}",
+                group_iid, "end", iid=iid,
                 text=entry.name,
-                values=(f"({entry.type}) {default_str}",),
+                values=(row_value,),
             )
+            self._attach_var_type_indicator(iid, entry, default_str)
+
+    def _attach_var_type_indicator(
+        self, row_iid: str, entry, default_str: str,
+    ) -> None:
+        """v1.38 — per-row overlays on the Local Variables list. Every
+        type wears a dim 3-letter chip (``str`` / ``int`` / ``flt`` /
+        ``bol`` / ``col``) at the right edge of the name column.
+        Colour rows additionally show a real-hue swatch at the left of
+        the value column so the user reads the row as ``Name col |
+        [swatch] #hex`` at a glance.
+        """
+        if self.overlays is None:
+            return
+        from app.core.variables import VAR_TYPE_SHORT
+        short = VAR_TYPE_SHORT.get(entry.type, entry.type)
+        chip = tk.Label(
+            self.tree,
+            text=short,
+            bg=TREE_BG, fg="#777777",
+            font=ui_font(9),
+            anchor="w",
+            borderwidth=0, padx=0, pady=0,
+        )
+        self.overlays.add(
+            row_iid, SLOT_VAR_TYPE_CHIP, chip, place_var_type_chip,
+        )
+        if entry.type == "color":
+            from .editors.color import _swatch_bg
+            try:
+                swatch = tk.Frame(
+                    self.tree, bg=_swatch_bg(default_str),
+                    highlightthickness=1,
+                    highlightbackground="#3a3a3a",
+                )
+            except tk.TclError:
+                swatch = tk.Frame(
+                    self.tree, bg="#2b2b2b",
+                    highlightthickness=1,
+                    highlightbackground="#3a3a3a",
+                )
+            self.overlays.add(
+                row_iid, SLOT_VAR_COLOR_SWATCH, swatch,
+                place_var_color_swatch,
+            )
+
+    def _attach_objref_type_chip(
+        self, row_iid: str, target_type: str,
+    ) -> None:
+        """v1.38 — same chip slot the Variables list uses, but the
+        text is the widget / window short label (``Btn`` / ``Win`` /
+        ``Dlg`` …) from ``TYPE_SHORT_LABELS``. Falls back to the raw
+        target type when it isn't in the table.
+        """
+        if self.overlays is None:
+            return
+        from app.core.object_references import short_type_label
+        chip = tk.Label(
+            self.tree,
+            text=short_type_label(target_type),
+            bg=TREE_BG, fg="#777777",
+            font=ui_font(9),
+            anchor="w",
+            borderwidth=0, padx=0, pady=0,
+        )
+        self.overlays.add(
+            row_iid, SLOT_VAR_TYPE_CHIP, chip, place_var_type_chip,
+        )
 
     def _populate_object_references_group(self) -> None:
         """v1.10.8 — read-only Object References list on Window panel.
@@ -268,25 +354,150 @@ class SchemaMixin:
             tags=("class",),
         )
         local_refs = list(doc.local_object_references or [])
-        if not local_refs:
+        for entry in local_refs:
+            target_label = self._object_ref_target_label(entry)
+            iid = f"objref:l:{entry.id}"
+            self.tree.insert(
+                group_iid, "end", iid=iid,
+                text=entry.name,
+                values=(target_label,),
+            )
+            self._attach_objref_type_chip(iid, entry.target_type)
+        # v1.38 — Global object references from the project. Window
+        # targets render with a ``Win``/``Dlg`` chip; double-click /
+        # right-click → ``Open`` switches to that document. The
+        # current window's own global entry is skipped because the
+        # ``Object Reference`` toggle row above already surfaces it.
+        active_doc_id = doc.id
+        globals_list = list(self.project.object_references or [])
+        rendered_global = False
+        for entry in globals_list:
+            if entry.target_id == active_doc_id:
+                continue
+            target_doc = (
+                self.project.get_document(entry.target_id)
+                if entry.target_id else None
+            )
+            iid = f"objref:g:{entry.id}"
+            if target_doc is not None:
+                self.tree.insert(
+                    group_iid, "end", iid=iid,
+                    text=entry.name,
+                    values=(target_doc.name,),
+                )
+            else:
+                target_label = self._object_ref_target_label(entry)
+                self.tree.insert(
+                    group_iid, "end", iid=iid,
+                    text=entry.name,
+                    values=(target_label,),
+                )
+            self._attach_objref_type_chip(iid, entry.target_type)
+            rendered_global = True
+        if not local_refs and not rendered_global:
             self.tree.insert(
                 group_iid, "end", iid="objref:empty",
                 text="",
                 values=("no references — toggle from a widget panel",),
                 tags=("disabled",),
             )
+
+    def _populate_attached_scripts_group(self) -> None:
+        """v1.38 — Attached Scripts group on the Window properties
+        panel. Lists ``doc.attached_scripts`` (paths relative to the
+        page-scripts folder) as read-only rows with a ``×`` detach
+        button. The group header carries a ``+`` button that opens
+        the Scripts window — attach / create / rename happens there.
+        """
+        if self.project is None:
             return
-        from app.core.object_references import short_type_label
-        for entry in local_refs:
-            target_label = self._object_ref_target_label(entry)
+        doc = self.project.active_document
+        if doc is None:
+            return
+        group_iid = "g:Attached Scripts"
+        self.tree.insert(
+            "", "end", iid=group_iid,
+            text="Attached Scripts", values=("",), open=True,
+            tags=("class",),
+        )
+        self._attach_scripts_add_button(group_iid)
+        scripts = list(getattr(doc, "attached_scripts", []) or [])
+        if not scripts:
             self.tree.insert(
-                group_iid, "end",
-                iid=f"objref:l:{entry.id}",
-                text=entry.name,
-                values=(
-                    f"({short_type_label(entry.target_type)})  "
-                    f"→  {target_label}",
-                ),
+                group_iid, "end", iid="script:empty",
+                text="",
+                values=("no scripts attached — click + to manage",),
+                tags=("disabled",),
+            )
+            return
+        for idx, path in enumerate(scripts):
+            row_iid = f"script:{idx}"
+            self.tree.insert(
+                group_iid, "end", iid=row_iid,
+                text=path, values=("",),
+            )
+            self._attach_script_remove_button(row_iid, path)
+
+    def _attach_scripts_add_button(self, header_iid: str) -> None:
+        """``+`` button on the Attached Scripts header — opens the
+        Scripts window through the event bus (same path F6 uses).
+        """
+        btn = tk.Label(
+            self.tree,
+            text="+",
+            bg="#0e639c", fg="#ffffff",
+            font=derive_ui_font(size=12, weight="bold"),
+            cursor="hand2", borderwidth=0, padx=0, pady=0,
+            anchor="center",
+        )
+        btn.bind(
+            "<Enter>",
+            lambda _e, b=btn: b.configure(bg="#1177bb"),
+        )
+        btn.bind(
+            "<Leave>",
+            lambda _e, b=btn: b.configure(bg="#0e639c"),
+        )
+        btn.bind(
+            "<Button-1>",
+            lambda _e: self._open_scripts_window(),
+        )
+        if self.overlays is not None:
+            self.overlays.add(
+                header_iid, SLOT_OBJECT_REFERENCE_TOGGLE, btn,
+                place_object_reference_toggle,
+            )
+
+    def _attach_script_remove_button(
+        self, row_iid: str, path: str,
+    ) -> None:
+        """``×`` button per attached-script row — detaches the script
+        from the active document and rebuilds the panel locally.
+        """
+        btn = tk.Label(
+            self.tree,
+            text="×",
+            bg="#a33d3d", fg="#ffffff",
+            font=derive_ui_font(size=12, weight="bold"),
+            cursor="hand2", borderwidth=0, padx=0, pady=0,
+            anchor="center",
+        )
+        btn.bind(
+            "<Enter>",
+            lambda _e, b=btn: b.configure(bg="#c94545"),
+        )
+        btn.bind(
+            "<Leave>",
+            lambda _e, b=btn: b.configure(bg="#a33d3d"),
+        )
+        btn.bind(
+            "<Button-1>",
+            lambda _e, p=path: self._detach_script(p),
+        )
+        if self.overlays is not None:
+            self.overlays.add(
+                row_iid, SLOT_OBJECT_REFERENCE_TOGGLE, btn,
+                place_object_reference_toggle,
             )
 
     def _populate_window_global_reference_toggle(self) -> None:

@@ -1149,6 +1149,14 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         if iid and iid.startswith("localvar:") and iid != "localvar:empty":
             self._show_local_var_menu(event)
             return
+        # v1.38 — global Object Reference rows whose target is a
+        # Document offer a one-item ``Open`` menu (same action as
+        # double-click). Widget-target globals and locals skip the
+        # menu — the F11 Object References tab is the place for any
+        # mutation work.
+        if iid and iid.startswith("objref:g:"):
+            self._show_global_objref_menu(event, iid)
+            return
         # Phase 2 visual scripting — Events group rows route to a
         # dedicated menu. Side-table lookup avoids re-parsing iid
         # strings; ``_event_row_meta`` is populated alongside the
@@ -1913,6 +1921,32 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         )
         self.project.history.push(cmd)
 
+    # ------------------------------------------------------------------
+    # v1.38 — Attached Scripts handlers
+    # ------------------------------------------------------------------
+    def _open_scripts_window(self) -> None:
+        """Publish the same request F6 / View → Scripts triggers.
+        ``main_window`` owns the singleton + actual open/close.
+        """
+        if self.project is None:
+            return
+        self.project.event_bus.publish("request_open_scripts_window")
+
+    def _detach_script(self, path: str) -> None:
+        """Remove ``path`` from ``doc.attached_scripts`` and rebuild
+        the panel locally. Attaching back happens from the Scripts
+        window; no event_bus publish here.
+        """
+        if self.project is None:
+            return
+        doc = self.project.active_document
+        if doc is None:
+            return
+        if path not in doc.attached_scripts:
+            return
+        doc.attached_scripts.remove(path)
+        self._rebuild()
+
     def _make_window_global_reference(self, doc) -> None:
         """Promote the active document (Window or Dialog) to a global
         Object Reference. Creates a project-level entry whose target
@@ -2070,6 +2104,39 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             label="Open Variables Editor",
             command=lambda: self.project.event_bus.publish(
                 "request_open_variables_window", "local", doc_id,
+            ),
+        )
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _show_global_objref_menu(self, event, iid: str) -> None:
+        """v1.38 — right-click on a global Object Reference row.
+        Window targets get an ``Open`` item that switches to that
+        document (same action as double-click). Widget-target globals
+        skip the menu — they don't carry an open-able destination.
+        """
+        if self.project is None:
+            return
+        ref_id = iid.split(":", 2)[2]
+        entry = next(
+            (
+                r for r in (self.project.object_references or [])
+                if r.id == ref_id
+            ),
+            None,
+        )
+        if entry is None or not entry.target_id:
+            return
+        target_doc = self.project.get_document(entry.target_id)
+        if target_doc is None:
+            return
+        menu = tk.Menu(self.tree, tearoff=0)
+        menu.add_command(
+            label="Open",
+            command=lambda d=target_doc.id: (
+                self.project.set_active_document(d)
             ),
         )
         try:
