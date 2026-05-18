@@ -1337,6 +1337,19 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             menu.add_cascade(
                 label="Object References", menu=refs_menu,
             )
+        attached = getattr(document, "attached_scripts", []) or []
+        if attached:
+            scripts_menu = tk.Menu(menu, tearoff=0)
+            for path in attached:
+                scripts_menu.add_command(
+                    label=path,
+                    command=lambda p=path: self._retarget_to_library(
+                        widget_id, event_key, m_idx, p,
+                    ),
+                )
+            menu.add_cascade(
+                label="Library Scripts", menu=scripts_menu,
+            )
         try:
             menu.tk_popup(
                 self.tree.winfo_pointerx(),
@@ -1388,16 +1401,46 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             "widget_handler_changed", widget_id, event_key, "",
         )
 
+    def _retarget_to_library(
+        self, widget_id: str, event_key: str,
+        m_idx: int, script_path: str,
+    ) -> None:
+        """Replace the entry at ``m_idx`` with a library_call dict
+        targeting ``script_path``, method/args empty until the user
+        picks via the Function picker.
+        """
+        node = self.project.get_widget(widget_id)
+        if node is None:
+            return
+        entries = node.handlers.get(event_key)
+        if entries is None or m_idx >= len(entries):
+            return
+        entries[m_idx] = {
+            "kind": "library_call",
+            "script": script_path,
+            "method": "",
+            "args": [],
+        }
+        self.project.event_bus.publish(
+            "widget_handler_changed", widget_id, event_key, "",
+        )
+
     def _open_function_picker(
         self, widget_id: str, event_key: str, m_idx: int,
     ) -> None:
         """Single-click on the ``Function:`` child row opens a
-        cascade menu of compatible functions. Page-script targets
-        list public methods filtered by ``parse_handler_methods_compatible``;
-        Object Reference targets list ``WIDGET_ACTION_METHODS``
-        actions for the ref's widget type. Picking replaces the
-        entry's method in place — no auto-stub creation, no
-        rebind plumbing.
+        cascade menu of compatible functions. Per entry kind:
+
+        * Page script (str) → public class methods filtered by
+          ``parse_handler_methods_compatible``.
+        * Object Reference (``ref_call``) → ``WIDGET_ACTION_METHODS``
+          actions for the ref's widget type.
+        * Library script (``library_call``) → public top-level
+          functions from the attached file, signature-filtered
+          by ``parse_module_functions``.
+
+        Picking replaces the entry's method in place — no
+        auto-stub creation, no rebind plumbing.
         """
         node = self.project.get_widget(widget_id)
         if node is None:
@@ -1410,6 +1453,10 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         menu = tk.Menu(self.tree, tearoff=0, **menu_style())
         is_ref_call = (
             isinstance(entry, dict) and entry.get("kind") == "ref_call"
+        )
+        is_library_call = (
+            isinstance(entry, dict)
+            and entry.get("kind") == "library_call"
         )
         if is_ref_call:
             ref_name = entry.get("ref", "")
@@ -1447,6 +1494,41 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
                             widget_id, event_key, m_idx, a,
                         ),
                     )
+        elif is_library_call:
+            from app.core.script_paths import page_scripts_dir
+            from app.io.scripts import parse_module_functions
+            from app.widgets.event_registry import event_by_key
+            script_path = entry.get("script", "")
+            ev = event_by_key(node.widget_type, event_key)
+            fns: list[str] = []
+            if (
+                ev is not None
+                and script_path
+                and getattr(self.project, "path", None)
+            ):
+                page_dir = page_scripts_dir(self.project.path)
+                if page_dir is not None:
+                    full_path = page_dir / script_path
+                    if full_path.exists():
+                        fns = parse_module_functions(
+                            full_path, ev.wiring_kind,
+                        )
+            if not fns:
+                menu.add_command(
+                    label=(
+                        f"No public functions in {script_path}"
+                        if script_path else "Script not set"
+                    ),
+                    state="disabled",
+                )
+            for fn_name in fns:
+                menu.add_command(
+                    label=fn_name,
+                    command=lambda m=fn_name:
+                    self._set_handler_method_library(
+                        widget_id, event_key, m_idx, m,
+                    ),
+                )
         else:
             from app.io.scripts import parse_handler_methods_compatible
             from app.core.script_paths import (
@@ -1489,6 +1571,30 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             )
         finally:
             menu.grab_release()
+
+    def _set_handler_method_library(
+        self, widget_id: str, event_key: str,
+        m_idx: int, method_name: str,
+    ) -> None:
+        """Replace a library_call entry's method in place. ``args``
+        stays empty — multi-arg support for module functions is
+        deferred; for now the lambda emits as ``module.func()``.
+        Direct mutation; publishes ``widget_handler_changed``.
+        """
+        node = self.project.get_widget(widget_id)
+        if node is None:
+            return
+        entries = node.handlers.get(event_key)
+        if entries is None or m_idx >= len(entries):
+            return
+        entry = entries[m_idx]
+        if not isinstance(entry, dict):
+            return
+        entry["method"] = method_name
+        entry["args"] = []
+        self.project.event_bus.publish(
+            "widget_handler_changed", widget_id, event_key, method_name,
+        )
 
     def _set_handler_method_str(
         self, widget_id: str, event_key: str,

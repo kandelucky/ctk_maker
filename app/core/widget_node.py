@@ -53,13 +53,22 @@ class WidgetNode:
         #
         # Each entry is one of:
         #   * ``str`` — name of a method on the window's behavior class
-        #     (v1 / v2 shape, still supported).
+        #     (v1 / v2 shape, still supported). Empty ``""`` = target
+        #     picked (Page Script) but function not chosen yet.
         #   * ``dict`` with ``{"kind": "ref_call", "ref": <ref_name>,
         #     "method": <method_name>, "args": [...]}`` — direct
         #     widget-to-widget call routed through an Object Reference
-        #     (v3 addition). ``args`` is a list of
-        #     ``{"name": str, "type": "str"|"int"|"float"|"bool",
-        #     "value": Any, "kwarg": bool}`` dicts.
+        #     (v3 addition).
+        #   * ``dict`` with ``{"kind": "library_call", "script":
+        #     <page_folder_relative_path>, "method": <function_name>,
+        #     "args": [...]}`` — module-level function call into an
+        #     attached library script (v1.38 addition). ``script``
+        #     must appear in the owning Document's ``attached_scripts``
+        #     list for the binding to resolve.
+        #
+        # ``args`` (when present) is a list of
+        # ``{"name": str, "type": "str"|"int"|"float"|"bool",
+        # "value": Any, "kwarg": bool}`` dicts.
         self.handlers: dict[str, list] = {}
 
     def to_dict(self) -> dict:
@@ -124,10 +133,14 @@ class WidgetNode:
         #   v3: ``{event: ["m1", {"kind": "ref_call", ...}]}`` (mixed
         #       list — string entries are page methods, dict entries
         #       are direct widget-to-widget calls routed through an
-        #       Object Reference). A bare string is wrapped into a
-        #       one-element list. Empty entries are dropped; dict
-        #       entries without ``"kind": "ref_call"`` are also
-        #       dropped to keep the live model strict.
+        #       Object Reference).
+        #   v4 / v1.38: dict entries also accept
+        #       ``{"kind": "library_call", "script": <path>,
+        #       "method": <name>, "args": [...]}`` for module-level
+        #       function calls into attached library scripts.
+        # A bare string is wrapped into a one-element list. Empty
+        # entries are dropped; unrecognised dict ``kind`` values are
+        # also dropped to keep the live model strict.
         raw_handlers = data.get("handlers")
         if isinstance(raw_handlers, dict):
             normalised: dict[str, list] = {}
@@ -147,10 +160,9 @@ class WidgetNode:
                             # the exporter filters them as missing
                             # methods.
                             entries.append(raw)
-                        elif (
-                            isinstance(raw, dict)
-                            and raw.get("kind") == "ref_call"
-                        ):
+                        elif isinstance(raw, dict) and raw.get(
+                            "kind",
+                        ) in ("ref_call", "library_call"):
                             entries.append(copy.deepcopy(raw))
                     if entries:
                         normalised[key] = entries

@@ -739,17 +739,16 @@ class SchemaMixin:
         ``label_prefix`` is the primary-column text — varies by
         target kind so the user reads the row as a category:
 
-        * ``"Script:"`` — page-method entry (behavior file).
-        * ``"Object:"`` — ref_call to a widget or window (Object
-          umbrellas both — widget refs today, Window refs later).
+        * ``"Script:"`` — page-method entry OR library_call (both
+          live in ``.py`` files; the value cell distinguishes the
+          page behavior file from an attached library script).
+        * ``"Object:"`` — ref_call to a widget or window.
         * ``"Target:"`` — pending placeholder (no target picked
           yet); the value cell carries the ``Add target`` prompt.
 
         ``target_picked`` controls whether the Function / param
         child rows render at all — ``False`` for the placeholder
-        state. Value column drops the widget-type suffix now that
-        the prefix carries the category — "Object: result" beats
-        "Object: result (CTkLabel)" for scanability.
+        state.
         """
         if isinstance(handler_entry, dict) and (
             handler_entry.get("kind") == "ref_call"
@@ -773,6 +772,21 @@ class SchemaMixin:
             if target is None:
                 return "Object:", ref_name, "reference unbound", True
             return "Object:", ref_name, None, True
+        if isinstance(handler_entry, dict) and (
+            handler_entry.get("kind") == "library_call"
+        ):
+            script_path = handler_entry.get("script", "")
+            if not script_path:
+                return "Target:", "Add target", None, False
+            document = self.project.find_document_for_widget(node.id)
+            if document is None:
+                return "Script:", script_path, None, True
+            if script_path not in (document.attached_scripts or []):
+                return (
+                    "Script:", script_path,
+                    "script not attached", True,
+                )
+            return "Script:", script_path, None, True
         # Page-method string entry — display as the behavior file
         # name (``dialog.py`` style) so the parent reads as the
         # source the method lives in.
@@ -821,6 +835,19 @@ class SchemaMixin:
                     (pname, str(pvalue) if pvalue != "" else "—"),
                 )
             return action.label, None, param_pairs
+        if isinstance(handler_entry, dict) and (
+            handler_entry.get("kind") == "library_call"
+        ):
+            method = handler_entry.get("method", "")
+            if not method:
+                return "Pick function…", None, []
+            # Cross-check that the picked function still exists in
+            # the attached script — surface a missing reason if the
+            # user renamed / deleted it manually.
+            script_path = handler_entry.get("script", "")
+            if not self._library_method_exists(script_path, method):
+                return method, "function missing in script", []
+            return method, None, []
         # Page method — bare string entry. Empty string = target
         # picked but function not chosen yet.
         method = handler_entry
@@ -833,6 +860,30 @@ class SchemaMixin:
         ):
             missing = "missing in file"
         return method, missing, []
+
+    def _library_method_exists(
+        self, script_path: str, method_name: str,
+    ) -> bool:
+        """Cheap AST lookup — does the attached script contain a
+        public top-level ``def`` with this name? Returns ``True``
+        when the project is unsaved or the file isn't reachable
+        (don't flag a missing reason we can't confirm). Mirrors the
+        permissive ``_filter_handlers_to_existing_methods`` logic
+        for unsaved projects.
+        """
+        if not script_path or not method_name:
+            return True
+        if not getattr(self.project, "path", None):
+            return True
+        from app.core.script_paths import page_scripts_dir
+        from app.io.scripts import parse_module_functions
+        page_dir = page_scripts_dir(self.project.path)
+        if page_dir is None:
+            return True
+        full_path = page_dir / script_path
+        if not full_path.exists():
+            return True
+        return method_name in parse_module_functions(full_path)
 
     def _action_entry_for_ref_call(self, handler_entry: dict):
         """Look up the ``ActionEntry`` for a ref_call's

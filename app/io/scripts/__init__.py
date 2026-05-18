@@ -31,6 +31,7 @@ from app.io.scripts.ast_scan import (
     parse_handler_methods,
     parse_handler_methods_compatible,
     parse_method_docstrings,
+    parse_module_functions,
     parse_object_reference_fields,
 )
 from app.io.scripts.editor import (
@@ -68,6 +69,7 @@ __all__ = [
     "parse_handler_methods",
     "parse_handler_methods_compatible",
     "parse_method_docstrings",
+    "parse_module_functions",
     "parse_object_reference_fields",
     # editor
     "launch_editor",

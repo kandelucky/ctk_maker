@@ -1321,6 +1321,32 @@ def _generate_code_inner(
             )
         lines.append("")
 
+    # v1.38 — Library script imports. Every emitted document
+    # contributes its ``attached_scripts`` paths; we dedupe across
+    # docs so a script attached to multiple windows imports once.
+    # Page-folder-relative paths convert to dotted module paths
+    # rooted at ``assets.scripts.<page_slug>`` so handler lambdas
+    # can reference the module name (``helpers.save_log()``) as a
+    # bare module-level free variable.
+    attached_paths: list[str] = []
+    seen_paths: set[str] = set()
+    for doc, _cls in class_names:
+        for path in getattr(doc, "attached_scripts", []) or []:
+            if path in seen_paths:
+                continue
+            seen_paths.add(path)
+            attached_paths.append(path)
+    if attached_paths:
+        if not behavior_imports:
+            # Need ``page_slug`` for the dotted path; recompute when
+            # we didn't already pull it in for the behavior imports
+            # above.
+            from app.core.script_paths import behavior_file_stem
+            page_slug = behavior_file_stem(project.path)
+        for path in attached_paths:
+            lines.append(_library_import_line(page_slug, path))
+        lines.append("")
+
     # In single-document mode, force the class to subclass ctk.CTk so
     # the exported file is a standalone runnable app — even if the
     # source document is a CTkToplevel in the multi-doc project.
@@ -1428,13 +1454,18 @@ def _filter_handlers_to_existing_methods(
     to ``_MISSING_BEHAVIOR_METHODS`` so the preview-warning injector
     can surface the broken binding in the Console.
 
-    Two entry shapes:
+    Three entry shapes:
       * ``str`` — page method on the window's behavior class. Dropped
         when the per-doc AST scan didn't find a matching ``def``.
       * ``dict`` with ``"kind": "ref_call"`` — widget-to-widget call
         routed through an Object Reference. Dropped when the ref name
         doesn't resolve, the target is unbound, or the method isn't
         in ``WIDGET_ACTION_METHODS`` for the target's widget type.
+      * ``dict`` with ``"kind": "library_call"`` — module-level
+        function call into an attached library script. Dropped when
+        the script isn't in ``doc.attached_scripts``, the file
+        doesn't exist, or the function isn't a public top-level
+        ``def`` in it.
 
     ``widget_label`` is ``node.name`` if set, otherwise
     ``"<unnamed <widget_type>>"``.
@@ -1466,6 +1497,17 @@ def _filter_handlers_to_existing_methods(
             continue
         if isinstance(entry, dict) and entry.get("kind") == "ref_call":
             reason = _validate_ref_call(doc, entry)
+            if reason is None:
+                kept.append(entry)
+            else:
+                _MISSING_BEHAVIOR_METHODS.append((
+                    widget_label, event_label, reason,
+                ))
+            continue
+        if isinstance(entry, dict) and entry.get(
+            "kind",
+        ) == "library_call":
+            reason = _validate_library_call(doc, entry)
             if reason is None:
                 kept.append(entry)
             else:
@@ -1507,6 +1549,76 @@ def _validate_ref_call(doc: Document, entry: dict) -> str | None:
             f"Action not allowed: {method_name!r} on {target.widget_type}"
         )
     return None
+
+
+def _validate_library_call(doc: Document, entry: dict) -> str | None:
+    """Return ``None`` when a ``library_call`` entry resolves
+    cleanly, or a pre-formatted reason string when it doesn't.
+
+    Checks:
+      1. ``script`` + ``method`` fields are non-empty.
+      2. ``script`` path appears in ``doc.attached_scripts`` (the
+         picker scopes by attachment — call into an unattached
+         module would mean the exporter is missing its ``from
+         assets.scripts.<page>.<...> import <module>`` line).
+      3. The script file exists at the resolved page path.
+      4. ``method`` is a public top-level ``def`` in that file
+         (uses ``parse_module_functions`` — same AST surface the
+         Function picker reads from).
+    """
+    script_path = entry.get("script", "")
+    method_name = entry.get("method", "")
+    if not script_path or not method_name:
+        return f"Library call missing script or method: {entry!r}"
+    if script_path not in doc.attached_scripts:
+        return f"Script not attached: {script_path!r}"
+    if _EXPORT_PROJECT is None or not _EXPORT_PROJECT.path:
+        return None
+    from app.core.script_paths import page_scripts_dir
+    from app.io.scripts import parse_module_functions
+    page_dir = page_scripts_dir(_EXPORT_PROJECT.path)
+    if page_dir is None:
+        return None
+    full_path = page_dir / script_path
+    if not full_path.exists():
+        return f"Script file not found: {script_path!r}"
+    fns = parse_module_functions(full_path)
+    if method_name not in fns:
+        return (
+            f"Function not found: {method_name!r} in {script_path!r}"
+        )
+    return None
+
+
+def _library_script_module_name(rel_path: str) -> str:
+    """Convert a page-folder-relative path to the Python module
+    name used in lambda bodies. Strips ``.py``, takes the basename
+    so ``services/auth.py`` → ``auth``. Library imports use a
+    ``from <package> import <module>`` shape; the resulting module
+    name is what handler lambdas reference.
+    """
+    name = rel_path
+    if name.endswith(".py"):
+        name = name[:-3]
+    return name.rsplit("/", 1)[-1]
+
+
+def _library_import_line(page_slug: str, rel_path: str) -> str:
+    """Render the ``from assets.scripts.<page>[.<sub>] import
+    <module>`` line for an attached library script. Sub-packages
+    fold into the dotted path; bare top-of-page scripts import
+    directly from ``assets.scripts.<page_slug>``.
+    """
+    path = rel_path
+    if path.endswith(".py"):
+        path = path[:-3]
+    parts = path.split("/")
+    module = parts[-1]
+    package_tail = parts[:-1]
+    package = f"assets.scripts.{page_slug}"
+    if package_tail:
+        package = package + "." + ".".join(package_tail)
+    return f"from {package} import {module}"
 
 
 def _prepend_missing_handler_warnings(
@@ -1719,7 +1831,13 @@ def _emit_handler_lines(
                         f'"{seq}", self._behavior.{ent}, add="+")',
                     )
                 else:
-                    call = _format_ref_call(ent)
+                    if (
+                        isinstance(ent, dict)
+                        and ent.get("kind") == "library_call"
+                    ):
+                        call = _format_library_call(ent)
+                    else:
+                        call = _format_ref_call(ent)
                     post_lines.append(
                         f'{full_name}.bind('
                         f'"{seq}", lambda e: {call}, add="+")',
@@ -1733,9 +1851,9 @@ def _format_handler_entries(entries: list) -> str:
 
     A single page-method (str) entry becomes a bare reference so the
     constructor kwarg reads ``command=self._behavior.foo``. Anything
-    else (multi-entry, or a single ref_call which is always a call
-    expression) wraps in a tuple-style lambda so fan-out is visible
-    at the call site — no hidden registration.
+    else (multi-entry, or a single ref_call / library_call which is
+    always a call expression) wraps in a tuple-style lambda so
+    fan-out is visible at the call site — no hidden registration.
     """
     if len(entries) == 1 and isinstance(entries[0], str):
         return f"self._behavior.{entries[0]}"
@@ -1743,6 +1861,11 @@ def _format_handler_entries(entries: list) -> str:
     for entry in entries:
         if isinstance(entry, str):
             parts.append(f"self._behavior.{entry}()")
+        elif (
+            isinstance(entry, dict)
+            and entry.get("kind") == "library_call"
+        ):
+            parts.append(_format_library_call(entry))
         else:
             parts.append(_format_ref_call(entry))
     return f"lambda: ({', '.join(parts)})"
@@ -1762,6 +1885,21 @@ def _format_ref_call(entry: dict) -> str:
         _format_ref_arg(a) for a in entry.get("args", [])
     )
     return f"self._behavior.{ref}.{method}({args_src})"
+
+
+def _format_library_call(entry: dict) -> str:
+    """Render a single ``library_call`` entry as the Python
+    expression that invokes it — e.g. ``helpers.save_log()``.
+    The module name comes from the script's basename (stripped of
+    ``.py``); the exporter's top-of-file imports keep it in scope.
+    Argument formatting reuses ``_format_ref_arg``.
+    """
+    module = _library_script_module_name(entry["script"])
+    method = entry["method"]
+    args_src = ", ".join(
+        _format_ref_arg(a) for a in entry.get("args", [])
+    )
+    return f"{module}.{method}({args_src})"
 
 
 def _format_ref_arg(arg: dict) -> str:

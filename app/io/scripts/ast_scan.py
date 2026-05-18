@@ -111,6 +111,67 @@ def _signature_matches_event(
     return False
 
 
+def parse_module_functions(
+    file_path: str | Path,
+    wiring_kind: str | None = None,
+) -> list[str]:
+    """Return public top-level function names from a library script.
+
+    Three filters apply:
+
+    * **Top-level only** — class methods and nested functions are
+      skipped (event handlers call ``module.func()``, not classes).
+    * **Visibility** — name doesn't start with ``_`` (Python
+      convention; mirrors ``parse_handler_methods_compatible``).
+    * **Sync only** — ``async def`` is dropped (Tk event callbacks
+      can't ``await``; an attached script wanting async logic
+      wraps it manually in a sync entry point).
+
+    ``wiring_kind`` (optional): when ``"command"`` or ``"bind"``,
+    also filter by signature compatibility — same rule as
+    ``parse_handler_methods_compatible`` but without the ``self``
+    drop (module functions have no ``self``).
+
+    Empty on missing file / syntax error / no public functions.
+    """
+    source = _read_source(file_path)
+    if source is None:
+        return []
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    names: list[str] = []
+    for stmt in tree.body:
+        if not isinstance(stmt, ast.FunctionDef):
+            continue
+        if stmt.name.startswith("_"):
+            continue
+        if wiring_kind is not None and not _module_function_matches(
+            stmt, wiring_kind,
+        ):
+            continue
+        names.append(stmt.name)
+    return names
+
+
+def _module_function_matches(
+    fn: ast.FunctionDef, wiring_kind: str,
+) -> bool:
+    """Signature-compat check for module-level functions. Same
+    semantics as ``_signature_matches_event`` but without the
+    ``self`` drop — module functions are called directly without
+    an implicit instance arg.
+    """
+    pos = list(fn.args.args)
+    required = max(0, len(pos) - len(fn.args.defaults))
+    if wiring_kind == "command":
+        return required == 0
+    if wiring_kind == "bind":
+        return len(pos) >= 1 and required <= 1
+    return False
+
+
 # ---------------------------------------------------------------------
 # Object Reference annotation parser (v1.10.8+)
 #

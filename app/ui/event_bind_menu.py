@@ -197,11 +197,10 @@ def populate_target_only_menu(
     event_key: str,
     on_commit: Callable[[], None] | None = None,
 ) -> None:
-    """Flat target picker — lists Page Script + every Object
-    Reference that resolves to a widget type with at least one
-    allowlisted action. Picking commits the entry to ``handlers``
-    with the target set and method/args left empty so the user
-    fills the Function row separately.
+    """Flat target picker — lists Page Script, Object References,
+    and library scripts attached to the document. Picking commits
+    the entry to ``handlers`` with the target set and method/args
+    left empty so the user fills the Function row separately.
 
     Use when the workflow is "first pick target, then pick
     function" (Unity Inspector behaviour); the cascading
@@ -244,6 +243,16 @@ def populate_target_only_menu(
                     project, widget_id, event_key, r.name, on_commit,
                 ),
             )
+    attached = getattr(document, "attached_scripts", []) or []
+    if attached:
+        menu.add_separator()
+        for path in attached:
+            menu.add_command(
+                label=path,
+                command=lambda p=path: _commit_target_library(
+                    project, widget_id, event_key, p, on_commit,
+                ),
+            )
 
 
 def _commit_target_page(
@@ -275,6 +284,30 @@ def _commit_target_ref(
     entry = {
         "kind": "ref_call",
         "ref": ref_name,
+        "method": "",
+        "args": [],
+    }
+    cmd = BindHandlerCommand(widget_id, event_key, entry)
+    cmd.redo(project)
+    project.history.push(cmd)
+    if on_commit is not None:
+        on_commit()
+
+
+def _commit_target_library(
+    project: "Project", widget_id: str, event_key: str,
+    script_path: str,
+    on_commit: Callable[[], None] | None,
+) -> None:
+    """Append an empty library_call entry — method/args left blank
+    for the Function row picker to fill. ``script_path`` is the
+    page-folder-relative path stored in
+    ``Document.attached_scripts``.
+    """
+    from app.core.commands import BindHandlerCommand
+    entry = {
+        "kind": "library_call",
+        "script": script_path,
         "method": "",
         "args": [],
     }

@@ -96,7 +96,7 @@ Two cross-cutting registries sit next to the descriptors:
 | `project_loader.py` | Load `.ctkproj` (v1→v2 migration on load; v2/v3 handler shapes accepted). |
 | `project_saver.py` | Save `.ctkproj`. |
 | `code_exporter/` | `.ctkproj` → runnable `.py` (per-window class). Package: `__init__.py` (main pipeline + filter / formatter / warning injection), `runtime_helpers.py`, `_utils.py`, `ctk_defaults.py`, `auto_trace_templates.py`, `preview_screenshot.py`. |
-| `scripts/` | Per-window behavior file generation + AST scan (`assets/scripts/<page>/<window>.py`). Package: `ast_scan.py` (incl. `parse_handler_methods_compatible` — signature-filtered method list for the Function picker), `mutate.py`, `paths.py`, `editor.py`, `runtime.py`. |
+| `scripts/` | Per-window behavior file generation + AST scan (`assets/scripts/<page>/<window>.py`). Package: `ast_scan.py` (incl. `parse_handler_methods_compatible` — signature-filtered class methods; `parse_module_functions` — public top-level functions in library scripts for the v1.38 library_call picker), `mutate.py`, `paths.py`, `editor.py`, `runtime.py`. |
 | `library_scripts.py` | Per-page library script management — list / create / rename / recycle user-authored `.py` files alongside the window behavior files. Behavior-file rows are flagged via `LibraryEntry.is_behavior` so the Scripts panel renders them distinctly but blocks rename / delete (those go through the window chrome). |
 | `component_io.py`, `component_assets.py` | `.ctkcomp` zip pack/unpack with asset bundling. |
 

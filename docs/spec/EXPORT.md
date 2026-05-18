@@ -47,6 +47,10 @@ from pathlib import Path
 # Phase 2 — behavior file imports (one per doc with handlers)
 from assets.scripts.<page_slug>.<window_slug> import <WindowName>Page
 
+# v1.38 — library-script imports (one per unique path across docs)
+from assets.scripts.<page_slug> import helpers
+from assets.scripts.<page_slug>.services import auth
+
 # Optional helpers (only when used)
 from scrollable_dropdown import ScrollableDropdown
 
@@ -231,10 +235,14 @@ command=lambda: (self._behavior.validate(), self._behavior.on_submit())
 # ref_call entry (widget-to-widget direct call via Object Reference)
 command=lambda: self._behavior.status_label.configure(text='Submitted')
 
-# Mixed list — page method + ref_call
+# library_call entry (module-level function in an attached script)
+command=lambda: helpers.save_log()
+
+# Mixed list — page method + ref_call + library_call
 command=lambda: (
     self._behavior.on_submit(),
     self._behavior.status_label.configure(text='Submitted'),
+    helpers.save_log(),
 )
 
 # Tk bind-style — page method routes as a bare bound method
@@ -247,12 +255,13 @@ self.label_status.bind("<Button-1>", lambda e: self._behavior.lbl.configure(text
 Helpers:
 
 - `_emit_handler_lines(...)` — resolves a widget's `handlers` mapping into the constructor `command=` kwarg and post-construction `.bind()` lines.
-- `_format_handler_entries(entries)` — renders a mixed list of page-method strings and `ref_call` dicts as the `command=` source (bare reference for a single page-method, tuple-style lambda otherwise).
-- `_format_ref_call(entry)` / `_format_ref_arg(arg)` — render a single `ref_call` dict and its typed args as the Python expression that invokes it.
+- `_format_handler_entries(entries)` — renders a mixed list of page-method strings, `ref_call` dicts, and `library_call` dicts as the `command=` source (bare reference for a single page-method, tuple-style lambda otherwise).
+- `_format_ref_call(entry)` / `_format_library_call(entry)` / `_format_ref_arg(arg)` — render a single dict entry and its typed args as the Python expression that invokes it.
+- `_library_import_line(page_slug, rel_path)` / `_library_script_module_name(rel_path)` — convert a page-folder-relative path into the matching `from … import …` statement plus the bare module name used in lambda bodies.
 - `_doc_has_handlers(doc)` / `_node_has_handlers(node)` / `_doc_needs_behavior(doc)` — gate the per-doc behavior-class plumbing.
 - `_scan_behavior_methods_for_export(project)` — AST scan; populates `_BEHAVIOR_METHODS_BY_DOC_ID`.
-- `_filter_handlers_to_existing_methods(node, event_label, entries)` — drop handler entries the exporter can't resolve. Validates page-method strings against the per-doc AST and `ref_call` dicts against the Object Reference list + [`WIDGET_ACTION_METHODS`](../../app/widgets/action_registry.py).
-- `_validate_ref_call(doc, entry)` — returns the pre-formatted reason string when a `ref_call` doesn't resolve, or `None` when it does.
+- `_filter_handlers_to_existing_methods(node, event_label, entries)` — drop handler entries the exporter can't resolve. Validates page-method strings against the per-doc AST, `ref_call` dicts against the Object Reference list + [`WIDGET_ACTION_METHODS`](../../app/widgets/action_registry.py), and `library_call` dicts against the document's `attached_scripts` list + AST module-function scan.
+- `_validate_ref_call(doc, entry)` / `_validate_library_call(doc, entry)` — return the pre-formatted reason string when an entry doesn't resolve, or `None` when it does.
 
 ### Phase 3 — Object References
 

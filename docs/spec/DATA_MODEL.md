@@ -142,6 +142,7 @@ One window inside a project (Main Window or Toplevel). 207 lines.
 | `local_variables` | `list[VariableEntry]` | `[]` | Per-document variables (scope="local"). |
 | `local_object_references` | `list[ObjectReferenceEntry]` | `[]` | Per-document widget references. |
 | `name_counters` | `dict[str, int]` | `{}` | Per-doc auto-naming counter. `{"CTkButton": 3, ...}`. |
+| `attached_scripts` | `list[str]` | `[]` | **v1.38.** Library-script paths (page-folder-relative) bound to this window. Drives event-picker scope + behavior-file imports at export. Behavior file is implicitly attached and stays out of this list. |
 
 ### `window_properties` schema — [document.py:26](../../app/core/document.py#L26)
 
@@ -199,6 +200,7 @@ Each entry is one of:
 | `str` (non-empty) | Method name on the window's behavior class. The exporter resolves it to `self._behavior.<name>`. The file is the user's source of truth: no auto-stub creation, no auto-delete on unbind — the Function picker only lists `def`s actually present in the file. |
 | `str` (empty `""`) | Page Script target picked, function not chosen yet. The Properties panel renders this with the Function row showing `Pick function…`; the exporter filters it out and emits a Console warning (`Method not found: ''`). |
 | `dict` with `{"kind": "ref_call", "ref": <ref_name>, "method": <method_name>, "args": [...]}` | Direct widget-to-widget call routed through an Object Reference (v3). `args` is a list of `{"name": str, "type": "str"\|"int"\|"float"\|"bool", "value": Any, "kwarg": bool}` dicts. Method must be in [`WIDGET_ACTION_METHODS`](../../app/widgets/action_registry.py) for the referenced widget's type — out-of-allowlist entries get dropped at export with the same warning surface as missing behavior methods. Empty `method` = ref picked, function not chosen yet (same pending state as the empty-string page entry). |
+| `dict` with `{"kind": "library_call", "script": <page_folder_relative_path>, "method": <function_name>, "args": [...]}` | Module-level function call into an attached library script (v1.38). `script` must appear in the owning Document's `attached_scripts` list. `method` must be a public top-level `def` in that file (signature filtered same as page methods). Exports as `<module>.<func>(...)` — module name = basename stripped of `.py`, kept in scope by the generated file's `from assets.scripts.<page>[.<sub>] import <module>` line. Empty `method` = library script picked, function not chosen yet. |
 
 The behavior file lives at `<project>/assets/scripts/<page_slug>/<window_slug>.py`.
 

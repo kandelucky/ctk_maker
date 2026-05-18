@@ -117,6 +117,21 @@ class Document:
         # exporter consumes it to emit ``self._behavior.<name>``
         # assignments after ``_build_ui()``.
         self.local_object_references: list[ObjectReferenceEntry] = []
+        # v1.38 — Library-script attachment list. Paths are relative
+        # to the page-scripts folder (``assets/scripts/<page>/``).
+        # A script attached to this document:
+        #   * appears in the Properties-panel event picker for any
+        #     widget inside this document
+        #   * gets imported in this window's behavior file at
+        #     export time (``from . import helpers`` / ``from
+        #     .services import auth``)
+        # Path-as-identity: renaming a library file via the Scripts
+        # panel sweeps every document's ``attached_scripts`` to
+        # update the path. Behavior files (``<window_slug>.py``)
+        # are NOT listed here — the structural 1:1 attachment is
+        # implicit and surfaces in the Scripts-panel UI as a
+        # grayed-out always-on checkbox.
+        self.attached_scripts: list[str] = []
 
     # ------------------------------------------------------------------
     # Serialisation
@@ -169,6 +184,8 @@ class Document:
             result["local_object_references"] = [
                 r.to_dict() for r in self.local_object_references
             ]
+        if self.attached_scripts:
+            result["attached_scripts"] = list(self.attached_scripts)
         return result
 
     @classmethod
@@ -250,6 +267,16 @@ class Document:
                 entry = ObjectReferenceEntry.from_dict(raw)
                 entry.scope = "local"
                 doc.local_object_references.append(entry)
+        # v1.38 — Library script attachments. Paths are
+        # page-folder-relative; empty/non-string entries dropped to
+        # keep the live model strict. Pre-v1.38 projects come back
+        # with an empty list, matching a freshly-created Document.
+        raw_scripts = data.get("attached_scripts")
+        if isinstance(raw_scripts, list):
+            doc.attached_scripts = [
+                str(p) for p in raw_scripts
+                if isinstance(p, str) and p
+            ]
         # v1.10.7- legacy migration: a ``behavior_field_values`` dict in
         # the JSON payload predates Object References. Convert each
         # entry to a local ObjectReferenceEntry with target_type
