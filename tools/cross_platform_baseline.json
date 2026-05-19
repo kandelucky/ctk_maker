@@ -6,7 +6,6 @@
     "consolas": 1
   },
   "app/ui/console_window.py": {
-    "consolas": 1,
     "control_bind": 1,
     "segoe_ui": 1
   },

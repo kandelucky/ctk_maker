@@ -32,7 +32,7 @@ import customtkinter as ctk
 from app.ui import style
 from app.ui.icons import load_icon
 from app.ui.managed_window import ManagedToplevel
-from app.ui.system_fonts import ui_font
+from app.ui.system_fonts import derive_mono_font, ui_font
 from app.ui.toolbar import _attach_tooltip
 
 CONSOLE_STDERR_FG = "#ff6b6b"
@@ -375,7 +375,7 @@ class ConsolePanel(ctk.CTkFrame):
             selectbackground=style.TREE_SELECTED_BG,
             selectforeground="#ffffff",
             relief="flat", borderwidth=0,
-            font=("Consolas", 10),
+            font=derive_mono_font(size=10),
             padx=10, pady=8,
             # Word-wrap means a multi-KB log line is fully visible
             # instead of disappearing off-screen (the old wrap="none"
@@ -394,7 +394,7 @@ class ConsolePanel(ctk.CTkFrame):
             if colour is not None:
                 kw["foreground"] = colour
             if level == "critical":
-                kw["font"] = ("Consolas", 10, "bold")
+                kw["font"] = derive_mono_font(size=10, weight="bold")
             self._text.tag_configure(f"level-{level}", **kw)
         # ``[E]`` prefix marker on editor lines gets its own coloured
         # tag so it stays cyan regardless of the line's severity
@@ -405,7 +405,7 @@ class ConsolePanel(ctk.CTkFrame):
         )
         self._text.tag_configure(
             "truncated", foreground=TRUNCATED_FG,
-            font=("Consolas", 9, "italic"),
+            font=derive_mono_font(size=9, slant="italic"),
         )
         self._text.tag_configure(
             "separator", foreground=style.EMPTY_FG,

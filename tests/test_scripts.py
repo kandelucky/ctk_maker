@@ -6,7 +6,9 @@ from app.io.scripts import (
     find_handler_method,
     load_or_create_behavior_file,
     parse_handler_methods,
+    parse_handler_methods_compatible,
     parse_method_docstrings,
+    parse_module_functions,
     slugify_method_part,
     suggest_method_name,
 )
@@ -126,6 +128,133 @@ def test_parse_handler_methods_includes_async_defs(tmp_path):
     assert parse_handler_methods(file, "LoginPage") == [
         "fetch", "sync_one",
     ]
+
+
+# ---- parse_handler_methods_compatible ------------------------------------
+
+def test_parse_compatible_command_keeps_zero_arg_methods(tmp_path):
+    file = tmp_path / "behavior.py"
+    file.write_text(
+        "class LoginPage:\n"
+        "    def setup(self, window): pass\n"
+        "    def on_click(self): pass\n"
+        "    def on_event(self, event): pass\n",
+        encoding="utf-8",
+    )
+
+    # ``command`` events call method() — only zero-arg-after-self
+    # methods qualify. ``setup`` has a required ``window`` arg, so
+    # it's filtered out alongside the bind-shaped ``on_event``.
+    assert parse_handler_methods_compatible(
+        file, "LoginPage", "command",
+    ) == ["on_click"]
+
+
+def test_parse_compatible_bind_requires_one_positional_after_self(tmp_path):
+    file = tmp_path / "behavior.py"
+    file.write_text(
+        "class LoginPage:\n"
+        "    def on_click(self): pass\n"
+        "    def on_event(self, event): pass\n"
+        "    def on_default(self, event=None): pass\n",
+        encoding="utf-8",
+    )
+
+    # ``bind`` events pass an event arg — methods need a slot for it.
+    # ``on_click`` (zero positional after self) is filtered out.
+    # ``on_default`` qualifies because the default-valued param
+    # still accepts a positional event arg.
+    assert parse_handler_methods_compatible(
+        file, "LoginPage", "bind",
+    ) == ["on_event", "on_default"]
+
+
+def test_parse_compatible_drops_private_and_dunder(tmp_path):
+    file = tmp_path / "behavior.py"
+    file.write_text(
+        "class LoginPage:\n"
+        "    def public_one(self): pass\n"
+        "    def _private(self): pass\n"
+        "    def __dunder__(self): pass\n",
+        encoding="utf-8",
+    )
+
+    assert parse_handler_methods_compatible(
+        file, "LoginPage", "command",
+    ) == ["public_one"]
+
+
+def test_parse_compatible_unknown_wiring_kind_returns_empty(tmp_path):
+    file = tmp_path / "behavior.py"
+    file.write_text(
+        "class LoginPage:\n    def on_click(self): pass\n",
+        encoding="utf-8",
+    )
+
+    assert parse_handler_methods_compatible(
+        file, "LoginPage", "ghost_kind",
+    ) == []
+
+
+# ---- parse_module_functions ----------------------------------------------
+
+def test_parse_module_functions_lists_top_level_public_defs(tmp_path):
+    file = tmp_path / "helpers.py"
+    file.write_text(
+        "def save_log():\n    pass\n"
+        "def _private():\n    pass\n"
+        "async def fetch():\n    pass\n"
+        "class Helper:\n"
+        "    def method(self): pass\n"
+        "def outer():\n"
+        "    def nested():\n        pass\n",
+        encoding="utf-8",
+    )
+
+    # Public top-level sync ``def`` only — private, async,
+    # nested, and class methods are all filtered.
+    assert parse_module_functions(file) == ["save_log", "outer"]
+
+
+def test_parse_module_functions_signature_filter_command(tmp_path):
+    file = tmp_path / "helpers.py"
+    file.write_text(
+        "def zero_args():\n    pass\n"
+        "def one_required(x):\n    pass\n"
+        "def one_default(x=1):\n    pass\n",
+        encoding="utf-8",
+    )
+
+    # ``command`` needs zero required args; the defaulted variant
+    # qualifies because the runtime call ``helpers.func()`` works.
+    assert parse_module_functions(file, "command") == [
+        "zero_args", "one_default",
+    ]
+
+
+def test_parse_module_functions_signature_filter_bind(tmp_path):
+    file = tmp_path / "helpers.py"
+    file.write_text(
+        "def zero_args():\n    pass\n"
+        "def one_required(event):\n    pass\n"
+        "def two_required(a, b):\n    pass\n",
+        encoding="utf-8",
+    )
+
+    # ``bind`` passes one event arg — need at least one slot, but
+    # no more than one *required* arg.
+    assert parse_module_functions(file, "bind") == ["one_required"]
+
+
+def test_parse_module_functions_missing_file_returns_empty(tmp_path):
+    assert parse_module_functions(tmp_path / "nope.py") == []
+
+
+def test_parse_module_functions_syntax_error_returns_empty(tmp_path):
+    file = tmp_path / "helpers.py"
+    file.write_text("def broken(:\n", encoding="utf-8")
+
+    assert parse_module_functions(file) == []
 
 
 # ---- parse_method_docstrings ---------------------------------------------

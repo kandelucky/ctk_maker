@@ -115,6 +115,9 @@ def test_from_dict_drops_empty_string_v1_handler():
 
 
 def test_from_dict_filters_non_string_list_entries():
+    # Empty strings are preserved: they mark "target picked (Page
+    # Script) but method not chosen yet" in the Properties panel.
+    # Non-string entries (None, ints) are still filtered.
     data = {
         "id": "abc",
         "widget_type": "CTkButton",
@@ -124,7 +127,64 @@ def test_from_dict_filters_non_string_list_entries():
 
     node = WidgetNode.from_dict(data)
 
-    assert node.handlers == {"command": ["good", "also_good"]}
+    assert node.handlers == {"command": ["good", "", "also_good"]}
+
+
+def test_from_dict_library_call_entry_round_trips():
+    # v1.38 — module-level call into an attached library script.
+    # The dict is preserved verbatim (deep-copied) including args.
+    data = {
+        "id": "abc",
+        "widget_type": "CTkButton",
+        "properties": {},
+        "handlers": {
+            "command": [
+                {
+                    "kind": "library_call",
+                    "script": "helpers.py",
+                    "method": "save_log",
+                    "args": [{"name": "level", "type": "str", "value": "info"}],
+                },
+            ],
+        },
+    }
+
+    node = WidgetNode.from_dict(data)
+
+    assert node.handlers == {
+        "command": [
+            {
+                "kind": "library_call",
+                "script": "helpers.py",
+                "method": "save_log",
+                "args": [{"name": "level", "type": "str", "value": "info"}],
+            },
+        ],
+    }
+    # Round-trip back to dict matches the input shape.
+    restored = WidgetNode.from_dict(node.to_dict())
+    assert restored.handlers == node.handlers
+
+
+def test_from_dict_drops_unknown_dict_kind():
+    # Defensive: an unrecognised ``kind`` (typo, future schema) is
+    # dropped rather than carried through — keeps the live model
+    # strict so the exporter never sees garbage.
+    data = {
+        "id": "abc",
+        "widget_type": "CTkButton",
+        "properties": {},
+        "handlers": {
+            "command": [
+                "valid_method",
+                {"kind": "unknown_kind", "script": "x.py", "method": "y"},
+            ],
+        },
+    }
+
+    node = WidgetNode.from_dict(data)
+
+    assert node.handlers == {"command": ["valid_method"]}
 
 
 def test_from_dict_renames_legacy_widget_types():
