@@ -20,7 +20,7 @@ from app.core.project import Project
 from app.core.project_folder import (
     ProjectMetaError, find_active_page_entry, find_project_root,
     migrate_page_sidecars, page_file_path, pages_dir,
-    read_project_meta, write_project_meta,
+    read_project_meta, write_project_meta, write_python_env_scaffold,
 )
 from app.core.widget_node import WidgetNode
 
@@ -308,6 +308,11 @@ def load_project(
     # in memory. Legacy single-file projects clear these fields.
     if multi_page_meta is not None and project_folder is not None:
         project.folder_path = str(project_folder)
+        # Auto-heal: legacy projects predate the scaffold writer
+        # (introduced v1.41.4). Idempotent — files the user has
+        # already customised are left alone. Covers behaviour-file
+        # type warnings that would otherwise surface on every open.
+        write_python_env_scaffold(project_folder)
         raw_pages = multi_page_meta.get("pages") or []
         project.pages = [
             {
