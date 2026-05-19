@@ -41,10 +41,17 @@ warning before the runtime hits ``AttributeError``. Import ``ref``
 from the auto-generated ``_runtime`` module and the widget class
 from ``customtkinter``.
 """
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import customtkinter as ctk
+    import tkinter as tk
 
 
 class {class_name}:
-    def setup(self, window):
+    def setup(self, window: "ctk.CTk | ctk.CTkToplevel") -> None:
         """Called once after the UI is built and Object References
         are wired. ``self.<field>`` slots and ``window.<widget>``
         attributes are both available at this point.

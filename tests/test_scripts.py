@@ -63,7 +63,7 @@ def test_load_or_create_behavior_file_creates_skeleton_with_class(tmp_path):
     assert path.is_file()
     body = path.read_text(encoding="utf-8")
     assert "class LoginPage:" in body
-    assert "def setup(self, window):" in body
+    assert 'def setup(self, window: "ctk.CTk | ctk.CTkToplevel") -> None:' in body
 
 
 def test_load_or_create_behavior_file_returns_existing_path_unchanged(tmp_path):

@@ -14,7 +14,7 @@ def test_events_for_button_has_single_command_entry():
     entry = entries[0]
     assert entry.key == "command"
     assert entry.wiring_kind == "command"
-    assert entry.signature == "(self)"
+    assert entry.signature == "(self) -> None"
     assert entry.verb == "click"
 
 
@@ -26,7 +26,7 @@ def test_events_for_slider_passes_value_in_signature():
     entries = events_for("CTkSlider")
 
     assert len(entries) == 1
-    assert entries[0].signature == "(self, value)"
+    assert entries[0].signature == "(self, value: float) -> None"
     assert entries[0].wiring_kind == "command"
 
 
@@ -37,7 +37,10 @@ def test_events_for_entry_has_bind_wirings():
     assert "bind:<Return>" in keys
     assert "bind:<KeyRelease>" in keys
     assert all(e.wiring_kind == "bind" for e in entries)
-    assert all(e.signature == "(self, event=None)" for e in entries)
+    assert all(
+        e.signature == "(self, event: 'tk.Event | None' = None) -> None"
+        for e in entries
+    )
 
 
 def test_event_by_key_returns_matching_entry():

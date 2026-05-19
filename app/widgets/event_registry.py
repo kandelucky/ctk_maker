@@ -9,10 +9,16 @@ Properties panel "Handlers" group. Each ``EventEntry`` pairs:
 - ``verb`` — snake_case suffix for the auto-generated method name
   (``on_<widget>_<verb>``).
 - ``signature`` — parameter list that lands on the stub. Buttons /
-  Switches / RadioButtons take ``(self)``; CTkSlider / ComboBox /
-  OptionMenu / SegmentedButton take ``(self, value)`` because CTk
+  Switches / RadioButtons take ``(self) -> None``; CTkSlider takes
+  ``(self, value: float) -> None``; ComboBox / OptionMenu /
+  SegmentedButton take ``(self, value: str) -> None`` because CTk
   passes the new value to the command callback. Bind-style events
-  take ``(self, event=None)``.
+  take ``(self, event: 'tk.Event | None' = None) -> None``. The
+  string-form ``tk.Event`` reference is a forward-only annotation
+  so the stub remains importable in behavior files that do not
+  have ``import tkinter as tk`` at runtime — Pylance still resolves
+  it when the file includes ``import tkinter as tk`` (typically in
+  a ``TYPE_CHECKING`` block; the scaffold template seeds this).
 - ``wiring_kind`` — ``"command"`` (constructor kwarg) vs ``"bind"``
   (post-construction ``widget.bind(seq, fn)`` call). Read by Part 3's
   exporter + runtime wiring.
@@ -66,7 +72,7 @@ _BIND = "bind"
 EVENT_REGISTRY: dict[str, list[EventEntry]] = {
     "CTkButton": [
         EventEntry(
-            "command", "on click", "click", "(self)", _COMMAND,
+            "command", "on click", "click", "(self) -> None", _COMMAND,
             description="Fires when the user clicks the button.",
         ),
     ],
@@ -78,7 +84,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
         # ----- Mouse buttons -----
         EventEntry(
             "bind:<Button-1>", "on click", "click",
-            "(self, event=None)", _BIND,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND,
             description=(
                 "Fires on left mouse button click anywhere on the "
                 "label's body."
@@ -86,17 +92,17 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
         ),
         EventEntry(
             "bind:<Double-Button-1>", "on double click", "double_click",
-            "(self, event=None)", _BIND,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND,
             description="Fires when the user double-clicks the label.",
         ),
         EventEntry(
             "bind:<Button-2>", "on middle click", "middle_click",
-            "(self, event=None)", _BIND, advanced=True,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND, advanced=True,
             description="Fires on middle mouse button click.",
         ),
         EventEntry(
             "bind:<Button-3>", "on right click", "right_click",
-            "(self, event=None)", _BIND, advanced=True,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND, advanced=True,
             description=(
                 "Fires on right mouse button click — typical place "
                 "to open a context menu."
@@ -104,7 +110,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
         ),
         EventEntry(
             "bind:<ButtonRelease-1>", "on mouse release", "mouse_release",
-            "(self, event=None)", _BIND, advanced=True,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND, advanced=True,
             description=(
                 "Fires when the user releases the left mouse button "
                 "after pressing it."
@@ -113,17 +119,17 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
         # ----- Mouse motion / wheel -----
         EventEntry(
             "bind:<Enter>", "on mouse enter", "mouse_enter",
-            "(self, event=None)", _BIND,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND,
             description="Fires when the cursor enters the label's bounds.",
         ),
         EventEntry(
             "bind:<Leave>", "on mouse leave", "mouse_leave",
-            "(self, event=None)", _BIND,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND,
             description="Fires when the cursor leaves the label's bounds.",
         ),
         EventEntry(
             "bind:<Motion>", "on mouse move", "mouse_move",
-            "(self, event=None)", _BIND,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND,
             warning="Fires at 60+ Hz while the cursor is inside — "
                     "keep the handler cheap.",
             advanced=True,
@@ -134,7 +140,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
         ),
         EventEntry(
             "bind:<MouseWheel>", "on mouse wheel", "mouse_wheel",
-            "(self, event=None)", _BIND,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND,
             description=(
                 "Fires when the user scrolls the mouse wheel over the "
                 "label. Direction is in event.delta."
@@ -143,7 +149,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
         # ----- Lifecycle / geometry -----
         EventEntry(
             "bind:<Configure>", "on resize", "resize",
-            "(self, event=None)", _BIND,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND,
             warning="Fires repeatedly during a window resize — "
                     "keep the handler cheap.",
             advanced=True,
@@ -154,7 +160,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
         ),
         EventEntry(
             "bind:<Map>", "on shown", "shown",
-            "(self, event=None)", _BIND, advanced=True,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND, advanced=True,
             description=(
                 "Fires when the label becomes visible (mapped onto "
                 "the screen)."
@@ -162,7 +168,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
         ),
         EventEntry(
             "bind:<Unmap>", "on hidden", "hidden",
-            "(self, event=None)", _BIND, advanced=True,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND, advanced=True,
             description=(
                 "Fires when the label becomes hidden (unmapped from "
                 "the screen)."
@@ -171,7 +177,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
         # ----- Focus / keyboard (require takefocus=True) -----
         EventEntry(
             "bind:<FocusIn>", "on focus in", "focus_in",
-            "(self, event=None)", _BIND,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND,
             warning="Requires takefocus=True; the Label cannot "
                     "receive focus otherwise.",
             advanced=True,
@@ -179,7 +185,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
         ),
         EventEntry(
             "bind:<FocusOut>", "on focus out", "focus_out",
-            "(self, event=None)", _BIND,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND,
             warning="Requires takefocus=True; the Label cannot "
                     "receive focus otherwise.",
             advanced=True,
@@ -187,7 +193,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
         ),
         EventEntry(
             "bind:<KeyPress>", "on key press", "key_press",
-            "(self, event=None)", _BIND,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND,
             warning="Requires takefocus=True; key events are "
                     "delivered only to the focused widget.",
             advanced=True,
@@ -198,7 +204,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
         ),
         EventEntry(
             "bind:<KeyRelease>", "on key release", "key_release",
-            "(self, event=None)", _BIND,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND,
             warning="Requires takefocus=True; key events are "
                     "delivered only to the focused widget.",
             advanced=True,
@@ -209,13 +215,13 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
     ],
     "CTkSwitch": [
         EventEntry(
-            "command", "on toggle", "toggle", "(self)", _COMMAND,
+            "command", "on toggle", "toggle", "(self) -> None", _COMMAND,
             description="Fires when the user flips the switch on or off.",
         ),
     ],
     "CTkCheckBox": [
         EventEntry(
-            "command", "on toggle", "toggle", "(self)", _COMMAND,
+            "command", "on toggle", "toggle", "(self) -> None", _COMMAND,
             description=(
                 "Fires when the user toggles the checkbox on or off."
             ),
@@ -223,7 +229,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
     ],
     "CTkRadioButton": [
         EventEntry(
-            "command", "on select", "select", "(self)", _COMMAND,
+            "command", "on select", "select", "(self) -> None", _COMMAND,
             description=(
                 "Fires when the user picks this radio button — group "
                 "siblings deselect automatically."
@@ -233,7 +239,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
     "CTkSlider": [
         EventEntry(
             "command", "on change", "change",
-            "(self, value)", _COMMAND,
+            "(self, value: float) -> None", _COMMAND,
             description=(
                 "Fires every time the slider's value changes; the new "
                 "value is passed as the second argument."
@@ -243,7 +249,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
     "CTkSegmentedButton": [
         EventEntry(
             "command", "on select", "select",
-            "(self, value)", _COMMAND,
+            "(self, value: str) -> None", _COMMAND,
             description=(
                 "Fires when the user picks a segment; the picked "
                 "segment's text is passed as the second argument."
@@ -253,7 +259,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
     "CTkComboBox": [
         EventEntry(
             "command", "on select", "select",
-            "(self, value)", _COMMAND,
+            "(self, value: str) -> None", _COMMAND,
             description=(
                 "Fires when the user picks a value from the dropdown "
                 "or commits a typed value; the value is passed as the "
@@ -264,7 +270,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
     "CTkOptionMenu": [
         EventEntry(
             "command", "on select", "select",
-            "(self, value)", _COMMAND,
+            "(self, value: str) -> None", _COMMAND,
             description=(
                 "Fires when the user picks a value from the dropdown; "
                 "the value is passed as the second argument."
@@ -274,7 +280,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
     "CTkEntry": [
         EventEntry(
             "bind:<Return>", "on Return", "return_pressed",
-            "(self, event=None)", _BIND,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND,
             description=(
                 "Fires when the user presses Enter while the entry "
                 "has focus."
@@ -282,7 +288,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
         ),
         EventEntry(
             "bind:<KeyRelease>", "on key release", "key_release",
-            "(self, event=None)", _BIND,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND,
             description=(
                 "Fires every time a key is released — useful for live "
                 "validation or filtering as the user types."
@@ -290,7 +296,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
         ),
         EventEntry(
             "bind:<FocusOut>", "on focus out", "focus_out",
-            "(self, event=None)", _BIND,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND,
             description=(
                 "Fires when the entry loses focus — typical place to "
                 "commit a final value."
@@ -300,7 +306,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
     "CTkTextbox": [
         EventEntry(
             "bind:<KeyRelease>", "on key release", "key_release",
-            "(self, event=None)", _BIND,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND,
             description=(
                 "Fires every time a key is released — useful for live "
                 "counts or validation while the user types."
@@ -308,7 +314,7 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
         ),
         EventEntry(
             "bind:<FocusOut>", "on focus out", "focus_out",
-            "(self, event=None)", _BIND,
+            "(self, event: 'tk.Event | None' = None) -> None", _BIND,
             description="Fires when the textbox loses focus.",
         ),
     ],
