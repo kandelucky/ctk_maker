@@ -291,6 +291,49 @@ def write_project_meta(folder: str | Path, data: dict) -> None:
 # ---------------------------------------------------------------------
 # Bootstrap
 # ---------------------------------------------------------------------
+def _detect_customtkinter_path() -> str | None:
+    """Return the parent directory of the live ``customtkinter`` package,
+    or ``None`` if it can't be located.
+
+    Used as a Pyright ``extraPaths`` entry so the generated project's
+    behaviour files type-check without requiring a project-local
+    ``.venv`` + ``pip install``. Works regardless of install method —
+    editable dev install, pip, or installer-bundled — because we ask
+    the live runtime where ``customtkinter.__file__`` actually lives.
+
+    Uses POSIX-style forward slashes so the JSON stays readable on
+    Windows (no escaped backslashes).
+    """
+    try:
+        import customtkinter
+    except ImportError:
+        return None
+    file_attr = getattr(customtkinter, "__file__", None)
+    if not file_attr:
+        return None
+    try:
+        return Path(file_attr).resolve().parent.parent.as_posix()
+    except OSError:
+        return None
+
+
+def _build_pyrightconfig_json() -> str:
+    """Build the ``pyrightconfig.json`` body. ``extraPaths`` carries the
+    detected ``customtkinter`` location when available; ``.venv`` is
+    listed first so a project-local environment still takes precedence
+    if the user later opts to create one.
+    """
+    config: dict = {
+        "venvPath": ".",
+        "venv": ".venv",
+    }
+    extra = _detect_customtkinter_path()
+    if extra:
+        config["extraPaths"] = [extra]
+    config["reportMissingImports"] = "warning"
+    return json.dumps(config, indent=4) + "\n"
+
+
 def write_python_env_scaffold(folder: str | Path) -> list[str]:
     """Write ``requirements.txt`` + ``pyrightconfig.json`` + ``.gitignore``
     at the project root if they don't already exist.
@@ -298,11 +341,13 @@ def write_python_env_scaffold(folder: str | Path) -> list[str]:
     Idempotent — files the user has already customised are left alone.
     Returns the list of filenames actually written (for caller logging).
 
-    Goal: a fresh project folder is type-check + run ready as soon as
-    the user creates a ``.venv`` and runs ``pip install -r requirements.txt``.
-    Generated behaviour files reference ``customtkinter`` types under
-    ``TYPE_CHECKING``; without these scaffold files the user's IDE flags
-    every behaviour file with "missing import" warnings.
+    Goal: a fresh project folder is type-check ready immediately —
+    ``pyrightconfig.json`` carries an ``extraPaths`` entry pointing at
+    the live ``customtkinter`` install so behaviour files generated
+    since v1.41.3 (which reference ``customtkinter`` types under
+    ``TYPE_CHECKING``) resolve cleanly in any IDE that reads Pyright
+    configs. ``requirements.txt`` covers the distribute-to-another-
+    machine flow.
     """
     folder = Path(folder)
     files = {
@@ -310,13 +355,7 @@ def write_python_env_scaffold(folder: str | Path) -> list[str]:
             "ctkmaker-core>=5.5.1,<6.0\n"
             "Pillow>=10.0\n"
         ),
-        "pyrightconfig.json": (
-            '{\n'
-            '    "venvPath": ".",\n'
-            '    "venv": ".venv",\n'
-            '    "reportMissingImports": "warning"\n'
-            '}\n'
-        ),
+        "pyrightconfig.json": _build_pyrightconfig_json(),
         ".gitignore": (
             "# CTkMaker\n"
             ".autosave/\n"
