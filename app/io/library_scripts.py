@@ -215,7 +215,22 @@ def create_library_script(
         target.parent.mkdir(parents=True, exist_ok=True)
         _ensure_init_chain(page_dir, target.parent)
         target.write_text(
-            f'"""Library script — imported by behavior files in this page."""\n',
+            (
+                '"""Library script for this page.\n'
+                "\n"
+                "Functions defined here are imported by behaviour files via\n"
+                "``from . import <module>`` or bound directly to widget events as\n"
+                "``library_call`` entries from the Properties panel (public,\n"
+                "top-level, sync ``def``s only).\n"
+                '"""\n'
+                "\n"
+                "from __future__ import annotations\n"
+                "\n"
+                "\n"
+                "def example() -> None:\n"
+                '    """Replace with your own function."""\n'
+                "    pass\n"
+            ),
             encoding="utf-8",
         )
     except OSError:

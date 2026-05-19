@@ -196,6 +196,27 @@ def test_parse_compatible_unknown_wiring_kind_returns_empty(tmp_path):
     ) == []
 
 
+def test_parse_compatible_filters_reserved_setup_from_bind(tmp_path):
+    """``setup(self, window)`` matches the ``bind`` signature shape
+    (one positional after self) so without the reserved-set filter it
+    leaks into every Label/Entry/Textbox bind picker. Other methods
+    with the same signature shape but a non-reserved name (``helper``)
+    must still pass through.
+    """
+    file = tmp_path / "behavior.py"
+    file.write_text(
+        "class LoginPage:\n"
+        "    def setup(self, window): pass\n"
+        "    def on_label_click(self, event=None): pass\n"
+        "    def helper(self, payload): pass\n",
+        encoding="utf-8",
+    )
+
+    assert parse_handler_methods_compatible(
+        file, "LoginPage", "bind",
+    ) == ["on_label_click", "helper"]
+
+
 # ---- parse_module_functions ----------------------------------------------
 
 def test_parse_module_functions_lists_top_level_public_defs(tmp_path):

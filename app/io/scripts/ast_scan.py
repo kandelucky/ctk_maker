@@ -20,6 +20,13 @@ from pathlib import Path
 
 from app.io.scripts._internals import _find_class, _read_source
 
+# Lifecycle methods on the behavior class — never user-bindable handlers.
+# Kept out of the Function picker so they don't clutter the dropdown.
+# ``setup(self, window)`` happens to signature-match ``bind`` events
+# (one arg after self, default-allowed) so without this filter it leaks
+# into every Label/Entry/Textbox bind dropdown.
+_RESERVED_BEHAVIOR_METHODS: frozenset[str] = frozenset({"setup"})
+
 
 def parse_handler_methods(
     file_path: str | Path,
@@ -88,6 +95,8 @@ def parse_handler_methods_compatible(
         if not isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         if stmt.name.startswith("_"):
+            continue
+        if stmt.name in _RESERVED_BEHAVIOR_METHODS:
             continue
         if _signature_matches_event(stmt, wiring_kind):
             names.append(stmt.name)
