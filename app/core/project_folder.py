@@ -291,6 +291,57 @@ def write_project_meta(folder: str | Path, data: dict) -> None:
 # ---------------------------------------------------------------------
 # Bootstrap
 # ---------------------------------------------------------------------
+def write_python_env_scaffold(folder: str | Path) -> list[str]:
+    """Write ``requirements.txt`` + ``pyrightconfig.json`` + ``.gitignore``
+    at the project root if they don't already exist.
+
+    Idempotent — files the user has already customised are left alone.
+    Returns the list of filenames actually written (for caller logging).
+
+    Goal: a fresh project folder is type-check + run ready as soon as
+    the user creates a ``.venv`` and runs ``pip install -r requirements.txt``.
+    Generated behaviour files reference ``customtkinter`` types under
+    ``TYPE_CHECKING``; without these scaffold files the user's IDE flags
+    every behaviour file with "missing import" warnings.
+    """
+    folder = Path(folder)
+    files = {
+        "requirements.txt": (
+            "ctkmaker-core>=5.5.1,<6.0\n"
+            "Pillow>=10.0\n"
+        ),
+        "pyrightconfig.json": (
+            '{\n'
+            '    "venvPath": ".",\n'
+            '    "venv": ".venv",\n'
+            '    "reportMissingImports": "warning"\n'
+            '}\n'
+        ),
+        ".gitignore": (
+            "# CTkMaker\n"
+            ".autosave/\n"
+            ".backups/\n"
+            "\n"
+            "# Python\n"
+            ".venv/\n"
+            "__pycache__/\n"
+            "*.pyc\n"
+        ),
+    }
+    written: list[str] = []
+    for name, content in files.items():
+        target = folder / name
+        if target.exists():
+            continue
+        try:
+            with target.open("w", encoding="utf-8") as f:
+                f.write(content)
+            written.append(name)
+        except OSError:
+            log_error(f"write_python_env_scaffold {name}")
+    return written
+
+
 def bootstrap_project_folder(
     parent_dir: str | Path,
     project_name: str,
@@ -330,6 +381,7 @@ def bootstrap_project_folder(
         "system_fonts": [],
     }
     write_project_meta(folder, meta)
+    write_python_env_scaffold(folder)
     return folder, meta, page_path
 
 
@@ -773,6 +825,7 @@ def convert_legacy_to_multi_page(scene_path: str | Path) -> Path:
             except OSError:
                 log_error("convert rollback after meta fail")
         raise
+    write_python_env_scaffold(folder)
     return new_page_path
 
 
