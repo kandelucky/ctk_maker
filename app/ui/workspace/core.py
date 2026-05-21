@@ -555,7 +555,7 @@ class Workspace(ctk.CTkFrame):
             descriptor = get_descriptor(node.widget_type)
             if descriptor is None:
                 continue
-            self._apply_generic_configure(
+            self.props._apply_generic_configure(
                 widget_id, "font_family",
                 node.properties.get("font_family"),
                 node, descriptor, widget, window_id,
