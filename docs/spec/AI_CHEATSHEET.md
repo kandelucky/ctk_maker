@@ -55,12 +55,13 @@ Project → has → Pages → has → Windows → has → Widgets (nested tree)
 
 ## Widgets — quick list
 
-21 palette widgets across 5 groups (Display, Controls, Containers, Layouts, Indicators). See [WIDGETS.md](WIDGETS.md) for full property tables.
+22 palette widgets across 5 groups (Display, Controls, Containers, Layouts, Indicators). See [WIDGETS.md](WIDGETS.md) for full property tables.
 
 | Widget | Use for |
 |---|---|
 | `CTkButton` | Click action |
 | `CTkLabel` | Static text + optional image |
+| `CTkRichLabel` | Markdown-like / XML-style formatted text |
 | `CTkEntry` | Single-line text input |
 | `CTkTextbox` | Multi-line text |
 | `CTkCheckBox`, `CTkSwitch`, `CTkRadioButton` | Boolean / choice |
@@ -81,7 +82,7 @@ Every widget has: `x`, `y`, `width`, `height` (in pixels — for `place` layout)
 | Button | `text`, `command` | `fg_color`, `hover_color`, `corner_radius`, `image`, `compound` |
 | Label | `text` | `font_*`, `text_color` / `text_color_disabled`, `corner_radius`, `image` / `compound`, `anchor`, `padx` / `pady`, `label_enabled`, `cursor`, `takefocus`, `fg_color` / `bg_color` |
 | Entry | `placeholder_text`, `initial_value` | `font_*`, `width`, `show` (password) |
-| Textbox | `initial_value` | `wrap`, font props |
+| Textbox | `initial_text` | `wrap`, font props |
 | Slider | `from_`, `to`, `initial_value` | `orientation`, `number_of_steps` |
 | Switch / CheckBox | `text`, `initially_checked` | `onvalue`, `offvalue` |
 | Card | (no children kwargs) | `shape` (rectangle/rounded/circle), `image` |

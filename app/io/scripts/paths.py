@@ -24,22 +24,12 @@ from app.io.scripts.runtime import ensure_runtime_helpers
 # document creation). Plain string — no f-string at module level so
 # the literal ``{class_name}`` markers stay intact for ``.format``
 # at call time.
-_SKELETON_TEMPLATE = '''"""Behavior file for the {window_label} window.
+_SKELETON_TEMPLATE = '''"""Behavior for the {window_label} window — fill in the method bodies below.
 
-Methods here run in response to widget events. CTkMaker stubs new
-methods automatically — fill in the bodies here. Each method maps
-to a handler binding configured in the Properties panel.
-
-To bind a widget as an Inspector slot, declare a ``ref[<WidgetType>]``
-annotation on the class (e.g. ``target_label: ref[CTkLabel]``) and
-add an entry with the **same name verbatim** in the Properties
-panel's Object References group. CTkMaker keeps the two ends in
-sync when refs are created / renamed in the GUI; renaming the
-annotation by hand without updating the GUI side (or vice versa)
-leaves ``self.<name>`` unbound — the next export run surfaces a
-warning before the runtime hits ``AttributeError``. Import ``ref``
-from the auto-generated ``_runtime`` module and the widget class
-from ``customtkinter``.
+Each method maps to a widget event set in the Properties panel; CTkMaker
+stubs new methods automatically. For an Inspector-bindable widget slot,
+annotate ``name: ref[CTkLabel]`` (imported from ``_runtime``) and add a
+matching Object Reference in the Properties panel.
 """
 from __future__ import annotations
 
@@ -52,10 +42,7 @@ if TYPE_CHECKING:
 
 class {class_name}:
     def setup(self, window: "ctk.CTk | ctk.CTkToplevel") -> None:
-        """Called once after the UI is built and Object References
-        are wired. ``self.<field>`` slots and ``window.<widget>``
-        attributes are both available at this point.
-        """
+        """Runs once after the UI is built and Object References are wired."""
         self.window = window
 '''
 
