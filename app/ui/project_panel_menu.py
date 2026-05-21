@@ -7,9 +7,9 @@ Owns the entire tree right-click flow:
   assets root), refreshes the info panel, then opens the menu.
 * ``show_context_menu`` builds a kind-specific menu — folder rows
   get New Subfolder + Add cascade + Rename + Delete; page rows get
-  Switch / Duplicate / Rename / Delete; file rows get Open / Open
+  Switch / Duplicate / Rename / Delete; file rows get Open / Show
   in Explorer / Reimport / Rename / Remove. Empty-area menu shows
-  New Folder + Add cascade + "Open assets folder in Explorer".
+  New Folder + Add cascade + "Show assets folder in Explorer".
 
 Action handlers exposed by the menu's command targets:
 
@@ -92,7 +92,7 @@ class ProjectPanelMenu:
         if meta is None:
             # Right-clicked on the empty area below all rows.
             # Compact: New Folder + an "Add ▶" cascade for the
-            # four content-import actions, then Open in Explorer.
+            # four content-import actions, then Show in Explorer.
             panel._menu_command(
                 menu, "New Folder...", "folder", panel._on_new_folder,
             )
@@ -102,7 +102,7 @@ class ProjectPanelMenu:
             )
             menu.add_separator()
             panel._menu_command(
-                menu, "Open assets folder in Explorer",
+                menu, "Show assets folder in Explorer",
                 "folder-open", self.on_reveal_assets_root,
             )
         else:
@@ -124,7 +124,7 @@ class ProjectPanelMenu:
                     )
                     menu.add_separator()
                     panel._menu_command(
-                        menu, "Open in Explorer", "folder-open",
+                        menu, "Show in Explorer", "folder-open",
                         self.on_context_reveal,
                     )
                 else:
@@ -140,7 +140,7 @@ class ProjectPanelMenu:
                     )
                     menu.add_separator()
                     panel._menu_command(
-                        menu, "Open in Explorer", "folder-open",
+                        menu, "Show in Explorer", "folder-open",
                         self.on_context_reveal,
                     )
                     panel._menu_command(
@@ -170,7 +170,7 @@ class ProjectPanelMenu:
                 )
                 menu.add_separator()
                 panel._menu_command(
-                    menu, "Open in Explorer", "folder-open",
+                    menu, "Show in Explorer", "folder-open",
                     self.on_context_reveal,
                 )
                 panel._menu_command(
@@ -182,7 +182,7 @@ class ProjectPanelMenu:
                     menu, "Open", "external-link", self.on_context_open,
                 )
                 panel._menu_command(
-                    menu, "Open in Explorer", "folder-open",
+                    menu, "Show in Explorer", "folder-open",
                     self.on_context_reveal,
                 )
                 # Reimport is hidden for fonts because tkextrafont

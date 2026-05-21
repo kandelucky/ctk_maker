@@ -14,7 +14,7 @@ Capabilities:
 - Toolbar: + Image, + Font, + Folder, + Text File (.md). The kind
   buttons preserve the legacy auto-routing (image picker imports
   go to ``images/``, font imports to ``fonts/``).
-- Right-click on a file → Open in Explorer, Reimport, Remove.
+- Right-click on a file → Show in Explorer, Reimport, Remove.
 - Right-click on a folder → New Subfolder, Rename, Delete (recursive).
 - Double-click → opens the file with the OS default application
   (``os.startfile`` Windows, ``open`` macOS, ``xdg-open`` Linux).

@@ -128,7 +128,7 @@ class ComponentsPanel(ctk.CTkFrame):
     # ------------------------------------------------------------------
     def _build_header(self) -> None:
         # Full-width "Library actions" button — opens the New Folder /
-        # Import / Open-in-Explorer menu. The previous compact "+" was
+        # Import / Show-in-Explorer menu. The previous compact "+" was
         # too cryptic; pairing the icon with a label and stretching the
         # button across the panel width makes the affordance obvious.
         type_bar = ctk.CTkFrame(
@@ -490,7 +490,7 @@ class ComponentsPanel(ctk.CTkFrame):
         )
         menu.add_separator()
         self._menu_command(
-            menu, "Open library folder in Explorer", "folder-open",
+            menu, "Show library folder in Explorer", "folder-open",
             lambda r=root: self._reveal(r),
         )
         try:
@@ -580,7 +580,7 @@ class ComponentsPanel(ctk.CTkFrame):
                 )
                 menu.add_separator()
                 self._menu_command(
-                    menu, "Open library folder in Explorer",
+                    menu, "Show library folder in Explorer",
                     "folder-open", lambda r=root: self._reveal(r),
                 )
         else:
@@ -592,7 +592,7 @@ class ComponentsPanel(ctk.CTkFrame):
                 )
                 menu.add_separator()
                 self._menu_command(
-                    menu, "Open in Explorer", "folder-open",
+                    menu, "Show in Explorer", "folder-open",
                     lambda p=entry_path: self._reveal(p),
                 )
                 self._menu_command(
@@ -628,7 +628,7 @@ class ComponentsPanel(ctk.CTkFrame):
                     lambda p=entry_path: self._on_export(p),
                 )
                 self._menu_command(
-                    menu, "Open in Explorer", "folder-open",
+                    menu, "Show in Explorer", "folder-open",
                     lambda p=entry_path: self._reveal(p),
                 )
                 self._menu_command(
