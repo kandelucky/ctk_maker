@@ -103,6 +103,7 @@ No event introspection, no priority, no async. If an event fires no one cares ab
 | `project_renamed` | `(new_name)` | main_window.py (4 sites), workspace/core.py:2326 | |
 | `font_defaults_changed` | `(defaults: dict)` | panel_commit.py:479 + project_window.py (4 sites) | Cascade map for font resolution. |
 | `component_library_changed` | `()` | workspace/core.py:2254, workspace/core.py:2400 | `.ctkcomp` added/removed in `<project>/components/`. |
+| `library_scripts_changed` | `()` | scripts_window.py `_publish_library_changed` (script / folder add, rename, move, delete) + project_panel_files.py / project_panel_drag.py (Assets-side script ops, path-gated to `assets/scripts/`) | Keeps the Assets tree and Scripts panel in sync when the `assets/scripts/` tree changes from either side. The Assets panel deliberately does NOT refresh on `dirty_changed` (fires on nearly every edit); the Scripts panel filters out its own echo via the `_own_library_publish` flag so a fresh script keeps its post-create selection. |
 
 ### UI requests (UI → UI routing)
 

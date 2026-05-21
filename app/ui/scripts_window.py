@@ -91,6 +91,13 @@ class ScriptsPanel(ctk.CTkFrame):
         "document_added",
         "document_removed",
         "document_renamed",
+        # Reverse direction: the Assets tree writes into
+        # ``assets/scripts/`` too (new folder / .py, rename, move,
+        # delete). Mirror those here so they show without a restart.
+        # Our own publishes are filtered in ``_on_bus_event`` via the
+        # ``_own_library_publish`` flag so the post-create selection
+        # set by ``_create_script`` isn't wiped by an echo refresh.
+        "library_scripts_changed",
     )
 
     def _subscribe_events(self) -> None:
@@ -115,6 +122,11 @@ class ScriptsPanel(ctk.CTkFrame):
         when the bus fires between widget destroy and ``<Destroy>``
         bubbling up to ``_on_destroy``.
         """
+        if getattr(self, "_own_library_publish", False):
+            # Echo of our own ``library_scripts_changed`` publish — the
+            # mutating handler already called ``self.refresh()`` (and may
+            # have set a selection); skip the duplicate after_idle pass.
+            return
         try:
             if not self.winfo_exists():
                 return
@@ -128,6 +140,29 @@ class ScriptsPanel(ctk.CTkFrame):
         # event published mid-teardown can't re-enter the panel.
         if event.widget is self:
             self._unsubscribe_events()
+
+    def _publish_library_changed(self) -> None:
+        """Tell other panels the page's library scripts changed on disk.
+
+        The Scripts panel refreshes itself directly after every mutation;
+        this is purely a cross-panel signal so views that scan
+        ``assets/scripts/`` (the Assets tree) don't stay stale until the
+        next restart. Library scripts are loose files written straight to
+        disk, so this intentionally does NOT mark the project dirty.
+        """
+        bus = getattr(self.project, "event_bus", None)
+        if bus is None:
+            return
+        # Flag our own publish so the synchronous echo back into
+        # ``_on_bus_event`` (we subscribe to this event for the reverse
+        # direction) is ignored — we refresh directly right after.
+        self._own_library_publish = True
+        try:
+            bus.publish("library_scripts_changed")
+        except Exception:
+            log_error("ScriptsPanel publish library_scripts_changed")
+        finally:
+            self._own_library_publish = False
 
     # ------------------------------------------------------------------
     # Build
@@ -372,6 +407,7 @@ class ScriptsPanel(ctk.CTkFrame):
                 parent=self,
             )
             return
+        self._publish_library_changed()
         self.refresh()
         try:
             self.tree.selection_set(result.relative_to(result.parent.parent).as_posix())
@@ -409,6 +445,7 @@ class ScriptsPanel(ctk.CTkFrame):
                 parent=self,
             )
             return
+        self._publish_library_changed()
         self.refresh()
 
     # ------------------------------------------------------------------
@@ -567,6 +604,7 @@ class ScriptsPanel(ctk.CTkFrame):
         if not is_folder and not new_rel.endswith(".py"):
             new_rel = new_rel + ".py"
         self._sweep_attached_paths(source, new_rel, is_folder)
+        self._publish_library_changed()
         self.refresh()
 
     def _open_attached_popup(
@@ -829,6 +867,7 @@ class ScriptsPanel(ctk.CTkFrame):
         if not is_folder and not new_rel.endswith(".py"):
             new_rel = new_rel + ".py"
         self._sweep_attached_paths(rel, new_rel, is_folder)
+        self._publish_library_changed()
         self.refresh()
 
     def _delete_selected(self) -> None:
@@ -854,6 +893,7 @@ class ScriptsPanel(ctk.CTkFrame):
             )
             return
         self._sweep_attached_paths(rel, None, is_folder)
+        self._publish_library_changed()
         self.refresh()
 
     def _sweep_attached_paths(

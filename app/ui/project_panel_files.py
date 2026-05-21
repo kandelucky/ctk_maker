@@ -80,6 +80,7 @@ class ProjectPanelFiles:
             )
             return
         panel.project.event_bus.publish("dirty_changed", True)
+        panel._notify_scripts_changed(new_dir)
         panel.refresh()
 
     def on_new_text_file(self) -> None:
@@ -172,6 +173,7 @@ class ProjectPanelFiles:
             )
             return
         panel.project.event_bus.publish("dirty_changed", True)
+        panel._notify_scripts_changed(new_file)
         panel.refresh()
         # No auto-open. The user just typed a filename and clicked
         # OK — they expect to see the file land in the tree, not
@@ -229,6 +231,7 @@ class ProjectPanelFiles:
         panel.project.event_bus.publish(
             "font_defaults_changed", panel.project.font_defaults,
         )
+        panel._notify_scripts_changed(old_path, new_path)
         panel.refresh()
 
     def on_delete_folder(self) -> None:
@@ -287,6 +290,7 @@ class ProjectPanelFiles:
         panel.project.event_bus.publish(
             "font_defaults_changed", panel.project.font_defaults,
         )
+        panel._notify_scripts_changed(folder)
         panel.refresh()
 
     def remove_asset(self, file_path: Path, kind: str) -> None:
@@ -337,6 +341,7 @@ class ProjectPanelFiles:
         panel.project.event_bus.publish(
             "font_defaults_changed", panel.project.font_defaults,
         )
+        panel._notify_scripts_changed(file_path)
         panel.refresh()
 
     def reimport_asset(self, file_path: Path, kind: str) -> None:

@@ -46,6 +46,7 @@ from app.core.logger import log_error
 from app.core.paths import (
     ASSET_SUBDIRS, assets_dir, ensure_project_folder,
 )
+from app.core.script_paths import scripts_root
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
@@ -208,6 +209,11 @@ class ProjectPanel(ctk.CTkFrame):
             # behavior files in/out of ``assets/scripts/``; the asset
             # tree was reading stale state until refresh fired again.
             "document_added", "document_removed", "document_renamed",
+            # Library script add/folder/rename/move/delete from the
+            # Scripts panel writes straight to ``assets/scripts/`` but
+            # publishes no document_* event — without this the Assets
+            # tree only picked the change up on the next restart.
+            "library_scripts_changed",
         ):
             bus.subscribe(evt, lambda *_a, **_k: self.refresh())
         self.after(0, self.refresh)
@@ -271,6 +277,36 @@ class ProjectPanel(ctk.CTkFrame):
             except tk.TclError:
                 pass
             self._set_buttons_enabled(False)
+
+    def _notify_scripts_changed(self, *paths: "Path | str | None") -> None:
+        """Publish ``library_scripts_changed`` when an Assets-side file
+        op touched ``assets/scripts/``. The Scripts panel deliberately
+        doesn't listen to ``dirty_changed`` (fires on nearly every edit),
+        so without this a folder/file created, renamed, moved, or deleted
+        under ``scripts/`` from the Assets tree stayed invisible in the
+        Scripts window until the next restart. Path-gated so non-script
+        asset ops (images, fonts) don't trigger a needless rescan.
+        """
+        root = scripts_root(self.path_provider())
+        if root is None:
+            return
+        try:
+            root = root.resolve()
+        except OSError:
+            return
+        for p in paths:
+            if not p:
+                continue
+            try:
+                rp = Path(p).resolve()
+            except OSError:
+                continue
+            if rp == root or root in rp.parents:
+                try:
+                    self.project.event_bus.publish("library_scripts_changed")
+                except Exception:
+                    log_error("ProjectPanel publish library_scripts_changed")
+                return
 
     # ------- internal layout -------
 

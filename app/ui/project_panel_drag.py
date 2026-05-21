@@ -325,4 +325,5 @@ class ProjectPanelDragDrop:
             panel.project.event_bus.publish(
                 "font_defaults_changed", panel.project.font_defaults,
             )
+            panel._notify_scripts_changed(target_dir)
         panel.refresh()
