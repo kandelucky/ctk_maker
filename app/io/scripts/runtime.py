@@ -13,15 +13,12 @@ from app.core.script_paths import ensure_scripts_root, scripts_root
 
 
 _RUNTIME_MODULE_NAME = "_runtime.py"
-_RUNTIME_TEMPLATE = '''"""CTkMaker behavior-runtime helpers — auto-generated.
+_RUNTIME_TEMPLATE = '''"""CTkMaker behavior-runtime helpers — auto-generated, do not edit.
 
-The ``ref`` marker lets behavior files declare Inspector-bindable
-attributes without forcing a CTkMaker package install. CTkMaker
-detects ``<name>: ref[<WidgetType>]`` annotations at parse time and
-exposes them as widget picker slots in the Properties panel; the
-exported app then assigns the real widget to each slot at runtime.
-
-Edits to this file are overwritten when CTkMaker regenerates it.
+The ``ref`` marker lets behavior files declare Inspector-bindable widget
+slots (``name: ref[CTkLabel]``) without a CTkMaker install. CTkMaker turns
+each annotation into a widget picker in the Properties panel; the exported
+app assigns the real widget at runtime.
 """
 from __future__ import annotations
 
@@ -31,21 +28,12 @@ T = TypeVar("T")
 
 
 class ref(Generic[T]):
-    """Inspector-bindable widget reference marker.
+    """Inspector-bindable widget reference marker (no runtime behavior).
 
-    Has no runtime behavior on its own — annotations of the form
-    ``target: ref[CTkLabel]`` are resolved by the exporter into
-    ``self._behavior.target = self.<widget_var>`` assignments after
-    the UI is built.
-
-    Name match is verbatim: the annotation name must equal the
-    Properties-panel Object Reference name exactly. ``counter_label``
-    and ``counter_label_ref`` are two different slots — typoing one
-    side means ``self.<annotation_name>`` stays unbound and the first
-    access raises ``AttributeError``. CTkMaker keeps the two in sync
-    when you create / rename / delete refs in the GUI; if you edit
-    this file by hand, an export-time validator warns before runtime
-    hits the mismatch.
+    The annotation name must match its Object Reference name verbatim — a
+    mismatch leaves ``self.<name>`` unbound and raises ``AttributeError`` on
+    first access. CTkMaker keeps both sides in sync from the GUI; a hand-edit
+    is caught by the export-time validator.
     """
 
     pass
@@ -64,12 +52,12 @@ def ensure_runtime_helpers(
     """
     if not project_file_path:
         return None
-    # Run ensure_scripts_root() for the side effect of creating the
-    # __init__.py at both ``scripts/`` and ``scripts/<page>/`` so the
-    # ``from assets.scripts.<page>.<window>`` import resolves; its
-    # return value is the per-page subfolder, which is the wrong
-    # level for ``_runtime.py``. Drop the helper at the parent root
-    # so behavior files' ``from .._runtime import ref`` resolves.
+    # Run ensure_scripts_root() to create the ``scripts/<page>/`` folder
+    # structure; its return value is the per-page subfolder, which is the
+    # wrong level for ``_runtime.py`` — drop the helper at the parent
+    # root so behavior files' ``from .._runtime import ref`` resolves.
+    # Package ``__init__.py`` markers are NOT written to source; they're
+    # generated into the build at export time (write_package_markers_in).
     if ensure_scripts_root(project_file_path) is None:
         return None
     root = scripts_root(project_file_path)

@@ -25,6 +25,7 @@ from app.io.library_scripts import (
     create_library_script,
     create_library_subpackage,
     list_library_scripts,
+    purge_source_package_markers,
     recycle_library_script,
     rename_library_script,
     script_absolute_path,
@@ -299,6 +300,10 @@ class ScriptsPanel(ctk.CTkFrame):
                 values=("",),
             )
             return
+        # Clean up legacy package plumbing (empty __init__.py + __pycache__)
+        # so the source folder shows only the user's real scripts. Markers
+        # are an export-only concern now (see write_package_markers_in).
+        purge_source_package_markers(path)
         entries = list_library_scripts(path, self._window_names())
         if not entries:
             self.tree.insert(

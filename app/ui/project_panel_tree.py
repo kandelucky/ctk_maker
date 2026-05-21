@@ -172,7 +172,14 @@ class ProjectPanelTree:
             except OSError:
                 return
             folders = sorted(
-                (e for e in entries if e.is_dir()),
+                (
+                    e for e in entries
+                    if e.is_dir()
+                    # Hide Python's bytecode cache — it appears inside
+                    # ``assets/scripts/`` once behavior files get
+                    # imported and is pure plumbing, never user content.
+                    and e.name != "__pycache__"
+                ),
                 key=lambda p: p.name.lower(),
             )
             files = sorted(
@@ -185,6 +192,12 @@ class ProjectPanelTree:
                     and not e.name.endswith(".bak")
                     and not e.name.endswith(".autosave")
                     and not e.name.endswith(".tmp")
+                    # ``__init__.py`` is package plumbing — no longer
+                    # written to source (markers are export-only; legacy
+                    # ones get removed by ``purge_source_package_markers``).
+                    # Hidden defensively so a lingering one never shows;
+                    # mirrors the Scripts panel, which never lists it.
+                    and e.name != "__init__.py"
                 ),
                 key=lambda p: p.name.lower(),
             )

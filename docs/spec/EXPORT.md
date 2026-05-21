@@ -369,7 +369,7 @@ The pattern is intentional — the export call tree is deep, threading every con
 load_or_create_behavior_file(project_path, page_slug, window_slug, class_name, ...) → Path
 ```
 
-Called eagerly on `document_added` (so a fresh dialog gets its file before any handler is attached). Creates parent directories + `__init__.py` chain (`assets/scripts/__init__.py` + `assets/scripts/<page>/__init__.py`) for namespace package import.
+Called eagerly on `document_added` (so a fresh dialog gets its file before any handler is attached). Creates parent directories only — package `__init__.py` markers are **not** written to source. CTkMaker never imports user scripts (it only AST-parses them), so the source tree stays clean; the markers are generated into the build at export time (see [Asset copying](#asset-copying) → `write_package_markers_in`).
 
 ### AST-driven introspection
 
@@ -414,6 +414,7 @@ class ref(Generic[T]):
 
 - Default — full copy (`shutil.copytree(..., dirs_exist_ok=True)`)
 - With `asset_filter` — only the listed asset files (per-page exports). Behavior subtree is copied separately via `_copy_behavior_assets_for_filter` ([:1692](../../app/io/code_exporter.py#L1692)) so `from assets.scripts.<page>.<window> import <Class>Page` resolves.
+- Package markers — after the asset copy, `write_package_markers_in` writes empty `__init__.py` into the build's `assets/scripts/` tree (root + every sub-folder). The source keeps no markers; the explicit package is materialised only in the build, so the import resolves on any Python (not just via PEP 420 namespace packages).
 - ScrollableDropdown helper — sidecar-copied next to the export when any `CTkComboBox` / `CTkOptionMenu` is present.
 
 ## Variable name resolution

@@ -86,12 +86,15 @@ def page_scripts_dir(
 def ensure_scripts_root(
     project_file_path: str | Path | None,
 ) -> Path | None:
-    """Create ``assets/scripts/`` + the page subfolder + both
-    ``__init__.py`` files. ``None`` for unsaved projects.
+    """Create ``assets/scripts/`` + the page subfolder. ``None`` for
+    unsaved projects.
 
-    The two ``__init__.py`` files make ``assets.scripts.<page>`` an
-    importable package so the exporter can emit
-    ``from assets.scripts.<page>.<window> import <Class>Page``.
+    Package ``__init__.py`` markers are NOT written here — they're an
+    export concern, generated into the build bundle at export time (see
+    ``write_package_markers_in``). The source tree stays free of empty
+    plumbing files; CTkMaker itself never imports user scripts (it only
+    AST-parses them), and exports/previews work via PEP 420 namespace
+    packages even without markers.
 
     When a digit-start ``.ctkproj`` filename gains the underscore
     prefix from [[behavior_file_stem]], any pre-existing folder at the
@@ -109,15 +112,6 @@ def ensure_scripts_root(
         page_dir.mkdir(parents=True, exist_ok=True)
     except OSError:
         return None
-    # Both levels need __init__.py — assets/scripts/ is the top
-    # package; <page>/ is the subpackage. Both files stay empty
-    # (Decision I=A) — the user can hand-edit if they want.
-    for init_path in (root / "__init__.py", page_dir / "__init__.py"):
-        if not init_path.exists():
-            try:
-                init_path.write_text("", encoding="utf-8")
-            except OSError:
-                pass
     return page_dir
 
 

@@ -26,6 +26,7 @@ from app.core.script_paths import (
     behavior_file_stem,
     ensure_scripts_root,
     page_scripts_dir,
+    scripts_root,
     slugify_window_name,
 )
 
@@ -144,28 +145,64 @@ def _walk(
     return behavior + folders + files
 
 
-def _ensure_init_chain(page_root: Path, target_parent: Path) -> None:
-    """Walk from ``page_root`` down to ``target_parent`` writing an
-    empty ``__init__.py`` in every folder that doesn't already have
-    one. Required so ``from .services import auth`` resolves.
+def write_package_markers_in(scripts_dir: Path) -> None:
+    """Write empty ``__init__.py`` markers into ``scripts_dir`` and every
+    sub-folder beneath it (skipping ``__pycache__``).
+
+    Called at EXPORT time against the build bundle's ``assets/scripts/``
+    so the runnable output is an explicit package tree — even though the
+    source kept no markers. (Modern Python resolves the imports via PEP
+    420 namespace packages regardless, but explicit packages stay robust
+    across odd runtime environments.) Idempotent; swallows write errors.
     """
-    if not page_root.exists() or not target_parent.exists():
+    if not scripts_dir.is_dir():
         return
-    try:
-        target_parent.resolve().relative_to(page_root.resolve())
-    except ValueError:
-        return
-    current = target_parent
-    while True:
-        init_path = current / "__init__.py"
+    folders = [scripts_dir]
+    folders.extend(
+        sub for sub in scripts_dir.rglob("*")
+        if sub.is_dir() and "__pycache__" not in sub.parts
+    )
+    for folder in folders:
+        init_path = folder / "__init__.py"
         if not init_path.exists():
             try:
                 init_path.write_text("", encoding="utf-8")
             except OSError:
                 pass
-        if current == page_root:
-            break
-        current = current.parent
+
+
+def purge_source_package_markers(
+    project_file_path: str | Path | None,
+) -> None:
+    """Remove leftover package plumbing from the SOURCE scripts tree:
+    empty (zero-byte) ``__init__.py`` files and ``__pycache__`` folders.
+
+    The source tree no longer needs ``__init__.py`` — markers are an
+    export-only concern (see ``write_package_markers_in``), and CTkMaker
+    only ever AST-parses user scripts, never imports them. This cleans up
+    projects created before that change so the user's OS file manager
+    shows only their real scripts.
+
+    Only zero-byte ``__init__.py`` are removed — a marker someone
+    hand-edited into a real module is left untouched. ``_runtime.py``
+    (the ``ref`` helper, real content) is never touched. Idempotent;
+    swallows errors.
+    """
+    root = scripts_root(project_file_path)
+    if root is None or not root.exists():
+        return
+    for path in list(root.rglob("*")):
+        try:
+            if path.is_dir() and path.name == "__pycache__":
+                shutil.rmtree(path, ignore_errors=True)
+            elif (
+                path.is_file()
+                and path.name == "__init__.py"
+                and path.stat().st_size == 0
+            ):
+                path.unlink()
+        except OSError:
+            pass
 
 
 def _validate_rel_path(rel_path: str) -> str | None:
@@ -213,7 +250,6 @@ def create_library_script(
             return None
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
-        _ensure_init_chain(page_dir, target.parent)
         target.write_text(
             (
                 '"""Library script for this page.\n'
@@ -257,7 +293,6 @@ def create_library_subpackage(
         return None
     try:
         target.mkdir(parents=True, exist_ok=True)
-        _ensure_init_chain(page_dir, target)
     except OSError:
         return None
     return target
@@ -301,7 +336,6 @@ def rename_library_script(
             return None
     try:
         dst.parent.mkdir(parents=True, exist_ok=True)
-        _ensure_init_chain(page_dir, dst.parent)
         shutil.move(str(src), str(dst))
     except OSError:
         return None

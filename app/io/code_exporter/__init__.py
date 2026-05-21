@@ -1031,6 +1031,13 @@ def export_project(
                     )
             except OSError:
                 pass
+            # Generate package ``__init__.py`` markers into the BUILD's
+            # scripts tree (the source keeps none). Makes the runnable
+            # output an explicit package so ``from assets.scripts.<page>
+            # .<window> import ...`` resolves on any Python — not only via
+            # PEP 420 namespace packages.
+            from app.io.library_scripts import write_package_markers_in
+            write_package_markers_in(out.parent / "assets" / "scripts")
     # Side-car the ScrollableDropdown helper next to the export when
     # any ComboBox / OptionMenu is in the project — the import in the
     # generated code resolves it via the export directory.
