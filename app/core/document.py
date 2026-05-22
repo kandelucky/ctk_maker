@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import uuid
 
-from app.core.object_references import ObjectReferenceEntry
 from app.core.variables import VariableEntry
 from app.core.widget_node import WidgetNode
 
@@ -109,14 +108,6 @@ class Document:
         # project. Not persisted — load_project rebuilds it from
         # existing widget names.
         self.name_counters: dict[str, int] = {}
-        # v1.10.8 Object References — local scope holds ``ref[Widget]``
-        # slots whose target lives inside this document. Globals
-        # (``ref[Window]`` / ``ref[Dialog]``) live on
-        # ``Project.object_references`` instead. The Variables window
-        # and Properties panel both work against this list; the code
-        # exporter consumes it to emit ``self._behavior.<name>``
-        # assignments after ``_build_ui()``.
-        self.local_object_references: list[ObjectReferenceEntry] = []
         # v1.38 — Library-script attachment list. Paths are relative
         # to the page-scripts folder (``assets/scripts/<page>/``).
         # A script attached to this document:
@@ -197,10 +188,6 @@ class Document:
         if self.local_variables:
             result["local_variables"] = [
                 v.to_dict() for v in self.local_variables
-            ]
-        if self.local_object_references:
-            result["local_object_references"] = [
-                r.to_dict() for r in self.local_object_references
             ]
         if self.attached_scripts:
             result["attached_scripts"] = list(self.attached_scripts)
@@ -289,14 +276,6 @@ class Document:
                 str(k): int(v) for k, v in raw_counters.items()
                 if isinstance(v, (int, float))
             }
-        raw_refs = data.get("local_object_references")
-        if isinstance(raw_refs, list):
-            for raw in raw_refs:
-                if not isinstance(raw, dict):
-                    continue
-                entry = ObjectReferenceEntry.from_dict(raw)
-                entry.scope = "local"
-                doc.local_object_references.append(entry)
         # v1.38 — Library script attachments. Paths are
         # page-folder-relative; empty/non-string entries dropped to
         # keep the live model strict. Pre-v1.38 projects come back
@@ -339,33 +318,4 @@ class Document:
                         {"script": raw["script"], "class": raw["class"]},
                     )
             doc.attached_components = comps
-        # v1.10.7- legacy migration: a ``behavior_field_values`` dict in
-        # the JSON payload predates Object References. Convert each
-        # entry to a local ObjectReferenceEntry with target_type
-        # defaulting to ``CTkLabel`` (the JSON didn't carry type info).
-        # Skipped when an entry with the same name already exists in
-        # ``local_object_references`` so a partial-migration replay is
-        # idempotent. The next save drops the legacy key naturally
-        # because ``to_dict`` no longer emits it.
-        raw_legacy = data.get("behavior_field_values")
-        if isinstance(raw_legacy, dict):
-            existing_names = {
-                r.name for r in doc.local_object_references
-            }
-            for raw_name, raw_widget_id in raw_legacy.items():
-                if not isinstance(raw_name, str) or not raw_name:
-                    continue
-                if not isinstance(raw_widget_id, str):
-                    continue
-                if raw_name in existing_names:
-                    continue
-                doc.local_object_references.append(
-                    ObjectReferenceEntry(
-                        name=raw_name,
-                        target_type="CTkLabel",
-                        scope="local",
-                        target_id=raw_widget_id,
-                    ),
-                )
-                existing_names.add(raw_name)
         return doc

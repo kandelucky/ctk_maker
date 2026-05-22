@@ -40,7 +40,6 @@ from app.core.document import (
 )
 from app.core.event_bus import EventBus
 from app.core.history import History
-from app.core.object_references import ObjectReferenceEntry
 from app.core.variables import (
     VAR_TYPES,
     VariableEntry,
@@ -277,13 +276,6 @@ class Project:
         # constructor (``textvariable=`` / ``variable=``).
         self.variables: list[VariableEntry] = []
         self._tk_vars: dict[str, tk.Variable] = {}
-        # v1.10.8 Object References — "global" scope (page-scoped as
-        # of the variable-scope redesign) holds typed ``ref[Window]``
-        # / ``ref[Dialog]`` slots whose target lives in
-        # ``Project.documents``. Inner-widget refs live on each
-        # ``Document.local_object_references`` instead. Matches the
-        # variables system's global / local split.
-        self.object_references: list[ObjectReferenceEntry] = []
         # Undo / redo history. UI code pushes Command objects after
         # applying mutations; history replays them backward / forward.
         self.history = History(self)

@@ -401,10 +401,6 @@ class MenuMixin(_MainWindowHost):
             data_menu, "Local Variables",
             lambda: self._on_request_open_variables_window("local"),
         )
-        self._add_cmd(
-            data_menu, "Object References",
-            lambda: self._on_request_open_variables_window("objrefs"),
-        )
         menubar.add_cascade(label="Data", menu=data_menu)
 
         # ---- Tools ----

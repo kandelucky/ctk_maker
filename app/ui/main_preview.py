@@ -47,7 +47,7 @@ class PreviewMixin(_MainWindowHost):
 
     def _on_preview(self) -> None:
         from app.ui.main_window import (
-            _confirm_missing_handler_methods, _confirm_ref_annotation_issues,
+            _confirm_missing_handler_methods,
             _confirm_var_name_fallbacks, _preview_cwd, _preview_show_floater,
             _spawn_preview,
         )
@@ -80,8 +80,6 @@ class PreviewMixin(_MainWindowHost):
             return
         if not _confirm_var_name_fallbacks(self):
             return
-        if not _confirm_ref_annotation_issues(self):
-            return
         try:
             proc = _spawn_preview(
                 tmp_dir, tmp_path,
@@ -107,7 +105,7 @@ class PreviewMixin(_MainWindowHost):
         mash-of-clicks from flooding the screen with duplicate copies.
         """
         from app.ui.main_window import (
-            _confirm_missing_handler_methods, _confirm_ref_annotation_issues,
+            _confirm_missing_handler_methods,
             _confirm_var_name_fallbacks, _preview_cwd, _preview_show_floater,
             _spawn_preview,
         )
@@ -140,8 +138,6 @@ class PreviewMixin(_MainWindowHost):
         if not _confirm_missing_handler_methods(self):
             return
         if not _confirm_var_name_fallbacks(self):
-            return
-        if not _confirm_ref_annotation_issues(self):
             return
         try:
             proc = _spawn_preview(
@@ -239,7 +235,6 @@ class PreviewMixin(_MainWindowHost):
         doc) and from the per-form chrome Export icon (specific id
         via ``request_export_document`` event bus).
         """
-        from app.ui.main_window import _format_ref_annotation_issues_body
         if not self._confirm_save_before_export():
             return
         target_id = doc_id or self.project.active_document_id
@@ -317,16 +312,6 @@ class PreviewMixin(_MainWindowHost):
                 parent=self,
             )
             return
-        # Ref-annotation mismatches are non-fatal but bite at first
-        # widget interaction in the exported app — surface them before
-        # the success toast so the user can fix before sharing.
-        ref_body = _format_ref_annotation_issues_body()
-        if ref_body is not None:
-            messagebox.showwarning(
-                "Object Reference annotations out of sync",
-                ref_body,
-                parent=self,
-            )
         # Show a relative path in the toast — the user already
         # knows their project folder; the noisy absolute prefix
         # would push the actual filename off-screen on a small

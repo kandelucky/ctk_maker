@@ -7,14 +7,6 @@ bodies in their own editor. The file lives at
 and is imported by exported code as
 ``from assets.scripts.<page>.<window> import <WindowName>Page``.
 
-Object References (v1.10.8+) — annotated class attributes typed as
-``ref[<WidgetType>]`` declare Inspector slots that pair with entries
-in the document's ``local_object_references``. Resolution happens at
-export time via ``self._behavior.<field> = self.<widget_var>`` lines
-after ``_build_ui()``. The ``ref`` marker class lives in an
-auto-generated ``assets/scripts/_runtime.py`` so behavior files stay
-importable outside CTkMaker (IDE typing, standalone tests, etc.).
-
 Sub-modules group helpers by what they do; this package re-exports
 the public surface so existing callers can keep importing from
 ``app.io.scripts``.
@@ -25,8 +17,6 @@ from app.core.script_paths import (
     behavior_file_path,
 )
 from app.io.scripts.ast_scan import (
-    FieldSpec,
-    existing_object_reference_names,
     find_attachable_scripts,
     find_handler_method,
     parse_ctkscript_classes,
@@ -34,7 +24,6 @@ from app.io.scripts.ast_scan import (
     parse_handler_methods_compatible,
     parse_method_docstrings,
     parse_module_functions,
-    parse_object_reference_fields,
 )
 from app.io.scripts.components import (
     iter_script_call_targets,
@@ -46,15 +35,12 @@ from app.io.scripts.editor import (
 )
 from app.io.scripts.mutate import (
     add_handler_stub,
-    add_object_reference_annotation,
     collect_used_method_names,
     delete_method_from_file,
-    delete_object_reference_annotation,
     ensure_imports_in_behavior_file,
     ensure_relative_import_in_behavior_file,
     slugify_method_part,
     suggest_method_name,
-    suggest_object_reference_name,
 )
 from app.io.scripts.paths import (
     create_user_script,
@@ -72,8 +58,6 @@ __all__ = [
     "behavior_class_name",
     "behavior_file_path",
     # ast_scan
-    "FieldSpec",
-    "existing_object_reference_names",
     "find_attachable_scripts",
     "find_handler_method",
     "parse_ctkscript_classes",
@@ -81,7 +65,6 @@ __all__ = [
     "parse_handler_methods_compatible",
     "parse_method_docstrings",
     "parse_module_functions",
-    "parse_object_reference_fields",
     # components (CTkScript resolution)
     "iter_script_call_targets",
     "resolve_script_component",
@@ -90,15 +73,12 @@ __all__ = [
     "resolve_project_root_for_editor",
     # mutate
     "add_handler_stub",
-    "add_object_reference_annotation",
     "collect_used_method_names",
     "delete_method_from_file",
-    "delete_object_reference_annotation",
     "ensure_imports_in_behavior_file",
     "ensure_relative_import_in_behavior_file",
     "slugify_method_part",
     "suggest_method_name",
-    "suggest_object_reference_name",
     # paths
     "create_user_script",
     "list_page_scripts",

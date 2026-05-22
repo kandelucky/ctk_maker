@@ -65,9 +65,6 @@ def project_to_dict(project: Project) -> dict:
         "variables": [
             v.to_dict() for v in (project.variables or [])
         ],
-        "object_references": [
-            r.to_dict() for r in (project.object_references or [])
-        ],
     }
     if not project.folder_path:
         data["name"] = project.name

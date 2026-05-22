@@ -500,7 +500,7 @@ def _empty_page_data(name: str) -> dict:
     """Build the minimal v2 .ctkproj payload for a fresh page in a
     multi-page project. Only page-level fields appear — project-level
     metadata (``name``, ``font_defaults``, ``system_fonts``,
-    ``variables``, ``object_references``) lives in ``project.json``
+    ``variables``) lives in ``project.json``
     and is read from there on load. Mirrors the multi-page branch of
     ``project_to_dict``.
     """

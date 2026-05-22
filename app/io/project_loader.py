@@ -260,25 +260,6 @@ def load_project(
     )
     project.reset_tk_vars()
 
-    # v1.10.8 Object References (global scope — Window / Dialog
-    # targets, page-scoped as of the variable-scope redesign). Local
-    # refs live on each Document and are restored in
-    # Document.from_dict. Same legacy migration as variables.
-    from app.core.object_references import ObjectReferenceEntry
-    raw_refs = data.get("object_references")
-    if raw_refs is None and multi_page_meta is not None:
-        raw_refs = multi_page_meta.get("object_references")
-    project.object_references = (
-        [
-            ObjectReferenceEntry.from_dict(d)
-            for d in raw_refs if isinstance(d, dict)
-        ]
-        if isinstance(raw_refs, list) else []
-    )
-    # Force scope=global defensively — storage location is truth.
-    for entry in project.object_references:
-        entry.scope = "global"
-
     # Prime the font system BEFORE any widget is added — otherwise
     # CTkFont(family=...) calls inside widget construction resolve
     # against an empty cascade (defaults stale from the previous
@@ -379,13 +360,6 @@ def load_project(
     # migrate helper publishes a single ``local_variables_migrated``
     # event per call so MainWindow shows one toast per repaired doc.
     _repair_cross_doc_local_bindings(project)
-
-    # Legacy ``behavior_field_values`` JSON entries (pre-v1.10.8) are
-    # converted to ``local_object_references`` inside
-    # ``Document.from_dict`` itself, so by the time we reach this
-    # point every doc already has the migrated entries. Target type
-    # defaults to ``CTkLabel`` because the legacy JSON didn't carry
-    # type info — the user can adjust via F11 if needed.
 
     # Name counters are now per-document (Document.name_counters) and
     # round-trip through Document.from_dict / to_dict. Legacy v1 files

@@ -193,16 +193,6 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         bus.subscribe(
             "widget_handler_changed", self._on_widget_handler_changed,
         )
-        # v1.10.8 — Object Reference mutations (add / remove / rename
-        # / target change) repaint the Window panel + the toggle row
-        # on the active widget panel so all views stay in sync.
-        for ev in (
-            "object_reference_added",
-            "object_reference_removed",
-            "object_reference_renamed",
-            "object_reference_target_changed",
-        ):
-            bus.subscribe(ev, self._on_object_reference_changed)
         # v1.38 — Scripts panel toggles the attached_scripts list and
         # publishes this; mirror it into the Attached Scripts group so
         # the user doesn't have to reselect the Window to see the row
@@ -605,16 +595,11 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             self._show_event_tooltip(iid, event.x_root, event.y_root)
             return
 
-        # Widget-agnostic parent rows — Advanced events sub-group +
-        # Object Reference list / per-widget toggle group + the
-        # ``Reference`` row inside the toggle group (dynamic iid
-        # ``objref_toggle:<widget_id>`` — matched by prefix). Bypass
-        # the CTkLabel scope gate below.
+        # Widget-agnostic parent rows — Advanced events sub-group.
+        # Bypass the CTkLabel scope gate below.
         agnostic_key: str | None = None
         if iid in _WIDGET_AGNOSTIC_TOOLTIP_IIDS:
             agnostic_key = iid
-        elif iid.startswith("objref_toggle:"):
-            agnostic_key = "objref_toggle"
         if agnostic_key is not None:
             entry = ROW_HELP.get(agnostic_key)
             if entry is not None:
@@ -1157,14 +1142,6 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         if iid and iid.startswith("localvar:") and iid != "localvar:empty":
             self._show_local_var_menu(event)
             return
-        # v1.38 — global Object Reference rows whose target is a
-        # Document offer a one-item ``Open`` menu (same action as
-        # double-click). Widget-target globals and locals skip the
-        # menu — the F11 Object References tab is the place for any
-        # mutation work.
-        if iid and iid.startswith("objref:g:"):
-            self._show_global_objref_menu(event, iid)
-            return
         # Phase 2 visual scripting — Events group rows route to a
         # dedicated menu. Side-table lookup avoids re-parsing iid
         # strings; ``_event_row_meta`` is populated alongside the
@@ -1244,8 +1221,8 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             if method_index is None or method_index >= len(methods):
                 return
             method_name = methods[method_index]
-            # ref_call dicts have no behavior-file def to open —
-            # the right-click menu skips "Open in editor" for them.
+            # Handler dicts (library_call / script_call) have no
+            # behavior-file def to open — skip "Open in editor" for them.
             if isinstance(method_name, str):
                 menu.add_command(
                     label="Open in editor",
@@ -1340,8 +1317,8 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         target picker. Picking REPLACES the entry's target in place
         (rather than appending a new one) and resets method+args
         since the new target has its own pool of compatible
-        functions. Same Page Script / Object References cascade
-        the outer ``[+]`` flow uses.
+        functions. Same Page Script / Library Scripts picker the
+        outer ``[+]`` flow uses.
         """
         node = self.project.get_widget(widget_id)
         if node is None:
@@ -1352,7 +1329,6 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         document = self.project.find_document_for_widget(widget_id)
         if document is None:
             return
-        from app.widgets.action_registry import actions_for
         from app.ui.properties_panel.constants import menu_style
         menu = tk.Menu(self.tree, tearoff=0, **menu_style())
         menu.add_command(
@@ -1361,27 +1337,6 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
                 widget_id, event_key, m_idx,
             ),
         )
-        refs_with_actions: list = []
-        for ref in document.local_object_references:
-            if not ref.target_id:
-                continue
-            target = self.project.get_widget(ref.target_id)
-            if target is None:
-                continue
-            if actions_for(target.widget_type):
-                refs_with_actions.append((ref, target))
-        if refs_with_actions:
-            refs_menu = tk.Menu(menu, tearoff=0)
-            for ref, target in refs_with_actions:
-                refs_menu.add_command(
-                    label=f"{ref.name} ({target.widget_type})",
-                    command=lambda r=ref: self._retarget_to_ref(
-                        widget_id, event_key, m_idx, r.name,
-                    ),
-                )
-            menu.add_cascade(
-                label="Object References", menu=refs_menu,
-            )
         attached = getattr(document, "attached_scripts", []) or []
         if attached:
             scripts_menu = tk.Menu(menu, tearoff=0)
@@ -1422,30 +1377,6 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             "widget_handler_changed", widget_id, event_key, "",
         )
 
-    def _retarget_to_ref(
-        self, widget_id: str, event_key: str,
-        m_idx: int, ref_name: str,
-    ) -> None:
-        """Replace the entry at ``m_idx`` with a ref_call dict
-        targeting ``ref_name``, method/args empty until the user
-        picks via the Function picker.
-        """
-        node = self.project.get_widget(widget_id)
-        if node is None:
-            return
-        entries = node.handlers.get(event_key)
-        if entries is None or m_idx >= len(entries):
-            return
-        entries[m_idx] = {
-            "kind": "ref_call",
-            "ref": ref_name,
-            "method": "",
-            "args": [],
-        }
-        self.project.event_bus.publish(
-            "widget_handler_changed", widget_id, event_key, "",
-        )
-
     def _retarget_to_library(
         self, widget_id: str, event_key: str,
         m_idx: int, script_path: str,
@@ -1478,8 +1409,6 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
 
         * Page script (str) → public class methods filtered by
           ``parse_handler_methods_compatible``.
-        * Object Reference (``ref_call``) → ``WIDGET_ACTION_METHODS``
-          actions for the ref's widget type.
         * Library script (``library_call``) → public top-level
           functions from the attached file, signature-filtered
           by ``parse_module_functions``.
@@ -1496,9 +1425,6 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         entry = entries[m_idx]
         from app.ui.properties_panel.constants import menu_style
         menu = tk.Menu(self.tree, tearoff=0, **menu_style())
-        is_ref_call = (
-            isinstance(entry, dict) and entry.get("kind") == "ref_call"
-        )
         is_library_call = (
             isinstance(entry, dict)
             and entry.get("kind") == "library_call"
@@ -1507,43 +1433,7 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             isinstance(entry, dict)
             and entry.get("kind") == "script_call"
         )
-        if is_ref_call:
-            ref_name = entry.get("ref", "")
-            document = self.project.find_document_for_widget(widget_id)
-            ref_widget = None
-            if document is not None:
-                ref_entry = next(
-                    (
-                        r for r in document.local_object_references
-                        if r.name == ref_name
-                    ),
-                    None,
-                )
-                if ref_entry is not None and ref_entry.target_id:
-                    ref_widget = self.project.get_widget(ref_entry.target_id)
-            if ref_widget is None:
-                menu.add_command(
-                    label="Object reference unbound", state="disabled",
-                )
-            else:
-                from app.widgets.action_registry import actions_for
-                allowed = actions_for(ref_widget.widget_type)
-                if not allowed:
-                    menu.add_command(
-                        label=(
-                            f"No actions for {ref_widget.widget_type}"
-                        ),
-                        state="disabled",
-                    )
-                for action in allowed:
-                    menu.add_command(
-                        label=action.label,
-                        command=lambda a=action:
-                        self._set_handler_method_ref(
-                            widget_id, event_key, m_idx, a,
-                        ),
-                    )
-        elif is_library_call:
+        if is_library_call:
             from app.core.script_paths import page_scripts_dir
             from app.io.scripts import parse_module_functions
             from app.widgets.event_registry import event_by_key
@@ -1739,44 +1629,13 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             "widget_handler_changed", widget_id, event_key, method_name,
         )
 
-    def _set_handler_method_ref(
-        self, widget_id: str, event_key: str,
-        m_idx: int, action,
-    ) -> None:
-        """Replace a ref_call entry's method (and reset args from
-        the action's defaults) in place. Direct mutation; publishes
-        ``widget_handler_changed``.
-        """
-        node = self.project.get_widget(widget_id)
-        if node is None:
-            return
-        entries = node.handlers.get(event_key)
-        if entries is None or m_idx >= len(entries):
-            return
-        entry = entries[m_idx]
-        if not isinstance(entry, dict):
-            return
-        entry["method"] = action.name
-        entry["args"] = [
-            {
-                "name": p.name,
-                "type": p.type,
-                "value": p.default,
-                "kwarg": p.kwarg,
-            }
-            for p in action.params
-        ]
-        self.project.event_bus.publish(
-            "widget_handler_changed", widget_id, event_key, action.name,
-        )
-
     def _begin_param_edit(
         self, widget_id: str, event_key: str,
         m_idx: int, p_idx: int, target_iid: str,
     ) -> None:
         """Single-click on a ``<param>:`` child row opens an inline
         Entry editor over the value cell. Tab / Enter commit the new
-        value into the ref_call's ``args[p_idx]["value"]``; Escape
+        value into the handler entry's ``args[p_idx]["value"]``; Escape
         cancels. Type-coerced on commit (int / float / bool); empty
         strings stay empty. ``target_iid`` is the clicked row's iid
         (passed by the click router so we don't search the meta map
@@ -2058,139 +1917,6 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         self.project.history.push(cmd)
         self._rebuild()
 
-    def _make_window_global_reference(self, doc) -> None:
-        """Promote the active document (Window or Dialog) to a global
-        Object Reference. Creates a project-level entry whose target
-        is the document itself; behavior code reaches the class via
-        ``self.<name>``. Symmetric to the per-widget local toggle.
-        """
-        if self.project is None or doc is None:
-            return
-        from app.core.commands import AddObjectReferenceCommand
-        from app.core.object_references import (
-            ObjectReferenceEntry, suggest_ref_name,
-        )
-        existing_names = {
-            e.name for e in (self.project.object_references or [])
-        }
-        # Locals share the user-facing namespace too — collide-check
-        # against every doc's locals.
-        for d in self.project.documents or []:
-            existing_names.update(
-                e.name for e in (d.local_object_references or [])
-            )
-        target_type = "Dialog" if doc.is_toplevel else "Window"
-        suggested = suggest_ref_name(
-            doc.name or "", target_type, existing_names,
-        )
-        entry = ObjectReferenceEntry(
-            name=suggested,
-            target_type=target_type,
-            scope="global",
-            target_id=doc.id,
-        )
-        index = len(self.project.object_references)
-        self.project.object_references.append(entry)
-        self.project.event_bus.publish("object_reference_added", entry)
-        cmd = AddObjectReferenceCommand(
-            entry.to_dict(), index=index,
-            scope="global", document_id=None,
-        )
-        self.project.history.push(cmd)
-
-    def _maybe_write_ref_annotation(
-        self, doc, name: str, type_name: str,
-    ) -> None:
-        """Best-effort behavior-file annotation write. Adds
-        ``<name>: ref[<type_name>]`` + the ``from .._runtime import
-        ref`` and ``from customtkinter import <Type>`` imports.
-        Skips silently when the project is unsaved (no path); any
-        other failure is logged so the user can diagnose stale-
-        annotation symptoms in the .py file.
-        """
-        path = getattr(self.project, "path", None)
-        if not path:
-            return
-        try:
-            from app.core.script_paths import (
-                behavior_class_name,
-            )
-            from app.io.scripts import (
-                add_object_reference_annotation,
-                ensure_imports_in_behavior_file,
-                load_or_create_behavior_file,
-            )
-            file_path = load_or_create_behavior_file(path, doc)
-            if file_path is None:
-                return
-            class_name = behavior_class_name(doc)
-            add_object_reference_annotation(
-                file_path, class_name, name, type_name,
-            )
-            ensure_imports_in_behavior_file(
-                file_path,
-                [
-                    ("customtkinter", type_name),
-                ],
-            )
-            # ``ref`` lives in the auto-generated ``_runtime.py`` —
-            # use the existing relative-import helper that knows the
-            # 2-level package path.
-            from app.io.scripts import (
-                ensure_relative_import_in_behavior_file,
-            )
-            ensure_relative_import_in_behavior_file(
-                file_path, level=2, module="_runtime", name="ref",
-            )
-        except Exception:
-            log_error(
-                f"write ref annotation: {name!r} ({type_name}) "
-                f"in doc {doc.id}",
-            )
-
-    def _maybe_delete_ref_annotation(self, doc, name: str) -> None:
-        """Strip ``<name>: <annotation>`` from the doc's behavior file.
-        Skips silently for unsaved projects or when the file doesn't
-        exist yet (annotation never landed). Logs both exception and
-        logical-failure paths — the second catches stale annotations
-        that survived a previous deletion (e.g., the U3 inconsistency
-        where an Object Reference was removed from the model but the
-        annotation stayed in the .py file).
-        """
-        path = getattr(self.project, "path", None)
-        if not path:
-            return
-        try:
-            from app.core.script_paths import (
-                behavior_class_name, behavior_file_path,
-            )
-            from app.io.scripts import (
-                delete_object_reference_annotation,
-            )
-            file_path = behavior_file_path(path, doc)
-            if file_path is None or not file_path.exists():
-                return
-            removed = delete_object_reference_annotation(
-                file_path, behavior_class_name(doc), name,
-            )
-            if not removed:
-                log_error(
-                    f"delete ref annotation: {name!r} not found in "
-                    f"{file_path.name} (orphan ref or stale annotation)",
-                )
-        except Exception:
-            log_error(
-                f"delete ref annotation: {name!r} in doc {doc.id}",
-            )
-
-    def _on_object_reference_changed(self, *_args, **_kwargs) -> None:
-        """Live repaint after any ObjectReference mutation. Only the
-        active panel rebuilds — inactive selections wait for their
-        own activation.
-        """
-        if self.current_id is not None:
-            self._rebuild()
-
     def _on_attached_scripts_changed(
         self, doc_id: str | None = None, *_args, **_kwargs,
     ) -> None:
@@ -2215,39 +1941,6 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             label="Open Variables Editor",
             command=lambda: self.project.event_bus.publish(
                 "request_open_variables_window", "local", doc_id,
-            ),
-        )
-        try:
-            menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            menu.grab_release()
-
-    def _show_global_objref_menu(self, event, iid: str) -> None:
-        """v1.38 — right-click on a global Object Reference row.
-        Window targets get an ``Open`` item that switches to that
-        document (same action as double-click). Widget-target globals
-        skip the menu — they don't carry an open-able destination.
-        """
-        if self.project is None:
-            return
-        ref_id = iid.split(":", 2)[2]
-        entry = next(
-            (
-                r for r in (self.project.object_references or [])
-                if r.id == ref_id
-            ),
-            None,
-        )
-        if entry is None or not entry.target_id:
-            return
-        target_doc = self.project.get_document(entry.target_id)
-        if target_doc is None:
-            return
-        menu = tk.Menu(self.tree, tearoff=0)
-        menu.add_command(
-            label="Open",
-            command=lambda d=target_doc.id: (
-                self.project.set_active_document(d)
             ),
         )
         try:

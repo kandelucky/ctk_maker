@@ -48,7 +48,6 @@ from .overlays import (
     SLOT_EVENT_ADD,
     SLOT_EVENT_DROPDOWN,
     SLOT_EVENT_UNBIND,
-    SLOT_OBJECT_REFERENCE_TOGGLE,
     SLOT_SCRIPT_NAME_CHIP,
     SLOT_SCRIPT_PATH,
     SLOT_VAR_COLOR_SWATCH,
@@ -59,7 +58,6 @@ from .overlays import (
     place_event_add,
     place_event_dropdown,
     place_event_unbind,
-    place_object_reference_toggle,
     place_script_name_chip,
     place_script_open_label,
     place_script_path,
@@ -745,7 +743,6 @@ class SchemaMixin:
         * ``"Script:"`` — page-method entry OR library_call (both
           live in ``.py`` files; the value cell distinguishes the
           page behavior file from an attached library script).
-        * ``"Object:"`` — ref_call to a widget or window.
         * ``"Target:"`` — pending placeholder (no target picked
           yet); the value cell carries the ``Add target`` prompt.
 
@@ -753,28 +750,6 @@ class SchemaMixin:
         child rows render at all — ``False`` for the placeholder
         state.
         """
-        if isinstance(handler_entry, dict) and (
-            handler_entry.get("kind") == "ref_call"
-        ):
-            ref_name = handler_entry.get("ref", "")
-            if not ref_name:
-                return "Target:", "Add target", None, False
-            document = self.project.find_document_for_widget(node.id)
-            if document is None:
-                return "Object:", ref_name, None, True
-            ref_entry = next(
-                (
-                    r for r in document.local_object_references
-                    if r.name == ref_name
-                ),
-                None,
-            )
-            if ref_entry is None:
-                return "Object:", ref_name, "reference not found", True
-            target = self.project.get_widget(ref_entry.target_id)
-            if target is None:
-                return "Object:", ref_name, "reference unbound", True
-            return "Object:", ref_name, None, True
         if isinstance(handler_entry, dict) and (
             handler_entry.get("kind") == "library_call"
         ):
@@ -832,23 +807,6 @@ class SchemaMixin:
         whether to highlight that as missing or just as pending.
         """
         if isinstance(handler_entry, dict) and (
-            handler_entry.get("kind") == "ref_call"
-        ):
-            method = handler_entry.get("method", "")
-            if not method:
-                return "Pick function…", None, []
-            action = self._action_entry_for_ref_call(handler_entry)
-            if action is None:
-                return method, "action not allowed", []
-            param_pairs: list[tuple[str, str]] = []
-            for arg in handler_entry.get("args", []) or []:
-                pname = arg.get("name", "")
-                pvalue = arg.get("value", "")
-                param_pairs.append(
-                    (pname, str(pvalue) if pvalue != "" else "—"),
-                )
-            return action.label, None, param_pairs
-        if isinstance(handler_entry, dict) and (
             handler_entry.get("kind") == "library_call"
         ):
             method = handler_entry.get("method", "")
@@ -904,36 +862,6 @@ class SchemaMixin:
         if not full_path.exists():
             return True
         return method_name in parse_module_functions(full_path)
-
-    def _action_entry_for_ref_call(self, handler_entry: dict):
-        """Look up the ``ActionEntry`` for a ref_call's
-        ``(ref → target_widget_type, method)`` so the renderer can
-        surface the friendly label instead of the raw method name.
-        Returns ``None`` when the ref doesn't resolve or the action
-        isn't allowlisted — caller treats that as missing.
-        """
-        from app.widgets.action_registry import find_action
-        ref_name = handler_entry.get("ref", "")
-        method_name = handler_entry.get("method", "")
-        if not ref_name or not method_name or self.project is None:
-            return None
-        doc = self.project.active_document
-        if doc is None:
-            return None
-        ref_entry = next(
-            (
-                r for r in doc.local_object_references
-                if r.name == ref_name
-            ),
-            None,
-        )
-        if ref_entry is None or not ref_entry.target_id:
-            return None
-        target = self.project.get_widget(ref_entry.target_id)
-        if target is None:
-            return None
-        return find_action(target.widget_type, method_name)
-
 
     def _lookup_existing_method_names(self, node) -> set[str] | None:
         """Phase 3 — return the set of method names defined on the

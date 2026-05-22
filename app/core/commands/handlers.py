@@ -16,8 +16,8 @@ class BindHandlerCommand(Command):
     widget's event list. ``event_key`` is the storage key
     (``"command"`` or ``"bind:<seq>"``); ``method_name`` is the
     handler entry — either a string (page method name on the
-    window's behavior class) or a ``ref_call`` dict (direct
-    widget-to-widget call routed through an Object Reference, v3).
+    window's behavior class) or a handler dict (e.g. a
+    ``script_call`` binding to a CTkScript method).
     Both shapes share the multi-method-per-event semantics —
     invocation appends a row, undo pops the row that was added
     (matched by index so duplicates don't confuse the undo stack).
@@ -252,7 +252,7 @@ class UnbindHandlerCommand(Command):
     the row's index at construction so undo restores it at the same
     position (sibling order matters for execution order). The
     ``previous_method`` argument accepts either a page-method
-    string or a ``ref_call`` dict — list comparison stays correct
+    string or a handler dict — list comparison stays correct
     for both shapes (Python equality is per-element / per-key).
     """
 

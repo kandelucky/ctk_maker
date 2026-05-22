@@ -106,12 +106,6 @@ _BEHAVIOR_METHODS_BY_DOC_ID: dict[str, set[str]] = {}
 _MISSING_BEHAVIOR_METHODS: list[tuple[str, str, str]] = []
 _GLOBAL_VAR_ATTR: dict = {}
 _VAR_ID_TO_ATTR: dict = {}
-# v1.10.8 — doc.id → class name emitted in this generate_code run.
-# Populated at the top of ``generate_code`` once class names are
-# assigned, consumed by ``_emit_object_reference_lines`` so global
-# Window/Dialog refs resolve to the right class symbol. Reset
-# alongside the variable maps.
-_DOC_ID_TO_CLASS: dict = {}
 # Var-name fallbacks the exporter applied during this run because the
 # user-set Properties-panel "Name" was empty / invalid / a duplicate.
 # Tuples are ``(doc_name, intended, fallback, reason)``; reset at the
@@ -119,24 +113,10 @@ _DOC_ID_TO_CLASS: dict = {}
 # ``get_var_name_fallbacks()`` so launchers (F5 preview, export
 # dialog) can show the user which names were silently rewritten.
 _VAR_NAME_FALLBACKS: list[tuple[str, str, str, str]] = []
-# v1.10.9 — mismatches between GUI Object References and the per-doc
-# behavior file's ``<name>: ref[<Type>]`` annotations. Auto-stub paths
-# (panel.py ``_maybe_write_ref_annotation`` + variables_window
-# ``_maybe_rename_annotation``) cover the happy path; this scan
-# catches the case where the user edited the .py manually and drifted
-# from the GUI names — verbatim wiring means ``self.<ref_name>`` then
-# stays unbound until the first widget interaction raises
-# ``AttributeError``. Tuples are ``(doc_name, kind, ref_name, detail)``;
-# ``kind`` is ``"missing_annotation"`` / ``"orphan_annotation"`` /
-# ``"type_mismatch"``. Reset by ``_scan_ref_annotations_for_export``
-# at the top of ``generate_code``. Surfaced via
-# ``get_ref_annotation_issues()`` for F5 preview + export dialog.
-_REF_ANNOTATION_ISSUES: list[tuple[str, str, str, str]] = []
 # Per-doc memoisation for ``_resolve_var_names`` so the resolver
 # runs once per ``generate_code`` call per doc — keeps the
-# ``_emit_subtree`` walk and the ``_build_id_to_var_name`` Phase 3
-# replay in lockstep without recomputing (and without double-
-# recording warnings).
+# ``_emit_subtree`` walk consistent without recomputing (and
+# without double-recording warnings).
 _NAME_MAP_CACHE: dict[str, dict[str, str]] = {}
 # Static reserved set — names the exporter itself emits on the window
 # class. Joined at check time with the lazy ``_ctk_inherited_names()``
@@ -1183,21 +1163,17 @@ def generate_code(
     production code.
     """
     global _INCLUDE_DESCRIPTIONS_DEFAULT, _EXPORT_PROJECT
-    global _GLOBAL_VAR_ATTR, _VAR_ID_TO_ATTR, _DOC_ID_TO_CLASS
+    global _GLOBAL_VAR_ATTR, _VAR_ID_TO_ATTR
     global _VAR_NAME_FALLBACKS, _NAME_MAP_CACHE
     _prev = (
         _INCLUDE_DESCRIPTIONS_DEFAULT, _EXPORT_PROJECT,
-        _GLOBAL_VAR_ATTR, _VAR_ID_TO_ATTR, _DOC_ID_TO_CLASS,
+        _GLOBAL_VAR_ATTR, _VAR_ID_TO_ATTR,
     )
     _INCLUDE_DESCRIPTIONS_DEFAULT = include_descriptions
     _EXPORT_PROJECT = project
     _GLOBAL_VAR_ATTR = _build_global_var_attrs(project)
     # Per-class map is rebuilt inside ``_emit_class``; start empty.
     _VAR_ID_TO_ATTR = {}
-    # doc.id → class name; populated inside ``_generate_code_inner``
-    # once class names are picked. Empty here so single-doc / no-doc
-    # paths skip global-ref resolution cleanly.
-    _DOC_ID_TO_CLASS = {}
     # Reset the var-name fallback log + DFS-walk memoisation so this
     # export run starts from a clean slate. The log survives past
     # ``generate_code`` so launchers can read it via
@@ -1211,7 +1187,6 @@ def generate_code(
     # ``self._behavior.<missing>`` references that crash the preview
     # at __init__ time.
     _scan_behavior_methods_for_export(project)
-    _scan_ref_annotations_for_export(project)
     try:
         return _generate_code_inner(
             project,
@@ -1225,7 +1200,6 @@ def generate_code(
             _EXPORT_PROJECT,
             _GLOBAL_VAR_ATTR,
             _VAR_ID_TO_ATTR,
-            _DOC_ID_TO_CLASS,
         ) = _prev
 
 
@@ -1352,12 +1326,6 @@ def _generate_code_inner(
         cls_name = _class_name_for(doc, index, used_class_names)
         used_class_names.add(cls_name)
         class_names.append((doc, cls_name))
-    # v1.10.8 — populate the global doc.id → class-name map so
-    # _emit_object_reference_lines can resolve global Window/Dialog
-    # refs to the right symbol. The map is reset at the top of
-    # generate_code so we never carry state across runs.
-    global _DOC_ID_TO_CLASS
-    _DOC_ID_TO_CLASS = {doc.id: cls for doc, cls in class_names}
 
     # Phase 2 — emit ``from assets.scripts.<page>.<window> import
     # <WindowName>Page`` for every Document that actually binds at
@@ -1549,10 +1517,6 @@ def _filter_handlers_to_existing_methods(
     Three entry shapes:
       * ``str`` — page method on the window's behavior class. Dropped
         when the per-doc AST scan didn't find a matching ``def``.
-      * ``dict`` with ``"kind": "ref_call"`` — widget-to-widget call
-        routed through an Object Reference. Dropped when the ref name
-        doesn't resolve, the target is unbound, or the method isn't
-        in ``WIDGET_ACTION_METHODS`` for the target's widget type.
       * ``dict`` with ``"kind": "library_call"`` — module-level
         function call into an attached library script. Dropped when
         the script isn't in ``doc.attached_scripts``, the file
@@ -1587,15 +1551,6 @@ def _filter_handlers_to_existing_methods(
                     f"Method not found: {entry!r}",
                 ))
             continue
-        if isinstance(entry, dict) and entry.get("kind") == "ref_call":
-            reason = _validate_ref_call(doc, entry)
-            if reason is None:
-                kept.append(entry)
-            else:
-                _MISSING_BEHAVIOR_METHODS.append((
-                    widget_label, event_label, reason,
-                ))
-            continue
         if isinstance(entry, dict) and entry.get(
             "kind",
         ) == "library_call":
@@ -1620,34 +1575,6 @@ def _filter_handlers_to_existing_methods(
             "Handler entry has unrecognised shape",
         ))
     return kept
-
-
-def _validate_ref_call(doc: Document, entry: dict) -> str | None:
-    """Return ``None`` when a ``ref_call`` entry resolves cleanly, or
-    a pre-formatted reason string when it doesn't. Reason strings
-    drive the warning message in ``_prepend_missing_handler_warnings``.
-    """
-    from app.widgets.action_registry import find_action
-    ref_name = entry.get("ref", "")
-    method_name = entry.get("method", "")
-    if not ref_name or not method_name:
-        return f"Object reference call missing ref or method: {entry!r}"
-    if _EXPORT_PROJECT is None:
-        return None
-    ref_entry = next(
-        (r for r in doc.local_object_references if r.name == ref_name),
-        None,
-    )
-    if ref_entry is None:
-        return f"Object reference not found: {ref_name!r}"
-    target = _EXPORT_PROJECT.get_widget(ref_entry.target_id)
-    if target is None:
-        return f"Object reference unbound: {ref_name!r}"
-    if find_action(target.widget_type, method_name) is None:
-        return (
-            f"Action not allowed: {method_name!r} on {target.widget_type}"
-        )
-    return None
 
 
 def _validate_library_call(doc: Document, entry: dict) -> str | None:
@@ -1763,109 +1690,6 @@ def get_var_name_fallbacks() -> list[tuple[str, str, str, str]]:
     return list(_VAR_NAME_FALLBACKS)
 
 
-def _scan_ref_annotations_for_export(project: Project) -> None:
-    """Diff every doc's Object References against its behavior file's
-    ``<name>: ref[<Type>]`` annotations. Populates
-    ``_REF_ANNOTATION_ISSUES`` with one tuple per mismatch so launchers
-    can warn the user before runtime would otherwise raise
-    ``AttributeError`` on the first widget interaction.
-
-    Three issue kinds:
-
-    - ``missing_annotation`` — a local Object Reference declared in
-      the Properties panel has no matching ``<name>: ref[<Type>]``
-      line in the behavior class. The auto-stub (panel.py
-      ``_maybe_write_ref_annotation``) usually keeps these in sync;
-      reaching here means the user edited the .py manually and
-      removed / renamed the annotation.
-    - ``orphan_annotation`` — annotation present in the .py with no
-      matching ref in either ``doc.local_object_references`` or the
-      project-level globals. ``self.<name>`` stays unbound at runtime.
-    - ``type_mismatch`` — both sides exist but disagree on the widget
-      type (e.g., annotation says ``ref[CTkButton]`` but the GUI ref
-      targets a ``CTkLabel``).
-
-    Globals are only consulted to suppress ``orphan_annotation``
-    warnings — they don't need a matching annotation on every doc
-    that has access to them, so we never flag them as
-    ``missing_annotation``.
-
-    Robust to unsaved projects (skip — annotations live next to the
-    saved project) and missing files (skip the doc — the annotation
-    will be created next time the user opens the file).
-    """
-    global _REF_ANNOTATION_ISSUES
-    _REF_ANNOTATION_ISSUES = []
-    project_path = getattr(project, "path", None)
-    if not project_path:
-        return
-    from app.core.script_paths import (
-        behavior_class_name, behavior_file_path,
-    )
-    from app.io.scripts import parse_object_reference_fields
-    global_names = {
-        entry.name for entry in (project.object_references or [])
-        if entry.name
-    }
-    for doc in project.documents:
-        file_path = behavior_file_path(project_path, doc)
-        if file_path is None or not file_path.exists():
-            continue
-        annotated = {
-            field.name: field.type_name
-            for field in parse_object_reference_fields(
-                file_path, behavior_class_name(doc),
-            )
-        }
-        locals_map = {
-            entry.name: entry.target_type
-            for entry in (doc.local_object_references or [])
-            if entry.name
-        }
-        # Locals: warn on missing annotation + type mismatch. Verbatim
-        # wiring means ``self.<entry.name>`` won't resolve unless the
-        # behavior file declares the same name.
-        for name, target_type in locals_map.items():
-            ann_type = annotated.get(name)
-            if ann_type is None:
-                _REF_ANNOTATION_ISSUES.append(
-                    (doc.name, "missing_annotation", name, target_type),
-                )
-            elif target_type and ann_type and ann_type != target_type:
-                _REF_ANNOTATION_ISSUES.append(
-                    (
-                        doc.name, "type_mismatch", name,
-                        f"annotation=ref[{ann_type}], "
-                        f"reference target={target_type}",
-                    ),
-                )
-        # Orphan annotations — the user typed a ref[...] line whose
-        # name doesn't match any local OR global. Globals are checked
-        # too so a shared ``main_window: ref[Window]`` annotation
-        # doesn't fire a false positive.
-        for name, ann_type in annotated.items():
-            if name in locals_map or name in global_names:
-                continue
-            _REF_ANNOTATION_ISSUES.append(
-                (doc.name, "orphan_annotation", name, ann_type),
-            )
-
-
-def get_ref_annotation_issues() -> list[tuple[str, str, str, str]]:
-    """Return ``(doc_name, kind, ref_name, detail)`` rows for every
-    mismatch the most recent export found between GUI Object
-    References and the per-doc behavior file's ``ref[<Type>]``
-    annotations. ``kind`` is one of ``"missing_annotation"`` /
-    ``"orphan_annotation"`` / ``"type_mismatch"`` — see
-    ``_scan_ref_annotations_for_export`` for the precise semantics.
-    Empty list when every annotation lines up. Read by F5 preview /
-    export dialog launchers to show a pre-spawn notice — without it
-    the user only learns about the mismatch when the first widget
-    interaction raises ``AttributeError``.
-    """
-    return list(_REF_ANNOTATION_ISSUES)
-
-
 def _emit_handler_lines(
     node: WidgetNode, full_name: str,
 ) -> tuple[tuple[str, str] | None, list[str]]:
@@ -1902,7 +1726,7 @@ def _emit_handler_lines(
             or (
                 isinstance(e, dict)
                 and e.get("kind") in (
-                    "ref_call", "library_call", "script_call",
+                    "library_call", "script_call",
                 )
             )
         ]
@@ -1915,8 +1739,8 @@ def _emit_handler_lines(
             # code; the Properties panel surfaces the dangling row.
             continue
         # Phase 3 — drop handler entries the exporter can't resolve
-        # (page methods missing from the behavior file, ref_calls
-        # whose ref disappeared, etc.). Pre-1.8.3 these emitted as
+        # (page methods missing from the behavior file, etc.).
+        # Pre-1.8.3 these emitted as
         # ``self._behavior.<missing>`` and crashed the preview at
         # widget construction with AttributeError. Now the exporter
         # filters them and records the drop in
@@ -1969,7 +1793,8 @@ def _emit_handler_lines(
                         continue
                     call = f"{expr}()"
                 else:
-                    call = _format_ref_call(ent)
+                    # Unrecognised entry shape — defensive skip.
+                    continue
                 post_lines.append(
                     f'{full_name}.bind('
                     f'"{seq}", lambda e: {call}, add="+")',
@@ -1996,9 +1821,8 @@ def _format_handler_entries(
     (``command=self._behavior.foo``) — CTk forwards its native arg to
     the method directly, so no wrapper is needed. Anything else wraps
     in a tuple-style lambda so fan-out is visible at the call site.
-    Page-method + ref_call entries are emitted unchanged (legacy
-    behavior-class path); only ``library_call`` gets the window/value
-    prefix.
+    Page-method entries are emitted unchanged (legacy behavior-class
+    path); only ``library_call`` gets the window/value prefix.
     """
     records = records or []
     # Single CTkScript method on an argless command → bare reference
@@ -2033,26 +1857,10 @@ def _format_handler_entries(
             expr = _format_script_call(entry, records, owner_id)
             if expr is not None:
                 parts.append(f"{expr}()")
-        else:
-            parts.append(_format_ref_call(entry))
+        # Unrecognised entry shapes are skipped — only str / library_call
+        # / script_call survive the kind filter upstream.
     head = f"lambda {value_param}: " if value_param else "lambda: "
     return f"{head}({', '.join(parts)})"
-
-
-def _format_ref_call(entry: dict) -> str:
-    """Render a single ``ref_call`` entry as the Python expression
-    that invokes it — e.g.
-    ``self._behavior.my_label.configure(text='Submitted')``.
-    Argument literals are typed: ``str`` becomes a quoted string,
-    ``int`` / ``float`` pass through, ``bool`` renders as
-    ``True`` / ``False``.
-    """
-    ref = entry["ref"]
-    method = entry["method"]
-    args_src = ", ".join(
-        _format_ref_arg(a) for a in entry.get("args", [])
-    )
-    return f"self._behavior.{ref}.{method}({args_src})"
 
 
 def _format_library_call(
@@ -2314,20 +2122,11 @@ def _node_has_handlers(node: WidgetNode) -> bool:
 
 
 def _doc_needs_behavior(doc: Document) -> bool:
-    """v1.10.8 — broader behavior-class gate. Returns True when the
-    doc has bound handlers OR object-reference targets to wire (any
-    target_id non-empty). Reference-only docs (declared refs, picked
-    widgets, no event handlers) still require the
-    ``self._behavior = X()`` instance so setup() can run + the
-    reference assignments have a target.
+    """Behavior-class gate. Returns True when the doc has at least one
+    bound handler — the ``self._behavior = X()`` instance is only
+    emitted for docs that actually call into it.
     """
-    if _doc_has_handlers(doc):
-        return True
-    if any(
-        e.target_id for e in (doc.local_object_references or [])
-    ):
-        return True
-    return False
+    return _doc_has_handlers(doc)
 
 
 def _copy_behavior_assets_for_filter(
@@ -2409,9 +2208,8 @@ def _copy_behavior_assets_for_filter(
 def _resolve_var_names(doc: Document) -> dict[str, str]:
     """Walk a doc's widget tree DFS and produce the canonical
     ``{widget_id: var_name}`` map for every node. Single source of
-    truth used by both ``_emit_subtree`` (live emission) and
-    ``_build_id_to_var_name`` (Object Reference replay) so the two
-    walks can never drift.
+    truth used by ``_emit_subtree`` (live emission) so the naming
+    stays consistent across the export.
 
     Naming priority per node:
     1. ``node.name`` (user-set in the Properties panel) when it's a
@@ -2501,61 +2299,6 @@ def _resolve_var_names(doc: Document) -> dict[str, str]:
         walk(root)
     _NAME_MAP_CACHE[doc.id] = id_map
     return id_map
-
-
-def _build_id_to_var_name(doc: Document) -> dict[str, str]:
-    """Object Reference replay helper — alias of ``_resolve_var_names``
-    so callers reading post-build assignments line up with whatever
-    ``_emit_subtree`` actually emitted. Memoisation in
-    ``_NAME_MAP_CACHE`` keeps this from re-walking the tree or
-    duplicating user warnings.
-    """
-    return _resolve_var_names(doc)
-
-
-def _emit_object_reference_lines(
-    doc: Document,
-    id_to_var: dict[str, str],
-    instance_prefix: str,
-) -> list[str]:
-    """v1.10.8 — produce the ``self._behavior.<name> = <expr>`` lines
-    that wire object-reference slots after ``_build_ui()`` returns.
-    Reads from ``doc.local_object_references`` (local refs) and the
-    project-level ``object_references`` (globals — Window/Dialog
-    pointers). Skips entries whose target is missing in this export.
-
-    Indentation is two levels (``__init__`` body inside ``class``);
-    the caller appends them right after the ``self._build_ui()``
-    call.
-    """
-    lines: list[str] = []
-    for entry in doc.local_object_references or []:
-        if not entry.target_id:
-            continue
-        var_name = id_to_var.get(entry.target_id)
-        if not var_name:
-            continue
-        lines.append(
-            f"{INDENT}{INDENT}self._behavior.{entry.name} = "
-            f"{instance_prefix}{var_name}",
-        )
-    # Globals — Window/Dialog refs resolve to the class symbol the
-    # current export emitted. Same-file class references mean no
-    # imports are needed; missing target_id (unbound slot) or a
-    # target that wasn't in this export (single-doc mode) are
-    # silently skipped so the generated code stays runnable.
-    project = _EXPORT_PROJECT
-    if project is not None:
-        for entry in project.object_references or []:
-            if not entry.target_id:
-                continue
-            cls = _DOC_ID_TO_CLASS.get(entry.target_id)
-            if not cls:
-                continue
-            lines.append(
-                f"{INDENT}{INDENT}self._behavior.{entry.name} = {cls}",
-            )
-    return lines
 
 
 def _behavior_class_for_doc(doc: Document) -> str:
@@ -2716,21 +2459,11 @@ def _emit_class_body(
     # (self.widget / self.window) is injected after the build.
     lines.extend(_emit_component_init_lines(_doc_components))
     lines.append(f"{INDENT}{INDENT}self._build_ui()")
-    # Object Reference assignments must run AFTER _build_ui() since
-    # they reference widgets created inside it. Per-doc id-to-var
-    # map mirrors the naming the subtree walk emits, so the right-
-    # hand sides line up with the actual ``self.<widget_var>``
-    # attributes set during the build.
-    if _doc_needs_behavior(doc) and (doc.local_object_references):
-        id_to_var = _build_id_to_var_name(doc)
-        field_lines = _emit_object_reference_lines(doc, id_to_var, "self.")
-        lines.extend(field_lines)
-    # ``setup()`` runs AFTER _build_ui + Object Reference assignments
-    # so user code can reference both ``self.<widget>`` attributes
-    # and the bound ``self._behavior.<field>`` slots without worrying
-    # about ordering. Widget command kwargs captured
-    # ``self._behavior.<method>`` during _build_ui; those bindings
-    # are stable references whose call sites fire later.
+    # ``setup()`` runs AFTER _build_ui so user code can reference
+    # ``self.<widget>`` attributes without worrying about ordering.
+    # Widget command kwargs captured ``self._behavior.<method>``
+    # during _build_ui; those bindings are stable references whose
+    # call sites fire later.
     if _doc_needs_behavior(doc):
         lines.append(
             f"{INDENT}{INDENT}self._behavior.setup(self)",

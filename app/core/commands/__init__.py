@@ -45,14 +45,6 @@ from app.core.commands.handlers import (
     ReorderHandlerCommand,
     UnbindHandlerCommand,
 )
-from app.core.commands.object_references import (
-    AddObjectReferenceCommand,
-    DeleteObjectReferenceCommand,
-    RenameObjectReferenceCommand,
-    SetObjectReferenceTargetCommand,
-    _iter_all_refs,
-    _ref_target_list,
-)
 from app.core.commands.properties import (
     ChangeDescriptionCommand,
     ChangePropertyCommand,
@@ -122,11 +114,6 @@ __all__ = [
     "RenameVariableCommand",
     "ChangeVariableTypeCommand",
     "ChangeVariableDefaultCommand",
-    # object references
-    "AddObjectReferenceCommand",
-    "DeleteObjectReferenceCommand",
-    "RenameObjectReferenceCommand",
-    "SetObjectReferenceTargetCommand",
     # helpers
     "paste_target_parent_id",
     "build_bulk_add_entries",

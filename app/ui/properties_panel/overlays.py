@@ -291,12 +291,6 @@ def place_event_dropdown(
     widget.lift()
 
 
-# v1.10.8 — Object Reference toggle button slot. Wider than the
-# ``[+]`` / ``[Pick…]`` buttons because the label reads
-# ``+ Make Reference`` / ``✕ Remove`` — both need ~130 px.
-SLOT_OBJECT_REFERENCE_TOGGLE = "object_reference_toggle"
-
-
 # v1.38 — Variable type chip slot. Used by the Local Variables read-
 # only list in the Window properties panel to surface the 3-letter
 # type abbreviation (``str`` / ``flt`` / ``bol`` / ``col``…) at the
@@ -343,15 +337,6 @@ def place_var_color_swatch(
     tree: tk.Widget, widget: tk.Widget, iid: str,
 ) -> None:
     _place_value_cell_left(tree, widget, iid, width=24, pad_y=3)
-
-
-def place_object_reference_toggle(
-    tree: tk.Widget, widget: tk.Widget, iid: str,
-) -> None:
-    """Right-edge ``+`` / ``×`` toggle button. Sized like the other
-    icon-only action buttons in the panel (e.g. bind ✕).
-    """
-    _place_value_cell_right(tree, widget, iid, width=20, pad_y=3)
 
 
 # CTkScript model — the Scripts group rows. The value cell holds an
