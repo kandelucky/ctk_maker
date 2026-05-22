@@ -1528,6 +1528,7 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
                     if full_path.exists():
                         fns = parse_module_functions(
                             full_path, ev.wiring_kind,
+                            ev.command_passes_value,
                         )
             if not fns:
                 menu.add_command(
@@ -1593,9 +1594,12 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         m_idx: int, method_name: str,
     ) -> None:
         """Replace a library_call entry's method in place. ``args``
-        stays empty — multi-arg support for module functions is
-        deferred; for now the lambda emits as ``module.func()``.
-        Direct mutation; publishes ``widget_handler_changed``.
+        stays empty — extra literal params are deferred. Under the
+        direct-binding convention a bind handler exports as
+        ``module.func(self, e)`` (window + Tk event); the picker only
+        offers functions whose signature matches (see
+        ``_module_function_matches``). Direct mutation; publishes
+        ``widget_handler_changed``.
         """
         node = self.project.get_widget(widget_id)
         if node is None:

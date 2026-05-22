@@ -133,6 +133,24 @@ class Document:
         # grayed-out always-on checkbox.
         self.attached_scripts: list[str] = []
 
+        # Window lifecycle handlers (direct-binding model). Maps a
+        # lifecycle event key (``lifecycle:on_setup`` /
+        # ``lifecycle:on_close``) to an ordered list of handler entries
+        # — same entry shapes as ``WidgetNode.handlers`` (a
+        # ``library_call`` dict binds the user's own function). These
+        # are window/document scope, not per-widget: ``on_setup`` runs
+        # once after the UI is built; ``on_close`` runs on the window's
+        # WM_DELETE_WINDOW. Replaces the behavior class's ``setup()``.
+        self.lifecycle_handlers: dict[str, list] = {}
+
+        # CTkScript model — components (CTkScript subclasses) attached to
+        # the WINDOW itself. Each entry: ``{"script": <scripts/-relative
+        # path>, "class": <ClassName>}``. A window-attached component is
+        # scoped to the window (``self.window``) — for logic that
+        # coordinates several widgets. Same entry shape as
+        # ``WidgetNode.attached_components``. Multiple allowed.
+        self.attached_components: list[dict] = []
+
     # ------------------------------------------------------------------
     # Serialisation
     # ------------------------------------------------------------------
@@ -186,6 +204,18 @@ class Document:
             ]
         if self.attached_scripts:
             result["attached_scripts"] = list(self.attached_scripts)
+        if self.lifecycle_handlers:
+            emitted = {
+                k: [dict(e) if isinstance(e, dict) else e for e in v]
+                for k, v in self.lifecycle_handlers.items()
+                if v
+            }
+            if emitted:
+                result["lifecycle_handlers"] = emitted
+        if self.attached_components:
+            result["attached_components"] = [
+                dict(c) for c in self.attached_components
+            ]
         return result
 
     @classmethod
@@ -277,6 +307,38 @@ class Document:
                 str(p) for p in raw_scripts
                 if isinstance(p, str) and p
             ]
+        # Window lifecycle handlers (direct-binding model). Same entry
+        # shapes as widget handlers; non-string keys / non-list values
+        # and empty entries are dropped to keep the live model strict.
+        # Pre-feature projects come back with an empty dict.
+        raw_lifecycle = data.get("lifecycle_handlers")
+        if isinstance(raw_lifecycle, dict):
+            for key, entries in raw_lifecycle.items():
+                if not isinstance(key, str) or not isinstance(entries, list):
+                    continue
+                kept: list = []
+                for e in entries:
+                    if isinstance(e, str) and e:
+                        kept.append(e)
+                    elif isinstance(e, dict) and e.get("kind"):
+                        kept.append(dict(e))
+                if kept:
+                    doc.lifecycle_handlers[key] = kept
+        # CTkScript components attached to the window. Each entry needs
+        # a non-empty ``script`` + ``class``; malformed entries dropped.
+        raw_components = data.get("attached_components")
+        if isinstance(raw_components, list):
+            comps: list[dict] = []
+            for raw in raw_components:
+                if (
+                    isinstance(raw, dict)
+                    and isinstance(raw.get("script"), str) and raw["script"]
+                    and isinstance(raw.get("class"), str) and raw["class"]
+                ):
+                    comps.append(
+                        {"script": raw["script"], "class": raw["class"]},
+                    )
+            doc.attached_components = comps
         # v1.10.7- legacy migration: a ``behavior_field_values`` dict in
         # the JSON payload predates Object References. Convert each
         # entry to a local ObjectReferenceEntry with target_type

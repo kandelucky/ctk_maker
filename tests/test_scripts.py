@@ -241,15 +241,17 @@ def test_parse_module_functions_signature_filter_command(tmp_path):
     file = tmp_path / "helpers.py"
     file.write_text(
         "def zero_args():\n    pass\n"
-        "def one_required(x):\n    pass\n"
-        "def one_default(x=1):\n    pass\n",
+        "def one_required(window):\n    pass\n"
+        "def one_default(window=None):\n    pass\n",
         encoding="utf-8",
     )
 
-    # ``command`` needs zero required args; the defaulted variant
-    # qualifies because the runtime call ``helpers.func()`` works.
+    # Direct-binding convention: an argless command is called
+    # ``helpers.func(window)`` — the function needs 1 positional slot
+    # (the window) and at most 1 required arg. The 0-arg function no
+    # longer qualifies (the window would be dropped).
     assert parse_module_functions(file, "command") == [
-        "zero_args", "one_default",
+        "one_required", "one_default",
     ]
 
 
@@ -257,14 +259,19 @@ def test_parse_module_functions_signature_filter_bind(tmp_path):
     file = tmp_path / "helpers.py"
     file.write_text(
         "def zero_args():\n    pass\n"
-        "def one_required(event):\n    pass\n"
-        "def two_required(a, b):\n    pass\n",
+        "def one_arg(window):\n    pass\n"
+        "def window_event(window, event):\n    pass\n"
+        "def window_event_default(window, event=None):\n    pass\n",
         encoding="utf-8",
     )
 
-    # ``bind`` passes one event arg — need at least one slot, but
-    # no more than one *required* arg.
-    assert parse_module_functions(file, "bind") == ["one_required"]
+    # Direct-binding convention: bind handlers are called
+    # ``func(window, event)`` — need 2 positional slots, at most 2
+    # required. A 1-arg function no longer qualifies (the event would
+    # be dropped).
+    assert parse_module_functions(file, "bind") == [
+        "window_event", "window_event_default",
+    ]
 
 
 def test_parse_module_functions_missing_file_returns_empty(tmp_path):

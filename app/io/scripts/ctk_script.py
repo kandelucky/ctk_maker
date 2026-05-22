@@ -1,0 +1,65 @@
+"""``CTkScript`` — base class for CTkMaker behavior scripts.
+
+The Unity ``MonoBehaviour`` model for CTkMaker. You subclass it in your
+own script (in the project's ``scripts/`` folder) and attach it to an
+object in the builder. CTkMaker injects the object you attached it to —
+and **only** that object:
+
+    - attached to a **widget** → ``self.widget``. A widget script knows
+      only its own widget; it has no ``self.window`` at all (strict
+      scope), so it stays self-contained and reusable on any widget.
+    - attached to a **window** → ``self.window``, which reaches every
+      widget on it by builder name: ``self.window.my_button``. Use this
+      for logic that coordinates several widgets (form logic).
+
+You choose what to attach to; that alone decides what the script sees.
+
+    class ClickCounter(CTkScript):        # attach to a button
+        def on_start(self):
+            self.count = 0
+        def bump(self):                    # bound to the button's click
+            self.count += 1
+            self.widget.configure(text=str(self.count))
+
+    class LoginForm(CTkScript):            # attach to the window
+        def submit(self):                  # bound to a button's click
+            name = self.window.username.get()
+            self.window.status.configure(text=f"Hi {name}")
+
+Add public methods and bind events to them in the builder; CTkMaker
+never edits this file.
+
+This module is the single source of truth for the class. The exporter
+inlines its source into the build so exported apps stay self-contained
+(no ``pip install`` needed) — hence: no imports, nothing here the
+runtime would have to pull in.
+"""
+
+
+class CTkScript:
+    """Base class for an attached behavior script. Subclass it, override
+    the lifecycle hooks you need, and add public methods to bind to
+    events. See the module docstring for the widget-vs-window scope.
+    """
+
+    def __init__(self, *, widget=None, window=None):
+        # CTkMaker injects the matching context after building the
+        # instance; the constructor mirrors that so the class stays
+        # usable standalone (tests, manual instantiation). Only the
+        # context for where it's attached is set — a widget script has
+        # no ``window`` attribute at all, a window script has no
+        # ``widget`` (strict scope).
+        if widget is not None:
+            self.widget = widget
+        if window is not None:
+            self.window = window
+
+    # -- Lifecycle hooks — override what you need; defaults do nothing --
+    def on_start(self):
+        """Runs once after the object is built and its widgets exist.
+        Use it for initial state, focus, populating fields, timers."""
+
+    def on_close(self):
+        """Runs when the user closes the window (window scripts). Do
+        your cleanup, then call ``self.window.destroy()`` to actually
+        close — skip it to keep the window open."""

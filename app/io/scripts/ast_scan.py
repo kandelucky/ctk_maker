@@ -123,6 +123,7 @@ def _signature_matches_event(
 def parse_module_functions(
     file_path: str | Path,
     wiring_kind: str | None = None,
+    command_value: bool = False,
 ) -> list[str]:
     """Return public top-level function names from a library script.
 
@@ -137,9 +138,10 @@ def parse_module_functions(
       wraps it manually in a sync entry point).
 
     ``wiring_kind`` (optional): when ``"command"`` or ``"bind"``,
-    also filter by signature compatibility — same rule as
-    ``parse_handler_methods_compatible`` but without the ``self``
-    drop (module functions have no ``self``).
+    also filter by signature compatibility under the direct-binding
+    convention (see ``_module_function_matches``). ``command_value``
+    marks a value-passing command (slider / combo / option /
+    segmented) so its functions are required to accept the value.
 
     Empty on missing file / syntax error / no public functions.
     """
@@ -157,7 +159,7 @@ def parse_module_functions(
         if stmt.name.startswith("_"):
             continue
         if wiring_kind is not None and not _module_function_matches(
-            stmt, wiring_kind,
+            stmt, wiring_kind, command_value,
         ):
             continue
         names.append(stmt.name)
@@ -165,20 +167,38 @@ def parse_module_functions(
 
 
 def _module_function_matches(
-    fn: ast.FunctionDef, wiring_kind: str,
+    fn: ast.FunctionDef, wiring_kind: str, command_value: bool = False,
 ) -> bool:
-    """Signature-compat check for module-level functions. Same
-    semantics as ``_signature_matches_event`` but without the
-    ``self`` drop — module functions are called directly without
-    an implicit instance arg.
+    """Signature-compat check for module-level functions under the
+    direct-binding calling convention. Module functions have no
+    implicit ``self``, so the window is an explicit first parameter.
+    The export passes a fixed number of positional args per shape:
+
+    - ``bind`` → ``func(window, event)`` — 2 args.
+    - ``command`` + ``command_value`` → ``func(window, value)`` — 2.
+    - ``command`` (argless) → ``func(window)`` — 1.
+    - ``lifecycle`` → ``func(window)`` — 1 (on_setup / on_close).
+
+    A function matches when it can be called with exactly that many
+    positionals: ``len(pos) >= need`` with ``required <= need``, or a
+    ``*args`` catch-all. So a 1-arg function no longer qualifies for a
+    bind / value-command (the extra arg would be dropped), and an
+    argless function no longer qualifies for any shape (the window
+    would be dropped).
     """
+    if wiring_kind == "bind":
+        need = 2
+    elif wiring_kind == "command":
+        need = 2 if command_value else 1
+    elif wiring_kind == "lifecycle":
+        need = 1
+    else:
+        return False
     pos = list(fn.args.args)
     required = max(0, len(pos) - len(fn.args.defaults))
-    if wiring_kind == "command":
-        return required == 0
-    if wiring_kind == "bind":
-        return len(pos) >= 1 and required <= 1
-    return False
+    if fn.args.vararg is not None:
+        return required <= need
+    return len(pos) >= need and required <= need
 
 
 # ---------------------------------------------------------------------

@@ -66,10 +66,27 @@ class WidgetNode:
         #     must appear in the owning Document's ``attached_scripts``
         #     list for the binding to resolve.
         #
+        #   * ``dict`` with ``{"kind": "script_call", "class":
+        #     <ClassName>, "method": <method_name>}`` — call a method on
+        #     a CTkScript component attached to this widget (or to the
+        #     owning window). ``class`` must match an entry in this
+        #     widget's (or the window's) ``attached_components``; the
+        #     script path is resolved from there. The CTkScript model
+        #     (see docs/plans/script_optimization.md).
+        #
         # ``args`` (when present) is a list of
         # ``{"name": str, "type": "str"|"int"|"float"|"bool",
         # "value": Any, "kwarg": bool}`` dicts.
         self.handlers: dict[str, list] = {}
+
+        # CTkScript model — components (CTkScript subclasses) attached to
+        # this widget. Each entry: ``{"script": <scripts/-relative
+        # path>, "class": <ClassName>}``. A widget-attached component is
+        # scoped to this widget (``self.widget``); CTkMaker instantiates
+        # one per entry, calls ``on_start`` after build, and exposes its
+        # public methods to event bindings. Multiple allowed (Unity:
+        # many components per object).
+        self.attached_components: list[dict] = []
 
     def to_dict(self) -> dict:
         # Shallow-copy ``properties`` so callers (project_saver
@@ -110,6 +127,10 @@ class WidgetNode:
         }
         if emitted:
             result["handlers"] = emitted
+        if self.attached_components:
+            result["attached_components"] = [
+                dict(c) for c in self.attached_components
+            ]
         return result
 
     @classmethod
@@ -162,11 +183,24 @@ class WidgetNode:
                             entries.append(raw)
                         elif isinstance(raw, dict) and raw.get(
                             "kind",
-                        ) in ("ref_call", "library_call"):
+                        ) in ("ref_call", "library_call", "script_call"):
                             entries.append(copy.deepcopy(raw))
                     if entries:
                         normalised[key] = entries
             node.handlers = normalised
+        raw_components = data.get("attached_components")
+        if isinstance(raw_components, list):
+            comps: list[dict] = []
+            for raw in raw_components:
+                if (
+                    isinstance(raw, dict)
+                    and isinstance(raw.get("script"), str) and raw["script"]
+                    and isinstance(raw.get("class"), str) and raw["class"]
+                ):
+                    comps.append(
+                        {"script": raw["script"], "class": raw["class"]},
+                    )
+            node.attached_components = comps
         for child_data in data.get("children", []):
             child = cls.from_dict(child_data)
             child.parent = node

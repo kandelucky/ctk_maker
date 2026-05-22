@@ -1802,7 +1802,10 @@ def _emit_handler_lines(
         entries = [
             e for e in node.handlers.get(key, [])
             if (isinstance(e, str) and e)
-            or (isinstance(e, dict) and e.get("kind") == "ref_call")
+            or (
+                isinstance(e, dict)
+                and e.get("kind") in ("ref_call", "library_call")
+            )
         ]
         if not entries:
             continue
@@ -1826,8 +1829,13 @@ def _emit_handler_lines(
         if not entries:
             continue
         if entry.wiring_kind == "command":
+            # Value-commands (slider / combo / option / segmented)
+            # hand CTk's value through to the user's function as the
+            # native arg; argless commands (button, switch, ...) pass
+            # only the window.
+            value_param = "v" if entry.command_passes_value else None
             command_kwarg = (
-                "command", _format_handler_entries(entries),
+                "command", _format_handler_entries(entries, value_param),
             )
         elif entry.wiring_kind == "bind":
             seq = key.split(":", 1)[1] if ":" in key else key
@@ -1842,7 +1850,10 @@ def _emit_handler_lines(
                         isinstance(ent, dict)
                         and ent.get("kind") == "library_call"
                     ):
-                        call = _format_library_call(ent)
+                        # Direct-binding convention: hand the window
+                        # (``self``) + the Tk event to the user's
+                        # function — ``func(window, event)``.
+                        call = _format_library_call(ent, ["self", "e"])
                     else:
                         call = _format_ref_call(ent)
                     post_lines.append(
@@ -1852,18 +1863,29 @@ def _emit_handler_lines(
     return command_kwarg, post_lines
 
 
-def _format_handler_entries(entries: list) -> str:
+def _format_handler_entries(
+    entries: list, value_param: str | None = None,
+) -> str:
     """Render an ordered list of handler entries as the source for
     a ``command=`` kwarg.
 
-    A single page-method (str) entry becomes a bare reference so the
-    constructor kwarg reads ``command=self._behavior.foo``. Anything
-    else (multi-entry, or a single ref_call / library_call which is
-    always a call expression) wraps in a tuple-style lambda so
-    fan-out is visible at the call site — no hidden registration.
+    ``value_param`` is the native arg CTk passes to value-commands
+    (``"v"`` for slider / combo / option / segmented) or ``None`` for
+    argless commands (button, switch, checkbox, radio). It drives both
+    the lambda head and the window/value prefix handed to
+    ``library_call`` entries under the direct-binding convention.
+
+    A single page-method (str) entry stays a bare reference
+    (``command=self._behavior.foo``) — CTk forwards its native arg to
+    the method directly, so no wrapper is needed. Anything else wraps
+    in a tuple-style lambda so fan-out is visible at the call site.
+    Page-method + ref_call entries are emitted unchanged (legacy
+    behavior-class path); only ``library_call`` gets the window/value
+    prefix.
     """
     if len(entries) == 1 and isinstance(entries[0], str):
         return f"self._behavior.{entries[0]}"
+    prefix = ["self", value_param] if value_param else ["self"]
     parts: list[str] = []
     for entry in entries:
         if isinstance(entry, str):
@@ -1872,10 +1894,11 @@ def _format_handler_entries(entries: list) -> str:
             isinstance(entry, dict)
             and entry.get("kind") == "library_call"
         ):
-            parts.append(_format_library_call(entry))
+            parts.append(_format_library_call(entry, prefix))
         else:
             parts.append(_format_ref_call(entry))
-    return f"lambda: ({', '.join(parts)})"
+    head = f"lambda {value_param}: " if value_param else "lambda: "
+    return f"{head}({', '.join(parts)})"
 
 
 def _format_ref_call(entry: dict) -> str:
@@ -1894,19 +1917,194 @@ def _format_ref_call(entry: dict) -> str:
     return f"self._behavior.{ref}.{method}({args_src})"
 
 
-def _format_library_call(entry: dict) -> str:
+def _format_library_call(
+    entry: dict, prefix_args: list[str] | None = None,
+) -> str:
     """Render a single ``library_call`` entry as the Python
-    expression that invokes it — e.g. ``helpers.save_log()``.
+    expression that invokes it — e.g. ``helpers.on_click(self, e)``.
     The module name comes from the script's basename (stripped of
     ``.py``); the exporter's top-of-file imports keep it in scope.
-    Argument formatting reuses ``_format_ref_arg``.
+
+    ``prefix_args`` are raw expression strings injected ahead of the
+    user-set literal args — the direct-binding calling convention
+    (``func(window, native_arg, ...)``). Bind-style events pass
+    ``["self", "e"]`` so the handler receives the window + the Tk
+    event; command-style currently passes nothing (folded in a later
+    phase). Literal args (from the picker) follow, formatted via
+    ``_format_ref_arg``.
     """
     module = _library_script_module_name(entry["script"])
     method = entry["method"]
-    args_src = ", ".join(
-        _format_ref_arg(a) for a in entry.get("args", [])
-    )
-    return f"{module}.{method}({args_src})"
+    parts = list(prefix_args or [])
+    parts += [_format_ref_arg(a) for a in entry.get("args", [])]
+    return f"{module}.{method}({', '.join(parts)})"
+
+
+def _emit_lifecycle_lines(doc) -> list[str]:
+    """Emit window lifecycle hooks from ``doc.lifecycle_handlers``
+    (direct-binding model), placed after ``_build_ui()``:
+
+    - ``lifecycle:on_setup`` → bare ``module.func(self)`` calls in
+      order, run once after the UI exists.
+    - ``lifecycle:on_close`` → one ``WM_DELETE_WINDOW`` protocol
+      registration (multiple handlers fan out in a tuple lambda).
+
+    Library calls receive the window via the ``func(window)``
+    convention. Entries validate the same way widget library calls do
+    (``_validate_library_call`` — script attached + function present);
+    unresolved entries are skipped silently.
+    """
+    handlers = getattr(doc, "lifecycle_handlers", None) or {}
+
+    def _calls(key: str) -> list[str]:
+        calls: list[str] = []
+        for ent in handlers.get(key, []) or []:
+            if (
+                isinstance(ent, dict)
+                and ent.get("kind") == "library_call"
+                and _validate_library_call(doc, ent) is None
+            ):
+                calls.append(_format_library_call(ent, ["self"]))
+        return calls
+
+    out: list[str] = [
+        f"{INDENT}{INDENT}{call}" for call in _calls("lifecycle:on_setup")
+    ]
+    close_calls = _calls("lifecycle:on_close")
+    if close_calls:
+        body = (
+            close_calls[0] if len(close_calls) == 1
+            else f"({', '.join(close_calls)})"
+        )
+        out.append(
+            f'{INDENT}{INDENT}self.protocol('
+            f'"WM_DELETE_WINDOW", lambda: {body})',
+        )
+    return out
+
+
+# ---------------------------------------------------------------------
+# CTkScript model — export engine (docs/plans/script_optimization.md)
+#
+# Pure helpers that turn a document's attached components + script_call
+# bindings into runnable code. Wiring order in the window class:
+#   1. instantiate every component BEFORE _build_ui() so event bindings
+#      can reference ``self._script_N.<method>``;
+#   2. _build_ui() emits the widgets + the event references;
+#   3. after _build_ui(): inject scope (self.widget / self.window) now
+#      that widgets exist, then call on_start on each component;
+#   4. WM_DELETE_WINDOW: call on_close on each, then destroy.
+# ---------------------------------------------------------------------
+def _ctkscript_base_source() -> str:
+    """The ``CTkScript`` base-class definition as text, for the exporter
+    to inline into a self-contained build (no ``pip install``)."""
+    import inspect
+
+    from app.io.scripts.ctk_script import CTkScript
+
+    return inspect.getsource(CTkScript)
+
+
+def _collect_doc_components(doc, id_to_var: dict) -> list[dict]:
+    """Component records for a document, in stable order — window
+    components first, then widgets in DFS (pre-order). Each record::
+
+        {var, scope, target, script, class, owner_id}
+
+    ``var`` is the instance attribute the window holds the component on
+    (``_script_0`` ...); ``scope`` is ``"window"`` / ``"widget"``;
+    ``target`` is the expression injected as the component's context
+    (``self`` for window, ``self.<varname>`` for a widget); ``owner_id``
+    is ``None`` for window components, else the widget id.
+    """
+    records: list[dict] = []
+    counter = 0
+
+    def _add(comps, scope, target, owner_id):
+        nonlocal counter
+        for comp in comps or []:
+            records.append({
+                "var": f"_script_{counter}",
+                "scope": scope,
+                "target": target,
+                "script": comp.get("script", ""),
+                "class": comp.get("class", ""),
+                "owner_id": owner_id,
+            })
+            counter += 1
+
+    _add(getattr(doc, "attached_components", None), "window", "self", None)
+    stack = list(reversed(list(doc.root_widgets)))
+    while stack:
+        node = stack.pop()
+        var_name = id_to_var.get(node.id, node.id)
+        _add(
+            getattr(node, "attached_components", None),
+            "widget", f"self.{var_name}", node.id,
+        )
+        stack.extend(reversed(list(node.children)))
+    return records
+
+
+def _resolve_component_var(
+    records: list[dict], owner_id, class_name: str,
+) -> str | None:
+    """Instance var for a ``script_call`` — a component of ``class_name``
+    attached to ``owner_id`` (the widget) wins; otherwise a window
+    component of that class. ``None`` when unresolved (caller drops the
+    binding)."""
+    for r in records:
+        if r["class"] == class_name and r["owner_id"] == owner_id:
+            return r["var"]
+    for r in records:
+        if r["class"] == class_name and r["scope"] == "window":
+            return r["var"]
+    return None
+
+
+def _emit_component_init_lines(records: list[dict]) -> list[str]:
+    """``self._script_N = ClassName()`` — emitted before _build_ui()."""
+    return [
+        f"{INDENT}{INDENT}self.{r['var']} = {r['class']}()"
+        for r in records if r["class"]
+    ]
+
+
+def _emit_component_post_lines(records: list[dict]) -> list[str]:
+    """After _build_ui(): inject each component's scope, then on_start."""
+    inject = [
+        f"{INDENT}{INDENT}self.{r['var']}."
+        f"{'widget' if r['scope'] == 'widget' else 'window'} = {r['target']}"
+        for r in records if r["class"]
+    ]
+    starts = [
+        f"{INDENT}{INDENT}self.{r['var']}.on_start()"
+        for r in records if r["class"]
+    ]
+    return inject + starts
+
+
+def _emit_component_close_lines(records: list[dict]) -> list[str]:
+    """WM_DELETE_WINDOW: on_close on each component, then destroy."""
+    live = [r for r in records if r["class"]]
+    if not live:
+        return []
+    calls = ", ".join(f"self.{r['var']}.on_close()" for r in live)
+    return [
+        f'{INDENT}{INDENT}self.protocol("WM_DELETE_WINDOW", '
+        f'lambda: ({calls}, self.destroy()))',
+    ]
+
+
+def _format_script_call(entry: dict, records: list[dict], owner_id) -> str | None:
+    """Bare reference to a ``script_call`` target —
+    ``self._script_N.<method>`` — or ``None`` when the component can't
+    be resolved. Used as a ``command=`` value or wrapped for a bind."""
+    var = _resolve_component_var(records, owner_id, entry.get("class", ""))
+    method = entry.get("method", "")
+    if var is None or not method:
+        return None
+    return f"self.{var}.{method}"
 
 
 def _format_ref_arg(arg: dict) -> str:
@@ -2357,6 +2555,10 @@ def _emit_class_body(
         lines.append(
             f"{INDENT}{INDENT}self._behavior.setup(self)",
         )
+    # Direct-binding window lifecycle hooks (on_setup / on_close) run
+    # after the legacy behavior setup() so both coexist during the
+    # migration off the behavior-class model.
+    lines.extend(_emit_lifecycle_lines(doc))
     lines.append("")
     lines.append(f"{INDENT}def _build_ui(self):")
 
