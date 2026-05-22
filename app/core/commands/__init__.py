@@ -39,7 +39,9 @@ from app.core.commands.flags import (
     ToggleFlagCommand,
 )
 from app.core.commands.handlers import (
+    AttachComponentCommand,
     BindHandlerCommand,
+    DetachComponentCommand,
     ReorderHandlerCommand,
     UnbindHandlerCommand,
 )
@@ -100,7 +102,9 @@ __all__ = [
     "ChangeDescriptionCommand",
     "MultiChangePropertyCommand",
     # handlers
+    "AttachComponentCommand",
     "BindHandlerCommand",
+    "DetachComponentCommand",
     "ReorderHandlerCommand",
     "UnbindHandlerCommand",
     # documents

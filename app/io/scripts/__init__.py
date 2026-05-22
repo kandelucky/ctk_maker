@@ -27,7 +27,9 @@ from app.core.script_paths import (
 from app.io.scripts.ast_scan import (
     FieldSpec,
     existing_object_reference_names,
+    find_attachable_scripts,
     find_handler_method,
+    parse_ctkscript_classes,
     parse_handler_methods,
     parse_handler_methods_compatible,
     parse_method_docstrings,
@@ -51,6 +53,7 @@ from app.io.scripts.mutate import (
     suggest_object_reference_name,
 )
 from app.io.scripts.paths import (
+    create_user_script,
     list_page_scripts,
     load_or_create_behavior_file,
     recycle_behavior_file,
@@ -67,7 +70,9 @@ __all__ = [
     # ast_scan
     "FieldSpec",
     "existing_object_reference_names",
+    "find_attachable_scripts",
     "find_handler_method",
+    "parse_ctkscript_classes",
     "parse_handler_methods",
     "parse_handler_methods_compatible",
     "parse_method_docstrings",
@@ -88,6 +93,7 @@ __all__ = [
     "suggest_method_name",
     "suggest_object_reference_name",
     # paths
+    "create_user_script",
     "list_page_scripts",
     "load_or_create_behavior_file",
     "recycle_behavior_file",

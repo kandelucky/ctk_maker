@@ -1474,6 +1474,10 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             isinstance(entry, dict)
             and entry.get("kind") == "library_call"
         )
+        is_script_call = (
+            isinstance(entry, dict)
+            and entry.get("kind") == "script_call"
+        )
         if is_ref_call:
             ref_name = entry.get("ref", "")
             document = self.project.find_document_for_widget(widget_id)
@@ -1546,6 +1550,54 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
                         widget_id, event_key, m_idx, m,
                     ),
                 )
+        elif is_script_call:
+            from pathlib import Path
+
+            from app.core.script_paths import user_scripts_dir
+            from app.io.scripts import (
+                find_attachable_scripts, parse_handler_methods,
+            )
+            cls = entry.get("class", "")
+            methods: list[str] = []
+            scripts_dir = user_scripts_dir(
+                getattr(self.project, "path", None),
+            )
+            rel = next(
+                (
+                    p for (p, c) in find_attachable_scripts(scripts_dir)
+                    if c == cls
+                ),
+                None,
+            )
+            if rel and scripts_dir is not None:
+                methods = [
+                    m for m in parse_handler_methods(
+                        Path(scripts_dir) / rel, cls,
+                    )
+                    if m not in ("on_start", "on_close")
+                ]
+            if not methods:
+                # Normal-state no-op, not state="disabled" — Windows
+                # native menu draw renders disabled items as etched
+                # ghost text on the dark theme ("ჯადო"). Dimmed
+                # foreground + inert command gives a clean hint instead.
+                menu.add_command(
+                    label=(
+                        f"No public methods in {cls}" if cls
+                        else "Script not set"
+                    ),
+                    command=lambda: None,
+                    foreground="#777777", activeforeground="#777777",
+                    activebackground="#2d2d30",
+                )
+            for method_name in methods:
+                menu.add_command(
+                    label=method_name,
+                    command=lambda m=method_name:
+                    self._set_handler_method_script(
+                        widget_id, event_key, m_idx, m,
+                    ),
+                )
         else:
             from app.io.scripts import parse_handler_methods_compatible
             from app.core.script_paths import (
@@ -1612,6 +1664,27 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             return
         entry["method"] = method_name
         entry["args"] = []
+        self.project.event_bus.publish(
+            "widget_handler_changed", widget_id, event_key, method_name,
+        )
+
+    def _set_handler_method_script(
+        self, widget_id: str, event_key: str,
+        m_idx: int, method_name: str,
+    ) -> None:
+        """Set a ``script_call`` entry's method (a public method on the
+        attached CTkScript class). Direct mutation; publishes
+        ``widget_handler_changed``."""
+        node = self.project.get_widget(widget_id)
+        if node is None:
+            return
+        entries = node.handlers.get(event_key)
+        if entries is None or m_idx >= len(entries):
+            return
+        entry = entries[m_idx]
+        if not isinstance(entry, dict):
+            return
+        entry["method"] = method_name
         self.project.event_bus.publish(
             "widget_handler_changed", widget_id, event_key, method_name,
         )
@@ -1949,6 +2022,148 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         if path not in doc.attached_scripts:
             return
         doc.attached_scripts.remove(path)
+        self._rebuild()
+
+    # -- CTkScript model: attach scripts to an object ------------------
+    def _component_target(self, node):
+        """Object that holds ``attached_components`` for ``node`` — the
+        active Document for the Window node, else the WidgetNode."""
+        from app.core.project import WINDOW_ID
+        if self.project is None or node is None:
+            return None
+        if node.id == WINDOW_ID:
+            return self.project.active_document
+        return node
+
+    def _open_component_picker(self, node) -> None:
+        """Pop a menu of CTkScript classes from the project's
+        ``scripts/`` folder that aren't already attached to ``node``;
+        picking one attaches it."""
+        import tkinter as tk
+
+        from app.core.script_paths import user_scripts_dir
+        from app.io.scripts import find_attachable_scripts
+        from app.ui.properties_panel.constants import menu_style
+        target = self._component_target(node)
+        if target is None:
+            return
+        attached = {
+            c.get("class") for c in (target.attached_components or [])
+        }
+        found = find_attachable_scripts(
+            user_scripts_dir(getattr(self.project, "path", None)),
+        )
+        available = [(p, c) for (p, c) in found if c not in attached]
+        menu = tk.Menu(self.tree, tearoff=0, **menu_style())
+        menu.add_command(
+            label="✚  New script…",
+            command=lambda n=node: self._create_and_attach_script(n),
+        )
+        if available:
+            menu.add_separator()
+            for path, cls in available:
+                menu.add_command(
+                    label=f"{cls}  ({path})",
+                    command=lambda p=path, c=cls:
+                    self._attach_script_component(node, p, c),
+                )
+        attached_comps = list(target.attached_components or [])
+        if attached_comps:
+            menu.add_separator()
+            for comp in attached_comps:
+                cls = comp.get("class", "")
+                path = comp.get("script", "")
+                menu.add_command(
+                    label=f"Open {cls} in editor",
+                    command=lambda p=path: self._open_script_in_editor(p),
+                )
+        try:
+            menu.tk_popup(
+                self.tree.winfo_pointerx(), self.tree.winfo_pointery(),
+            )
+        finally:
+            menu.grab_release()
+
+    def _create_and_attach_script(self, node) -> None:
+        """Prompt for a class name, create ``scripts/<snake>.py`` with a
+        CTkScript skeleton, attach it to ``node``, and open it in the
+        editor — so the user never hand-creates the file."""
+        from pathlib import Path
+        from tkinter import messagebox
+
+        from app.core.script_paths import user_scripts_dir
+        from app.io.scripts import create_user_script, launch_editor
+        from app.ui.dialogs.rename import RenameDialog
+        parent = self.winfo_toplevel()
+        scripts_dir = user_scripts_dir(getattr(self.project, "path", None))
+        if scripts_dir is None:
+            messagebox.showinfo(
+                "Save first",
+                "Save the project before creating scripts.",
+                parent=parent,
+            )
+            return
+        # Themed prompt (not the native white simpledialog). The
+        # validator keeps it open + bells on a non-identifier name, so
+        # the user fixes a typo in place rather than getting bounced.
+        dlg = RenameDialog(
+            parent, "",
+            title="New script",
+            label="Class name (e.g. LoginForm):",
+            validate=str.isidentifier,
+        )
+        name = dlg.result
+        if not name:
+            return
+        result = create_user_script(scripts_dir, name)
+        if result is None:
+            messagebox.showerror(
+                "Couldn't create script",
+                "Failed to write the new script file.",
+                parent=parent,
+            )
+            return
+        rel, cls = result
+        self._attach_script_component(node, rel, cls)
+        launch_editor(Path(scripts_dir) / rel)
+
+    def _open_script_in_editor(self, rel_path: str) -> None:
+        """Open an attached script in the user's editor (F7-style)."""
+        from pathlib import Path
+
+        from app.core.script_paths import user_scripts_dir
+        from app.io.scripts import launch_editor
+        scripts_dir = user_scripts_dir(getattr(self.project, "path", None))
+        if scripts_dir is None or not rel_path:
+            return
+        launch_editor(Path(scripts_dir) / rel_path)
+
+    def _attach_script_component(self, node, script: str, cls: str) -> None:
+        """Attach a CTkScript class to ``node`` (widget or window) via an
+        undoable command. No-op if that class is already attached."""
+        if self.project is None:
+            return
+        target = self._component_target(node)
+        if target is None:
+            return
+        existing = getattr(target, "attached_components", None) or []
+        if any(c.get("class") == cls for c in existing):
+            return
+        from app.core.commands import AttachComponentCommand
+        cmd = AttachComponentCommand(node.id, {"script": script, "class": cls})
+        cmd.redo(self.project)
+        self.project.history.push(cmd)
+        self._rebuild()
+
+    def _detach_script_component(self, node, cls: str) -> None:
+        """Detach the CTkScript class ``cls`` from ``node`` via an
+        undoable command."""
+        if self.project is None:
+            return
+        from app.core.commands import DetachComponentCommand
+        cmd = DetachComponentCommand(node.id, cls)
+        cmd.redo(self.project)
+        self.project.history.push(cmd)
         self._rebuild()
 
     def _make_window_global_reference(self, doc) -> None:

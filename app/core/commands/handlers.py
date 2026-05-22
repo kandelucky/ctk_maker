@@ -87,6 +87,120 @@ class BindHandlerCommand(Command):
         self._do(project)
 
 
+class AttachComponentCommand(Command):
+    """CTkScript model — attach a component (``{"script", "class"}``) to
+    a widget or the window (``attached_components``). ``widget_id`` is
+    the WidgetNode id, or ``WINDOW_ID`` for the active document. Undo
+    removes the entry it added (recorded index, class-name fallback).
+    """
+
+    def __init__(self, widget_id: str, component: dict):
+        self.widget_id = widget_id
+        self.component = dict(component)
+        self._index: int | None = None
+        self.description = "Attach script"
+
+    def _target(self, project: "Project"):
+        from app.core.project import WINDOW_ID
+        if self.widget_id == WINDOW_ID:
+            return project.active_document
+        return project.get_widget(self.widget_id)
+
+    def _refresh(self, project: "Project") -> None:
+        project.event_bus.publish(
+            "widget_handler_changed", self.widget_id, "", "",
+        )
+        project.select_widget(self.widget_id)
+
+    def redo(self, project: "Project") -> None:
+        target = self._target(project)
+        if target is None:
+            return
+        comps = getattr(target, "attached_components", None)
+        if comps is None:
+            target.attached_components = comps = []
+        comps.append(dict(self.component))
+        self._index = len(comps) - 1
+        self._refresh(project)
+
+    def undo(self, project: "Project") -> None:
+        target = self._target(project)
+        if target is None:
+            return
+        comps = getattr(target, "attached_components", None) or []
+        idx = self._index
+        cls = self.component.get("class")
+        if (
+            idx is None or idx >= len(comps)
+            or comps[idx].get("class") != cls
+        ):
+            idx = next(
+                (
+                    i for i in range(len(comps) - 1, -1, -1)
+                    if comps[i].get("class") == cls
+                ),
+                None,
+            )
+        if idx is not None and 0 <= idx < len(comps):
+            comps.pop(idx)
+        self._refresh(project)
+
+
+class DetachComponentCommand(Command):
+    """CTkScript model — remove a component (by class name) from a widget
+    or the window. Undo re-inserts it at its original index."""
+
+    def __init__(self, widget_id: str, class_name: str):
+        self.widget_id = widget_id
+        self.class_name = class_name
+        self._removed: dict | None = None
+        self._index: int | None = None
+        self.description = "Detach script"
+
+    def _target(self, project: "Project"):
+        from app.core.project import WINDOW_ID
+        if self.widget_id == WINDOW_ID:
+            return project.active_document
+        return project.get_widget(self.widget_id)
+
+    def _refresh(self, project: "Project") -> None:
+        project.event_bus.publish(
+            "widget_handler_changed", self.widget_id, "", "",
+        )
+        project.select_widget(self.widget_id)
+
+    def redo(self, project: "Project") -> None:
+        target = self._target(project)
+        if target is None:
+            return
+        comps = getattr(target, "attached_components", None) or []
+        idx = next(
+            (
+                i for i, c in enumerate(comps)
+                if c.get("class") == self.class_name
+            ),
+            None,
+        )
+        if idx is None:
+            return
+        self._index = idx
+        self._removed = dict(comps[idx])
+        comps.pop(idx)
+        self._refresh(project)
+
+    def undo(self, project: "Project") -> None:
+        target = self._target(project)
+        if target is None or self._removed is None:
+            return
+        comps = getattr(target, "attached_components", None)
+        if comps is None:
+            target.attached_components = comps = []
+        idx = self._index if self._index is not None else len(comps)
+        idx = max(0, min(idx, len(comps)))
+        comps.insert(idx, dict(self._removed))
+        self._refresh(project)
+
+
 class ReorderHandlerCommand(Command):
     """Move a bound method up or down within its event handler list.
     Execution order matters — the exporter emits a lambda chain in

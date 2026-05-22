@@ -254,6 +254,29 @@ def populate_target_only_menu(
                 ),
             )
 
+    # CTkScript model — components attached to this widget (its own
+    # scope) and to the window (window scope). Picking one commits a
+    # ``script_call`` with the class set; the Function row then lists
+    # that class's public methods.
+    comp_targets: list[tuple[str, str]] = []
+    for comp in (getattr(node, "attached_components", None) or []):
+        cls = comp.get("class", "")
+        if cls:
+            comp_targets.append((cls, "this widget"))
+    for comp in (getattr(document, "attached_components", None) or []):
+        cls = comp.get("class", "")
+        if cls:
+            comp_targets.append((cls, "window"))
+    if comp_targets:
+        menu.add_separator()
+        for cls, scope in comp_targets:
+            menu.add_command(
+                label=f"{cls}  ({scope})",
+                command=lambda c=cls: _commit_target_script_component(
+                    project, widget_id, event_key, c, on_commit,
+                ),
+            )
+
 
 def _commit_target_page(
     project: "Project", widget_id: str, event_key: str,
@@ -311,6 +334,25 @@ def _commit_target_library(
         "method": "",
         "args": [],
     }
+    cmd = BindHandlerCommand(widget_id, event_key, entry)
+    cmd.redo(project)
+    project.history.push(cmd)
+    if on_commit is not None:
+        on_commit()
+
+
+def _commit_target_script_component(
+    project: "Project", widget_id: str, event_key: str,
+    class_name: str,
+    on_commit: Callable[[], None] | None,
+) -> None:
+    """Append an empty ``script_call`` entry — method left blank for the
+    Function row picker to fill from the class's public methods. The
+    component is resolved at export time against the object's / window's
+    attached components.
+    """
+    from app.core.commands import BindHandlerCommand
+    entry = {"kind": "script_call", "class": class_name, "method": ""}
     cmd = BindHandlerCommand(widget_id, event_key, entry)
     cmd.redo(project)
     project.history.push(cmd)

@@ -36,6 +36,12 @@ ASSETS_DIR_NAME = "assets"
 SCRIPTS_DIR_NAME = "scripts"
 BEHAVIOR_FILE_EXT = ".py"
 
+# CTkScript model — the top-level user-scripts folder, at the project
+# root and decoupled from ``assets/`` (which keeps media only). Holds
+# the user's ``CTkScript`` subclasses; the exporter copies it into the
+# build and the attach picker AST-scans it.
+USER_SCRIPTS_DIR_NAME = "scripts"
+
 # Sibling under ``assets/`` that holds backup copies of behavior
 # files when the user picks "Save copy" instead of "Move to recycle
 # bin" in the window-delete dialog. Lives in the project so the
@@ -68,6 +74,22 @@ def scripts_root(project_file_path: str | Path | None) -> Path | None:
         / ASSETS_DIR_NAME
         / SCRIPTS_DIR_NAME
     )
+
+
+def user_scripts_dir(
+    project_file_path: str | Path | None,
+) -> Path | None:
+    """``<project_root>/scripts/`` — the CTkScript model's top-level
+    user-scripts folder (outside ``assets/``). ``None`` for unsaved
+    projects. Mirrors the layout the exporter copies into the build.
+    """
+    if not project_file_path:
+        return None
+    from app.core.project_folder import find_project_root
+    root = find_project_root(project_file_path)
+    if root is not None:
+        return root / USER_SCRIPTS_DIR_NAME
+    return Path(project_file_path).parent / USER_SCRIPTS_DIR_NAME
 
 
 def page_scripts_dir(

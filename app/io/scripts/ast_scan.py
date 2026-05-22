@@ -166,6 +166,57 @@ def parse_module_functions(
     return names
 
 
+def parse_ctkscript_classes(file_path: str | Path) -> list[str]:
+    """Return the names of every top-level class in ``file_path`` that
+    subclasses ``CTkScript`` — the attachable behavior classes of the
+    CTkScript model. Recognises both ``class X(CTkScript)`` and
+    ``class X(ctkmaker.CTkScript)``. Empty on missing file / syntax
+    error / none found (keeps the attach picker responsive mid-edit).
+    """
+    source = _read_source(file_path)
+    if source is None:
+        return []
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    names: list[str] = []
+    for stmt in tree.body:
+        if not isinstance(stmt, ast.ClassDef):
+            continue
+        for base in stmt.bases:
+            if isinstance(base, ast.Name) and base.id == "CTkScript":
+                names.append(stmt.name)
+                break
+            if isinstance(base, ast.Attribute) and base.attr == "CTkScript":
+                names.append(stmt.name)
+                break
+    return names
+
+
+def find_attachable_scripts(scripts_dir: str | Path | None) -> list[tuple[str, str]]:
+    """Scan a ``scripts/`` folder for attachable CTkScript classes.
+    Returns ``[(rel_path, class_name)]`` — ``rel_path`` is POSIX,
+    relative to ``scripts_dir`` (``counter.py``, ``sub/auth.py``), one
+    entry per ``CTkScript`` subclass found. Sorted by path then class.
+    Empty when the folder is absent. Skips ``__init__.py`` /
+    ``__pycache__``.
+    """
+    if not scripts_dir:
+        return []
+    root = Path(scripts_dir)
+    if not root.is_dir():
+        return []
+    out: list[tuple[str, str]] = []
+    for py in sorted(root.rglob("*.py")):
+        if py.name == "__init__.py" or "__pycache__" in py.parts:
+            continue
+        rel = py.relative_to(root).as_posix()
+        for cls in parse_ctkscript_classes(py):
+            out.append((rel, cls))
+    return out
+
+
 def _module_function_matches(
     fn: ast.FunctionDef, wiring_kind: str, command_value: bool = False,
 ) -> bool:

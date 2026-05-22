@@ -28,11 +28,26 @@ class RenameDialog(ManagedToplevel):
     modal = True
     window_resizable = (False, False)
 
-    def __init__(self, parent, initial_value: str):
+    def __init__(
+        self, parent, initial_value: str,
+        title: str | None = None,
+        label: str = "New name:",
+        validate=None,
+    ):
+        # ``title`` / ``label`` let callers reuse this themed prompt for
+        # any single-line input (e.g. "New script"); defaults preserve
+        # the rename behaviour. ``validate`` is an optional
+        # ``str -> bool`` — when it rejects the value, the dialog bells
+        # and stays open (same as the empty-name guard) instead of
+        # bouncing the user out to a native message box.
         self._initial = initial_value
+        self._label = label
+        self._validate = validate
         self.result: str | None = None
         self._name_var = tk.StringVar(master=parent, value=initial_value)
         super().__init__(parent)
+        if title:
+            self.title(title)
         self.bind("<Return>", lambda _e: self._on_ok())
         self.after(80, self._focus_entry)
         # Block the caller until the dialog closes — preserves the
@@ -69,7 +84,7 @@ class RenameDialog(ManagedToplevel):
         body = ctk.CTkFrame(container, fg_color="transparent")
         body.pack(padx=20, pady=(18, 10), fill="x")
 
-        style.styled_label(body, "New name:").pack(
+        style.styled_label(body, self._label).pack(
             anchor="w", pady=(0, 4),
         )
         self._entry = style.styled_entry(
@@ -94,6 +109,12 @@ class RenameDialog(ManagedToplevel):
         if not value:
             self.bell()
             self._name_var.set(self._initial)
+            self._focus_entry()
+            return
+        if self._validate is not None and not self._validate(value):
+            # Invalid per the caller's rule — keep the dialog open with
+            # the value intact so the user can fix it.
+            self.bell()
             self._focus_entry()
             return
         self.result = value

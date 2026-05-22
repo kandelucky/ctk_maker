@@ -207,6 +207,13 @@ class SchemaMixin:
             # refs declarations.
             self._populate_attached_scripts_group()
 
+        # CTkScript model — the "Scripts" group (attach CTkScript
+        # classes to this object). Sits above Events: you attach a
+        # script, then bind events to its methods. Shown for every
+        # object (widget + window).
+        if node is not None:
+            self._populate_node_scripts_group(node)
+
         # Phase 2 visual scripting — Events group for event-capable
         # widgets (button, slider, entry, …). Renders below every
         # property group; event-less widgets (Label, Frame, Image)
@@ -493,6 +500,88 @@ class SchemaMixin:
         btn.bind(
             "<Button-1>",
             lambda _e, p=path: self._detach_script(p),
+        )
+        if self.overlays is not None:
+            self.overlays.add(
+                row_iid, SLOT_OBJECT_REFERENCE_TOGGLE, btn,
+                place_object_reference_toggle,
+            )
+
+    def _populate_node_scripts_group(self, node) -> None:
+        """CTkScript model — the "Scripts" group on any object (widget
+        or window). Lists the CTkScript classes attached to it, each
+        with a ``×`` detach; the header ``+`` opens a picker of
+        attachable classes found in the project's ``scripts/`` folder.
+        Attaching here decides scope: a widget script knows its widget,
+        a window script knows the window.
+        """
+        if self.project is None or node is None:
+            return
+        target = self._component_target(node)
+        if target is None:
+            return
+        group_iid = "g:Scripts"
+        self.tree.insert(
+            "", "end", iid=group_iid,
+            text="Scripts", values=("",), open=True,
+            tags=("class",),
+        )
+        self._node_scripts_add_button(group_iid, node)
+        comps = list(getattr(target, "attached_components", []) or [])
+        if not comps:
+            self.tree.insert(
+                group_iid, "end", iid="comp:empty",
+                text="",
+                values=("no scripts attached — click + to add",),
+                tags=("disabled",),
+            )
+            return
+        for idx, comp in enumerate(comps):
+            cls = comp.get("class", "")
+            row_iid = f"comp:{idx}"
+            self.tree.insert(
+                group_iid, "end", iid=row_iid,
+                text=cls, values=("",),
+            )
+            self._node_script_remove_button(row_iid, node, cls)
+
+    def _node_scripts_add_button(self, header_iid: str, node) -> None:
+        """``+`` on the Scripts header — opens the attach picker."""
+        btn = tk.Label(
+            self.tree,
+            text="+",
+            bg="#0e639c", fg="#ffffff",
+            font=derive_ui_font(size=12, weight="bold"),
+            cursor="hand2", borderwidth=0, padx=0, pady=0,
+            anchor="center",
+        )
+        btn.bind("<Enter>", lambda _e, b=btn: b.configure(bg="#1177bb"))
+        btn.bind("<Leave>", lambda _e, b=btn: b.configure(bg="#0e639c"))
+        btn.bind(
+            "<Button-1>",
+            lambda _e, n=node: self._open_component_picker(n),
+        )
+        if self.overlays is not None:
+            self.overlays.add(
+                header_iid, SLOT_OBJECT_REFERENCE_TOGGLE, btn,
+                place_object_reference_toggle,
+            )
+
+    def _node_script_remove_button(self, row_iid: str, node, cls: str) -> None:
+        """``×`` per attached-script row — detaches the class."""
+        btn = tk.Label(
+            self.tree,
+            text="×",
+            bg="#a33d3d", fg="#ffffff",
+            font=derive_ui_font(size=12, weight="bold"),
+            cursor="hand2", borderwidth=0, padx=0, pady=0,
+            anchor="center",
+        )
+        btn.bind("<Enter>", lambda _e, b=btn: b.configure(bg="#c94545"))
+        btn.bind("<Leave>", lambda _e, b=btn: b.configure(bg="#a33d3d"))
+        btn.bind(
+            "<Button-1>",
+            lambda _e, n=node, c=cls: self._detach_script_component(n, c),
         )
         if self.overlays is not None:
             self.overlays.add(
@@ -998,6 +1087,13 @@ class SchemaMixin:
                     "script not attached", True,
                 )
             return "Script:", script_path, None, True
+        if isinstance(handler_entry, dict) and (
+            handler_entry.get("kind") == "script_call"
+        ):
+            cls = handler_entry.get("class", "")
+            if not cls:
+                return "Target:", "Add target", None, False
+            return "Script:", cls, None, True
         # Page-method string entry — display as the behavior file
         # name (``dialog.py`` style) so the parent reads as the
         # source the method lives in.
@@ -1058,6 +1154,13 @@ class SchemaMixin:
             script_path = handler_entry.get("script", "")
             if not self._library_method_exists(script_path, method):
                 return method, "function missing in script", []
+            return method, None, []
+        if isinstance(handler_entry, dict) and (
+            handler_entry.get("kind") == "script_call"
+        ):
+            method = handler_entry.get("method", "")
+            if not method:
+                return "Pick function…", None, []
             return method, None, []
         # Page method — bare string entry. Empty string = target
         # picked but function not chosen yet.
