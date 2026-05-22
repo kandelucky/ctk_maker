@@ -1056,6 +1056,33 @@ def export_project(
         out.with_name("scrollable_dropdown.py").write_text(
             helper_src, encoding="utf-8",
         )
+    # CTkScript model — when any component is attached, ship the
+    # ``CTkScript`` base as ``ctkmaker.py`` beside the export (so user
+    # scripts' ``from ctkmaker import CTkScript`` resolves with no pip
+    # install) and copy the project's top-level ``scripts/`` folder into
+    # the bundle, with package markers so ``from scripts.<mod> import``
+    # resolves. Self-contained build.
+    if _project_uses_components(project, single_document_id):
+        out.with_name("ctkmaker.py").write_text(
+            _ctkscript_base_source(), encoding="utf-8",
+        )
+        if project.path:
+            from app.core.project_folder import find_project_root
+            root = find_project_root(project.path)
+            src_scripts = (
+                (root / "scripts") if root is not None
+                else Path(project.path).parent / "scripts"
+            )
+            if src_scripts.is_dir():
+                dst_scripts = out.parent / "scripts"
+                try:
+                    shutil.copytree(
+                        src_scripts, dst_scripts, dirs_exist_ok=True,
+                    )
+                except OSError:
+                    pass
+                from app.io.library_scripts import write_package_markers_in
+                write_package_markers_in(dst_scripts)
 
 
 def _project_uses_custom_fonts(
@@ -1098,6 +1125,29 @@ def _project_uses_scrollable_dropdown(
                 return True
             for desc in _iter_descendants(root):
                 if desc.widget_type in ("CTkComboBox", "CTkOptionMenu"):
+                    return True
+    return False
+
+
+def _project_uses_components(
+    project: Project, single_document_id: str | None,
+) -> bool:
+    """True when any document or widget carries an attached CTkScript
+    component — gates the ``ctkmaker.py`` base sidecar + ``scripts/``
+    copy in the export."""
+    if single_document_id:
+        doc = project.get_document(single_document_id)
+        docs = [doc] if doc is not None else []
+    else:
+        docs = list(project.documents)
+    for doc in docs:
+        if getattr(doc, "attached_components", None):
+            return True
+        for root in doc.root_widgets:
+            if getattr(root, "attached_components", None):
+                return True
+            for desc in _iter_descendants(root):
+                if getattr(desc, "attached_components", None):
                     return True
     return False
 
@@ -1358,6 +1408,35 @@ def _generate_code_inner(
             page_slug = behavior_file_stem(project.path)
         for path in attached_paths:
             lines.append(_library_import_line(page_slug, path))
+        lines.append("")
+
+    # CTkScript model — import each attached component class from the
+    # project's top-level ``scripts/`` folder. Gathered across every
+    # document (window-level + per-widget components) and deduped by
+    # (module, class) so a component reused on many objects imports
+    # once. Empty for projects with no components — no lines emitted.
+    component_imports: list[tuple[str, str]] = []
+    seen_components: set[tuple[str, str]] = set()
+    for doc, _cls in class_names:
+        comp_sources = list(getattr(doc, "attached_components", []) or [])
+        stack = list(doc.root_widgets)
+        while stack:
+            node = stack.pop()
+            comp_sources.extend(getattr(node, "attached_components", []) or [])
+            stack.extend(node.children)
+        for comp in comp_sources:
+            module = _component_module_path(comp.get("script", ""))
+            cls = comp.get("class", "")
+            if not module or not cls:
+                continue
+            key = (module, cls)
+            if key in seen_components:
+                continue
+            seen_components.add(key)
+            component_imports.append(key)
+    if component_imports:
+        for module, cls in component_imports:
+            lines.append(f"from scripts.{module} import {cls}")
         lines.append("")
 
     # In single-document mode, force the class to subclass ctk.CTk so
@@ -2062,6 +2141,17 @@ def _ctkscript_base_source() -> str:
     from app.io.scripts.ctk_script import CTkScript
 
     return inspect.getsource(CTkScript)
+
+
+def _component_module_path(script: str) -> str:
+    """Map a ``scripts/``-relative file path to a dotted module path
+    for the import statement — ``counter.py`` → ``counter``,
+    ``sub/auth.py`` → ``sub.auth``. Empty input → empty (caller skips).
+    """
+    if not script:
+        return ""
+    stem = script[:-3] if script.endswith(".py") else script
+    return stem.replace("\\", "/").strip("/").replace("/", ".")
 
 
 def _collect_doc_components(doc, id_to_var: dict) -> list[dict]:

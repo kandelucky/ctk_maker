@@ -86,9 +86,29 @@ def test_on_close_protocol_emitted():
     ) in src
 
 
+def test_component_import_emitted():
+    project = Project()
+    _button(
+        project, "my_button",
+        components=[{"script": "counter.py", "class": "ClickCounter"}],
+    )
+    src = generate_code(project)
+    assert "from scripts.counter import ClickCounter" in src
+
+
+def test_component_import_deduped_across_widgets():
+    project = Project()
+    comp = [{"script": "counter.py", "class": "ClickCounter"}]
+    _button(project, "btn_a", components=list(comp))
+    _button(project, "btn_b", components=list(comp))
+    src = generate_code(project)
+    assert src.count("from scripts.counter import ClickCounter") == 1
+
+
 def test_no_components_leaves_export_clean():
     project = Project()
     _button(project, "plain_btn")
     src = generate_code(project)
     assert "_script_0" not in src
     assert "on_start()" not in src
+    assert "from scripts." not in src

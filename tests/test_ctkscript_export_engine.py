@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 from app.io.code_exporter import (
     _collect_doc_components,
+    _component_module_path,
     _ctkscript_base_source,
     _emit_component_close_lines,
     _emit_component_init_lines,
@@ -18,6 +19,13 @@ from app.io.code_exporter import (
     _format_script_call,
     _resolve_component_var,
 )
+
+
+def test_component_module_path():
+    assert _component_module_path("counter.py") == "counter"
+    assert _component_module_path("sub/auth.py") == "sub.auth"
+    assert _component_module_path("sub\\auth.py") == "sub.auth"
+    assert _component_module_path("") == ""
 
 
 def _node(node_id, comps=None, children=None):
