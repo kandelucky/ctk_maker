@@ -80,26 +80,27 @@ def _binding_chip_text(project, value) -> str | None:
     return entry.name if entry is not None else "(missing)"
 
 
-def _script_call_resolvable(project, node, cls: str) -> bool:
-    """True if a ``script_call``'s class is still reachable from
-    ``node`` — attached to the widget itself, or to the window as a
-    fallback. Mirrors the exporter's ``_resolve_component_var`` so the
-    panel flags exactly the bindings export would drop (e.g. the script
-    was detached after being wired into an event)."""
+def _script_call_resolvable(project, node, cls: str, scope=None) -> bool:
+    """True if a ``script_call``'s class is still usable from ``node``:
+    its component is attached (honoring ``scope``) **and**, for a saved
+    project, its file still exists under ``scripts/``. Mirrors the
+    exporter's resolution so the panel flags exactly what export drops —
+    a script detached after wiring, or one whose file was deleted."""
     if not cls:
         return False
-    if any(
-        c.get("class") == cls
-        for c in (getattr(node, "attached_components", None) or [])
-    ):
-        return True
+    from pathlib import Path
+    from app.core.script_paths import user_scripts_dir
+    from app.io.scripts import resolve_script_component
     document = project.find_document_for_widget(node.id)
-    if document is None:
+    comp = resolve_script_component(node, document, cls, scope)
+    if comp is None:
         return False
-    return any(
-        c.get("class") == cls
-        for c in (getattr(document, "attached_components", None) or [])
-    )
+    scripts_dir = user_scripts_dir(getattr(project, "path", None))
+    if scripts_dir is None:
+        # Unsaved project — no folder to verify against; trust the
+        # attachment so in-memory / test flows still resolve.
+        return True
+    return (Path(scripts_dir) / comp.get("script", "")).exists()
 
 
 class SchemaMixin:
@@ -1198,8 +1199,9 @@ class SchemaMixin:
             cls = handler_entry.get("class", "")
             if not cls:
                 return "Target:", "Add target", None, False
-            if not _script_call_resolvable(self.project, node, cls):
-                return "Script:", cls, "script not attached", True
+            scope = handler_entry.get("scope")
+            if not _script_call_resolvable(self.project, node, cls, scope):
+                return "Script:", cls, "script unavailable", True
             return "Script:", cls, None, True
         # Page-method string entry — display as the behavior file
         # name (``dialog.py`` style) so the parent reads as the

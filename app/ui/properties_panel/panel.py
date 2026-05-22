@@ -1584,24 +1584,25 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
 
             from app.core.script_paths import user_scripts_dir
             from app.io.scripts import (
-                find_attachable_scripts, parse_handler_methods,
+                parse_handler_methods, resolve_script_component,
             )
             cls = entry.get("class", "")
             methods: list[str] = []
             scripts_dir = user_scripts_dir(
                 getattr(self.project, "path", None),
             )
-            rel = next(
-                (
-                    p for (p, c) in find_attachable_scripts(scripts_dir)
-                    if c == cls
-                ),
-                None,
+            # The attachment already stores the exact file path — resolve
+            # it (honoring the entry's scope) instead of rescanning the
+            # whole scripts/ folder, so two files sharing a class name
+            # can't be confused.
+            document = self.project.find_document_for_widget(widget_id)
+            comp = resolve_script_component(
+                node, document, cls, entry.get("scope"),
             )
-            if rel and scripts_dir is not None:
+            if comp is not None and scripts_dir is not None:
                 methods = [
                     m for m in parse_handler_methods(
-                        Path(scripts_dir) / rel, cls,
+                        Path(scripts_dir) / comp["script"], cls,
                     )
                     if m not in ("on_start", "on_close")
                 ]

@@ -36,6 +36,10 @@ from app.io.scripts.ast_scan import (
     parse_module_functions,
     parse_object_reference_fields,
 )
+from app.io.scripts.components import (
+    iter_script_call_targets,
+    resolve_script_component,
+)
 from app.io.scripts.editor import (
     launch_editor,
     resolve_project_root_for_editor,
@@ -78,6 +82,9 @@ __all__ = [
     "parse_method_docstrings",
     "parse_module_functions",
     "parse_object_reference_fields",
+    # components (CTkScript resolution)
+    "iter_script_call_targets",
+    "resolve_script_component",
     # editor
     "launch_editor",
     "resolve_project_root_for_editor",

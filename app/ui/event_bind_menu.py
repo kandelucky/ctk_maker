@@ -78,33 +78,29 @@ def populate_event_bind_menu(
     from app.ui.properties_panel.constants import menu_style
     style = menu_style()
     # CTkScript components — primary path. Widget-scope components
-    # first, then window-scope.
-    comp_targets: list[tuple[str, str]] = []
-    for comp in (getattr(node, "attached_components", None) or []):
-        cls = comp.get("class", "")
-        if cls:
-            comp_targets.append((cls, "this widget"))
-    for comp in (getattr(document, "attached_components", None) or []):
-        cls = comp.get("class", "")
-        if cls:
-            comp_targets.append((cls, "window"))
+    # first, then window-scope (shared enumeration with the panel).
+    from app.io.scripts import iter_script_call_targets
+    comp_targets = iter_script_call_targets(node, document)
     if comp_targets:
         scripts_menu = tk.Menu(menu, tearoff=0, **style)
-        for cls, scope in comp_targets:
+        for script_rel, cls, scope in comp_targets:
+            label_scope = "this widget" if scope == "widget" else "window"
             sub = tk.Menu(scripts_menu, tearoff=0, **style)
-            methods = _component_methods(project, cls)
+            methods = _component_methods(project, script_rel, cls)
             if methods:
                 for method_name in methods:
                     sub.add_command(
                         label=method_name,
-                        command=lambda c=cls, m=method_name:
+                        command=lambda c=cls, m=method_name, s=scope:
                         _bind_script_call(
-                            project, widget_id, event_key, c, m, on_commit,
+                            project, widget_id, event_key, c, m, s, on_commit,
                         ),
                     )
             else:
                 _add_disabled_hint(sub, "No public methods")
-            scripts_menu.add_cascade(label=f"{cls}  ({scope})", menu=sub)
+            scripts_menu.add_cascade(
+                label=f"{cls}  ({label_scope})", menu=sub,
+            )
         menu.add_cascade(label="Scripts", menu=scripts_menu)
     if page_methods:
         page_menu = tk.Menu(menu, tearoff=0, **style)
@@ -171,39 +167,39 @@ def _bind_page_method(
         on_commit()
 
 
-def _component_methods(project: "Project", cls: str) -> list[str]:
+def _component_methods(
+    project: "Project", script_rel: str, cls: str,
+) -> list[str]:
     """Public methods of an attached CTkScript class (minus the
-    ``on_start``/``on_close`` lifecycle hooks). Empty when the project
-    is unsaved or the class can't be located under ``scripts/``."""
+    ``on_start``/``on_close`` lifecycle hooks), read from its stored file
+    path. Empty when the project is unsaved or the file is gone. Uses the
+    path from ``attached_components`` — no whole-folder rescan, so two
+    files sharing a class name can't be confused."""
     from pathlib import Path
     from app.core.script_paths import user_scripts_dir
-    from app.io.scripts import find_attachable_scripts, parse_handler_methods
+    from app.io.scripts import parse_handler_methods
     scripts_dir = user_scripts_dir(getattr(project, "path", None))
-    if scripts_dir is None or not cls:
-        return []
-    rel = next(
-        (p for (p, c) in find_attachable_scripts(scripts_dir) if c == cls),
-        None,
-    )
-    if not rel:
+    if scripts_dir is None or not script_rel or not cls:
         return []
     return [
-        m for m in parse_handler_methods(Path(scripts_dir) / rel, cls)
+        m for m in parse_handler_methods(Path(scripts_dir) / script_rel, cls)
         if m not in ("on_start", "on_close")
     ]
 
 
 def _bind_script_call(
     project: "Project", widget_id: str, event_key: str,
-    class_name: str, method_name: str,
+    class_name: str, method_name: str, scope: str,
     on_commit: Callable[[], None] | None = None,
 ) -> None:
-    """Bind a ``script_call`` entry (class + method already chosen) —
-    the one-shot workspace path, vs the panel's pick-target-then-method
-    flow. Resolved at export against the object's attached_components."""
+    """Bind a ``script_call`` entry (class + method + scope already
+    chosen) — the one-shot workspace path, vs the panel's
+    pick-target-then-method flow. ``scope`` records which attachment was
+    picked so export resolves the right instance."""
     from app.core.commands import BindHandlerCommand
     entry = {
-        "kind": "script_call", "class": class_name, "method": method_name,
+        "kind": "script_call", "class": class_name,
+        "method": method_name, "scope": scope,
     }
     cmd = BindHandlerCommand(widget_id, event_key, entry)
     cmd.redo(project)
@@ -332,24 +328,19 @@ def populate_target_only_menu(
 
     # CTkScript model — components attached to this widget (its own
     # scope) and to the window (window scope). Picking one commits a
-    # ``script_call`` with the class set; the Function row then lists
-    # that class's public methods.
-    comp_targets: list[tuple[str, str]] = []
-    for comp in (getattr(node, "attached_components", None) or []):
-        cls = comp.get("class", "")
-        if cls:
-            comp_targets.append((cls, "this widget"))
-    for comp in (getattr(document, "attached_components", None) or []):
-        cls = comp.get("class", "")
-        if cls:
-            comp_targets.append((cls, "window"))
+    # ``script_call`` with the class + scope set; the Function row then
+    # lists that class's public methods.
+    from app.io.scripts import iter_script_call_targets
+    comp_targets = iter_script_call_targets(node, document)
     if comp_targets:
         menu.add_separator()
-        for cls, scope in comp_targets:
+        for _script_rel, cls, scope in comp_targets:
+            label_scope = "this widget" if scope == "widget" else "window"
             menu.add_command(
-                label=f"{cls}  ({scope})",
-                command=lambda c=cls: _commit_target_script_component(
-                    project, widget_id, event_key, c, on_commit,
+                label=f"{cls}  ({label_scope})",
+                command=lambda c=cls, s=scope:
+                _commit_target_script_component(
+                    project, widget_id, event_key, c, s, on_commit,
                 ),
             )
 
@@ -419,16 +410,20 @@ def _commit_target_library(
 
 def _commit_target_script_component(
     project: "Project", widget_id: str, event_key: str,
-    class_name: str,
+    class_name: str, scope: str,
     on_commit: Callable[[], None] | None,
 ) -> None:
     """Append an empty ``script_call`` entry — method left blank for the
-    Function row picker to fill from the class's public methods. The
-    component is resolved at export time against the object's / window's
-    attached components.
+    Function row picker to fill from the class's public methods. ``scope``
+    (``"widget"`` / ``"window"``) records which attachment the user
+    picked, so export resolves the right instance even when the same
+    class is attached to both.
     """
     from app.core.commands import BindHandlerCommand
-    entry = {"kind": "script_call", "class": class_name, "method": ""}
+    entry = {
+        "kind": "script_call", "class": class_name,
+        "method": "", "scope": scope,
+    }
     cmd = BindHandlerCommand(widget_id, event_key, entry)
     cmd.redo(project)
     project.history.push(cmd)

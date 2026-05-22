@@ -49,3 +49,45 @@ def test_empty_class_is_unresolvable():
     node = _widget_in_doc(project)
     node.attached_components = [_comp("counter.py", "Counter")]
     assert _script_call_resolvable(project, node, "") is False
+
+
+def test_saved_project_requires_the_file_to_exist(tmp_path):
+    # When the project is saved, resolvable must verify the script file
+    # still exists — a binding to a deleted file is NOT valid (fix 3).
+    proj_file = tmp_path / "demo.ctkproj"
+    proj_file.write_text("{}", encoding="utf-8")
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "counter.py").write_text(
+        "from ctkmaker import CTkScript\n"
+        "class Counter(CTkScript):\n    def go(self):\n        pass\n",
+        encoding="utf-8",
+    )
+    project = Project()
+    project.path = str(proj_file)
+    node = _widget_in_doc(project)
+    node.attached_components = [_comp("counter.py", "Counter")]
+
+    assert _script_call_resolvable(project, node, "Counter", "widget") is True
+    (scripts / "counter.py").unlink()
+    assert _script_call_resolvable(project, node, "Counter", "widget") is False
+
+
+def test_window_scope_does_not_resolve_against_widget(tmp_path):
+    # A window-scope binding must not silently bind to a widget-scope
+    # component of the same class (fix 2 — strict scope).
+    proj_file = tmp_path / "demo.ctkproj"
+    proj_file.write_text("{}", encoding="utf-8")
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "dup.py").write_text(
+        "from ctkmaker import CTkScript\nclass Dup(CTkScript):\n    pass\n",
+        encoding="utf-8",
+    )
+    project = Project()
+    project.path = str(proj_file)
+    node = _widget_in_doc(project)
+    node.attached_components = [_comp("dup.py", "Dup")]   # widget only
+
+    assert _script_call_resolvable(project, node, "Dup", "widget") is True
+    assert _script_call_resolvable(project, node, "Dup", "window") is False

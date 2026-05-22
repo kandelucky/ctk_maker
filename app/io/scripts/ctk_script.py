@@ -60,6 +60,7 @@ class CTkScript:
         Use it for initial state, focus, populating fields, timers."""
 
     def on_close(self):
-        """Runs when the user closes the window (window scripts). Do
-        your cleanup, then call ``self.window.destroy()`` to actually
-        close — skip it to keep the window open."""
+        """Runs when the window is closing — for **any** attached script
+        (widget- or window-scope). A cleanup notification: stop timers,
+        save state, release resources. The window closes either way; you
+        don't control that here (don't call ``destroy()`` yourself)."""

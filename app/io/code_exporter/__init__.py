@@ -2196,19 +2196,38 @@ def _collect_doc_components(doc, id_to_var: dict) -> list[dict]:
 
 
 def _resolve_component_var(
-    records: list[dict], owner_id, class_name: str,
+    records: list[dict], owner_id, class_name: str, scope=None,
 ) -> str | None:
-    """Instance var for a ``script_call`` — a component of ``class_name``
-    attached to ``owner_id`` (the widget) wins; otherwise a window
-    component of that class. ``None`` when unresolved (caller drops the
-    binding)."""
-    for r in records:
-        if r["class"] == class_name and r["owner_id"] == owner_id:
-            return r["var"]
-    for r in records:
-        if r["class"] == class_name and r["scope"] == "window":
-            return r["var"]
-    return None
+    """Instance var for a ``script_call``, honoring the entry's scope:
+
+    * ``scope="widget"`` → only a component on ``owner_id`` (the widget),
+    * ``scope="window"`` → only a window component,
+    * ``scope=None`` (legacy entries) → owner first, then window.
+
+    ``None`` when unresolved (the caller drops the binding)."""
+    def _owner():
+        return next(
+            (
+                r["var"] for r in records
+                if r["class"] == class_name and r["owner_id"] == owner_id
+            ),
+            None,
+        )
+
+    def _window():
+        return next(
+            (
+                r["var"] for r in records
+                if r["class"] == class_name and r["scope"] == "window"
+            ),
+            None,
+        )
+
+    if scope == "widget":
+        return _owner()
+    if scope == "window":
+        return _window()
+    return _owner() or _window()
 
 
 def _emit_component_init_lines(records: list[dict]) -> list[str]:
@@ -2249,7 +2268,9 @@ def _format_script_call(entry: dict, records: list[dict], owner_id) -> str | Non
     """Bare reference to a ``script_call`` target —
     ``self._script_N.<method>`` — or ``None`` when the component can't
     be resolved. Used as a ``command=`` value or wrapped for a bind."""
-    var = _resolve_component_var(records, owner_id, entry.get("class", ""))
+    var = _resolve_component_var(
+        records, owner_id, entry.get("class", ""), entry.get("scope"),
+    )
     method = entry.get("method", "")
     if var is None or not method:
         return None
