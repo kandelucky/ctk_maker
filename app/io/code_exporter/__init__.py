@@ -79,6 +79,12 @@ _INCLUDE_DESCRIPTIONS_DEFAULT = True
 #       ``"self.master.var_X"`` so widget kwargs use the right form
 #       for whichever class is currently being emitted.
 _EXPORT_PROJECT = None
+# CTkScript model — the component records (`_collect_doc_components`)
+# for the document currently being emitted. Set in ``_emit_class_body``
+# so ``_emit_handler_lines`` (running deep inside the subtree walk) can
+# resolve ``script_call`` bindings to ``self._script_N.<method>``.
+# ``None`` / empty when the doc has no attached components.
+_CURRENT_DOC_COMPONENTS: list | None = None
 # Phase 3 — populated at top of ``_generate_code_inner`` so
 # ``_emit_handler_lines`` can skip stale handler bindings whose
 # methods no longer exist in the per-window behavior file. Maps
@@ -1522,6 +1528,13 @@ def _filter_handlers_to_existing_methods(
                     widget_label, event_label, reason,
                 ))
             continue
+        if isinstance(entry, dict) and entry.get("kind") == "script_call":
+            # CTkScript binding — kept here; resolution against the
+            # doc's attached components happens at emission time
+            # (``_format_script_call`` drops it silently if the class
+            # isn't attached). Component-level validation lands later.
+            kept.append(entry)
+            continue
         # Unknown shape — defensive drop with a generic message.
         _MISSING_BEHAVIOR_METHODS.append((
             widget_label, event_label,
@@ -1798,13 +1811,20 @@ def _emit_handler_lines(
     from app.widgets.event_registry import event_by_key
     command_kwarg: tuple[str, str] | None = None
     post_lines: list[str] = []
+    # CTkScript model — components for the document being emitted, so
+    # ``script_call`` bindings on this node resolve to the right
+    # ``self._script_N`` instance. Empty for docs with no components.
+    records = _CURRENT_DOC_COMPONENTS or []
+    owner_id = node.id
     for key in node.handlers:
         entries = [
             e for e in node.handlers.get(key, [])
             if (isinstance(e, str) and e)
             or (
                 isinstance(e, dict)
-                and e.get("kind") in ("ref_call", "library_call")
+                and e.get("kind") in (
+                    "ref_call", "library_call", "script_call",
+                )
             )
         ]
         if not entries:
@@ -1835,7 +1855,10 @@ def _emit_handler_lines(
             # only the window.
             value_param = "v" if entry.command_passes_value else None
             command_kwarg = (
-                "command", _format_handler_entries(entries, value_param),
+                "command",
+                _format_handler_entries(
+                    entries, value_param, records, owner_id,
+                ),
             )
         elif entry.wiring_kind == "bind":
             seq = key.split(":", 1)[1] if ":" in key else key
@@ -1845,26 +1868,41 @@ def _emit_handler_lines(
                         f'{full_name}.bind('
                         f'"{seq}", self._behavior.{ent}, add="+")',
                     )
+                    continue
+                if (
+                    isinstance(ent, dict)
+                    and ent.get("kind") == "library_call"
+                ):
+                    # Direct-binding convention: hand the window
+                    # (``self``) + the Tk event to the user's
+                    # function — ``func(window, event)``.
+                    call = _format_library_call(ent, ["self", "e"])
+                elif (
+                    isinstance(ent, dict)
+                    and ent.get("kind") == "script_call"
+                ):
+                    # CTkScript method — context is self.widget /
+                    # self.window, so the Tk event is dropped (read
+                    # state off the widget instead). Skip if the
+                    # component can't be resolved in this doc.
+                    expr = _format_script_call(ent, records, owner_id)
+                    if expr is None:
+                        continue
+                    call = f"{expr}()"
                 else:
-                    if (
-                        isinstance(ent, dict)
-                        and ent.get("kind") == "library_call"
-                    ):
-                        # Direct-binding convention: hand the window
-                        # (``self``) + the Tk event to the user's
-                        # function — ``func(window, event)``.
-                        call = _format_library_call(ent, ["self", "e"])
-                    else:
-                        call = _format_ref_call(ent)
-                    post_lines.append(
-                        f'{full_name}.bind('
-                        f'"{seq}", lambda e: {call}, add="+")',
-                    )
+                    call = _format_ref_call(ent)
+                post_lines.append(
+                    f'{full_name}.bind('
+                    f'"{seq}", lambda e: {call}, add="+")',
+                )
     return command_kwarg, post_lines
 
 
 def _format_handler_entries(
-    entries: list, value_param: str | None = None,
+    entries: list,
+    value_param: str | None = None,
+    records: list | None = None,
+    owner_id=None,
 ) -> str:
     """Render an ordered list of handler entries as the source for
     a ``command=`` kwarg.
@@ -1883,6 +1921,19 @@ def _format_handler_entries(
     behavior-class path); only ``library_call`` gets the window/value
     prefix.
     """
+    records = records or []
+    # Single CTkScript method on an argless command → bare reference
+    # (``command=self._script_0.bump``); CTk calls it with no args,
+    # matching the no-parameter ``def bump(self):`` convention.
+    if (
+        len(entries) == 1
+        and isinstance(entries[0], dict)
+        and entries[0].get("kind") == "script_call"
+        and value_param is None
+    ):
+        expr = _format_script_call(entries[0], records, owner_id)
+        if expr is not None:
+            return expr
     if len(entries) == 1 and isinstance(entries[0], str):
         return f"self._behavior.{entries[0]}"
     prefix = ["self", value_param] if value_param else ["self"]
@@ -1895,6 +1946,14 @@ def _format_handler_entries(
             and entry.get("kind") == "library_call"
         ):
             parts.append(_format_library_call(entry, prefix))
+        elif (
+            isinstance(entry, dict)
+            and entry.get("kind") == "script_call"
+        ):
+            # CTkScript method — no native arg (context via self.*).
+            expr = _format_script_call(entry, records, owner_id)
+            if expr is not None:
+                parts.append(f"{expr}()")
         else:
             parts.append(_format_ref_call(entry))
     head = f"lambda {value_param}: " if value_param else "lambda: "
@@ -2472,6 +2531,12 @@ def _emit_class_body(
     doc: Document, class_name: str, force_main: bool,
     register_fonts: bool,
 ) -> list[str]:
+    global _CURRENT_DOC_COMPONENTS
+    # CTkScript model — components attached to this window / its widgets.
+    # Computed once: drives instantiation (before _build_ui), scope
+    # injection + on_start (after), on_close, and script_call
+    # resolution during the subtree walk. Empty for docs with none.
+    _doc_components = _collect_doc_components(doc, _resolve_var_names(doc))
     if force_main or not doc.is_toplevel:
         base = "ctk.CTk"
     else:
@@ -2535,6 +2600,10 @@ def _emit_class_body(
         lines.append(
             f'{INDENT}{INDENT}self.configure(fg_color="{fg_color}")',
         )
+    # CTkScript components — instantiate BEFORE _build_ui() so widget
+    # event bindings can reference ``self._script_N.<method>``. Scope
+    # (self.widget / self.window) is injected after the build.
+    lines.extend(_emit_component_init_lines(_doc_components))
     lines.append(f"{INDENT}{INDENT}self._build_ui()")
     # Object Reference assignments must run AFTER _build_ui() since
     # they reference widgets created inside it. Per-doc id-to-var
@@ -2559,6 +2628,11 @@ def _emit_class_body(
     # after the legacy behavior setup() so both coexist during the
     # migration off the behavior-class model.
     lines.extend(_emit_lifecycle_lines(doc))
+    # CTkScript components — widgets exist now: inject each component's
+    # scope (self.widget / self.window), call on_start, and wire
+    # on_close to WM_DELETE_WINDOW.
+    lines.extend(_emit_component_post_lines(_doc_components))
+    lines.extend(_emit_component_close_lines(_doc_components))
     lines.append("")
     lines.append(f"{INDENT}def _build_ui(self):")
 
@@ -2569,6 +2643,10 @@ def _emit_class_body(
     # the legacy ``<type>_<N>`` shape. Same map fuels the Object
     # Reference replay above (memoised in ``_NAME_MAP_CACHE``).
     id_to_var = _resolve_var_names(doc)
+    # Expose components to ``_emit_handler_lines`` for the duration of
+    # the subtree walk so ``script_call`` bindings resolve to the right
+    # ``self._script_N`` instance; cleared before return.
+    _CURRENT_DOC_COMPONENTS = _doc_components
     body_lines: list[str] = []
     # Phase 1.5 binding: shared variables come BEFORE widget
     # construction so any constructor below can reference
@@ -2652,6 +2730,7 @@ def _emit_class_body(
             )
     for line in body_lines:
         lines.append(f"{INDENT}{INDENT}{line}" if line else "")
+    _CURRENT_DOC_COMPONENTS = None
     return lines
 
 
