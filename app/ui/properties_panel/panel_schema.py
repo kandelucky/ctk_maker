@@ -215,25 +215,11 @@ class SchemaMixin:
         # at the very end so the user can see what locals belong to the
         # current document without opening the F11 Variables window.
         if descriptor.type_name == WINDOW_ID:
-            # v1.10.8 — symmetric per-Window global toggle. Mirrors
-            # the per-widget local toggle: ``+`` creates a global
-            # reference whose target is this Window/Dialog itself;
-            # ``×`` removes it. Behavior code from any doc reaches
-            # the window class through ``self.<name>``. Sits with the
-            # schema-side window properties — it describes how the
-            # window itself is exposed, not user-declared content.
-            self._populate_window_global_reference_toggle()
-            # Spacer separates the trailing declarations block (locals
-            # + references list) from the window-property block above
-            # so the user reads them as a distinct zone.
+            # Spacer separates the trailing declarations block (locals)
+            # from the window-property block above so the user reads
+            # them as a distinct zone.
             self._insert_section_spacer()
             self._populate_local_variables_group()
-            # Local refs of this doc — read-only list.
-            self._populate_object_references_group()
-            # v1.38 — Library scripts attached to this window. Sits
-            # last so the user reads it as a peer of the variables /
-            # refs declarations.
-            self._populate_attached_scripts_group()
 
         # CTkScript model — the "Scripts" group (attach CTkScript
         # classes to this object). Sits above Events: you attach a
@@ -248,14 +234,6 @@ class SchemaMixin:
         # skip it entirely so their panels stay tidy.
         if node is not None:
             self._populate_events_group(node)
-
-        # v1.10.8 — per-widget Object Reference toggle. Replaces the
-        # ``Behavior Fields`` group from v1.10.7 with a one-row
-        # status + button: "this widget is/is not exposed as a
-        # reference; click to toggle". Window panel skips this since
-        # it shows the consolidated list above.
-        if node is not None and node.id != WINDOW_ID:
-            self._populate_object_reference_toggle(node)
 
     def _insert_section_spacer(self) -> None:
         """Empty top-level row that visually offsets the trailing
