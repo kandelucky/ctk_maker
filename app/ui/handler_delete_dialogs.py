@@ -400,6 +400,156 @@ class ActionDeleteDialog(ManagedToplevel):
         self.destroy()
 
 
+class PageDeleteDialog(ManagedToplevel):
+    """Confirmation gate for deleting a whole page. A page owns a
+    folder of per-window behavior scripts (``assets/scripts/<page>/``);
+    deleting the page used to silently orphan that folder. This dialog
+    lists every script and lets the user opt-in (per Decision: default
+    all-unchecked) to recycling the ones that should go with the page.
+
+    On ``[Delete page]`` the caller reads:
+    - ``self.confirmed`` — True only when Delete was clicked.
+    - ``self.selected_filenames`` — basenames the user checked. Empty
+      means "delete the page but keep every script" — the safe default.
+
+    Recycle Bin is the only disposal route (recoverable), mirroring the
+    window-delete dialog's send2trash default.
+    """
+
+    window_title = "Delete page"
+    min_size = (440, 200)
+    fg_color = _BG
+    panel_padding = (0, 0)
+    modal = True
+    window_resizable = (False, False)
+
+    def __init__(self, parent, page_name: str, scripts):
+        # ``scripts`` — list of (filename, method_count, line_count).
+        self.confirmed: bool = False
+        self.selected_filenames: list[str] = []
+        self._page_name = page_name
+        self._scripts = list(scripts)
+        self._has_scripts = bool(self._scripts)
+        if self._has_scripts:
+            visible = min(len(self._scripts), 6)
+            self.default_size = (510, 250 + visible * 32)
+            self._all_var = tk.IntVar(master=parent, value=0)
+            self._row_vars: dict[str, tk.IntVar] = {
+                fname: tk.IntVar(master=parent, value=0)
+                for (fname, _m, _l) in self._scripts
+            }
+        else:
+            self.default_size = (470, 210)
+        super().__init__(parent)
+
+    def default_offset(self, parent) -> tuple[int, int]:
+        return _parent_centered(parent, *self.default_size)
+
+    def build_content(self) -> ctk.CTkFrame:
+        container = ctk.CTkFrame(self, fg_color="transparent")
+
+        # Footer packed FIRST against the bottom edge so the action
+        # buttons always keep their strip — otherwise the expanding
+        # body (scrollable script list) eats the cavity and pushes the
+        # buttons off the fixed-height, non-resizable window.
+        footer = ctk.CTkFrame(container, fg_color="transparent")
+        footer.pack(side="bottom", fill="x", padx=22, pady=(12, 16))
+        ctk.CTkButton(
+            footer, text="Delete page",
+            width=130, height=34, corner_radius=4,
+            fg_color=_DANGER_BG, hover_color=_DANGER_HOVER,
+            command=self._on_delete,
+        ).pack(side="right")
+        ctk.CTkButton(
+            footer, text="Cancel",
+            width=90, height=34, corner_radius=4,
+            fg_color=_BTN_BG, hover_color=_BTN_HOVER,
+            command=self._on_cancel,
+        ).pack(side="right", padx=(0, 8))
+
+        body = ctk.CTkFrame(container, fg_color="transparent")
+        body.pack(side="top", padx=22, pady=(20, 8), fill="both", expand=True)
+
+        ctk.CTkLabel(
+            body, text=f"Delete \"{self._page_name}\"?",
+            font=ui_font(14, "bold"),
+            text_color=_HEADING_FG, anchor="w",
+        ).pack(anchor="w", pady=(0, 10))
+
+        if not self._has_scripts:
+            ctk.CTkLabel(
+                body,
+                text=(
+                    "No behavior scripts are attached to this page.\n"
+                    "The page file and its backups will be removed."
+                ),
+                font=ui_font(10), text_color=_BODY_FG,
+                justify="left", anchor="w", wraplength=420,
+            ).pack(anchor="w", pady=(0, 4))
+        else:
+            ctk.CTkLabel(
+                body,
+                text=(
+                    "Check the scripts to delete with this page — they "
+                    "go to the Recycle Bin (recoverable). Unchecked "
+                    "scripts stay in the project's scripts folder."
+                ),
+                font=ui_font(10), text_color=_BODY_FG,
+                justify="left", anchor="w", wraplength=440,
+            ).pack(anchor="w", pady=(0, 10))
+
+            ctk.CTkCheckBox(
+                body, text="Select all",
+                variable=self._all_var, command=self._on_select_all,
+                font=ui_font(10, "bold"),
+                fg_color=_LINK_FG, hover_color=_LINK_FG,
+                text_color=_HEADING_FG,
+            ).pack(anchor="w", pady=(0, 6))
+
+            list_frame = ctk.CTkScrollableFrame(
+                body, fg_color=_CARD_BG, corner_radius=4,
+                height=min(len(self._scripts), 6) * 30,
+            )
+            list_frame.pack(fill="both", expand=True, pady=(0, 4))
+            for fname, methods, lines in self._scripts:
+                label = (
+                    f"{fname}   ({methods} method"
+                    f"{'' if methods == 1 else 's'}, "
+                    f"{lines} line{'' if lines == 1 else 's'})"
+                )
+                ctk.CTkCheckBox(
+                    list_frame, text=label,
+                    variable=self._row_vars[fname],
+                    command=self._on_row_toggle,
+                    font=ui_font(10),
+                    fg_color=_LINK_FG, hover_color=_LINK_FG,
+                    text_color=_BODY_FG,
+                ).pack(anchor="w", padx=10, pady=4)
+
+        return container
+
+    def _on_select_all(self) -> None:
+        value = self._all_var.get()
+        for var in self._row_vars.values():
+            var.set(value)
+
+    def _on_row_toggle(self) -> None:
+        all_checked = all(v.get() for v in self._row_vars.values())
+        self._all_var.set(1 if all_checked else 0)
+
+    def _on_delete(self) -> None:
+        self.confirmed = True
+        if self._has_scripts:
+            self.selected_filenames = [
+                fname for fname, var in self._row_vars.items() if var.get()
+            ]
+        self.destroy()
+
+    def _on_cancel(self) -> None:
+        self.confirmed = False
+        self.destroy()
+
+
 # ---------------------------------------------------------------------
 # Orchestration helpers — keep call sites tiny
 # ---------------------------------------------------------------------
@@ -446,6 +596,44 @@ def run_window_delete_flow(parent, project, doc) -> bool:
                 )
             except OSError:
                 pass
+    return True
+
+
+def run_page_delete_flow(parent, folder_path, page_entry) -> bool:
+    """Pop ``PageDeleteDialog`` for a page about to be deleted, then
+    recycle the scripts the user checked. Returns ``True`` when the
+    caller should proceed with the actual page deletion, ``False`` on
+    Cancel.
+
+    ``page_entry`` is the page's ``project.json`` dict (``name`` +
+    ``file``). Unchecked scripts are left in place; a page cleared of
+    every script also loses its now-empty folder (handled inside
+    ``recycle_page_scripts``). Disposal runs BEFORE the caller removes
+    the .ctkproj so the page-folder path still resolves cleanly.
+    """
+    from app.core.project_folder import page_file_path
+    from app.io.scripts import list_page_scripts, recycle_page_scripts
+
+    page_name = (
+        page_entry.get("name") or "page"
+        if isinstance(page_entry, dict) else "page"
+    )
+    filename = (
+        page_entry.get("file") or ""
+        if isinstance(page_entry, dict) else ""
+    )
+    page_path = page_file_path(folder_path, filename) if filename else None
+    scripts = list_page_scripts(page_path) if page_path is not None else []
+
+    dialog = PageDeleteDialog(parent, page_name=page_name, scripts=scripts)
+    parent.wait_window(dialog)
+    if not dialog.confirmed:
+        return False
+    if page_path is not None and dialog.selected_filenames:
+        try:
+            recycle_page_scripts(page_path, dialog.selected_filenames)
+        except OSError:
+            pass
     return True
 
 

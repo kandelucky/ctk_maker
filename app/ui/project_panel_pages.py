@@ -227,20 +227,22 @@ class ProjectPanelPages:
                 parent=panel.winfo_toplevel(),
             )
             return
-        # Resolve display name for the confirmation prompt.
-        display = next(
+        # Resolve the page entry so the delete dialog can list the
+        # behavior scripts that live with it and let the user opt-in
+        # to recycling them (default: keep all, delete only what's
+        # checked). The dialog also handles the recycle itself.
+        entry = next(
             (
-                p.get("name", "") for p in (panel.project.pages or [])
+                p for p in (panel.project.pages or [])
                 if isinstance(p, dict) and p.get("id") == page_id
             ),
-            "",
+            None,
         )
-        if not messagebox.askyesno(
-            "Delete page",
-            f"Delete page '{display}'?\n\n"
-            "The page file and its backups will be removed from disk. "
-            "This can't be undone via Ctrl+Z.",
-            parent=panel.winfo_toplevel(),
+        if entry is None:
+            return
+        from app.ui.handler_delete_dialogs import run_page_delete_flow
+        if not run_page_delete_flow(
+            panel.winfo_toplevel(), panel.project.folder_path, entry,
         ):
             return
         # If the deleted page is the currently-active one, we need

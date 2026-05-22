@@ -51,8 +51,10 @@ from app.io.scripts.mutate import (
     suggest_object_reference_name,
 )
 from app.io.scripts.paths import (
+    list_page_scripts,
     load_or_create_behavior_file,
     recycle_behavior_file,
+    recycle_page_scripts,
     rename_behavior_file_and_class,
     save_behavior_file_copy,
 )
@@ -86,8 +88,10 @@ __all__ = [
     "suggest_method_name",
     "suggest_object_reference_name",
     # paths
+    "list_page_scripts",
     "load_or_create_behavior_file",
     "recycle_behavior_file",
+    "recycle_page_scripts",
     "rename_behavior_file_and_class",
     "save_behavior_file_copy",
     # runtime
