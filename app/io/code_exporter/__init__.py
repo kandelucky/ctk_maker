@@ -1352,32 +1352,6 @@ def _generate_code_inner(
             )
         lines.append("")
 
-    # v1.38 — Library script imports. Every emitted document
-    # contributes its ``attached_scripts`` paths; we dedupe across
-    # docs so a script attached to multiple windows imports once.
-    # Page-folder-relative paths convert to dotted module paths
-    # rooted at ``assets.scripts.<page_slug>`` so handler lambdas
-    # can reference the module name (``helpers.save_log()``) as a
-    # bare module-level free variable.
-    attached_paths: list[str] = []
-    seen_paths: set[str] = set()
-    for doc, _cls in class_names:
-        for path in getattr(doc, "attached_scripts", []) or []:
-            if path in seen_paths:
-                continue
-            seen_paths.add(path)
-            attached_paths.append(path)
-    if attached_paths:
-        if not behavior_imports:
-            # Need ``page_slug`` for the dotted path; recompute when
-            # we didn't already pull it in for the behavior imports
-            # above.
-            from app.core.script_paths import behavior_file_stem
-            page_slug = behavior_file_stem(project.path)
-        for path in attached_paths:
-            lines.append(_library_import_line(page_slug, path))
-        lines.append("")
-
     # CTkScript model — import each attached component class from the
     # project's top-level ``scripts/`` folder. Gathered across every
     # document (window-level + per-widget components) and deduped by
@@ -1514,14 +1488,11 @@ def _filter_handlers_to_existing_methods(
     to ``_MISSING_BEHAVIOR_METHODS`` so the preview-warning injector
     can surface the broken binding in the Console.
 
-    Three entry shapes:
+    Two entry shapes:
       * ``str`` — page method on the window's behavior class. Dropped
         when the per-doc AST scan didn't find a matching ``def``.
-      * ``dict`` with ``"kind": "library_call"`` — module-level
-        function call into an attached library script. Dropped when
-        the script isn't in ``doc.attached_scripts``, the file
-        doesn't exist, or the function isn't a public top-level
-        ``def`` in it.
+      * ``dict`` with ``"kind": "script_call"`` — CTkScript binding,
+        kept here (resolved at emission time).
 
     ``widget_label`` is ``node.name`` if set, otherwise
     ``"<unnamed <widget_type>>"``.
@@ -1551,17 +1522,6 @@ def _filter_handlers_to_existing_methods(
                     f"Method not found: {entry!r}",
                 ))
             continue
-        if isinstance(entry, dict) and entry.get(
-            "kind",
-        ) == "library_call":
-            reason = _validate_library_call(doc, entry)
-            if reason is None:
-                kept.append(entry)
-            else:
-                _MISSING_BEHAVIOR_METHODS.append((
-                    widget_label, event_label, reason,
-                ))
-            continue
         if isinstance(entry, dict) and entry.get("kind") == "script_call":
             # CTkScript binding — kept here; resolution against the
             # doc's attached components happens at emission time
@@ -1575,76 +1535,6 @@ def _filter_handlers_to_existing_methods(
             "Handler entry has unrecognised shape",
         ))
     return kept
-
-
-def _validate_library_call(doc: Document, entry: dict) -> str | None:
-    """Return ``None`` when a ``library_call`` entry resolves
-    cleanly, or a pre-formatted reason string when it doesn't.
-
-    Checks:
-      1. ``script`` + ``method`` fields are non-empty.
-      2. ``script`` path appears in ``doc.attached_scripts`` (the
-         picker scopes by attachment — call into an unattached
-         module would mean the exporter is missing its ``from
-         assets.scripts.<page>.<...> import <module>`` line).
-      3. The script file exists at the resolved page path.
-      4. ``method`` is a public top-level ``def`` in that file
-         (uses ``parse_module_functions`` — same AST surface the
-         Function picker reads from).
-    """
-    script_path = entry.get("script", "")
-    method_name = entry.get("method", "")
-    if not script_path or not method_name:
-        return f"Library call missing script or method: {entry!r}"
-    if script_path not in doc.attached_scripts:
-        return f"Script not attached: {script_path!r}"
-    if _EXPORT_PROJECT is None or not _EXPORT_PROJECT.path:
-        return None
-    from app.core.script_paths import page_scripts_dir
-    from app.io.scripts import parse_module_functions
-    page_dir = page_scripts_dir(_EXPORT_PROJECT.path)
-    if page_dir is None:
-        return None
-    full_path = page_dir / script_path
-    if not full_path.exists():
-        return f"Script file not found: {script_path!r}"
-    fns = parse_module_functions(full_path)
-    if method_name not in fns:
-        return (
-            f"Function not found: {method_name!r} in {script_path!r}"
-        )
-    return None
-
-
-def _library_script_module_name(rel_path: str) -> str:
-    """Convert a page-folder-relative path to the Python module
-    name used in lambda bodies. Strips ``.py``, takes the basename
-    so ``services/auth.py`` → ``auth``. Library imports use a
-    ``from <package> import <module>`` shape; the resulting module
-    name is what handler lambdas reference.
-    """
-    name = rel_path
-    if name.endswith(".py"):
-        name = name[:-3]
-    return name.rsplit("/", 1)[-1]
-
-
-def _library_import_line(page_slug: str, rel_path: str) -> str:
-    """Render the ``from assets.scripts.<page>[.<sub>] import
-    <module>`` line for an attached library script. Sub-packages
-    fold into the dotted path; bare top-of-page scripts import
-    directly from ``assets.scripts.<page_slug>``.
-    """
-    path = rel_path
-    if path.endswith(".py"):
-        path = path[:-3]
-    parts = path.split("/")
-    module = parts[-1]
-    package_tail = parts[:-1]
-    package = f"assets.scripts.{page_slug}"
-    if package_tail:
-        package = package + "." + ".".join(package_tail)
-    return f"from {package} import {module}"
 
 
 def _prepend_missing_handler_warnings(
@@ -1725,9 +1615,7 @@ def _emit_handler_lines(
             if (isinstance(e, str) and e)
             or (
                 isinstance(e, dict)
-                and e.get("kind") in (
-                    "library_call", "script_call",
-                )
+                and e.get("kind") == "script_call"
             )
         ]
         if not entries:
@@ -1774,14 +1662,6 @@ def _emit_handler_lines(
                     continue
                 if (
                     isinstance(ent, dict)
-                    and ent.get("kind") == "library_call"
-                ):
-                    # Direct-binding convention: hand the window
-                    # (``self``) + the Tk event to the user's
-                    # function — ``func(window, event)``.
-                    call = _format_library_call(ent, ["self", "e"])
-                elif (
-                    isinstance(ent, dict)
                     and ent.get("kind") == "script_call"
                 ):
                     # CTkScript method — context is self.widget /
@@ -1813,16 +1693,13 @@ def _format_handler_entries(
 
     ``value_param`` is the native arg CTk passes to value-commands
     (``"v"`` for slider / combo / option / segmented) or ``None`` for
-    argless commands (button, switch, checkbox, radio). It drives both
-    the lambda head and the window/value prefix handed to
-    ``library_call`` entries under the direct-binding convention.
+    argless commands (button, switch, checkbox, radio). It drives the
+    lambda head.
 
     A single page-method (str) entry stays a bare reference
     (``command=self._behavior.foo``) — CTk forwards its native arg to
     the method directly, so no wrapper is needed. Anything else wraps
     in a tuple-style lambda so fan-out is visible at the call site.
-    Page-method entries are emitted unchanged (legacy behavior-class
-    path); only ``library_call`` gets the window/value prefix.
     """
     records = records or []
     # Single CTkScript method on an argless command → bare reference
@@ -1839,16 +1716,10 @@ def _format_handler_entries(
             return expr
     if len(entries) == 1 and isinstance(entries[0], str):
         return f"self._behavior.{entries[0]}"
-    prefix = ["self", value_param] if value_param else ["self"]
     parts: list[str] = []
     for entry in entries:
         if isinstance(entry, str):
             parts.append(f"self._behavior.{entry}()")
-        elif (
-            isinstance(entry, dict)
-            and entry.get("kind") == "library_call"
-        ):
-            parts.append(_format_library_call(entry, prefix))
         elif (
             isinstance(entry, dict)
             and entry.get("kind") == "script_call"
@@ -1857,76 +1728,10 @@ def _format_handler_entries(
             expr = _format_script_call(entry, records, owner_id)
             if expr is not None:
                 parts.append(f"{expr}()")
-        # Unrecognised entry shapes are skipped — only str / library_call
-        # / script_call survive the kind filter upstream.
+        # Unrecognised entry shapes are skipped — only str / script_call
+        # survive the kind filter upstream.
     head = f"lambda {value_param}: " if value_param else "lambda: "
     return f"{head}({', '.join(parts)})"
-
-
-def _format_library_call(
-    entry: dict, prefix_args: list[str] | None = None,
-) -> str:
-    """Render a single ``library_call`` entry as the Python
-    expression that invokes it — e.g. ``helpers.on_click(self, e)``.
-    The module name comes from the script's basename (stripped of
-    ``.py``); the exporter's top-of-file imports keep it in scope.
-
-    ``prefix_args`` are raw expression strings injected ahead of the
-    user-set literal args — the direct-binding calling convention
-    (``func(window, native_arg, ...)``). Bind-style events pass
-    ``["self", "e"]`` so the handler receives the window + the Tk
-    event; command-style currently passes nothing (folded in a later
-    phase). Literal args (from the picker) follow, formatted via
-    ``_format_ref_arg``.
-    """
-    module = _library_script_module_name(entry["script"])
-    method = entry["method"]
-    parts = list(prefix_args or [])
-    parts += [_format_ref_arg(a) for a in entry.get("args", [])]
-    return f"{module}.{method}({', '.join(parts)})"
-
-
-def _emit_lifecycle_lines(doc) -> list[str]:
-    """Emit window lifecycle hooks from ``doc.lifecycle_handlers``
-    (direct-binding model), placed after ``_build_ui()``:
-
-    - ``lifecycle:on_setup`` → bare ``module.func(self)`` calls in
-      order, run once after the UI exists.
-    - ``lifecycle:on_close`` → one ``WM_DELETE_WINDOW`` protocol
-      registration (multiple handlers fan out in a tuple lambda).
-
-    Library calls receive the window via the ``func(window)``
-    convention. Entries validate the same way widget library calls do
-    (``_validate_library_call`` — script attached + function present);
-    unresolved entries are skipped silently.
-    """
-    handlers = getattr(doc, "lifecycle_handlers", None) or {}
-
-    def _calls(key: str) -> list[str]:
-        calls: list[str] = []
-        for ent in handlers.get(key, []) or []:
-            if (
-                isinstance(ent, dict)
-                and ent.get("kind") == "library_call"
-                and _validate_library_call(doc, ent) is None
-            ):
-                calls.append(_format_library_call(ent, ["self"]))
-        return calls
-
-    out: list[str] = [
-        f"{INDENT}{INDENT}{call}" for call in _calls("lifecycle:on_setup")
-    ]
-    close_calls = _calls("lifecycle:on_close")
-    if close_calls:
-        body = (
-            close_calls[0] if len(close_calls) == 1
-            else f"({', '.join(close_calls)})"
-        )
-        out.append(
-            f'{INDENT}{INDENT}self.protocol('
-            f'"WM_DELETE_WINDOW", lambda: {body})',
-        )
-    return out
 
 
 # ---------------------------------------------------------------------
@@ -2083,21 +1888,6 @@ def _format_script_call(entry: dict, records: list[dict], owner_id) -> str | Non
     if var is None or not method:
         return None
     return f"self.{var}.{method}"
-
-
-def _format_ref_arg(arg: dict) -> str:
-    name = arg.get("name", "")
-    type_ = arg.get("type", "str")
-    value = arg.get("value", "")
-    if type_ == "bool":
-        literal = "True" if value else "False"
-    elif type_ in ("int", "float"):
-        literal = str(value)
-    else:
-        literal = repr(str(value))
-    if arg.get("kwarg") and name:
-        return f"{name}={literal}"
-    return literal
 
 
 def _doc_has_handlers(doc: Document) -> bool:
@@ -2468,10 +2258,6 @@ def _emit_class_body(
         lines.append(
             f"{INDENT}{INDENT}self._behavior.setup(self)",
         )
-    # Direct-binding window lifecycle hooks (on_setup / on_close) run
-    # after the legacy behavior setup() so both coexist during the
-    # migration off the behavior-class model.
-    lines.extend(_emit_lifecycle_lines(doc))
     # CTkScript components — widgets exist now: inject each component's
     # scope (self.widget / self.window), call on_start, and wire
     # on_close to WM_DELETE_WINDOW.

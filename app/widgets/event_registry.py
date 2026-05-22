@@ -76,17 +76,6 @@ class EventEntry:
 
 _COMMAND = "command"
 _BIND = "bind"
-# Window/document-scope lifecycle hooks (direct-binding model). Neither
-# a CTk ``command=`` kwarg nor a ``.bind()`` — ``on_setup`` is a bare
-# call after the UI is built; ``on_close`` is a ``WM_DELETE_WINDOW``
-# protocol registration. The exporter dispatches on this kind in
-# ``_emit_lifecycle_lines``. Calling convention: ``func(window)``.
-_LIFECYCLE = "lifecycle"
-
-# Pseudo widget-type key for window/document-level lifecycle events.
-# Not a real CTk class — used by ``lifecycle_events()`` and the
-# Properties panel's window-selection Events group.
-DOCUMENT_EVENT_KEY = "__document__"
 
 EVENT_REGISTRY: dict[str, list[EventEntry]] = {
     "CTkButton": [
@@ -341,27 +330,6 @@ EVENT_REGISTRY: dict[str, list[EventEntry]] = {
             description="Fires when the textbox loses focus.",
         ),
     ],
-    DOCUMENT_EVENT_KEY: [
-        EventEntry(
-            "lifecycle:on_setup", "on setup", "setup",
-            "(window) -> None", _LIFECYCLE,
-            description=(
-                "Runs once after the window is built and its widgets "
-                "exist. Use it to initialise state, populate fields, "
-                "start timers. Replaces the old behavior setup()."
-            ),
-        ),
-        EventEntry(
-            "lifecycle:on_close", "on close", "close",
-            "(window) -> None", _LIFECYCLE,
-            description=(
-                "Runs when the user closes the window (the X button / "
-                "window manager). Do your cleanup, then call "
-                "window.destroy() to actually close — skip it to keep "
-                "the window open."
-            ),
-        ),
-    ],
 }
 
 
@@ -397,10 +365,3 @@ def event_by_key(widget_type: str, key: str) -> EventEntry | None:
         if entry.key == key:
             return entry
     return None
-
-
-def lifecycle_events() -> list[EventEntry]:
-    """Window/document-scope lifecycle events (``on_setup`` /
-    ``on_close``) bound at document scope rather than per widget.
-    """
-    return EVENT_REGISTRY.get(DOCUMENT_EVENT_KEY, [])

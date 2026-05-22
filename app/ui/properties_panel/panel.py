@@ -193,14 +193,6 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         bus.subscribe(
             "widget_handler_changed", self._on_widget_handler_changed,
         )
-        # v1.38 — Scripts panel toggles the attached_scripts list and
-        # publishes this; mirror it into the Attached Scripts group so
-        # the user doesn't have to reselect the Window to see the row
-        # appear / disappear.
-        bus.subscribe(
-            "document_attached_scripts_changed",
-            self._on_attached_scripts_changed,
-        )
 
         self._show_empty()
 
@@ -1221,8 +1213,8 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             if method_index is None or method_index >= len(methods):
                 return
             method_name = methods[method_index]
-            # Handler dicts (library_call / script_call) have no
-            # behavior-file def to open — skip "Open in editor" for them.
+            # Handler dicts (script_call) have no behavior-file def to
+            # open — skip "Open in editor" for them.
             if isinstance(method_name, str):
                 menu.add_command(
                     label="Open in editor",
@@ -1317,8 +1309,7 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         target picker. Picking REPLACES the entry's target in place
         (rather than appending a new one) and resets method+args
         since the new target has its own pool of compatible
-        functions. Same Page Script / Library Scripts picker the
-        outer ``[+]`` flow uses.
+        functions. Same Page Script picker the outer ``[+]`` flow uses.
         """
         node = self.project.get_widget(widget_id)
         if node is None:
@@ -1337,19 +1328,6 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
                 widget_id, event_key, m_idx,
             ),
         )
-        attached = getattr(document, "attached_scripts", []) or []
-        if attached:
-            scripts_menu = tk.Menu(menu, tearoff=0)
-            for path in attached:
-                scripts_menu.add_command(
-                    label=path,
-                    command=lambda p=path: self._retarget_to_library(
-                        widget_id, event_key, m_idx, p,
-                    ),
-                )
-            menu.add_cascade(
-                label="Library Scripts", menu=scripts_menu,
-            )
         try:
             menu.tk_popup(
                 self.tree.winfo_pointerx(),
@@ -1377,30 +1355,6 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             "widget_handler_changed", widget_id, event_key, "",
         )
 
-    def _retarget_to_library(
-        self, widget_id: str, event_key: str,
-        m_idx: int, script_path: str,
-    ) -> None:
-        """Replace the entry at ``m_idx`` with a library_call dict
-        targeting ``script_path``, method/args empty until the user
-        picks via the Function picker.
-        """
-        node = self.project.get_widget(widget_id)
-        if node is None:
-            return
-        entries = node.handlers.get(event_key)
-        if entries is None or m_idx >= len(entries):
-            return
-        entries[m_idx] = {
-            "kind": "library_call",
-            "script": script_path,
-            "method": "",
-            "args": [],
-        }
-        self.project.event_bus.publish(
-            "widget_handler_changed", widget_id, event_key, "",
-        )
-
     def _open_function_picker(
         self, widget_id: str, event_key: str, m_idx: int,
     ) -> None:
@@ -1409,9 +1363,8 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
 
         * Page script (str) → public class methods filtered by
           ``parse_handler_methods_compatible``.
-        * Library script (``library_call``) → public top-level
-          functions from the attached file, signature-filtered
-          by ``parse_module_functions``.
+        * CTkScript (``script_call``) → public methods on the
+          attached component class.
 
         Picking replaces the entry's method in place — no
         auto-stub creation, no rebind plumbing.
@@ -1425,51 +1378,11 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         entry = entries[m_idx]
         from app.ui.properties_panel.constants import menu_style
         menu = tk.Menu(self.tree, tearoff=0, **menu_style())
-        is_library_call = (
-            isinstance(entry, dict)
-            and entry.get("kind") == "library_call"
-        )
         is_script_call = (
             isinstance(entry, dict)
             and entry.get("kind") == "script_call"
         )
-        if is_library_call:
-            from app.core.script_paths import page_scripts_dir
-            from app.io.scripts import parse_module_functions
-            from app.widgets.event_registry import event_by_key
-            script_path = entry.get("script", "")
-            ev = event_by_key(node.widget_type, event_key)
-            fns: list[str] = []
-            if (
-                ev is not None
-                and script_path
-                and getattr(self.project, "path", None)
-            ):
-                page_dir = page_scripts_dir(self.project.path)
-                if page_dir is not None:
-                    full_path = page_dir / script_path
-                    if full_path.exists():
-                        fns = parse_module_functions(
-                            full_path, ev.wiring_kind,
-                            ev.command_passes_value,
-                        )
-            if not fns:
-                menu.add_command(
-                    label=(
-                        f"No public functions in {script_path}"
-                        if script_path else "Script not set"
-                    ),
-                    state="disabled",
-                )
-            for fn_name in fns:
-                menu.add_command(
-                    label=fn_name,
-                    command=lambda m=fn_name:
-                    self._set_handler_method_library(
-                        widget_id, event_key, m_idx, m,
-                    ),
-                )
-        elif is_script_call:
+        if is_script_call:
             from pathlib import Path
 
             from app.core.script_paths import user_scripts_dir
@@ -1560,33 +1473,6 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             )
         finally:
             menu.grab_release()
-
-    def _set_handler_method_library(
-        self, widget_id: str, event_key: str,
-        m_idx: int, method_name: str,
-    ) -> None:
-        """Replace a library_call entry's method in place. ``args``
-        stays empty — extra literal params are deferred. Under the
-        direct-binding convention a bind handler exports as
-        ``module.func(self, e)`` (window + Tk event); the picker only
-        offers functions whose signature matches (see
-        ``_module_function_matches``). Direct mutation; publishes
-        ``widget_handler_changed``.
-        """
-        node = self.project.get_widget(widget_id)
-        if node is None:
-            return
-        entries = node.handlers.get(event_key)
-        if entries is None or m_idx >= len(entries):
-            return
-        entry = entries[m_idx]
-        if not isinstance(entry, dict):
-            return
-        entry["method"] = method_name
-        entry["args"] = []
-        self.project.event_bus.publish(
-            "widget_handler_changed", widget_id, event_key, method_name,
-        )
 
     def _set_handler_method_script(
         self, widget_id: str, event_key: str,
@@ -1915,20 +1801,6 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         cmd = DetachComponentCommand(node.id, cls)
         cmd.redo(self.project)
         self.project.history.push(cmd)
-        self._rebuild()
-
-    def _on_attached_scripts_changed(
-        self, doc_id: str | None = None, *_args, **_kwargs,
-    ) -> None:
-        """Repaint the Window panel after the Scripts panel toggles
-        ``attached_scripts``. Filter on ``doc_id == active_document``
-        so mutations on inactive documents don't churn the UI.
-        """
-        if self.project is None or self.current_id is None:
-            return
-        active = getattr(self.project, "active_document", None)
-        if active is None or getattr(active, "id", None) != doc_id:
-            return
         self._rebuild()
 
     def _show_local_var_menu(self, event) -> None:

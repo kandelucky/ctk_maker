@@ -371,12 +371,6 @@ class MenuMixin(_MainWindowHost):
             command=self._on_toggle_variables_window,
             accelerator="F11",
         )
-        view_menu.add_checkbutton(
-            label="Scripts",
-            variable=self._scripts_var,
-            command=self._on_toggle_scripts_window,
-            accelerator="F6",
-        )
         view_menu.add_separator()
         view_menu.add_checkbutton(
             label="Console",

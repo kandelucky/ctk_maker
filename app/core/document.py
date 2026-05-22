@@ -108,32 +108,6 @@ class Document:
         # project. Not persisted — load_project rebuilds it from
         # existing widget names.
         self.name_counters: dict[str, int] = {}
-        # v1.38 — Library-script attachment list. Paths are relative
-        # to the page-scripts folder (``assets/scripts/<page>/``).
-        # A script attached to this document:
-        #   * appears in the Properties-panel event picker for any
-        #     widget inside this document
-        #   * gets imported in this window's behavior file at
-        #     export time (``from . import helpers`` / ``from
-        #     .services import auth``)
-        # Path-as-identity: renaming a library file via the Scripts
-        # panel sweeps every document's ``attached_scripts`` to
-        # update the path. Behavior files (``<window_slug>.py``)
-        # are NOT listed here — the structural 1:1 attachment is
-        # implicit and surfaces in the Scripts-panel UI as a
-        # grayed-out always-on checkbox.
-        self.attached_scripts: list[str] = []
-
-        # Window lifecycle handlers (direct-binding model). Maps a
-        # lifecycle event key (``lifecycle:on_setup`` /
-        # ``lifecycle:on_close``) to an ordered list of handler entries
-        # — same entry shapes as ``WidgetNode.handlers`` (a
-        # ``library_call`` dict binds the user's own function). These
-        # are window/document scope, not per-widget: ``on_setup`` runs
-        # once after the UI is built; ``on_close`` runs on the window's
-        # WM_DELETE_WINDOW. Replaces the behavior class's ``setup()``.
-        self.lifecycle_handlers: dict[str, list] = {}
-
         # CTkScript model — components (CTkScript subclasses) attached to
         # the WINDOW itself. Each entry: ``{"script": <scripts/-relative
         # path>, "class": <ClassName>}``. A window-attached component is
@@ -189,16 +163,6 @@ class Document:
             result["local_variables"] = [
                 v.to_dict() for v in self.local_variables
             ]
-        if self.attached_scripts:
-            result["attached_scripts"] = list(self.attached_scripts)
-        if self.lifecycle_handlers:
-            emitted = {
-                k: [dict(e) if isinstance(e, dict) else e for e in v]
-                for k, v in self.lifecycle_handlers.items()
-                if v
-            }
-            if emitted:
-                result["lifecycle_handlers"] = emitted
         if self.attached_components:
             result["attached_components"] = [
                 dict(c) for c in self.attached_components
@@ -276,33 +240,6 @@ class Document:
                 str(k): int(v) for k, v in raw_counters.items()
                 if isinstance(v, (int, float))
             }
-        # v1.38 — Library script attachments. Paths are
-        # page-folder-relative; empty/non-string entries dropped to
-        # keep the live model strict. Pre-v1.38 projects come back
-        # with an empty list, matching a freshly-created Document.
-        raw_scripts = data.get("attached_scripts")
-        if isinstance(raw_scripts, list):
-            doc.attached_scripts = [
-                str(p) for p in raw_scripts
-                if isinstance(p, str) and p
-            ]
-        # Window lifecycle handlers (direct-binding model). Same entry
-        # shapes as widget handlers; non-string keys / non-list values
-        # and empty entries are dropped to keep the live model strict.
-        # Pre-feature projects come back with an empty dict.
-        raw_lifecycle = data.get("lifecycle_handlers")
-        if isinstance(raw_lifecycle, dict):
-            for key, entries in raw_lifecycle.items():
-                if not isinstance(key, str) or not isinstance(entries, list):
-                    continue
-                kept: list = []
-                for e in entries:
-                    if isinstance(e, str) and e:
-                        kept.append(e)
-                    elif isinstance(e, dict) and e.get("kind"):
-                        kept.append(dict(e))
-                if kept:
-                    doc.lifecycle_handlers[key] = kept
         # CTkScript components attached to the window. Each entry needs
         # a non-empty ``script`` + ``class``; malformed entries dropped.
         raw_components = data.get("attached_components")

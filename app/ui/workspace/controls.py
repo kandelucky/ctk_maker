@@ -295,31 +295,6 @@ class WorkspaceControls:
         )
         vars_btn.pack(side="right", padx=(0, 4), pady=3)
 
-        # Separator between Data and Scripts so the cluster reads as
-        # two distinct buttons rather than one fused control.
-        ctk.CTkFrame(
-            bar, width=1, fg_color="#3c3c3c", corner_radius=0,
-        ).pack(side="right", fill="y", pady=6)
-
-        # "Scripts" button — opens the Scripts panel (F6). Packed
-        # AFTER vars_btn so it lands visually to vars_btn's left.
-        scripts_icon = load_icon("braces", size=14, color="#cccccc")
-        scripts_btn = ctk.CTkButton(
-            bar,
-            text="Scripts",
-            image=scripts_icon,
-            compound="left",
-            width=100,
-            height=24,
-            corner_radius=3,
-            fg_color="transparent",
-            hover_color=TOOL_BTN_HOVER,
-            text_color="#cccccc",
-            font=ui_font(10),
-            command=self._on_scripts_click,
-        )
-        scripts_btn.pack(side="right", padx=(0, 4), pady=3)
-
         self._refresh_tool_buttons()
 
     def build_status_bar(self) -> None:
@@ -338,9 +313,6 @@ class WorkspaceControls:
         self.project.event_bus.publish(
             "request_open_variables_window", "global", None,
         )
-
-    def _on_scripts_click(self) -> None:
-        self.project.event_bus.publish("request_open_scripts_window")
 
     def _focus_document(self, doc_id: str) -> None:
         self.project.set_active_document(doc_id)

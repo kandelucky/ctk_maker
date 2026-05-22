@@ -31,7 +31,6 @@ from app.io.project_saver import save_project
 from app.ui.console_window import ConsolePanel, ConsoleWindow
 from app.ui.dialogs import NewProjectSizeDialog, prompt_open_project_folder
 from app.ui.history_window import HistoryPanel, HistoryWindow
-from app.ui.scripts_window import ScriptsWindow
 from app.ui.variables_window import VariablesWindow
 from app.ui.main_actions import ActionsMixin
 from app.ui.main_documents import DocumentsMixin
@@ -517,8 +516,6 @@ class MainWindow(
         self._project_var = tk.BooleanVar(value=False)
         self._variables_window: VariablesWindow | None = None
         self._variables_var = tk.BooleanVar(value=False)
-        self._scripts_window: ScriptsWindow | None = None
-        self._scripts_var = tk.BooleanVar(value=False)
         # In-app preview console: buffer survives close/reopen so the
         # console can be opened mid-run and replay everything captured
         # so far. Reader threads (one per preview's stdout/stderr pipe)
@@ -829,10 +826,6 @@ class MainWindow(
         bus.subscribe(
             "request_open_variables_window",
             self._on_request_open_variables_window,
-        )
-        bus.subscribe(
-            "request_open_scripts_window",
-            lambda *_a, **_k: self._on_f6_scripts_window(),
         )
         bus.subscribe(
             "local_variables_migrated",
