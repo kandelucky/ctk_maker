@@ -35,7 +35,7 @@ from app.ui.system_fonts import ui_font
 
 from app.ui.system_fonts import derive_ui_font
 
-from .constants import STYLE_BOOL_NAMES, TREE_BG
+from .constants import STYLE_BOOL_NAMES, TREE_BG, TREE_FG, VALUE_BG
 from .editors import get_editor
 from .format_utils import (
     compute_subgroup_preview,
@@ -49,6 +49,8 @@ from .overlays import (
     SLOT_EVENT_DROPDOWN,
     SLOT_EVENT_UNBIND,
     SLOT_OBJECT_REFERENCE_TOGGLE,
+    SLOT_SCRIPT_NAME_CHIP,
+    SLOT_SCRIPT_PATH,
     SLOT_VAR_COLOR_SWATCH,
     SLOT_VAR_TYPE_CHIP,
     place_bind_button,
@@ -58,6 +60,9 @@ from .overlays import (
     place_event_dropdown,
     place_event_unbind,
     place_object_reference_toggle,
+    place_script_name_chip,
+    place_script_open_label,
+    place_script_path,
     place_var_color_swatch,
     place_var_type_chip,
 )
@@ -73,6 +78,28 @@ def _binding_chip_text(project, value) -> str | None:
         return None
     entry = project.get_variable(var_id) if project is not None else None
     return entry.name if entry is not None else "(missing)"
+
+
+def _script_call_resolvable(project, node, cls: str) -> bool:
+    """True if a ``script_call``'s class is still reachable from
+    ``node`` — attached to the widget itself, or to the window as a
+    fallback. Mirrors the exporter's ``_resolve_component_var`` so the
+    panel flags exactly the bindings export would drop (e.g. the script
+    was detached after being wired into an event)."""
+    if not cls:
+        return False
+    if any(
+        c.get("class") == cls
+        for c in (getattr(node, "attached_components", None) or [])
+    ):
+        return True
+    document = project.find_document_for_widget(node.id)
+    if document is None:
+        return False
+    return any(
+        c.get("class") == cls
+        for c in (getattr(document, "attached_components", None) or [])
+    )
 
 
 class SchemaMixin:
@@ -509,11 +536,13 @@ class SchemaMixin:
 
     def _populate_node_scripts_group(self, node) -> None:
         """CTkScript model — the "Scripts" group on any object (widget
-        or window). Lists the CTkScript classes attached to it, each
-        with a ``×`` detach; the header ``+`` opens a picker of
-        attachable classes found in the project's ``scripts/`` folder.
-        Attaching here decides scope: a widget script knows its widget,
-        a window script knows the window.
+        or window). One row per attached script (file location on the
+        left, an "Edit Script" action chip + ``×`` detach icon on the
+        right), then an always-present "Add Script" row whose ``+`` opens
+        a picker of attachable classes from the project's ``scripts/``
+        folder. Attaching here decides scope: a widget script knows its
+        widget, a window script knows the window. Icons mirror the Events
+        group's flat ``+`` / ``✕`` styling.
         """
         if self.project is None or node is None:
             return
@@ -526,67 +555,140 @@ class SchemaMixin:
             text="Scripts", values=("",), open=True,
             tags=("class",),
         )
-        self._node_scripts_add_button(group_iid, node)
+        from app.core.script_paths import USER_SCRIPTS_DIR_NAME
         comps = list(getattr(target, "attached_components", []) or [])
-        if not comps:
-            self.tree.insert(
-                group_iid, "end", iid="comp:empty",
-                text="",
-                values=("no scripts attached — click + to add",),
-                tags=("disabled",),
-            )
-            return
         for idx, comp in enumerate(comps):
-            cls = comp.get("class", "")
+            script_rel = (comp.get("script", "") or "").replace("\\", "/")
+            location = (
+                f"{USER_SCRIPTS_DIR_NAME}/{script_rel}"
+                if script_rel else USER_SCRIPTS_DIR_NAME
+            )
             row_iid = f"comp:{idx}"
             self.tree.insert(
-                group_iid, "end", iid=row_iid,
-                text=cls, values=("",),
+                group_iid, "end", iid=row_iid, text="", values=("",),
             )
-            self._node_script_remove_button(row_iid, node, cls)
-
-    def _node_scripts_add_button(self, header_iid: str, node) -> None:
-        """``+`` on the Scripts header — opens the attach picker."""
-        btn = tk.Label(
-            self.tree,
-            text="+",
-            bg="#0e639c", fg="#ffffff",
-            font=derive_ui_font(size=12, weight="bold"),
-            cursor="hand2", borderwidth=0, padx=0, pady=0,
-            anchor="center",
+            self._node_script_path_label(row_iid, location)
+            self._node_script_open_label(row_iid, comp.get("script", ""))
+            self._node_script_remove_icon(row_iid, node, comp.get("class", ""))
+        # Always-present "Add Script" row — the only row in the empty
+        # state, an add-more affordance below existing scripts otherwise.
+        add_iid = "comp:add"
+        self.tree.insert(
+            group_iid, "end", iid=add_iid, text="", values=("",),
         )
-        btn.bind("<Enter>", lambda _e, b=btn: b.configure(bg="#1177bb"))
-        btn.bind("<Leave>", lambda _e, b=btn: b.configure(bg="#0e639c"))
-        btn.bind(
+        self._node_script_add_label(
+            add_iid, lambda n=node: self._open_component_picker(n),
+        )
+        self._node_script_add_icon(add_iid, node)
+
+    def _node_script_path_label(self, row_iid: str, full_path: str) -> None:
+        """File-location label in the name column of a script row.
+        Left-elides to keep the tail visible (the placer handles it);
+        hovering shows the full path as a tooltip when truncated."""
+        lbl = tk.Label(
+            self.tree,
+            text=full_path,
+            bg=TREE_BG, fg=TREE_FG,
+            font=ui_font(11), anchor="w",
+            borderwidth=0, padx=0, pady=0,
+        )
+        lbl._full_text = full_path
+        lbl.bind(
+            "<Enter>",
+            lambda e, w=lbl, p=full_path: self._tooltip.schedule(
+                e.x_root, e.y_root, p, key=f"scriptpath:{id(w)}",
+            ),
+        )
+        lbl.bind("<Leave>", lambda _e: self._tooltip.cancel())
+        if self.overlays is not None:
+            self.overlays.add(
+                row_iid, SLOT_SCRIPT_PATH, lbl, place_script_path,
+            )
+
+    def _node_script_add_label(self, row_iid: str, on_click) -> None:
+        """Plain "Add Script" prompt in the add row's value cell — no
+        fill, no border (it's an add affordance, not an attached item).
+        Single click runs ``on_click``; the ``+`` icon does the same."""
+        chip = tk.Label(
+            self.tree,
+            text="Add Script",
+            bg=TREE_BG, fg=TREE_FG,
+            font=ui_font(11), anchor="w", padx=4, pady=0,
+            borderwidth=0, highlightthickness=0,
+            cursor="hand2",
+        )
+        chip.bind("<Button-1>", lambda _e: on_click())
+        if self.overlays is not None:
+            self.overlays.add(
+                row_iid, SLOT_SCRIPT_NAME_CHIP, chip, place_script_name_chip,
+            )
+
+    def _node_script_open_label(self, row_iid: str, script_rel: str) -> None:
+        """"Edit <file>.py" action in a script row's value cell — plain
+        text on a slightly lighter fill, single click opens the file in
+        the editor. The file name elides from the end (the placer keeps
+        the "Edit " prefix) when the cell is too narrow."""
+        prefix = "Edit ["
+        file_name = (script_rel or "").replace("\\", "/").rsplit("/", 1)[-1]
+        full = f"{prefix}{file_name}]"
+        lbl = tk.Label(
+            self.tree,
+            text=full,
+            bg=VALUE_BG, fg=TREE_FG,
+            font=ui_font(11), anchor="w", padx=4, pady=0,
+            borderwidth=0, highlightthickness=0,
+            cursor="hand2",
+        )
+        lbl._full_text = full
+        lbl._prefix_len = len(prefix)
+        lbl._suffix = "]"
+        lbl.bind("<Enter>", lambda _e, b=lbl: b.configure(fg="#ffffff"))
+        lbl.bind("<Leave>", lambda _e, b=lbl: b.configure(fg=TREE_FG))
+        lbl.bind(
             "<Button-1>",
-            lambda _e, n=node: self._open_component_picker(n),
+            lambda _e, p=script_rel: self._open_script_in_editor(p),
         )
         if self.overlays is not None:
             self.overlays.add(
-                header_iid, SLOT_OBJECT_REFERENCE_TOGGLE, btn,
-                place_object_reference_toggle,
+                row_iid, SLOT_SCRIPT_NAME_CHIP, lbl, place_script_open_label,
             )
 
-    def _node_script_remove_button(self, row_iid: str, node, cls: str) -> None:
-        """``×`` per attached-script row — detaches the class."""
+    def _node_script_remove_icon(self, row_iid: str, node, cls: str) -> None:
+        """``✕`` detach icon on a script row — Events-group styling."""
         btn = tk.Label(
             self.tree,
-            text="×",
-            bg="#a33d3d", fg="#ffffff",
-            font=derive_ui_font(size=12, weight="bold"),
+            text="✕", bg=VALUE_BG, fg="#888888",
+            font=ui_font(9),
             cursor="hand2", borderwidth=0, padx=0, pady=0,
-            anchor="center",
         )
-        btn.bind("<Enter>", lambda _e, b=btn: b.configure(bg="#c94545"))
-        btn.bind("<Leave>", lambda _e, b=btn: b.configure(bg="#a33d3d"))
+        btn.bind("<Enter>", lambda _e, b=btn: b.configure(fg="#ef4444"))
+        btn.bind("<Leave>", lambda _e, b=btn: b.configure(fg="#888888"))
         btn.bind(
             "<Button-1>",
             lambda _e, n=node, c=cls: self._detach_script_component(n, c),
         )
         if self.overlays is not None:
             self.overlays.add(
-                row_iid, SLOT_OBJECT_REFERENCE_TOGGLE, btn,
-                place_object_reference_toggle,
+                row_iid, SLOT_EVENT_UNBIND, btn, place_event_unbind,
+            )
+
+    def _node_script_add_icon(self, row_iid: str, node) -> None:
+        """``+`` add icon on the "Add Script" row — Events-group styling."""
+        btn = tk.Label(
+            self.tree,
+            text="+", bg=TREE_BG, fg="#7dd3fc",
+            font=ui_font(11, "bold"),
+            cursor="hand2", borderwidth=0, padx=0, pady=0,
+        )
+        btn.bind("<Enter>", lambda _e, b=btn: b.configure(fg="#ffffff"))
+        btn.bind("<Leave>", lambda _e, b=btn: b.configure(fg="#7dd3fc"))
+        btn.bind(
+            "<Button-1>",
+            lambda _e, n=node: self._open_component_picker(n),
+        )
+        if self.overlays is not None:
+            self.overlays.add(
+                row_iid, SLOT_EVENT_ADD, btn, place_event_add,
             )
 
     def _populate_window_global_reference_toggle(self) -> None:
@@ -942,6 +1044,9 @@ class SchemaMixin:
         self._attach_pending_picker_button(
             parent_iid, widget_id, event_entry.key,
         )
+        self._attach_pending_cancel_button(
+            parent_iid, widget_id, event_entry.key,
+        )
 
     def _render_handler_entry(
         self, ev_idx: int, m_idx: int, handler_entry,
@@ -1093,6 +1198,8 @@ class SchemaMixin:
             cls = handler_entry.get("class", "")
             if not cls:
                 return "Target:", "Add target", None, False
+            if not _script_call_resolvable(self.project, node, cls):
+                return "Script:", cls, "script not attached", True
             return "Script:", cls, None, True
         # Page-method string entry — display as the behavior file
         # name (``dialog.py`` style) so the parent reads as the
@@ -1336,9 +1443,37 @@ class SchemaMixin:
             lambda _e, wid=widget_id, k=event_key:
             self._open_pending_target_picker(wid, k),
         )
+        # Sits left of the ✕ cancel button (place_event_dropdown's
+        # right-edge offset), so a pending row reads [+][✕] like a
+        # committed row reads [▾][✕].
         if self.overlays is not None:
             self.overlays.add(
-                parent_iid, SLOT_EVENT_ADD, btn, place_event_add,
+                parent_iid, SLOT_EVENT_DROPDOWN, btn, place_event_dropdown,
+            )
+
+    def _attach_pending_cancel_button(
+        self, parent_iid: str, widget_id: str, event_key: str,
+    ) -> None:
+        """Inline ``[✕]`` on a pending "Add target" row — discards the
+        placeholder. An accidental [+] click leaves no committed entry,
+        so this just clears the panel state via
+        ``_remove_pending_event_row``."""
+        btn = tk.Label(
+            self.tree,
+            text="✕", bg=TREE_BG, fg="#888888",
+            font=ui_font(9),
+            cursor="hand2", borderwidth=0, padx=0, pady=0,
+        )
+        btn.bind("<Enter>", lambda _e, b=btn: b.configure(fg="#ef4444"))
+        btn.bind("<Leave>", lambda _e, b=btn: b.configure(fg="#888888"))
+        btn.bind(
+            "<Button-1>",
+            lambda _e, wid=widget_id, k=event_key:
+            self._remove_pending_event_row(wid, k),
+        )
+        if self.overlays is not None:
+            self.overlays.add(
+                parent_iid, SLOT_EVENT_UNBIND, btn, place_event_unbind,
             )
 
     def _attach_target_dropdown_button(

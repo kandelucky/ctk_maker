@@ -13,6 +13,7 @@ fan-out repositioning after scroll / layout changes.
 from __future__ import annotations
 
 import tkinter as tk
+from tkinter import font as tkfont
 from typing import Callable
 
 
@@ -338,6 +339,99 @@ def place_object_reference_toggle(
     icon-only action buttons in the panel (e.g. bind ✕).
     """
     _place_value_cell_right(tree, widget, iid, width=20, pad_y=3)
+
+
+# CTkScript model — the Scripts group rows. The value cell holds an
+# action chip ("Edit Script" / "Add Script"); the name column (#0)
+# holds the file location, left-elided so the tail stays visible.
+SLOT_SCRIPT_NAME_CHIP = "script_name_chip"
+SLOT_SCRIPT_PATH = "script_path"
+
+
+def place_script_name_chip(
+    tree: tk.Widget, widget: tk.Widget, iid: str,
+) -> None:
+    """Action label on an attached-script row — fills the whole value
+    cell so its (lighter) background tints the action column; the +/×
+    icon lifts on top at the right edge."""
+    try:
+        bbox = tree.bbox(iid, "value")
+    except tk.TclError:
+        bbox = ()
+    if not bbox:
+        widget.place_forget()
+        return
+    x, y, w, h = bbox
+    widget.place(x=x, y=y, width=w, height=max(1, h))
+    widget.lift()
+
+
+def place_script_path(
+    tree: tk.Widget, widget: tk.Widget, iid: str,
+) -> None:
+    """Path label in the name column (#0) of an attached-script row.
+    Left-elides the stored full path (``widget._full_text``) so the
+    tail — the file name — stays visible when the column is too narrow;
+    a hover tooltip carries the complete path."""
+    try:
+        bbox = tree.bbox(iid, "#0")
+    except tk.TclError:
+        bbox = ()
+    if not bbox:
+        widget.place_forget()
+        return
+    x, y, w, h = bbox
+    full = getattr(widget, "_full_text", "") or widget.cget("text")
+    avail = max(1, w - 6)
+    measure = tkfont.Font(font=widget.cget("font")).measure
+    text = full
+    if measure(full) > avail and len(full) > 1:
+        i = 0
+        while i < len(full) - 1 and measure("…" + full[i:]) > avail:
+            i += 1
+        text = "…" + full[i:]
+    if widget.cget("text") != text:
+        widget.configure(text=text)
+    widget.place(x=x, y=y, width=w, height=max(1, h))
+    widget.lift()
+
+
+def place_script_open_label(
+    tree: tk.Widget, widget: tk.Widget, iid: str,
+) -> None:
+    """"Open <name>" action label in a script row's value cell. Keeps
+    the leading "Open " (``widget._prefix_len`` chars); elides the
+    trailing name with "…" when the cell is too narrow. Width leaves
+    room for the × detach icon at the right edge."""
+    try:
+        bbox = tree.bbox(iid, "value")
+    except tk.TclError:
+        bbox = ()
+    if not bbox:
+        widget.place_forget()
+        return
+    x, y, w, h = bbox
+    # Fill the whole value cell (lighter background tint); reserve the
+    # right edge for the × icon by eliding the name to ``avail``. The
+    # leading prefix ("Edit [") and trailing suffix ("]") are preserved
+    # — only the name between them elides.
+    avail = max(1, w - 40)
+    full = getattr(widget, "_full_text", "") or widget.cget("text")
+    prefix_len = getattr(widget, "_prefix_len", 0)
+    suffix = getattr(widget, "_suffix", "")
+    measure = tkfont.Font(font=widget.cget("font")).measure
+    text = full
+    if measure(full) > avail:
+        end = len(full) - len(suffix)
+        j = end
+        while j > prefix_len and measure(full[:j] + "…" + suffix) > avail:
+            j -= 1
+        if j < end:
+            text = full[:j] + "…" + suffix
+    if widget.cget("text") != text:
+        widget.configure(text=text)
+    widget.place(x=x, y=y, width=w, height=max(1, h))
+    widget.lift()
 
 
 # =====================================================================

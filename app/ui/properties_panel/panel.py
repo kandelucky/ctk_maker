@@ -565,6 +565,14 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
     def _reposition_overlays(self) -> None:
         if self.overlays is not None:
             self.overlays.reposition_all()
+        # Overlays lift themselves; keep the column separator on top so
+        # full-width cell overlays (e.g. the Scripts rows) don't bury it.
+        sep = getattr(self, "_col_separator", None)
+        if sep is not None:
+            try:
+                sep.lift()
+            except tk.TclError:
+                pass
 
     def _on_tree_focus_out(self, _event=None) -> None:
         sel = self.tree.selection()
@@ -1180,6 +1188,20 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             return
         self._show_binding_menu(event, pname, prop, node)
 
+    def _add_menu_item(self, menu, label, command, enabled=True) -> None:
+        """Add a menu command. When ``enabled`` is False, render it as a
+        dimmed, inert item rather than ``state="disabled"`` — Windows
+        native menus draw disabled entries as etched-ghost text on the
+        dark theme ("ჯადო"); a grey foreground + no-op reads cleanly."""
+        if enabled:
+            menu.add_command(label=label, command=command)
+        else:
+            menu.add_command(
+                label=label, command=lambda: None,
+                foreground="#777777", activeforeground="#777777",
+                activebackground="#2d2d30",
+            )
+
     def _show_event_menu(self, event, iid: str) -> None:
         """Phase 2 — right-click menus for the Events group rows.
         Routing is driven by ``kind``:
@@ -1197,15 +1219,25 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             return
         if self.current_id is None:
             return
+        # Event header → same gesture as the inline [+]: begin a new
+        # action (pending target row, then the script_call target
+        # picker). No menu — the right-click performs the add directly.
+        if kind == "header":
+            self._add_pending_event_row(self.current_id, event_key)
+            return
         node = self.project.get_widget(self.current_id)
         if node is None:
             return
         from app.ui.properties_panel.constants import menu_style
         menu = tk.Menu(self.tree, tearoff=0, **menu_style())
-        if kind == "header":
-            from app.ui.event_bind_menu import populate_event_bind_menu
-            populate_event_bind_menu(
-                menu, self.project, self.current_id, event_key,
+        if kind == "pending":
+            # An accidental [+] leaves an uncommitted "Add target" row;
+            # offer a way to discard it (mirrors the inline ✕).
+            menu.add_command(
+                label="Delete",
+                command=lambda: self._remove_pending_event_row(
+                    self.current_id, event_key,
+                ),
             )
         elif kind == "method":
             methods = list(node.handlers.get(event_key, []) or [])
@@ -1222,24 +1254,21 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
                     ),
                 )
                 menu.add_separator()
-            menu.add_command(
-                label="Move up",
-                command=lambda: self._reorder_event_method(
+            self._add_menu_item(
+                menu, "Move up",
+                lambda: self._reorder_event_method(
                     self.current_id, event_key,
                     method_index, method_index - 1,
                 ),
-                state=("normal" if method_index > 0 else "disabled"),
+                enabled=method_index > 0,
             )
-            menu.add_command(
-                label="Move down",
-                command=lambda: self._reorder_event_method(
+            self._add_menu_item(
+                menu, "Move down",
+                lambda: self._reorder_event_method(
                     self.current_id, event_key,
                     method_index, method_index + 1,
                 ),
-                state=(
-                    "normal" if method_index < len(methods) - 1
-                    else "disabled"
-                ),
+                enabled=method_index < len(methods) - 1,
             )
             menu.add_separator()
             menu.add_command(
@@ -1621,9 +1650,9 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
                             ev.wiring_kind,
                         )
             if not methods_list:
-                menu.add_command(
-                    label="No public methods. Open behavior file (F7)…",
-                    state="disabled",
+                self._add_menu_item(
+                    menu, "No public methods. Open behavior file (F7)…",
+                    lambda: None, enabled=False,
                 )
             for method_name in methods_list:
                 menu.add_command(
@@ -2066,16 +2095,6 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
                     label=f"{cls}  ({path})",
                     command=lambda p=path, c=cls:
                     self._attach_script_component(node, p, c),
-                )
-        attached_comps = list(target.attached_components or [])
-        if attached_comps:
-            menu.add_separator()
-            for comp in attached_comps:
-                cls = comp.get("class", "")
-                path = comp.get("script", "")
-                menu.add_command(
-                    label=f"Open {cls} in editor",
-                    command=lambda p=path: self._open_script_in_editor(p),
                 )
         try:
             menu.tk_popup(
