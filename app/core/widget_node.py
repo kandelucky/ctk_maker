@@ -43,40 +43,20 @@ class WidgetNode:
         # the structure + intent and fill in the missing logic. Never
         # reaches CTk constructors.
         self.description: str = ""
-        # Phase 2 visual scripting — event handler bindings. Maps an
-        # event key (``"command"`` for click-style; ``"bind:<seq>"`` for
-        # Tk bind-style) to an ordered list of handler entries. Order
-        # is execution order — multi-entry binding fans out via lambda
-        # chain (constructor kwarg) or repeated ``.bind(seq, fn,
-        # add="+")`` (Tk bind). Empty list = unbound. The behavior file
-        # lives at ``<project>/assets/scripts/<page>/<window>.py``.
+        # CTkScript model — event handler bindings. Maps an event key
+        # (``"command"`` for click-style; ``"bind:<seq>"`` for Tk
+        # bind-style) to an ordered list of ``script_call`` entries.
+        # Order is execution order — multi-entry binding fans out via a
+        # lambda chain (constructor kwarg) or repeated ``.bind(seq, fn,
+        # add="+")`` (Tk bind). Empty list = unbound.
         #
-        # Each entry is one of:
-        #   * ``str`` — name of a method on the window's behavior class
-        #     (v1 / v2 shape, still supported). Empty ``""`` = target
-        #     picked (Page Script) but function not chosen yet.
-        #   * ``dict`` with ``{"kind": "ref_call", "ref": <ref_name>,
-        #     "method": <method_name>, "args": [...]}`` — direct
-        #     widget-to-widget call routed through an Object Reference
-        #     (v3 addition).
-        #   * ``dict`` with ``{"kind": "library_call", "script":
-        #     <page_folder_relative_path>, "method": <function_name>,
-        #     "args": [...]}`` — module-level function call into an
-        #     attached library script (v1.38 addition). ``script``
-        #     must appear in the owning Document's ``attached_scripts``
-        #     list for the binding to resolve.
-        #
-        #   * ``dict`` with ``{"kind": "script_call", "class":
-        #     <ClassName>, "method": <method_name>}`` — call a method on
-        #     a CTkScript component attached to this widget (or to the
-        #     owning window). ``class`` must match an entry in this
-        #     widget's (or the window's) ``attached_components``; the
-        #     script path is resolved from there. The CTkScript model
-        #     (see docs/plans/script_optimization.md).
-        #
-        # ``args`` (when present) is a list of
-        # ``{"name": str, "type": "str"|"int"|"float"|"bool",
-        # "value": Any, "kwarg": bool}`` dicts.
+        # Each entry is a ``dict`` with ``{"kind": "script_call",
+        # "class": <ClassName>, "method": <method_name>,
+        # "scope": "widget"|"window"}`` — call a public method on a
+        # CTkScript component attached to this widget (``scope="widget"``)
+        # or the owning window (``scope="window"``). ``class`` must match
+        # an entry in the relevant ``attached_components``; the script
+        # path is resolved from there. See docs/plans/script_optimization.md.
         self.handlers: dict[str, list] = {}
 
         # CTkScript model — components (CTkScript subclasses) attached to
@@ -166,27 +146,19 @@ class WidgetNode:
         if isinstance(raw_handlers, dict):
             normalised: dict[str, list] = {}
             for k, v in raw_handlers.items():
-                key = str(k)
-                if isinstance(v, str):
-                    if v:
-                        normalised[key] = [v]
-                elif isinstance(v, list):
-                    entries: list = []
-                    for raw in v:
-                        if isinstance(raw, str):
-                            # Empty strings represent "target picked
-                            # (Page Script) but method not chosen yet".
-                            # The Properties panel renders them with
-                            # the Function picker shown but no value;
-                            # the exporter filters them as missing
-                            # methods.
-                            entries.append(raw)
-                        elif isinstance(raw, dict) and raw.get(
-                            "kind",
-                        ) in ("ref_call", "library_call", "script_call"):
-                            entries.append(copy.deepcopy(raw))
-                    if entries:
-                        normalised[key] = entries
+                if not isinstance(v, list):
+                    continue
+                # CTkScript model — only ``script_call`` entries are
+                # kept. Legacy shapes (page-method strings, ``ref_call``,
+                # ``library_call``) are dropped on load (clean break).
+                entries = [
+                    copy.deepcopy(raw)
+                    for raw in v
+                    if isinstance(raw, dict)
+                    and raw.get("kind") == "script_call"
+                ]
+                if entries:
+                    normalised[str(k)] = entries
             node.handlers = normalised
         raw_components = data.get("attached_components")
         if isinstance(raw_components, list):

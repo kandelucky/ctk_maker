@@ -1,6 +1,13 @@
 from app.core.widget_node import WidgetNode
 
 
+def _sc(cls, method, scope="widget"):
+    return {
+        "kind": "script_call", "class": cls,
+        "method": method, "scope": scope,
+    }
+
+
 def _populated_node():
     node = WidgetNode("CTkButton", {"text": "Hi", "fg_color": "#abc"})
     node.name = "ok_button"
@@ -10,8 +17,8 @@ def _populated_node():
     node.group_id = "grp-1"
     node.description = "Submits the login form."
     node.handlers = {
-        "command": ["on_click", "log_click"],
-        "bind:<Enter>": ["highlight"],
+        "command": [_sc("Form", "submit", "window"), _sc("Log", "click")],
+        "bind:<Enter>": [_sc("Hover", "on_enter")],
     }
     child = WidgetNode("CTkLabel", {"text": "child"})
     child.parent = node
@@ -42,149 +49,65 @@ def test_to_dict_from_dict_full_round_trip():
 def test_to_dict_drops_empty_handlers():
     node = WidgetNode("CTkButton")
 
-    data = node.to_dict()
-
-    assert "handlers" not in data
+    assert "handlers" not in node.to_dict()
 
 
 def test_to_dict_drops_empty_handler_lists():
     node = WidgetNode("CTkButton")
-    node.handlers = {"command": [], "bind:<Enter>": ["highlight"]}
+    node.handlers = {"command": [], "bind:<Enter>": [_sc("H", "go")]}
 
-    data = node.to_dict()
-
-    assert data["handlers"] == {"bind:<Enter>": ["highlight"]}
+    assert node.to_dict()["handlers"] == {"bind:<Enter>": [_sc("H", "go")]}
 
 
-def test_from_dict_v1_string_handler_wraps_into_list():
+def test_from_dict_keeps_script_call_entries():
     data = {
         "id": "abc",
         "widget_type": "CTkButton",
         "properties": {},
-        "handlers": {"command": "on_click"},
+        "handlers": {"command": [_sc("Counter", "bump", "widget")]},
     }
 
     node = WidgetNode.from_dict(data)
 
-    assert node.handlers == {"command": ["on_click"]}
+    assert node.handlers == {"command": [_sc("Counter", "bump", "widget")]}
+    # Round-trips unchanged.
+    assert WidgetNode.from_dict(node.to_dict()).handlers == node.handlers
 
 
-def test_from_dict_v2_list_handler_round_trips():
-    data = {
-        "id": "abc",
-        "widget_type": "CTkButton",
-        "properties": {},
-        "handlers": {"command": ["m1", "m2"]},
-    }
-
-    node = WidgetNode.from_dict(data)
-
-    assert node.handlers == {"command": ["m1", "m2"]}
-
-
-def test_from_dict_mixed_v1_and_v2_handlers_normalised():
+def test_from_dict_drops_legacy_handler_entries():
+    # Clean break: page-method strings, ref_call and library_call are
+    # dropped on load — only script_call survives.
     data = {
         "id": "abc",
         "widget_type": "CTkButton",
         "properties": {},
         "handlers": {
-            "command": "legacy_method",
-            "bind:<Return>": ["new_a", "new_b"],
+            "command": [
+                "legacy_method",
+                "",
+                {"kind": "ref_call", "ref": "r", "method": "m", "args": []},
+                {"kind": "library_call", "script": "h.py", "method": "f"},
+                _sc("Counter", "bump"),
+            ],
         },
     }
 
     node = WidgetNode.from_dict(data)
 
-    assert node.handlers == {
-        "command": ["legacy_method"],
-        "bind:<Return>": ["new_a", "new_b"],
-    }
+    assert node.handlers == {"command": [_sc("Counter", "bump")]}
 
 
-def test_from_dict_drops_empty_string_v1_handler():
+def test_from_dict_drops_event_with_only_legacy_entries():
     data = {
         "id": "abc",
         "widget_type": "CTkButton",
         "properties": {},
-        "handlers": {"command": ""},
+        "handlers": {"command": ["legacy_method"]},
     }
 
     node = WidgetNode.from_dict(data)
 
     assert node.handlers == {}
-
-
-def test_from_dict_filters_non_string_list_entries():
-    # Empty strings are preserved: they mark "target picked (Page
-    # Script) but method not chosen yet" in the Properties panel.
-    # Non-string entries (None, ints) are still filtered.
-    data = {
-        "id": "abc",
-        "widget_type": "CTkButton",
-        "properties": {},
-        "handlers": {"command": ["good", "", None, 123, "also_good"]},
-    }
-
-    node = WidgetNode.from_dict(data)
-
-    assert node.handlers == {"command": ["good", "", "also_good"]}
-
-
-def test_from_dict_library_call_entry_round_trips():
-    # v1.38 — module-level call into an attached library script.
-    # The dict is preserved verbatim (deep-copied) including args.
-    data = {
-        "id": "abc",
-        "widget_type": "CTkButton",
-        "properties": {},
-        "handlers": {
-            "command": [
-                {
-                    "kind": "library_call",
-                    "script": "helpers.py",
-                    "method": "save_log",
-                    "args": [{"name": "level", "type": "str", "value": "info"}],
-                },
-            ],
-        },
-    }
-
-    node = WidgetNode.from_dict(data)
-
-    assert node.handlers == {
-        "command": [
-            {
-                "kind": "library_call",
-                "script": "helpers.py",
-                "method": "save_log",
-                "args": [{"name": "level", "type": "str", "value": "info"}],
-            },
-        ],
-    }
-    # Round-trip back to dict matches the input shape.
-    restored = WidgetNode.from_dict(node.to_dict())
-    assert restored.handlers == node.handlers
-
-
-def test_from_dict_drops_unknown_dict_kind():
-    # Defensive: an unrecognised ``kind`` (typo, future schema) is
-    # dropped rather than carried through — keeps the live model
-    # strict so the exporter never sees garbage.
-    data = {
-        "id": "abc",
-        "widget_type": "CTkButton",
-        "properties": {},
-        "handlers": {
-            "command": [
-                "valid_method",
-                {"kind": "unknown_kind", "script": "x.py", "method": "y"},
-            ],
-        },
-    }
-
-    node = WidgetNode.from_dict(data)
-
-    assert node.handlers == {"command": ["valid_method"]}
 
 
 def test_from_dict_renames_legacy_widget_types():
