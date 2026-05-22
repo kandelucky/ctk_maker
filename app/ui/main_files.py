@@ -128,12 +128,6 @@ class FilesMixin(_MainWindowHost):
             # that reference those families resolve them as real fonts
             # instead of silently falling back to Tk's default.
             register_project_fonts(path, root=self)
-            # Phase 2 — once a path exists, materialise the behavior
-            # file for every Document. Catches up the eager-create
-            # logic for projects opened from disk (which never fired
-            # ``document_added``) and for the first save of an
-            # unsaved project (where the deferred queue lands here).
-            self._ensure_behavior_files_for_all_docs()
         # Refresh the active font cascade from whatever the just-loaded
         # (or just-saved-as) project carries. New projects start with
         # an empty cascade; this also clears stale defaults left over

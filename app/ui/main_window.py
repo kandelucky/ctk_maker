@@ -922,31 +922,15 @@ class MainWindow(
         bus.subscribe(
             "request_export_document", self._on_export_active_document,
         )
-        # Phase 2 visual scripting — eager behavior-file creation
-        # (Decision #12). Every Document gets its own ``.py`` the
-        # moment it's added to a saved project, so the user can
-        # discover handlers + Edit Behavior File commands without
-        # needing to first attach a handler.
+        # Auto-save the .ctkproj on structural document changes so the
+        # on-disk window list never lags behind the in-memory project —
+        # the user kept losing state to "I created a dialog and exited
+        # without saving" orphans.
         bus.subscribe(
-            "document_added", self._on_document_added_for_behavior,
-        )
-        # Phase 2 Step 3 — keep the per-window behavior file in
-        # sync with the document on disk. Rename → rename file +
-        # rewrite class header (Decision B=A). The
-        # ``document_removed`` subscriber recycles any leftover
-        # ``.py`` after an undo of "Add Dialog" (the explicit
-        # delete path runs ``WindowDeleteDialog`` BEFORE the
-        # command and moves the file there). Both
-        # ``document_added`` and ``document_removed`` also trigger
-        # an auto-save so the on-disk window list never lags
-        # behind the active scripts folder — the user kept losing
-        # state to "I created a dialog and exited without saving"
-        # orphans.
-        bus.subscribe(
-            "document_renamed", self._on_document_renamed_for_behavior,
+            "document_added", self._autosave_on_document_added,
         )
         bus.subscribe(
-            "document_removed", self._on_document_removed_for_behavior,
+            "document_removed", self._autosave_on_document_removed,
         )
         # Ghost toggle persists the base64 screenshot into
         # ``Document.to_dict`` — flush to disk immediately so the
