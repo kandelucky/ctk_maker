@@ -20,6 +20,19 @@ from typing import Callable
 # =====================================================================
 # Placer helpers — low-level bbox + place math
 # =====================================================================
+_MEASURE_FONT_CACHE: dict[str, "tkfont.Font"] = {}
+
+
+def _measure_text(widget: tk.Widget, text: str) -> int:
+    """Pixel width of ``text`` in ``widget``'s font. Caches one Font per
+    font spec — a fresh ``tkfont.Font`` per call would leak Tcl named
+    fonts, and these placers run on every scroll / reposition."""
+    spec = str(widget.cget("font"))
+    font = _MEASURE_FONT_CACHE.get(spec)
+    if font is None:
+        font = tkfont.Font(font=widget.cget("font"))
+        _MEASURE_FONT_CACHE[spec] = font
+    return font.measure(text)
 def _place_value_cell_left(
     tree: tk.Widget, widget: tk.Widget, iid: str,
     *, width: int, pad_y: int,
@@ -383,7 +396,9 @@ def place_script_path(
     x, y, w, h = bbox
     full = getattr(widget, "_full_text", "") or widget.cget("text")
     avail = max(1, w - 6)
-    measure = tkfont.Font(font=widget.cget("font")).measure
+
+    def measure(s: str) -> int:
+        return _measure_text(widget, s)
     text = full
     if measure(full) > avail and len(full) > 1:
         i = 0
@@ -419,7 +434,9 @@ def place_script_open_label(
     full = getattr(widget, "_full_text", "") or widget.cget("text")
     prefix_len = getattr(widget, "_prefix_len", 0)
     suffix = getattr(widget, "_suffix", "")
-    measure = tkfont.Font(font=widget.cget("font")).measure
+
+    def measure(s: str) -> int:
+        return _measure_text(widget, s)
     text = full
     if measure(full) > avail:
         end = len(full) - len(suffix)

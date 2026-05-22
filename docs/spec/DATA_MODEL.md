@@ -142,7 +142,8 @@ One window inside a project (Main Window or Toplevel). 207 lines.
 | `local_variables` | `list[VariableEntry]` | `[]` | Per-document variables (scope="local"). |
 | `local_object_references` | `list[ObjectReferenceEntry]` | `[]` | Per-document widget references. |
 | `name_counters` | `dict[str, int]` | `{}` | Per-doc auto-naming counter. `{"CTkButton": 3, ...}`. |
-| `attached_scripts` | `list[str]` | `[]` | **v1.38.** Library-script paths (page-folder-relative) bound to this window. Drives event-picker scope + behavior-file imports at export. Behavior file is implicitly attached and stays out of this list. |
+| `attached_scripts` | `list[str]` | `[]` | **v1.38 (legacy).** Library-script paths (page-folder-relative) bound to this window. Drives event-picker scope + behavior-file imports at export. Behavior file is implicitly attached and stays out of this list. |
+| `attached_components` | `list[dict]` | `[]` | **v1.42+ (CTkScript model).** Window-scope scripts attached to this document — each `{"script": <scripts/-relative path>, "class": <ClassName>}`. Instantiated at export with `self.window` injected (the script can reach all widgets). See [script_optimization.md](../plans/script_optimization.md). |
 
 ### `window_properties` schema — [document.py:26](../../app/core/document.py#L26)
 
@@ -182,7 +183,8 @@ Tree node — one widget on the canvas. 129 lines.
 | `locked` | `bool` | `False` | Builder-only edit lock. Cascades through descendants. |
 | `group_id` | `str \| None` | `None` | Group membership (Ctrl+G). Skipped from export. |
 | `description` | `str` | `""` | AI-bridge — emitted as comment above the widget's constructor. |
-| `handlers` | `dict[str, list]` | `{}` | **Phase 2.** Event → ordered list of handler entries. Each entry is a method-name string OR a `ref_call` dict (see schema below). |
+| `handlers` | `dict[str, list]` | `{}` | **Phase 2.** Event → ordered list of handler entries. Each entry is a `script_call` dict (CTkScript model, current), or a method-name string / `ref_call` / `library_call` dict (legacy) — see schema below. |
+| `attached_components` | `list[dict]` | `[]` | **v1.42+ (CTkScript model).** Scripts attached to this widget — each `{"script": <scripts/-relative path>, "class": <ClassName>}`. Instantiated at export with `self.widget` injected (widget scope — does **not** know the window). See [script_optimization.md](../plans/script_optimization.md). |
 
 ### `handlers` schema
 
@@ -201,8 +203,11 @@ Each entry is one of:
 | `str` (empty `""`) | Page Script target picked, function not chosen yet. The Properties panel renders this with the Function row showing `Pick function…`; the exporter filters it out and emits a Console warning (`Method not found: ''`). |
 | `dict` with `{"kind": "ref_call", "ref": <ref_name>, "method": <method_name>, "args": [...]}` | Direct widget-to-widget call routed through an Object Reference (v3). `args` is a list of `{"name": str, "type": "str"\|"int"\|"float"\|"bool", "value": Any, "kwarg": bool}` dicts. Method must be in [`WIDGET_ACTION_METHODS`](../../app/widgets/action_registry.py) for the referenced widget's type — out-of-allowlist entries get dropped at export with the same warning surface as missing behavior methods. Empty `method` = ref picked, function not chosen yet (same pending state as the empty-string page entry). |
 | `dict` with `{"kind": "library_call", "script": <page_folder_relative_path>, "method": <function_name>, "args": [...]}` | Module-level function call into an attached library script (v1.38). `script` must appear in the owning Document's `attached_scripts` list. `method` must be a public top-level `def` in that file (signature filtered same as page methods). Exports as `<module>.<func>(...)` — module name = basename stripped of `.py`, kept in scope by the generated file's `from assets.scripts.<page>[.<sub>] import <module>` line. Empty `method` = library script picked, function not chosen yet. |
+| `dict` with `{"kind": "script_call", "class": <ClassName>, "method": <method_name>}` | **CTkScript model (current).** Call a public method on a CTkScript component attached to this widget (its own scope), or to the owning window (fallback). `class` must match an entry in this widget's or the window's `attached_components`; the script path is resolved from there at export. Exports as `self._script_N.<method>()`. Bindings that no longer resolve (script detached after wiring) render red in the panel and are dropped at export. Empty `method` = component picked, function not chosen yet. |
 
-The behavior file lives at `<project>/assets/scripts/<page_slug>/<window_slug>.py`.
+> **Legacy vs current.** The page-method string, `ref_call`, and `library_call` shapes — plus the behavior file and Object References — are the **legacy** model. The **current** model is `script_call` + `attached_components` (CTkScript). Both coexist until the legacy machinery is retired — see [script_optimization.md](../plans/script_optimization.md).
+
+The legacy behavior file lives at `<project>/assets/scripts/<page_slug>/<window_slug>.py`. CTkScript scripts live in the top-level `<project>/scripts/` folder (outside `assets/`).
 
 **Pending UI rows are NOT stored here.** The Unity-style "Add target" placeholder (outer `[+]` click on the event header before any target is picked) lives in `PropertiesPanel._pending_event_rows`, scoped per `(widget_id, event_key)`. Pending rows clear when the user switches widget — they exist only as transient editing state, not as model data. As soon as the user picks a target, the entry commits to ``handlers`` (with empty method, since the Function picker is a separate step).
 

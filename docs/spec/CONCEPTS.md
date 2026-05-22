@@ -136,7 +136,55 @@ Properties not in the binding table can still bind cosmetically — the widget g
 
 The classic Tk pattern — multiple `CTkRadioButton` widgets sharing a single `IntVar` so only one can be selected at a time. CTkMaker: bind every radio's `variable` slot to the same variable; set each radio's `value` to a unique number. The exporter wires the rest.
 
+## Scripts (CTkScript) — the current model
+
+A **Script** is a Python class you write that subclasses `CTkScript`. You attach it to an object — one widget OR the whole window — and bind events to its methods. This is the current way to add behavior; the Object References + behavior-file model below is the legacy path.
+
+### Where scripts live
+
+A visible top-level `scripts/` folder at the project root (next to `assets/`, not inside it). You own this folder — CTkMaker never writes into your script files.
+
+### Writing one
+
+```python
+from ctkmaker import CTkScript
+
+class Counter(CTkScript):
+    def on_start(self):
+        self.count = 0
+
+    def increment(self):
+        self.count += 1
+        self.widget.configure(text=str(self.count))
+```
+
+### Scope decides what the script sees (strict)
+
+- Attach to a **widget** → the script knows only that widget via `self.widget`. It does NOT know the window. Reusable across widgets.
+- Attach to the **window** → the script knows the window via `self.window`, so it can reach every widget on it (cross-widget / form logic).
+
+You pick what to attach to; that alone decides scope — there is no "knows-window" toggle.
+
+### Attaching + binding events
+
+1. Select a widget (or the window) → Properties panel → **Scripts** group.
+2. `+ Add Script` → create a new script or attach an existing one. `Edit [file.py]` opens it in your editor; `✕` detaches.
+3. In the **Events** group, add an event and pick the script + a public method (Unity `OnClick` style). Press → that method runs.
+
+The binding is saved in the project file (`.ctkproj`) — never written into your script. Handler methods take no forced parameters; read state via `self.widget` / `self.window`.
+
+### Lifecycle
+
+- `on_start(self)` — runs once after the object is built.
+- `on_close(self)` — runs when a window script's window is closed.
+
+### Export
+
+Self-contained: the `CTkScript` base is inlined as `ctkmaker.py` and your `scripts/` folder is copied next to the exported window — the exported app needs no CTkMaker install.
+
 ## Object References
+
+> **Legacy** — superseded by [Scripts (CTkScript)](#scripts-ctkscript--the-current-model) above. Still supported for existing projects.
 
 An **Object Reference** is a typed pointer slot on a window's behavior class — a way for hand-written behavior code to reach a widget by name without manual lookup.
 
@@ -179,7 +227,9 @@ Name match is verbatim — the `ref[<Type>]` annotation name in the behavior fil
 
 ## Event Handlers
 
-A widget **Handler** is a method on the window's behavior class invoked when the user interacts with the widget.
+> The **event styles** below (`command` / `bind:<sequence>`) still apply to the current model. The **behavior-file targeting** (a method on the window's behavior class) is **legacy** — for new behavior, bind to a [CTkScript](#scripts-ctkscript--the-current-model) method instead.
+
+A widget **Handler** is a method invoked when the user interacts with the widget. In the current model it is a public method on an attached CTkScript; in the legacy model it is a method on the window's behavior class.
 
 Two event styles:
 

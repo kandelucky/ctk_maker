@@ -158,7 +158,31 @@ class SettingsDialog(ctk.CTkToplevel):
         self.label.configure(textvariable=self.master.var_username)
 ```
 
+## Scripts (CTkScript) — current model
+
+Add behavior by attaching a `CTkScript` subclass to a widget or the window, then binding events to its public methods. Scripts live in a top-level `scripts/` folder (project root, outside `assets/`):
+
+```python
+# scripts/counter.py
+from ctkmaker import CTkScript
+
+class Counter(CTkScript):
+    def on_start(self):          # runs once after the object is built
+        self.n = 0
+    def increment(self):         # bind a button's command to this method
+        self.n += 1
+        self.widget.configure(text=str(self.n))
+```
+
+Scope (strict): attach to a **widget** → `self.widget` only (no window); attach to the **window** → `self.window` (reaches all widgets).
+
+Attach + bind: Properties → **Scripts** group → `+ Add Script` (new or existing); then **Events** group → add event → pick the script + a public method. No forced parameters; the binding is saved in `.ctkproj`, never written into your script. Lifecycle hooks: `on_start`, `on_close`.
+
+Export is self-contained — `CTkScript` is inlined as `ctkmaker.py` and `scripts/` is copied next to the exported window.
+
 ## Event handlers
+
+> The **event styles** below apply to the current model too. The **behavior-file** target (a method on a per-window class) is **legacy** — prefer a CTkScript method (above).
 
 Bind a method to a widget event from the Properties panel **Events** group:
 
@@ -167,7 +191,7 @@ Bind a method to a widget event from the Properties panel **Events** group:
   - **Entry / Textbox** — `<Return>`, `<KeyRelease>`, `<FocusOut>`.
   - **Label** — 16 events split into 5 default + 11 advanced. Default (flat list): `<Button-1>` / `<Double-Button-1>` / `<Enter>` / `<Leave>` / `<MouseWheel>`. Advanced (collapsible "Advanced" sub-section in cascade + panel): `<Button-2>` / `<Button-3>` / `<ButtonRelease-1>` / `<Motion>` / `<Configure>` / `<Map>` / `<Unmap>` / `<FocusIn>` / `<FocusOut>` / `<KeyPress>` / `<KeyRelease>`. Focus / key events require `takefocus=True`. CTkLabel routes binds onto both inner canvas and inner Tk Label so the rounded-corner area is also clickable. `<Motion>` and `<Configure>` fire at 60+ Hz — keep handlers cheap.
 
-Methods live in a per-window behavior file at `<project>/assets/scripts/<page>/<window>.py`:
+**Legacy** — methods live in a per-window behavior file at `<project>/assets/scripts/<page>/<window>.py`:
 
 ```python
 # assets/scripts/login/login.py
@@ -201,6 +225,8 @@ class MainWindow(ctk.CTk):
 Multi-method binding fans out via `lambda` for `command`-style or repeated `.bind(seq, fn, add="+")` for bind-style.
 
 ## Object References
+
+> **Legacy** — superseded by Scripts (CTkScript). Still works for existing projects.
 
 Typed slots on the behavior class for clean widget access:
 

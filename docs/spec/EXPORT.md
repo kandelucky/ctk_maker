@@ -194,7 +194,9 @@ Locals live on the owning class as `self.var_X` regardless of main/toplevel.
 
 When `single_document_id` exports a single Toplevel as a standalone `.py`, `force_main=True` flattens that doc's globals into locals so it runs without a parent.
 
-### Phase 2 — Event handlers + behavior files
+### Phase 2 — Event handlers + behavior files (legacy)
+
+> Superseded by the **CTkScript model** below (`script_call` + attached components). Kept until the legacy machinery is retired — see [script_optimization.md](../plans/script_optimization.md).
 
 Per-window behavior file at `<project>/assets/scripts/<page_slug>/<window_slug>.py` holds the user's hand-written method bodies:
 
@@ -262,6 +264,47 @@ Helpers:
 - `_scan_behavior_methods_for_export(project)` — AST scan; populates `_BEHAVIOR_METHODS_BY_DOC_ID`.
 - `_filter_handlers_to_existing_methods(node, event_label, entries)` — drop handler entries the exporter can't resolve. Validates page-method strings against the per-doc AST, `ref_call` dicts against the Object Reference list + [`WIDGET_ACTION_METHODS`](../../app/widgets/action_registry.py), and `library_call` dicts against the document's `attached_scripts` list + AST module-function scan.
 - `_validate_ref_call(doc, entry)` / `_validate_library_call(doc, entry)` — return the pre-formatted reason string when an entry doesn't resolve, or `None` when it does.
+
+### CTkScript model — attached components (current)
+
+The current scripting model attaches user `CTkScript` subclasses to widgets or the window via `attached_components` (see [DATA_MODEL.md](DATA_MODEL.md)) and binds events through `script_call` handler entries. Scripts live in the top-level `<project>/scripts/` folder (outside `assets/`). The exported build is **self-contained**: the `CTkScript` base is inlined as a `ctkmaker.py` sidecar and the `scripts/` folder is copied next to the exported window — no `pip install` of CTkMaker needed at runtime.
+
+Per attached object the exporter instantiates the script, injects its scope, and runs lifecycle hooks:
+
+```python
+from scripts.counter import Counter        # one import per distinct class
+
+class MainWindow(ctk.CTk):
+    def __init__(self):
+        ...
+        self._script_0 = Counter()           # one per attached component
+        self._build_ui()
+        self._script_0.window = self          # window-attach → self.window
+        # (a widget-attach injects self._script_0.widget = self.<var> instead)
+        self._script_0.on_start()
+        self.protocol(
+            "WM_DELETE_WINDOW",
+            lambda: (self._script_0.on_close(), self.destroy()),
+        )
+```
+
+`script_call` event entries resolve to a bare method reference, wired exactly like other entries (constructor kwarg for a lone entry, `lambda` chain otherwise):
+
+```python
+# command event → script_call on a window component
+command=self._script_0.increment
+
+# Tk bind → wrapped to swallow the event arg
+self.btn.bind("<Button-1>", lambda e: self._script_0.increment(), add="+")
+```
+
+Helpers:
+
+- `_collect_doc_components(doc, id_to_var)` — stable component records (`{var, scope, target, script, class, owner_id}`); window components first, then widgets in DFS.
+- `_resolve_component_var(records, owner_id, class_name)` — instance var for a `script_call`: a component of that class on the owning widget wins, else a window component; `None` → the binding is dropped.
+- `_emit_component_init_lines` / `_emit_component_post_lines` / `_emit_component_close_lines` — instantiation before `_build_ui()`, scope injection + `on_start()` after, `on_close()` on `WM_DELETE_WINDOW`.
+- `_format_script_call(entry, records, owner_id)` — `self._script_N.<method>`, or `None` when unresolved.
+- `_ctkscript_base_source()` / `_project_uses_components()` — the inlined `ctkmaker.py` base + the gate that copies `scripts/` and writes the sidecar **only** when components exist (component-less exports stay byte-identical).
 
 ### Phase 3 — Object References
 

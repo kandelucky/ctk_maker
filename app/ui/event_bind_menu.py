@@ -16,6 +16,17 @@ if TYPE_CHECKING:
     from app.core.project import Project
 
 
+def _add_disabled_hint(menu: tk.Menu, label: str) -> None:
+    """Dimmed, inert hint instead of ``state="disabled"`` — Windows
+    native menus draw disabled entries as etched-ghost text on the dark
+    theme ("ჯადო"); a grey foreground + no-op command reads cleanly."""
+    menu.add_command(
+        label=label, command=lambda: None,
+        foreground="#777777", activeforeground="#777777",
+        activebackground="#2d2d30",
+    )
+
+
 def populate_event_bind_menu(
     menu: tk.Menu,
     project: "Project",
@@ -25,35 +36,31 @@ def populate_event_bind_menu(
 ) -> None:
     """Fill ``menu`` with bind options for one event on one widget.
 
-    Two groups appear (in this order, when non-empty):
+    Groups appear in this order, when non-empty:
 
-    * **Page Script** — public methods on the per-window behavior
-      class whose signature matches the event's wiring kind
-      (``parse_handler_methods_compatible``).
-    * **Object References** — every Object Reference on the active
-      document whose target widget type has at least one action in
-      ``WIDGET_ACTION_METHODS``, with the allowlisted actions
-      nested under it.
+    * **Scripts** — CTkScript components attached to the widget (its
+      own scope) or the window, each with its public methods; picking
+      one binds a ``script_call`` (the primary, current model).
+    * **Page Script** / **Object References** — legacy behavior-file
+      methods + Object Reference actions, kept until those mechanisms
+      are retired (see docs/plans/script_optimization.md).
 
-    When both groups are empty, a single disabled hint entry is
-    added so the user knows where to add methods.
+    When nothing is bindable, a single dimmed hint points the user at
+    the Scripts group.
     """
     from app.widgets.action_registry import actions_for
     from app.widgets.event_registry import event_by_key
     node = project.get_widget(widget_id)
     if node is None:
-        menu.add_command(label="No widget selected", state="disabled")
+        _add_disabled_hint(menu, "No widget selected")
         return
     event_entry = event_by_key(node.widget_type, event_key)
     if event_entry is None:
-        menu.add_command(label="Unknown event", state="disabled")
+        _add_disabled_hint(menu, "Unknown event")
         return
     document = project.find_document_for_widget(widget_id)
     if document is None:
-        menu.add_command(
-            label="Open the project to bind handlers",
-            state="disabled",
-        )
+        _add_disabled_hint(menu, "Open the project to bind handlers")
         return
     page_methods = _existing_page_methods(
         project, document, event_entry.wiring_kind,
@@ -70,6 +77,35 @@ def populate_event_bind_menu(
             obj_ref_actions.append((ref, allowed))
     from app.ui.properties_panel.constants import menu_style
     style = menu_style()
+    # CTkScript components — primary path. Widget-scope components
+    # first, then window-scope.
+    comp_targets: list[tuple[str, str]] = []
+    for comp in (getattr(node, "attached_components", None) or []):
+        cls = comp.get("class", "")
+        if cls:
+            comp_targets.append((cls, "this widget"))
+    for comp in (getattr(document, "attached_components", None) or []):
+        cls = comp.get("class", "")
+        if cls:
+            comp_targets.append((cls, "window"))
+    if comp_targets:
+        scripts_menu = tk.Menu(menu, tearoff=0, **style)
+        for cls, scope in comp_targets:
+            sub = tk.Menu(scripts_menu, tearoff=0, **style)
+            methods = _component_methods(project, cls)
+            if methods:
+                for method_name in methods:
+                    sub.add_command(
+                        label=method_name,
+                        command=lambda c=cls, m=method_name:
+                        _bind_script_call(
+                            project, widget_id, event_key, c, m, on_commit,
+                        ),
+                    )
+            else:
+                _add_disabled_hint(sub, "No public methods")
+            scripts_menu.add_cascade(label=f"{cls}  ({scope})", menu=sub)
+        menu.add_cascade(label="Scripts", menu=scripts_menu)
     if page_methods:
         page_menu = tk.Menu(menu, tearoff=0, **style)
         for method_name in page_methods:
@@ -95,10 +131,9 @@ def populate_event_bind_menu(
                 )
             refs_menu.add_cascade(label=ref_entry.name, menu=sub)
         menu.add_cascade(label="Object References", menu=refs_menu)
-    if not page_methods and not obj_ref_actions:
-        menu.add_command(
-            label="No public methods. Open behavior file (F7)…",
-            state="disabled",
+    if not comp_targets and not page_methods and not obj_ref_actions:
+        _add_disabled_hint(
+            menu, "No actions yet — attach a script (＋ in the Scripts group)",
         )
 
 
@@ -130,6 +165,47 @@ def _bind_page_method(
 ) -> None:
     from app.core.commands import BindHandlerCommand
     cmd = BindHandlerCommand(widget_id, event_key, method_name)
+    cmd.redo(project)
+    project.history.push(cmd)
+    if on_commit is not None:
+        on_commit()
+
+
+def _component_methods(project: "Project", cls: str) -> list[str]:
+    """Public methods of an attached CTkScript class (minus the
+    ``on_start``/``on_close`` lifecycle hooks). Empty when the project
+    is unsaved or the class can't be located under ``scripts/``."""
+    from pathlib import Path
+    from app.core.script_paths import user_scripts_dir
+    from app.io.scripts import find_attachable_scripts, parse_handler_methods
+    scripts_dir = user_scripts_dir(getattr(project, "path", None))
+    if scripts_dir is None or not cls:
+        return []
+    rel = next(
+        (p for (p, c) in find_attachable_scripts(scripts_dir) if c == cls),
+        None,
+    )
+    if not rel:
+        return []
+    return [
+        m for m in parse_handler_methods(Path(scripts_dir) / rel, cls)
+        if m not in ("on_start", "on_close")
+    ]
+
+
+def _bind_script_call(
+    project: "Project", widget_id: str, event_key: str,
+    class_name: str, method_name: str,
+    on_commit: Callable[[], None] | None = None,
+) -> None:
+    """Bind a ``script_call`` entry (class + method already chosen) —
+    the one-shot workspace path, vs the panel's pick-target-then-method
+    flow. Resolved at export against the object's attached_components."""
+    from app.core.commands import BindHandlerCommand
+    entry = {
+        "kind": "script_call", "class": class_name, "method": method_name,
+    }
+    cmd = BindHandlerCommand(widget_id, event_key, entry)
     cmd.redo(project)
     project.history.push(cmd)
     if on_commit is not None:
