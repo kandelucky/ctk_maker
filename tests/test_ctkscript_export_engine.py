@@ -68,10 +68,12 @@ def test_collect_window_first_then_widgets_dfs():
         {
             "var": "_script_0", "scope": "window", "target": "self",
             "script": "login.py", "class": "LoginForm", "owner_id": None,
+            "var_bindings": {},
         },
         {
             "var": "_script_1", "scope": "widget", "target": "self.my_button",
             "script": "counter.py", "class": "ClickCounter", "owner_id": "b1",
+            "var_bindings": {},
         },
     ]
 
@@ -124,6 +126,37 @@ def test_post_lines_inject_scope_then_on_start():
         "self._script_1.widget = self.my_button",
         "self._script_0.on_start()",
         "self._script_1.on_start()",
+    ]
+
+
+def test_post_lines_inject_bound_variables(monkeypatch):
+    recs = _collect_doc_components(
+        _doc([{"script": "f.py", "class": "Form",
+               "var_bindings": {"user": "uuid-1"}}], []),
+        {},
+    )
+    monkeypatch.setattr(
+        "app.io.code_exporter._VAR_ID_TO_ATTR", {"uuid-1": "self.var_user"},
+    )
+    # var injection lands between scope inject and on_start.
+    assert [ln.strip() for ln in _emit_component_post_lines(recs)] == [
+        "self._script_0.window = self",
+        "self._script_0.user = self.var_user",
+        "self._script_0.on_start()",
+    ]
+
+
+def test_post_lines_skip_stale_binding(monkeypatch):
+    recs = _collect_doc_components(
+        _doc([{"script": "f.py", "class": "Form",
+               "var_bindings": {"user": "deleted-uuid"}}], []),
+        {},
+    )
+    monkeypatch.setattr("app.io.code_exporter._VAR_ID_TO_ATTR", {})
+    # Stale binding (variable deleted) → injection skipped, no crash.
+    assert [ln.strip() for ln in _emit_component_post_lines(recs)] == [
+        "self._script_0.window = self",
+        "self._script_0.on_start()",
     ]
 
 

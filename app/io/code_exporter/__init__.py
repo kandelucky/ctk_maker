@@ -1535,7 +1535,7 @@ def _collect_doc_components(doc, id_to_var: dict) -> list[dict]:
     """Component records for a document, in stable order — window
     components first, then widgets in DFS (pre-order). Each record::
 
-        {var, scope, target, script, class, owner_id}
+        {var, scope, target, script, class, owner_id, var_bindings}
 
     ``var`` is the instance attribute the window holds the component on
     (``_script_0`` ...); ``scope`` is ``"window"`` / ``"widget"``;
@@ -1556,6 +1556,7 @@ def _collect_doc_components(doc, id_to_var: dict) -> list[dict]:
                 "script": comp.get("script", ""),
                 "class": comp.get("class", ""),
                 "owner_id": owner_id,
+                "var_bindings": comp.get("var_bindings") or {},
             })
             counter += 1
 
@@ -1616,17 +1617,36 @@ def _emit_component_init_lines(records: list[dict]) -> list[str]:
 
 
 def _emit_component_post_lines(records: list[dict]) -> list[str]:
-    """After _build_ui(): inject each component's scope, then on_start."""
+    """After _build_ui(): inject each component's scope, then its bound
+    variables, then call on_start.
+
+    Order matters at runtime: scope + variable fields must be set before
+    ``on_start`` so user setup code can use them. Variables resolve
+    through ``_VAR_ID_TO_ATTR`` (the per-class map — ``self.var_X`` or
+    ``self.master.var_X``); a stale binding (variable since deleted) is
+    skipped, so a dropped variable never crashes the export (Q7).
+    """
     inject = [
         f"{INDENT}{INDENT}self.{r['var']}."
         f"{'widget' if r['scope'] == 'widget' else 'window'} = {r['target']}"
         for r in records if r["class"]
     ]
+    var_inject: list[str] = []
+    for r in records:
+        if not r["class"]:
+            continue
+        for field, var_id in (r.get("var_bindings") or {}).items():
+            attr = _VAR_ID_TO_ATTR.get(var_id)
+            if attr is None:
+                continue  # stale binding — variable deleted; skip (Q7)
+            var_inject.append(
+                f"{INDENT}{INDENT}self.{r['var']}.{field} = {attr}",
+            )
     starts = [
         f"{INDENT}{INDENT}self.{r['var']}.on_start()"
         for r in records if r["class"]
     ]
-    return inject + starts
+    return inject + var_inject + starts
 
 
 def _emit_component_close_lines(records: list[dict]) -> list[str]:

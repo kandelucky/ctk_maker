@@ -22,6 +22,7 @@ from app.io.scripts.editor import (
     resolve_project_root_for_editor,
 )
 from app.io.scripts.paths import create_user_script
+from app.io.scripts.variable_fields import build_variable_rows
 
 __all__ = [
     # ast_scan
@@ -32,6 +33,8 @@ __all__ = [
     # components (CTkScript resolution)
     "iter_script_call_targets",
     "resolve_script_component",
+    # variable_fields (Script Variables panel rows)
+    "build_variable_rows",
     # editor
     "launch_editor",
     "resolve_project_root_for_editor",
