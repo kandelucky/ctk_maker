@@ -87,3 +87,60 @@ def test_window_components_drop_malformed():
     ]
     doc = Document.from_dict(data)
     assert doc.attached_components == [_comp("login_form.py", "LoginForm")]
+
+
+# -- var_bindings (declared variable fields, Q1=B) --------------------
+
+def test_widget_var_bindings_round_trip():
+    node = WidgetNode("CTkButton")
+    node.attached_components = [
+        {"script": "counter.py", "class": "ClickCounter",
+         "var_bindings": {"score": "uuid-1", "title": "uuid-2"}},
+    ]
+    restored = WidgetNode.from_dict(node.to_dict())
+    assert restored.attached_components == node.attached_components
+
+
+def test_window_var_bindings_round_trip():
+    doc = Document(name="Main")
+    doc.attached_components = [
+        {"script": "form.py", "class": "LoginForm",
+         "var_bindings": {"user": "uuid-7"}},
+    ]
+    restored = Document.from_dict(doc.to_dict())
+    assert restored.attached_components == doc.attached_components
+
+
+def test_var_bindings_empty_key_omitted():
+    data = WidgetNode("CTkButton").to_dict()
+    data["attached_components"] = [
+        {"script": "c.py", "class": "C", "var_bindings": {}},
+    ]
+    node = WidgetNode.from_dict(data)
+    # Empty mapping → key dropped; the component itself is still kept.
+    assert node.attached_components == [{"script": "c.py", "class": "C"}]
+
+
+def test_var_bindings_drop_malformed_pairs():
+    data = WidgetNode("CTkButton").to_dict()
+    data["attached_components"] = [
+        {"script": "c.py", "class": "C", "var_bindings": {
+            "ok": "uuid-9",
+            "": "uuid-x",   # empty field name
+            "bad": "",       # empty uuid
+            "n": 123,        # non-str uuid
+        }},
+    ]
+    node = WidgetNode.from_dict(data)
+    assert node.attached_components == [
+        {"script": "c.py", "class": "C", "var_bindings": {"ok": "uuid-9"}},
+    ]
+
+
+def test_var_bindings_non_dict_ignored():
+    data = WidgetNode("CTkButton").to_dict()
+    data["attached_components"] = [
+        {"script": "c.py", "class": "C", "var_bindings": "nope"},
+    ]
+    node = WidgetNode.from_dict(data)
+    assert node.attached_components == [{"script": "c.py", "class": "C"}]

@@ -3,6 +3,9 @@
 Surfaces:
 - method names on a class (``parse_handler_methods``) — feeds the
   event Function picker.
+- exposed variable fields on a class (``parse_exposed_variables``) —
+  class-level ``name: tk.StringVar`` annotations, feeds the variable
+  bind picker.
 - ``CTkScript`` subclasses in a file / folder
   (``parse_ctkscript_classes`` / ``find_attachable_scripts``) — feeds
   the script attach picker.
@@ -44,6 +47,66 @@ def parse_handler_methods(
         if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
             names.append(stmt.name)
     return names
+
+
+# Class annotations of these tkinter Variable types mark an exposed
+# field the builder can bind to a project variable. Mapped to the
+# editor VAR_TYPE the class corresponds to. ``color`` has no distinct
+# tk class (it rides on StringVar), so a StringVar field accepts both
+# str and color variables — see docs/plans/script_variable_binding.md.
+_TK_VAR_CLASSES = {
+    "StringVar": "str",
+    "IntVar": "int",
+    "DoubleVar": "float",
+    "BooleanVar": "bool",
+}
+
+
+def parse_exposed_variables(
+    file_path: str | Path,
+    class_name: str,
+) -> list[tuple[str, str]]:
+    """Return ``[(field_name, var_type)]`` for every exposed variable
+    field on the named class — a class-level annotation of the form
+    ``name: tk.StringVar`` **with no value** (the field CTkMaker injects
+    at build time). ``var_type`` is the editor type the tk Variable
+    class maps to (``str`` / ``int`` / ``float`` / ``bool``); a ``str``
+    field also accepts ``color`` variables (color rides on StringVar).
+
+    Bare and dotted annotations are both recognised (``StringVar`` /
+    ``tk.StringVar`` / ``tkinter.StringVar``). Annotations carrying a
+    value (``x: tk.IntVar = ...``) are skipped — those are the script's
+    own state, not an injected field. Empty on missing file / syntax
+    error / class absent (keeps the bind picker responsive mid-edit).
+    """
+    source = _read_source(file_path)
+    if source is None:
+        return []
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    target = _find_class(tree, class_name)
+    if target is None:
+        return []
+    out: list[tuple[str, str]] = []
+    for stmt in target.body:
+        if not isinstance(stmt, ast.AnnAssign) or stmt.value is not None:
+            continue
+        if not isinstance(stmt.target, ast.Name):
+            continue
+        ann = stmt.annotation
+        if isinstance(ann, ast.Name):
+            cls = ann.id
+        elif isinstance(ann, ast.Attribute):
+            cls = ann.attr
+        else:
+            continue
+        var_type = _TK_VAR_CLASSES.get(cls)
+        if var_type is None:
+            continue
+        out.append((stmt.target.id, var_type))
+    return out
 
 
 def parse_ctkscript_classes(file_path: str | Path) -> list[str]:

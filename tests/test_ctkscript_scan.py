@@ -14,6 +14,7 @@ from app.io.scripts import (
     create_user_script,
     find_attachable_scripts,
     parse_ctkscript_classes,
+    parse_exposed_variables,
 )
 
 
@@ -97,6 +98,80 @@ def test_syntax_error_returns_empty(tmp_path):
 
 def test_missing_file_returns_empty(tmp_path):
     assert parse_ctkscript_classes(tmp_path / "nope.py") == []
+
+
+# -- parse_exposed_variables ------------------------------------------
+
+def test_exposed_vars_bare_and_dotted(tmp_path):
+    f = tmp_path / "x.py"
+    f.write_text(
+        "import tkinter as tk\n"
+        "from tkinter import IntVar\n"
+        "from ctkmaker import CTkScript\n"
+        "class A(CTkScript):\n"
+        "    score: tk.IntVar\n"
+        "    title: tk.StringVar\n"
+        "    ratio: tk.DoubleVar\n"
+        "    flag: tk.BooleanVar\n"
+        "    bare: IntVar\n",
+        encoding="utf-8",
+    )
+    assert parse_exposed_variables(f, "A") == [
+        ("score", "int"),
+        ("title", "str"),
+        ("ratio", "float"),
+        ("flag", "bool"),
+        ("bare", "int"),
+    ]
+
+
+def test_exposed_vars_skips_annotation_with_value(tmp_path):
+    # A value means script-owned state, not an injected field.
+    f = tmp_path / "x.py"
+    f.write_text(
+        "import tkinter as tk\n"
+        "from ctkmaker import CTkScript\n"
+        "class A(CTkScript):\n"
+        "    injected: tk.StringVar\n"
+        "    own: tk.StringVar = tk.StringVar()\n",
+        encoding="utf-8",
+    )
+    assert parse_exposed_variables(f, "A") == [("injected", "str")]
+
+
+def test_exposed_vars_ignores_non_var_annotations(tmp_path):
+    f = tmp_path / "x.py"
+    f.write_text(
+        "from ctkmaker import CTkScript\n"
+        "class A(CTkScript):\n"
+        "    count: int\n"
+        "    label: str\n"
+        "    misc: object\n",
+        encoding="utf-8",
+    )
+    assert parse_exposed_variables(f, "A") == []
+
+
+def test_exposed_vars_only_named_class_no_methods(tmp_path):
+    f = tmp_path / "x.py"
+    f.write_text(
+        "import tkinter as tk\n"
+        "from ctkmaker import CTkScript\n"
+        "class A(CTkScript):\n"
+        "    score: tk.IntVar\n"
+        "    def on_start(self): pass\n"
+        "class B(CTkScript):\n"
+        "    other: tk.StringVar\n",
+        encoding="utf-8",
+    )
+    assert parse_exposed_variables(f, "A") == [("score", "int")]
+
+
+def test_exposed_vars_missing_and_broken(tmp_path):
+    assert parse_exposed_variables(tmp_path / "nope.py", "A") == []
+    bad = tmp_path / "bad.py"
+    bad.write_text("class A(CTkScript:\n", encoding="utf-8")
+    assert parse_exposed_variables(bad, "A") == []
 
 
 # -- find_attachable_scripts ------------------------------------------

@@ -132,7 +132,7 @@ One window inside a project (Main Window or Toplevel). 207 lines.
 | `description` | `str` | `""` | AI-bridge plain-language description (emitted as code comments). |
 | `local_variables` | `list[VariableEntry]` | `[]` | Per-document variables (scope="local"). |
 | `name_counters` | `dict[str, int]` | `{}` | Per-doc auto-naming counter. `{"CTkButton": 3, ...}`. |
-| `attached_components` | `list[dict]` | `[]` | Window-scope CTkScript components attached to this document — each `{"script": <scripts/-relative path>, "class": <ClassName>}`. Instantiated at export with `self.window` injected (the script can reach all widgets). See [script_optimization.md](../plans/script_optimization.md). |
+| `attached_components` | `list[dict]` | `[]` | Window-scope CTkScript components attached to this document — each `{"script": <scripts/-relative path>, "class": <ClassName>, "var_bindings"?: {<field>: <variable UUID>}}`. `var_bindings` maps an exposed script field (`name: tk.StringVar`) to a project variable **by UUID** (rename-safe). Instantiated at export with `self.window` injected (the script can reach all widgets). See [script_optimization.md](../plans/script_optimization.md) / [script_variable_binding.md](../plans/script_variable_binding.md). |
 
 ### `window_properties` schema — [document.py:26](../../app/core/document.py#L26)
 
@@ -173,7 +173,7 @@ Tree node — one widget on the canvas. 129 lines.
 | `group_id` | `str \| None` | `None` | Group membership (Ctrl+G). Skipped from export. |
 | `description` | `str` | `""` | AI-bridge — emitted as comment above the widget's constructor. |
 | `handlers` | `dict[str, list]` | `{}` | Event → ordered list of `script_call` handler entries (CTkScript model) — see schema below. |
-| `attached_components` | `list[dict]` | `[]` | CTkScript components attached to this widget — each `{"script": <scripts/-relative path>, "class": <ClassName>}`. Instantiated at export with `self.widget` injected (widget scope — does **not** know the window). See [script_optimization.md](../plans/script_optimization.md). |
+| `attached_components` | `list[dict]` | `[]` | CTkScript components attached to this widget — each `{"script": <scripts/-relative path>, "class": <ClassName>, "var_bindings"?: {<field>: <variable UUID>}}`. `var_bindings` maps an exposed script field to a project variable **by UUID** (rename-safe); the picker offers globals + the widget's window locals. Instantiated at export with `self.widget` injected (widget scope — does **not** know the window). See [script_optimization.md](../plans/script_optimization.md) / [script_variable_binding.md](../plans/script_variable_binding.md). |
 
 ### `handlers` schema
 

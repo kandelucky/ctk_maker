@@ -14,7 +14,7 @@ from __future__ import annotations
 import uuid
 
 from app.core.variables import VariableEntry
-from app.core.widget_node import WidgetNode
+from app.core.widget_node import WidgetNode, clean_component_dict
 
 # Defaults for a freshly-created Document. Mirrors the previous
 # Project-level constants so single-document projects round-trip
@@ -244,15 +244,8 @@ class Document:
         # a non-empty ``script`` + ``class``; malformed entries dropped.
         raw_components = data.get("attached_components")
         if isinstance(raw_components, list):
-            comps: list[dict] = []
-            for raw in raw_components:
-                if (
-                    isinstance(raw, dict)
-                    and isinstance(raw.get("script"), str) and raw["script"]
-                    and isinstance(raw.get("class"), str) and raw["class"]
-                ):
-                    comps.append(
-                        {"script": raw["script"], "class": raw["class"]},
-                    )
-            doc.attached_components = comps
+            doc.attached_components = [
+                c for c in map(clean_component_dict, raw_components)
+                if c is not None
+            ]
         return doc

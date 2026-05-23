@@ -10,6 +10,7 @@ callers can keep importing from ``app.io.scripts``.
 from app.io.scripts.ast_scan import (
     find_attachable_scripts,
     parse_ctkscript_classes,
+    parse_exposed_variables,
     parse_handler_methods,
 )
 from app.io.scripts.components import (
@@ -26,6 +27,7 @@ __all__ = [
     # ast_scan
     "find_attachable_scripts",
     "parse_ctkscript_classes",
+    "parse_exposed_variables",
     "parse_handler_methods",
     # components (CTkScript resolution)
     "iter_script_call_targets",

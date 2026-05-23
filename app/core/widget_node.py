@@ -10,6 +10,41 @@ _WIDGET_TYPE_RENAMES = {
 }
 
 
+def clean_component_dict(raw) -> dict | None:
+    """Validate one serialised CTkScript component entry from a
+    ``.ctkproj``. Returns a fresh
+    ``{"script", "class"[, "var_bindings"]}`` dict, or ``None`` when
+    ``script`` / ``class`` is missing or empty.
+
+    ``var_bindings`` maps an exposed script field name to the bound
+    project variable's **UUID** (rename-safe — the variable's display
+    name can change without breaking the binding). Malformed pairs are
+    dropped; the key is omitted entirely when empty. Single source of
+    truth for the on-disk component shape — used by both
+    ``WidgetNode`` and ``Document`` loaders.
+    See docs/plans/script_variable_binding.md.
+    """
+    if not isinstance(raw, dict):
+        return None
+    script = raw.get("script")
+    cls = raw.get("class")
+    if not (isinstance(script, str) and script
+            and isinstance(cls, str) and cls):
+        return None
+    out: dict = {"script": script, "class": cls}
+    bindings = raw.get("var_bindings")
+    if isinstance(bindings, dict):
+        cleaned = {
+            field: vid
+            for field, vid in bindings.items()
+            if isinstance(field, str) and field
+            and isinstance(vid, str) and vid
+        }
+        if cleaned:
+            out["var_bindings"] = cleaned
+    return out
+
+
 class WidgetNode:
     def __init__(self, widget_type: str, properties: dict | None = None):
         self.id: str = str(uuid.uuid4())
@@ -93,10 +128,9 @@ class WidgetNode:
         # Drop empty lists so the .ctkproj stays compact for projects
         # that haven't bound anything; serialised handlers are always
         # ``{event: [entry, entry, ...]}`` lists, never strings.
-        # Each entry is either a method-name string OR a ref_call dict
-        # — deep-copy dicts so callers (tokeniser, undo recorder,
-        # clipboard) can mutate the returned snapshot without aliasing
-        # back into the live widget.
+        # Each entry is a ``script_call`` dict — deep-copy them so
+        # callers (tokeniser, undo recorder, clipboard) can mutate the
+        # returned snapshot without aliasing back into the live widget.
         emitted = {
             k: [
                 copy.deepcopy(e) if isinstance(e, dict) else e
@@ -128,29 +162,19 @@ class WidgetNode:
         node.parent_slot = data.get("parent_slot")
         node.group_id = data.get("group_id")
         node.description = data.get("description", "")
-        # Accept three shapes for forward-compat:
-        #   v1: ``{event: "method"}`` (single string)
-        #   v2: ``{event: ["m1", "m2"]}`` (multi-method list of strings)
-        #   v3: ``{event: ["m1", {"kind": "ref_call", ...}]}`` (mixed
-        #       list — string entries are page methods, dict entries
-        #       are direct widget-to-widget calls routed through an
-        #       Object Reference).
-        #   v4 / v1.38: dict entries also accept
-        #       ``{"kind": "library_call", "script": <path>,
-        #       "method": <name>, "args": [...]}`` for module-level
-        #       function calls into attached library scripts.
-        # A bare string is wrapped into a one-element list. Empty
-        # entries are dropped; unrecognised dict ``kind`` values are
-        # also dropped to keep the live model strict.
+        # Old ``.ctkproj`` files may carry legacy handler shapes:
+        # bare method-name strings (page methods), ``ref_call`` dicts
+        # (Object References), or ``library_call`` dicts (library
+        # scripts). The CTkScript model keeps NONE of them — only
+        # ``script_call`` dict entries survive; everything else is
+        # dropped on load (clean break) so old projects open clean.
         raw_handlers = data.get("handlers")
         if isinstance(raw_handlers, dict):
             normalised: dict[str, list] = {}
             for k, v in raw_handlers.items():
                 if not isinstance(v, list):
                     continue
-                # CTkScript model — only ``script_call`` entries are
-                # kept. Legacy shapes (page-method strings, ``ref_call``,
-                # ``library_call``) are dropped on load (clean break).
+                # Keep only ``script_call`` entries (see above).
                 entries = [
                     copy.deepcopy(raw)
                     for raw in v
@@ -162,17 +186,10 @@ class WidgetNode:
             node.handlers = normalised
         raw_components = data.get("attached_components")
         if isinstance(raw_components, list):
-            comps: list[dict] = []
-            for raw in raw_components:
-                if (
-                    isinstance(raw, dict)
-                    and isinstance(raw.get("script"), str) and raw["script"]
-                    and isinstance(raw.get("class"), str) and raw["class"]
-                ):
-                    comps.append(
-                        {"script": raw["script"], "class": raw["class"]},
-                    )
-            node.attached_components = comps
+            node.attached_components = [
+                c for c in map(clean_component_dict, raw_components)
+                if c is not None
+            ]
         for child_data in data.get("children", []):
             child = cls.from_dict(child_data)
             child.parent = node
