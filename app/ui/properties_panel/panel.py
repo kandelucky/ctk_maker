@@ -106,6 +106,10 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
 
         # Prop name → tree iid (for property_changed updates)
         self._prop_iids: dict[str, str] = {}
+        # Rows whose value is rendered as a VALUE_BG overlay box instead
+        # of native cell text (Interaction-group text rows — see
+        # _insert_prop). _refresh_cell updates the overlay for these.
+        self._boxed_value_iids: set[str] = set()
         # All persistent overlays (color swatches, pencil buttons,
         # enum dropdowns, text value labels, image buttons, style
         # preview) live in a single registry. Initialized in
@@ -437,6 +441,11 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         self.tree.tag_configure(
             "missing_method", foreground="#ef4444", background=TREE_BG,
         )
+        # Events group — header rows read dim when the event has no
+        # handlers and brighten once one is bound, so active events stand
+        # out from the long list of empty ones.
+        self.tree.tag_configure("event_empty", foreground="#666666")
+        self.tree.tag_configure("event_active", foreground=TREE_FG)
 
         # Tooltip created BEFORE the scrollbar wires up — yscrollcommand
         # may fire during initial layout, and ``_on_yscrollcommand``
@@ -881,6 +890,7 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         self._style_subgroup_iid = None
         self._subgroup_preview_iids.clear()
         self._prop_iids.clear()
+        self._boxed_value_iids.clear()
         self._event_row_meta.clear()
 
     def _rebuild(self) -> None:
@@ -1295,11 +1305,11 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
     def _open_target_retarget_picker(
         self, widget_id: str, event_key: str, m_idx: int,
     ) -> None:
-        """``▾`` on a committed entry's parent row — opens the
-        target picker. Picking REPLACES the entry's target in place
-        (rather than appending a new one) and resets method+args
-        since the new target has its own pool of compatible
-        functions. Same Page Script picker the outer ``[+]`` flow uses.
+        """``▾`` / target box on a committed entry — opens a picker of the
+        CTkScript components attached to this widget (and the window) and
+        REPLACES the entry's target in place, resetting the method since
+        the new class has its own pool of functions. Same component list
+        the pending ``Add target…`` picker uses.
         """
         node = self.project.get_widget(widget_id)
         if node is None:
@@ -1310,14 +1320,30 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         document = self.project.find_document_for_widget(widget_id)
         if document is None:
             return
+        from app.io.scripts import iter_script_call_targets
         from app.ui.properties_panel.constants import menu_style
+        comp_targets = iter_script_call_targets(node, document)
         menu = tk.Menu(self.tree, tearoff=0, **menu_style())
-        menu.add_command(
-            label="Page Script",
-            command=lambda: self._retarget_to_page(
-                widget_id, event_key, m_idx,
-            ),
-        )
+        if not comp_targets:
+            # Inert dim hint, NOT state="disabled" (Windows etches a 3D
+            # "ghost" on disabled menu entries — the "ჯადო" quirk).
+            menu.add_command(
+                label="No scripts attached — add one in the Scripts group",
+                command=lambda: None,
+                foreground="#6a6a6a", activeforeground="#6a6a6a",
+                activebackground="#2d2d30",
+            )
+        else:
+            current = entries[m_idx] if isinstance(entries[m_idx], dict) else {}
+            cur_cls, cur_scope = current.get("class", ""), current.get("scope")
+            for _script_rel, cls, scope in comp_targets:
+                label_scope = "this widget" if scope == "widget" else "window"
+                mark = "● " if (cls == cur_cls and scope == cur_scope) else "    "
+                menu.add_command(
+                    label=f"{mark}{cls}  ({label_scope})",
+                    command=lambda c=cls, s=scope:
+                    self._retarget_handler(widget_id, event_key, m_idx, c, s),
+                )
         try:
             menu.tk_popup(
                 self.tree.winfo_pointerx(),
@@ -1326,12 +1352,13 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         finally:
             menu.grab_release()
 
-    def _retarget_to_page(
+    def _retarget_handler(
         self, widget_id: str, event_key: str, m_idx: int,
+        class_name: str, scope: str,
     ) -> None:
-        """Replace the entry at ``m_idx`` with an empty page-method
-        string. The Function row's picker then exposes the per-doc
-        public methods so the user picks one. Direct mutation —
+        """Replace the entry at ``m_idx`` with a fresh ``script_call`` for
+        the picked class — method reset to empty so the Function row's
+        picker offers the new class's public methods. Direct mutation,
         same no-undo policy as ``_set_handler_method_*``.
         """
         node = self.project.get_widget(widget_id)
@@ -1340,7 +1367,10 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         entries = node.handlers.get(event_key)
         if entries is None or m_idx >= len(entries):
             return
-        entries[m_idx] = ""
+        entries[m_idx] = {
+            "kind": "script_call", "class": class_name,
+            "method": "", "scope": scope,
+        }
         self.project.event_bus.publish(
             "widget_handler_changed", widget_id, event_key, "",
         )

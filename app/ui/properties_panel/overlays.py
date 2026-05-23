@@ -345,13 +345,21 @@ def place_var_color_swatch(
 SLOT_SCRIPT_NAME_CHIP = "script_name_chip"
 SLOT_SCRIPT_PATH = "script_path"
 
+# Events group — one-line handler row. The target (script) is boxed in the
+# name column (#0) with a ✕ remove button; the method box + ▾ picker live in
+# the value column via the shared SLOT_TEXT_VALUE / SLOT_EVENT_DROPDOWN slots.
+SLOT_NAME_BOX = "name_box"
+SLOT_NAME_BOX_CLEAR = "name_box_clear"
+SLOT_NAME_BOX_BUTTON = "name_box_button"
+
 
 def place_script_name_chip(
     tree: tk.Widget, widget: tk.Widget, iid: str,
 ) -> None:
-    """Action label on an attached-script row — fills the whole value
-    cell so its (lighter) background tints the action column; the +/×
-    icon lifts on top at the right edge."""
+    """Action label on an attached-script row — bounded to the left part
+    of the value cell (mirrors place_text_value) so its lighter tint
+    frees the right edge for the +/× icon, which then reads as a
+    separate box rather than merging into the action block."""
     try:
         bbox = tree.bbox(iid, "value")
     except tk.TclError:
@@ -360,7 +368,10 @@ def place_script_name_chip(
         widget.place_forget()
         return
     x, y, w, h = bbox
-    widget.place(x=x, y=y, width=w, height=max(1, h))
+    widget.place(
+        x=x + 4, y=y + 3,
+        width=max(1, w - 32), height=max(1, h - 6),
+    )
     widget.lift()
 
 
@@ -411,10 +422,12 @@ def place_script_open_label(
         widget.place_forget()
         return
     x, y, w, h = bbox
-    # Fill the whole value cell (lighter background tint); reserve the
-    # right edge for the × icon by eliding the name to ``avail``. The
-    # leading prefix ("Edit [") and trailing suffix ("]") are preserved
-    # — only the name between them elides.
+    # Bounded value box (mirrors place_text_value): the lighter tint
+    # covers only the left part of the cell, freeing the right edge so
+    # the × detach button reads as a separate box — the same two-box
+    # rhythm as a variable row's [value] … [🔗]. The leading prefix
+    # ("Edit [") and trailing suffix ("]") are preserved — only the name
+    # between them elides.
     avail = max(1, w - 40)
     full = getattr(widget, "_full_text", "") or widget.cget("text")
     prefix_len = getattr(widget, "_prefix_len", 0)
@@ -432,7 +445,80 @@ def place_script_open_label(
             text = full[:j] + "…" + suffix
     if widget.cget("text") != text:
         widget.configure(text=text)
-    widget.place(x=x, y=y, width=w, height=max(1, h))
+    widget.place(
+        x=x + 4, y=y + 3,
+        width=max(1, w - 32), height=max(1, h - 6),
+    )
+    widget.lift()
+
+
+def place_name_box(tree: tk.Widget, widget: tk.Widget, iid: str) -> None:
+    """Boxed value in the name column (#0) — the middle slot, reserving the
+    left edge for the ✕ button and the right edge for the ▾ picker, so the
+    row reads ``✕ [ value ] ▾``. Elides ``widget._full_text`` from the end
+    when the cell is too narrow."""
+    try:
+        bbox = tree.bbox(iid, "#0")
+    except tk.TclError:
+        bbox = ()
+    if not bbox:
+        widget.place_forget()
+        return
+    x, y, w, h = bbox
+    avail = max(1, w - 60)
+    full = getattr(widget, "_full_text", "") or widget.cget("text")
+
+    def measure(s: str) -> int:
+        return _measure_text(widget, s)
+    text = full
+    if measure(full) > avail and len(full) > 1:
+        i = len(full)
+        while i > 1 and measure(full[:i] + "…") > avail:
+            i -= 1
+        text = full[:i] + "…"
+    if widget.cget("text") != text:
+        widget.configure(text=text)
+    widget.place(
+        x=x + 24, y=y + 3,
+        width=max(1, w - 52), height=max(1, h - 6),
+    )
+    widget.lift()
+
+
+def place_name_box_button(tree: tk.Widget, widget: tk.Widget, iid: str) -> None:
+    """Right-edge button in the name column (#0) — the target picker ▾.
+    Mirrors place_enum_button's geometry so it lines up with the value-
+    column ▾."""
+    try:
+        bbox = tree.bbox(iid, "#0")
+    except tk.TclError:
+        bbox = ()
+    if not bbox:
+        widget.place_forget()
+        return
+    x, y, w, h = bbox
+    widget.place(
+        x=x + w - 20 - 4, y=y + 4,
+        width=20, height=max(1, h - 8),
+    )
+    widget.lift()
+
+
+def place_name_clear_left(tree: tk.Widget, widget: tk.Widget, iid: str) -> None:
+    """✕ at the LEFT edge of the name column (#0) — the two-stage delete
+    button, sitting before the boxed value."""
+    try:
+        bbox = tree.bbox(iid, "#0")
+    except tk.TclError:
+        bbox = ()
+    if not bbox:
+        widget.place_forget()
+        return
+    x, y, w, h = bbox
+    widget.place(
+        x=x + 4, y=y + 4,
+        width=16, height=max(1, h - 8),
+    )
     widget.lift()
 
 

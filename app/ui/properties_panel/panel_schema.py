@@ -49,6 +49,9 @@ from .overlays import (
     SLOT_EVENT_ADD,
     SLOT_EVENT_DROPDOWN,
     SLOT_EVENT_UNBIND,
+    SLOT_NAME_BOX,
+    SLOT_NAME_BOX_BUTTON,
+    SLOT_NAME_BOX_CLEAR,
     SLOT_SCRIPT_NAME_CHIP,
     SLOT_SCRIPT_PATH,
     SLOT_TEXT_VALUE,
@@ -60,6 +63,9 @@ from .overlays import (
     place_event_add,
     place_event_dropdown,
     place_event_unbind,
+    place_name_box,
+    place_name_box_button,
+    place_name_clear_left,
     place_script_name_chip,
     place_script_open_label,
     place_script_path,
@@ -417,10 +423,14 @@ class SchemaMixin:
         if self.overlays is None:
             return
         if bound_id is not None:
-            name = by_id[bound_id].name if bound_id in by_id else "⚠ missing"
-            color = "#a9e0b4" if bound_id in by_id else "#e0a030"
+            name = by_id[bound_id].name if bound_id in by_id else "missing"
+            # Bound value reads in the standard panel foreground — the 🔗
+            # button already signals the bound state, so the text needs no
+            # extra colour. Orange stays only as a real "variable missing"
+            # warning, not as styling.
+            color = TREE_FG if bound_id in by_id else "#e0a030"
             lbl = tk.Label(
-                self.tree, text=f"◉  {name}", bg=VALUE_BG, fg=color,
+                self.tree, text=name, bg=VALUE_BG, fg=color,
                 font=ui_font(11), anchor="w", padx=4, pady=0,
                 borderwidth=0, highlightthickness=0, cursor="hand2",
             )
@@ -643,17 +653,20 @@ class SchemaMixin:
             )
 
     def _node_script_add_label(self, row_iid: str, on_click) -> None:
-        """Plain "Add Script" prompt in the add row's value cell — no
-        fill, no border (it's an add affordance, not an attached item).
+        """"Add Script" prompt in the add row's value cell — a bounded
+        box like the attached-script rows, but in a dimmer fill + text
+        so it reads as a distinct add affordance, not an attached item.
         Single click runs ``on_click``; the ``+`` icon does the same."""
         chip = tk.Label(
             self.tree,
             text="Add Script",
-            bg=TREE_BG, fg=TREE_FG,
+            bg="#262626", fg="#999999",
             font=ui_font(11), anchor="w", padx=4, pady=0,
             borderwidth=0, highlightthickness=0,
             cursor="hand2",
         )
+        chip.bind("<Enter>", lambda _e, b=chip: b.configure(fg="#cccccc"))
+        chip.bind("<Leave>", lambda _e, b=chip: b.configure(fg="#999999"))
         chip.bind("<Button-1>", lambda _e: on_click())
         if self.overlays is not None:
             self.overlays.add(
@@ -706,19 +719,20 @@ class SchemaMixin:
         )
         if self.overlays is not None:
             self.overlays.add(
-                row_iid, SLOT_EVENT_UNBIND, btn, place_event_unbind,
+                row_iid, SLOT_EVENT_UNBIND, btn, place_enum_button,
             )
 
     def _node_script_add_icon(self, row_iid: str, node) -> None:
-        """``+`` add icon on the "Add Script" row — Events-group styling."""
+        """``+`` add icon on the "Add Script" row — neutral standard
+        colour (matches the 🔗 / ✕ buttons), on the dimmer add-row fill."""
         btn = tk.Label(
             self.tree,
-            text="+", bg=TREE_BG, fg="#7dd3fc",
+            text="+", bg="#262626", fg="#888888",
             font=ui_font(11, "bold"),
             cursor="hand2", borderwidth=0, padx=0, pady=0,
         )
         btn.bind("<Enter>", lambda _e, b=btn: b.configure(fg="#ffffff"))
-        btn.bind("<Leave>", lambda _e, b=btn: b.configure(fg="#7dd3fc"))
+        btn.bind("<Leave>", lambda _e, b=btn: b.configure(fg="#888888"))
         btn.bind(
             "<Button-1>",
             lambda _e, n=node: self._open_component_picker(n),
@@ -818,14 +832,17 @@ class SchemaMixin:
             )
         else:
             preview = "no action"
+        # Empty events read dim (de-emphasised) so the bound ones stand
+        # out; an event with handlers brightens to normal — same affordance
+        # logic as the "Add Script" row vs attached scripts.
         self.tree.insert(
             parent_iid, "end", iid=header_iid,
             text=label, values=(preview,), open=True,
-            tags=("group",),
+            tags=("event_active",) if methods else ("event_empty",),
         )
         meta[header_iid] = ("header", entry.key, None)
         self._attach_event_add_button(
-            header_iid, widget_id, entry.key,
+            header_iid, widget_id, entry.key, dim=not methods,
         )
         for m_idx, handler_entry in enumerate(methods):
             self._render_handler_entry(
@@ -849,111 +866,313 @@ class SchemaMixin:
         self, ev_idx: int, m_idx: int, header_iid: str,
         event_entry, widget_id: str, meta: dict,
     ) -> None:
-        """Placeholder row for a pending event binding — ``Add target``
-        with an inner ``[+]`` that opens the cascade picker. Lives
-        only in panel state; the entry doesn't reach
-        ``WidgetNode.handlers`` until the user commits a target.
+        """Placeholder for a pending action — the same one-line layout as
+        a committed handler: an empty ``Add target…`` box in the name
+        column (click opens the target picker) + ✕ cancel, and a dark,
+        disabled ``Pick function…`` box in the value column so the two-
+        column shape is visible while the function side reads as not-yet-
+        available. Lives only in panel state until a target commits it.
         """
-        parent_iid = f"events:m:{ev_idx}:{m_idx}"
-        # Pending placeholder follows the same primary-column-label
-        # / value-cell-content split as committed rows. ``Target:``
-        # is the neutral umbrella — once the user picks, it
-        # resolves to ``Script:`` or ``Object:`` on rebuild.
+        row_iid = f"events:m:{ev_idx}:{m_idx}"
         self.tree.insert(
-            header_iid, "end", iid=parent_iid,
-            text="Target:", values=("Add target",),
-            open=True,
+            header_iid, "end", iid=row_iid,
+            text="", values=("",), open=True,
         )
-        meta[parent_iid] = ("pending", event_entry.key, None)
-        self._attach_pending_picker_button(
-            parent_iid, widget_id, event_entry.key,
-        )
+        meta[row_iid] = ("pending", event_entry.key, None)
+        # Name column: ✕ (cancel) [ Add target… ] ▾ (pick), same shape as
+        # a committed row so the pending → committed transition is smooth.
         self._attach_pending_cancel_button(
-            parent_iid, widget_id, event_entry.key,
+            row_iid, widget_id, event_entry.key,
         )
+        self._attach_pending_target_box(
+            row_iid, widget_id, event_entry.key,
+        )
+        self._attach_name_box_dropdown(
+            row_iid,
+            lambda wid=widget_id, k=event_entry.key:
+            self._open_pending_target_picker(wid, k),
+        )
+        self._attach_disabled_function_box(row_iid)
 
     def _render_handler_entry(
         self, ev_idx: int, m_idx: int, handler_entry,
         header_iid: str, event_entry, node,
         widget_id: str, meta: dict,
     ) -> None:
-        """Emit one handler entry as a Unity-style block: the parent
-        row IS the target (the attached CTkScript class); the
-        ``Function:`` child row appears only once a target is
-        picked; ``<param>:`` child rows surface one per
-        allowlisted argument when the function carries any.
+        """Emit one handler entry as a single Unity-style row:
+        ``target | function`` on one line. The target (attached
+        CTkScript class) is boxed in the name column with a ✕ remove
+        button; the method is boxed in the value column with a ▾
+        function picker. Allowlisted ``<param>:`` child rows surface
+        below only when the chosen function carries args.
 
-        Missing bindings (target or method unresolvable) render in
-        red on whatever row the breakage lives on — no glyph, just
-        the colour cue.
+        Missing bindings (target or method unresolvable) tint the
+        offending box red — no glyph, just the colour cue.
         """
-        parent_iid = f"events:m:{ev_idx}:{m_idx}"
-        target_prefix, target_value, target_missing, target_picked = (
+        row_iid = f"events:m:{ev_idx}:{m_idx}"
+        _prefix, target_value, target_missing, target_picked = (
             self._target_label_for_entry(handler_entry, node)
         )
         method_label, method_missing, param_pairs = (
             self._method_and_params_for_entry(handler_entry)
         )
-        # Parent row carries the target. Layout mirrors the
-        # ``Function:`` child below — primary column is the
-        # category prefix (``Script:`` / ``Widget:`` /
-        # ``Script/Object:`` for pending), value cell holds the
-        # picked target name. Missing tag applies if target itself
-        # is unresolvable; a missing method colours only the
-        # Function child below.
-        parent_tags: tuple[str, ...] = (
-            ("missing_method",) if target_missing else ()
-        )
-        parent_value = target_value
-        if target_missing:
-            parent_value = f"{parent_value} ({target_missing})"
+        # Single row — both columns are overlay boxes (name = target,
+        # value = function), so the native cell text stays empty.
         self.tree.insert(
-            header_iid, "end", iid=parent_iid,
-            text=target_prefix, values=(parent_value,),
-            open=True, tags=parent_tags,
+            header_iid, "end", iid=row_iid,
+            text="", values=("",), open=True,
         )
-        meta[parent_iid] = ("method", event_entry.key, m_idx)
-        # ▾ dropdown for retargeting (sits left of [✕]) + [✕] unbind
-        # at the right edge — same two-button pattern Unity uses for
-        # the target / runtime-only cells.
-        self._attach_target_dropdown_button(
-            parent_iid, widget_id, event_entry.key, m_idx,
+        meta[row_iid] = ("method", event_entry.key, m_idx)
+        # Name column: ✕ (left, two-stage clear) [ target box ] ▾ (retarget).
+        self._attach_handler_clear_button(
+            row_iid, widget_id, event_entry.key, m_idx, handler_entry,
         )
-        self._attach_event_unbind_button(
-            parent_iid, widget_id, event_entry.key, m_idx, handler_entry,
+        self._attach_handler_target_box(
+            row_iid, widget_id, event_entry.key, m_idx,
+            target_value, target_missing, handler_entry,
         )
-        # Function child row — only when a target is actually
-        # picked. Hidden in the "target picker pending" state to
-        # match the user's Unity-like layout.
+        self._attach_name_box_dropdown(
+            row_iid,
+            lambda wid=widget_id, k=event_entry.key, i=m_idx:
+            self._open_target_retarget_picker(wid, k, i),
+        )
+        # Function box (value column) + ▾ picker — only once a target
+        # is picked (matches the old "function appears after target").
         if target_picked:
-            function_iid = f"{parent_iid}:function"
-            function_value = method_label
-            function_tags: tuple[str, ...] = (
-                ("missing_method",) if method_missing else ()
+            self._attach_handler_function_box(
+                row_iid, widget_id, event_entry.key, m_idx,
+                method_label, method_missing,
             )
-            if method_missing:
-                function_value = f"{function_value} ({method_missing})"
-            self.tree.insert(
-                parent_iid, "end", iid=function_iid,
-                text="Function:", values=(function_value,),
-                tags=function_tags,
-            )
-            meta[function_iid] = ("function", event_entry.key, m_idx)
             self._attach_function_dropdown_button(
-                function_iid, widget_id, event_entry.key, m_idx,
+                row_iid, widget_id, event_entry.key, m_idx,
             )
             # Parameter rows — only when a method is picked and the
-            # allowlist entry carries args.
+            # allowlist entry carries args. Children of the single row.
             for p_idx, (pname, pvalue) in enumerate(param_pairs):
-                param_iid = f"{parent_iid}:p{p_idx}"
+                param_iid = f"{row_iid}:p{p_idx}"
                 self.tree.insert(
-                    parent_iid, "end",
+                    row_iid, "end",
                     iid=param_iid,
                     text=f"{pname}:", values=(pvalue,),
                 )
                 meta[param_iid] = (
                     "param", event_entry.key, m_idx, p_idx,
                 )
+
+    def _attach_handler_target_box(
+        self, row_iid: str, widget_id: str, event_key: str, m_idx: int,
+        target_value: str, target_missing: str | None, handler_entry,
+    ) -> None:
+        """Boxed target (script) value in the name column. Retarget is on
+        the ▾ only (no left-click here); right-click opens Delete / Edit
+        and double-click opens the script in the editor. Red text when the
+        target is unresolvable."""
+        if self.overlays is None:
+            return
+        lbl = tk.Label(
+            self.tree, text=target_value, bg=VALUE_BG,
+            fg="#ef4444" if target_missing else TREE_FG,
+            font=ui_font(11), anchor="w", padx=4, pady=0,
+            borderwidth=0, highlightthickness=0, cursor="hand2",
+        )
+        lbl._full_text = target_value
+        lbl.bind(
+            "<Button-3>",
+            lambda e, wid=widget_id, k=event_key, i=m_idx, m=handler_entry:
+            self._open_handler_target_menu(e, wid, k, i, m),
+        )
+        lbl.bind(
+            "<Double-Button-1>",
+            lambda _e, wid=widget_id, k=event_key, i=m_idx:
+            self._open_handler_script(wid, k, i),
+        )
+        self.overlays.add(row_iid, SLOT_NAME_BOX, lbl, place_name_box)
+
+    def _attach_handler_clear_button(
+        self, row_iid: str, widget_id: str, event_key: str,
+        m_idx: int, handler_entry,
+    ) -> None:
+        """✕ at the LEFT edge of the name column — first stage of the
+        two-stage delete: drops the script binding but leaves a pending
+        ``Add target…`` placeholder so the user can re-pick. A second ✕
+        (on that pending row) removes the action entirely."""
+        if self.overlays is None:
+            return
+        btn = tk.Label(
+            self.tree, text="✕", bg=VALUE_BG, fg="#888888",
+            font=ui_font(9), cursor="hand2", borderwidth=0, padx=0, pady=0,
+        )
+        btn.bind("<Enter>", lambda _e, b=btn: b.configure(fg="#ef4444"))
+        btn.bind("<Leave>", lambda _e, b=btn: b.configure(fg="#888888"))
+        btn.bind(
+            "<Button-1>",
+            lambda _e, wid=widget_id, k=event_key, i=m_idx, m=handler_entry:
+            self._clear_handler_to_pending(wid, k, i, m),
+        )
+        self.overlays.add(
+            row_iid, SLOT_NAME_BOX_CLEAR, btn, place_name_clear_left,
+        )
+
+    def _attach_name_box_dropdown(self, row_iid: str, on_click) -> None:
+        """▾ at the right edge of the name column — the target picker.
+        Used by both committed (retarget) and pending (pick) rows; the
+        ``on_click`` decides which picker opens."""
+        if self.overlays is None:
+            return
+        btn = tk.Label(
+            self.tree, text="▾", bg=VALUE_BG, fg="#aaaaaa",
+            font=ui_font(12, "bold"), cursor="hand2", borderwidth=0,
+        )
+        btn.bind("<Enter>", lambda _e, b=btn: b.configure(fg="#ffffff"))
+        btn.bind("<Leave>", lambda _e, b=btn: b.configure(fg="#aaaaaa"))
+        btn.bind("<Button-1>", lambda _e: on_click())
+        self.overlays.add(
+            row_iid, SLOT_NAME_BOX_BUTTON, btn, place_name_box_button,
+        )
+
+    def _clear_handler_to_pending(
+        self, widget_id: str, event_key: str, m_idx: int, handler_entry,
+    ) -> None:
+        """First ✕ on a committed handler — drops the script binding via
+        ``_delete_event_action`` and immediately re-adds a pending
+        ``Add target…`` placeholder in its place, so the slot stays put
+        and the user can re-pick. A second ✕ on the pending row removes
+        it for good."""
+        self._delete_event_action(widget_id, event_key, m_idx, handler_entry)
+        self._add_pending_event_row(widget_id, event_key)
+
+    def _attach_handler_function_box(
+        self, row_iid: str, widget_id: str, event_key: str, m_idx: int,
+        method_label: str, method_missing: str | None,
+    ) -> None:
+        """Boxed method value in the value column. Picking is on the ▾ only
+        (no left-click here); right-click opens Delete / Edit and double-
+        click opens the script. Red text when the method is unresolvable."""
+        if self.overlays is None:
+            return
+        lbl = tk.Label(
+            self.tree, text=method_label, bg=VALUE_BG,
+            fg="#ef4444" if method_missing else TREE_FG,
+            font=ui_font(11), anchor="w", padx=4, pady=0,
+            borderwidth=0, highlightthickness=0, cursor="hand2",
+        )
+        lbl.bind(
+            "<Button-3>",
+            lambda e, wid=widget_id, k=event_key, i=m_idx:
+            self._open_handler_function_menu(e, wid, k, i),
+        )
+        lbl.bind(
+            "<Double-Button-1>",
+            lambda _e, wid=widget_id, k=event_key, i=m_idx:
+            self._open_handler_script(wid, k, i),
+        )
+        self.overlays.add(row_iid, SLOT_TEXT_VALUE, lbl, place_text_value)
+
+    def _open_handler_target_menu(
+        self, event, widget_id: str, event_key: str, m_idx: int, handler_entry,
+    ) -> None:
+        """Right-click on the target box — Delete (clear the script,
+        reverting the row to a pending ``Add target…``) + Edit (open the
+        script in the editor)."""
+        from app.ui.properties_panel.constants import menu_style
+        menu = tk.Menu(self.tree, tearoff=0, **menu_style())
+        menu.add_command(
+            label="Delete",
+            command=lambda: self._clear_handler_to_pending(
+                widget_id, event_key, m_idx, handler_entry),
+        )
+        menu.add_command(
+            label="Edit",
+            command=lambda: self._open_handler_script(
+                widget_id, event_key, m_idx),
+        )
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _open_handler_function_menu(
+        self, event, widget_id: str, event_key: str, m_idx: int,
+    ) -> None:
+        """Right-click on the function box — Delete (clear the chosen
+        method, back to ``Pick function…``) + Edit (open the script).
+        Delete is disabled when no method is picked yet (nothing to
+        clear) — there's nothing to delete on a ``Pick function…`` cell."""
+        node = self.project.get_widget(widget_id)
+        entries = (node.handlers.get(event_key, []) or []) if node else []
+        entry = entries[m_idx] if m_idx < len(entries) else None
+        has_method = bool(isinstance(entry, dict) and entry.get("method"))
+        from app.ui.properties_panel.constants import menu_style
+        menu = tk.Menu(self.tree, tearoff=0, **menu_style())
+        if has_method:
+            menu.add_command(
+                label="Delete",
+                command=lambda: self._clear_handler_method(
+                    widget_id, event_key, m_idx),
+            )
+        else:
+            # Inert dim item, NOT state="disabled" — Windows native menus
+            # etch a 3D "ghost" on disabled entries (the "ჯადო" quirk), so
+            # a grey foreground + no-op command + neutralised hover reads
+            # cleanly. Nothing to delete until a function is picked.
+            menu.add_command(
+                label="Delete", command=lambda: None,
+                foreground="#6a6a6a", activeforeground="#6a6a6a",
+                activebackground="#2d2d30",
+            )
+        menu.add_command(
+            label="Edit",
+            command=lambda: self._open_handler_script(
+                widget_id, event_key, m_idx),
+        )
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _clear_handler_method(
+        self, widget_id: str, event_key: str, m_idx: int,
+    ) -> None:
+        """Clear a handler's chosen method (back to ``Pick function…``)
+        without touching the script target. Direct mutation + repaint,
+        same no-undo policy as the function picker."""
+        node = self.project.get_widget(widget_id)
+        if node is None:
+            return
+        entries = node.handlers.get(event_key)
+        if entries is None or m_idx >= len(entries):
+            return
+        entry = entries[m_idx]
+        if isinstance(entry, dict):
+            entry["method"] = ""
+        self.project.event_bus.publish(
+            "widget_handler_changed", widget_id, event_key, "",
+        )
+
+    def _open_handler_script(
+        self, widget_id: str, event_key: str, m_idx: int,
+    ) -> None:
+        """Open the script file backing a handler's target in the editor —
+        used by the boxes' Edit menu item and double-click."""
+        node = self.project.get_widget(widget_id)
+        if node is None:
+            return
+        entries = node.handlers.get(event_key, []) or []
+        if m_idx >= len(entries):
+            return
+        entry = entries[m_idx]
+        if not isinstance(entry, dict):
+            return
+        cls = entry.get("class", "")
+        if not cls:
+            return
+        document = self.project.find_document_for_widget(widget_id)
+        from app.io.scripts import resolve_script_component
+        comp = resolve_script_component(
+            node, document, cls, entry.get("scope"),
+        )
+        if comp:
+            self._open_script_in_editor(comp.get("script", ""))
 
     def _target_label_for_entry(
         self, handler_entry, node,
@@ -1005,15 +1224,18 @@ class SchemaMixin:
 
     def _attach_event_add_button(
         self, header_iid: str, widget_id: str, event_key: str,
+        dim: bool = False,
     ) -> None:
         """Inline ``[+]`` next to the event-header row preview.
         Click adds a pending "Add target" placeholder row; the
         target picker opens from THAT row's inner ``[+]`` rather
-        than from this header button.
+        than from this header button. Neutral colour (no accent blue);
+        dimmer on empty events so it tracks the de-emphasised header.
         """
+        rest = "#666666" if dim else "#999999"
         btn = tk.Label(
             self.tree,
-            text="+", bg=TREE_BG, fg="#7dd3fc",
+            text="+", bg=TREE_BG, fg=rest,
             font=ui_font(11, "bold"),
             cursor="hand2", borderwidth=0, padx=0, pady=0,
         )
@@ -1023,7 +1245,7 @@ class SchemaMixin:
         )
         btn.bind(
             "<Leave>",
-            lambda _e, b=btn: b.configure(fg="#7dd3fc"),
+            lambda _e, b=btn, c=rest: b.configure(fg=c),
         )
         btn.bind(
             "<Button-1>",
@@ -1035,53 +1257,40 @@ class SchemaMixin:
                 header_iid, SLOT_EVENT_ADD, btn, place_event_add,
             )
 
-    def _attach_pending_picker_button(
-        self, parent_iid: str, widget_id: str, event_key: str,
+    def _attach_pending_target_box(
+        self, row_iid: str, widget_id: str, event_key: str,
     ) -> None:
-        """Inline ``[+]`` on a pending "Add target" placeholder row.
-        Click opens the cascade target picker; picking commits the
-        entry to ``handlers`` and decrements the pending count via
-        ``_open_pending_target_picker``'s ``on_commit`` hook.
-        """
-        btn = tk.Label(
-            self.tree,
-            text="+", bg=TREE_BG, fg="#7dd3fc",
-            font=ui_font(11, "bold"),
-            cursor="hand2", borderwidth=0, padx=0, pady=0,
+        """Empty "Add target…" box in the name column of a pending row —
+        click opens the cascade target picker; picking commits the entry
+        to ``handlers`` (and the row rebuilds as a real handler)."""
+        if self.overlays is None:
+            return
+        lbl = tk.Label(
+            self.tree, text="Add target…", bg=VALUE_BG, fg="#999999",
+            font=ui_font(11), anchor="w", padx=4, pady=0,
+            borderwidth=0, highlightthickness=0, cursor="hand2",
         )
-        btn.bind(
-            "<Enter>",
-            lambda _e, b=btn: b.configure(fg="#ffffff"),
-        )
-        btn.bind(
-            "<Leave>",
-            lambda _e, b=btn: b.configure(fg="#7dd3fc"),
-        )
-        btn.bind(
+        lbl._full_text = "Add target…"
+        lbl.bind("<Enter>", lambda _e, b=lbl: b.configure(fg="#cccccc"))
+        lbl.bind("<Leave>", lambda _e, b=lbl: b.configure(fg="#999999"))
+        lbl.bind(
             "<Button-1>",
             lambda _e, wid=widget_id, k=event_key:
             self._open_pending_target_picker(wid, k),
         )
-        # Sits left of the ✕ cancel button (place_event_dropdown's
-        # right-edge offset), so a pending row reads [+][✕] like a
-        # committed row reads [▾][✕].
-        if self.overlays is not None:
-            self.overlays.add(
-                parent_iid, SLOT_EVENT_DROPDOWN, btn, place_event_dropdown,
-            )
+        self.overlays.add(row_iid, SLOT_NAME_BOX, lbl, place_name_box)
 
     def _attach_pending_cancel_button(
-        self, parent_iid: str, widget_id: str, event_key: str,
+        self, row_iid: str, widget_id: str, event_key: str,
     ) -> None:
-        """Inline ``[✕]`` on a pending "Add target" row — discards the
-        placeholder. An accidental [+] click leaves no committed entry,
-        so this just clears the panel state via
-        ``_remove_pending_event_row``."""
+        """✕ at the right edge of a pending row's name column — discards
+        the "Add target…" placeholder via ``_remove_pending_event_row``.
+        No committed entry exists yet, so nothing else to undo."""
+        if self.overlays is None:
+            return
         btn = tk.Label(
-            self.tree,
-            text="✕", bg=TREE_BG, fg="#888888",
-            font=ui_font(9),
-            cursor="hand2", borderwidth=0, padx=0, pady=0,
+            self.tree, text="✕", bg=VALUE_BG, fg="#888888",
+            font=ui_font(9), cursor="hand2", borderwidth=0, padx=0, pady=0,
         )
         btn.bind("<Enter>", lambda _e, b=btn: b.configure(fg="#ef4444"))
         btn.bind("<Leave>", lambda _e, b=btn: b.configure(fg="#888888"))
@@ -1090,10 +1299,30 @@ class SchemaMixin:
             lambda _e, wid=widget_id, k=event_key:
             self._remove_pending_event_row(wid, k),
         )
-        if self.overlays is not None:
-            self.overlays.add(
-                parent_iid, SLOT_EVENT_UNBIND, btn, place_event_unbind,
-            )
+        self.overlays.add(
+            row_iid, SLOT_NAME_BOX_CLEAR, btn, place_name_clear_left,
+        )
+
+    def _attach_disabled_function_box(self, row_iid: str) -> None:
+        """Dark, non-clickable "Pick function…" box + dim ▾ in the value
+        column of a pending row. Shows the two-column shape before a
+        target is picked, while reading as not-yet-available — the
+        function side only lights up once the target commits."""
+        if self.overlays is None:
+            return
+        lbl = tk.Label(
+            self.tree, text="Pick function…", bg="#262626", fg="#5a5a5a",
+            font=ui_font(11), anchor="w", padx=4, pady=0,
+            borderwidth=0, highlightthickness=0,
+        )
+        self.overlays.add(row_iid, SLOT_TEXT_VALUE, lbl, place_text_value)
+        arrow = tk.Label(
+            self.tree, text="▾", bg="#262626", fg="#5a5a5a",
+            font=ui_font(12, "bold"), borderwidth=0,
+        )
+        self.overlays.add(
+            row_iid, SLOT_EVENT_DROPDOWN, arrow, place_enum_button,
+        )
 
     def _attach_target_dropdown_button(
         self, parent_iid: str, widget_id: str,
@@ -1135,16 +1364,14 @@ class SchemaMixin:
         self, function_iid: str, widget_id: str,
         event_key: str, m_idx: int,
     ) -> None:
-        """``▾`` dropdown on the ``Function:`` child row — opens
-        the function picker. Sits at the right edge of the value
-        cell (no ``[✕]`` to dodge on this row) so the standard
-        ``place_enum_button`` geometry applies — same visual
-        rhythm as the Cursor / Anchor enum editors elsewhere on
-        the panel.
+        """``▾`` function picker at the right edge of the handler row's
+        value cell. Sits on the VALUE_BG fill so it reads as its own box
+        beside the boxed method value — the [ method ] … [ ▾ ] rhythm,
+        matching the script-variable / Cursor rows.
         """
         btn = tk.Label(
             self.tree,
-            text="▾", bg=TREE_BG, fg="#aaaaaa",
+            text="▾", bg=VALUE_BG, fg="#aaaaaa",
             font=ui_font(12, "bold"),
             cursor="hand2", borderwidth=0,
         )
@@ -1273,6 +1500,14 @@ class SchemaMixin:
         elif ptype == "color":
             get_editor(ptype).populate_bound(self, iid, pname)
 
+        # Interaction-group text rows wear the boxed-value look (matches
+        # the script-variable / Scripts rows): the value sits in a
+        # VALUE_BG box and the dropdown reads as a separate button at the
+        # right edge — [ value ] … [ ▾ ]. Booleans (checkbox) / colours
+        # (swatch) keep their own editors, so only the text rows qualify.
+        if chip is None and self._is_boxed_value_prop(prop):
+            self._add_boxed_value_overlay(iid, pname, ptype, display)
+
         # Resolve binding scope so the diamond carries the same colour
         # cue as the Variables window tab — global = blue, local =
         # orange. Unbound rows stay neutral grey.
@@ -1360,12 +1595,66 @@ class SchemaMixin:
                 iid, SLOT_BIND_CLEAR, clear_btn, place_bind_clear,
             )
 
+    def _is_boxed_value_prop(self, prop: dict) -> bool:
+        """True for rows that render their value in a VALUE_BG box (the
+        script-variable / Scripts look) instead of plain cell text.
+        Scoped to the Interaction group's text values — checkboxes and
+        colour swatches keep their own editors."""
+        return (
+            prop.get("group") == "Interaction"
+            and prop["type"] not in ("boolean", "color", "image")
+        )
+
+    def _add_boxed_value_overlay(
+        self, iid: str, pname: str, ptype: str, display: str,
+    ) -> None:
+        """Render an Interaction-group text value inside a VALUE_BG box so
+        the row reads as ``[ value ] … [ ▾ ]``. Clears the native cell
+        text (the overlay carries the value; _refresh_cell keeps it in
+        sync) and tints the dropdown button to match the box."""
+        if self.overlays is None:
+            return
+        self.tree.set(iid, "value", "")
+        # Tint the dropdown button so it reads as its own box beside the
+        # value — mirrors the variable row's value + 🔗 pairing.
+        btn = self.overlays.get(iid, SLOT_ENUM_BUTTON)
+        if btn is not None:
+            try:
+                btn.configure(bg=VALUE_BG)
+            except tk.TclError:
+                pass
+        lbl = tk.Label(
+            self.tree, text=display, bg=VALUE_BG, fg=TREE_FG,
+            font=ui_font(11), anchor="w", padx=4, pady=0,
+            borderwidth=0, highlightthickness=0, cursor="hand2",
+        )
+        lbl.bind(
+            "<Button-1>",
+            lambda _e, p=pname, t=ptype, w=lbl: self._popup_enum_menu_at(
+                p, t, w.winfo_rootx(), w.winfo_rooty() + w.winfo_height()),
+        )
+        self.overlays.add(iid, SLOT_TEXT_VALUE, lbl, place_text_value)
+        self._boxed_value_iids.add(iid)
+
     def _refresh_cell(self, iid: str, prop: dict, value) -> None:
         ptype = prop["type"]
         chip = _binding_chip_text(self.project, value)
         display = chip if chip is not None else format_value(
             ptype, value, prop,
         )
+        # Boxed Interaction values live in a VALUE_BG overlay label, not
+        # the native cell text — update the label and keep the cell empty.
+        if iid in self._boxed_value_iids and chip is None:
+            lbl = (
+                self.overlays.get(iid, SLOT_TEXT_VALUE)
+                if self.overlays is not None else None
+            )
+            if lbl is not None:
+                try:
+                    lbl.configure(text=display)
+                except tk.TclError:
+                    pass
+            display = ""
         try:
             self.tree.set(iid, "value", display)
         except tk.TclError:
