@@ -1213,16 +1213,6 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             if method_index is None or method_index >= len(methods):
                 return
             method_name = methods[method_index]
-            # Handler dicts (script_call) have no behavior-file def to
-            # open — skip "Open in editor" for them.
-            if isinstance(method_name, str):
-                menu.add_command(
-                    label="Open in editor",
-                    command=lambda: self._open_event_method(
-                        self.current_id, method_name,
-                    ),
-                )
-                menu.add_separator()
             self._add_menu_item(
                 menu, "Move up",
                 lambda: self._reorder_event_method(
@@ -1359,14 +1349,8 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         self, widget_id: str, event_key: str, m_idx: int,
     ) -> None:
         """Single-click on the ``Function:`` child row opens a
-        cascade menu of compatible functions. Per entry kind:
-
-        * Page script (str) → public class methods filtered by
-          ``parse_handler_methods_compatible``.
-        * CTkScript (``script_call``) → public methods on the
-          attached component class.
-
-        Picking replaces the entry's method in place — no
+        cascade menu of the attached CTkScript component's public
+        methods. Picking replaces the entry's method in place — no
         auto-stub creation, no rebind plumbing.
         """
         node = self.project.get_widget(widget_id)
@@ -1376,96 +1360,61 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         if m_idx >= len(entries):
             return
         entry = entries[m_idx]
-        from app.ui.properties_panel.constants import menu_style
-        menu = tk.Menu(self.tree, tearoff=0, **menu_style())
-        is_script_call = (
+        if not (
             isinstance(entry, dict)
             and entry.get("kind") == "script_call"
-        )
-        if is_script_call:
-            from pathlib import Path
+        ):
+            return
+        from pathlib import Path
 
-            from app.core.script_paths import user_scripts_dir
-            from app.io.scripts import (
-                parse_handler_methods, resolve_script_component,
-            )
-            cls = entry.get("class", "")
-            methods: list[str] = []
-            scripts_dir = user_scripts_dir(
-                getattr(self.project, "path", None),
-            )
-            # The attachment already stores the exact file path — resolve
-            # it (honoring the entry's scope) instead of rescanning the
-            # whole scripts/ folder, so two files sharing a class name
-            # can't be confused.
-            document = self.project.find_document_for_widget(widget_id)
-            comp = resolve_script_component(
-                node, document, cls, entry.get("scope"),
-            )
-            if comp is not None and scripts_dir is not None:
-                methods = [
-                    m for m in parse_handler_methods(
-                        Path(scripts_dir) / comp["script"], cls,
-                    )
-                    if m not in ("on_start", "on_close")
-                ]
-            if not methods:
-                # Normal-state no-op, not state="disabled" — Windows
-                # native menu draw renders disabled items as etched
-                # ghost text on the dark theme ("ჯადო"). Dimmed
-                # foreground + inert command gives a clean hint instead.
-                menu.add_command(
-                    label=(
-                        f"No public methods in {cls}" if cls
-                        else "Script not set"
-                    ),
-                    command=lambda: None,
-                    foreground="#777777", activeforeground="#777777",
-                    activebackground="#2d2d30",
+        from app.core.script_paths import user_scripts_dir
+        from app.io.scripts import (
+            parse_handler_methods, resolve_script_component,
+        )
+        from app.ui.properties_panel.constants import menu_style
+        menu = tk.Menu(self.tree, tearoff=0, **menu_style())
+        cls = entry.get("class", "")
+        methods: list[str] = []
+        scripts_dir = user_scripts_dir(
+            getattr(self.project, "path", None),
+        )
+        # The attachment already stores the exact file path — resolve
+        # it (honoring the entry's scope) instead of rescanning the
+        # whole scripts/ folder, so two files sharing a class name
+        # can't be confused.
+        document = self.project.find_document_for_widget(widget_id)
+        comp = resolve_script_component(
+            node, document, cls, entry.get("scope"),
+        )
+        if comp is not None and scripts_dir is not None:
+            methods = [
+                m for m in parse_handler_methods(
+                    Path(scripts_dir) / comp["script"], cls,
                 )
-            for method_name in methods:
-                menu.add_command(
-                    label=method_name,
-                    command=lambda m=method_name:
-                    self._set_handler_method_script(
-                        widget_id, event_key, m_idx, m,
-                    ),
-                )
-        else:
-            from app.io.scripts import parse_handler_methods_compatible
-            from app.core.script_paths import (
-                behavior_class_name, behavior_file_path,
+                if m not in ("on_start", "on_close")
+            ]
+        if not methods:
+            # Normal-state no-op, not state="disabled" — Windows
+            # native menu draw renders disabled items as etched
+            # ghost text on the dark theme ("ჯადო"). Dimmed
+            # foreground + inert command gives a clean hint instead.
+            menu.add_command(
+                label=(
+                    f"No public methods in {cls}" if cls
+                    else "Script not set"
+                ),
+                command=lambda: None,
+                foreground="#777777", activeforeground="#777777",
+                activebackground="#2d2d30",
             )
-            from app.widgets.event_registry import event_by_key
-            ev = event_by_key(node.widget_type, event_key)
-            methods_list: list[str] = []
-            if (
-                ev is not None
-                and getattr(self.project, "path", None)
-            ):
-                document = self.project.find_document_for_widget(widget_id)
-                if document is not None:
-                    file_path = behavior_file_path(
-                        self.project.path, document,
-                    )
-                    if file_path is not None and file_path.exists():
-                        methods_list = parse_handler_methods_compatible(
-                            file_path, behavior_class_name(document),
-                            ev.wiring_kind,
-                        )
-            if not methods_list:
-                self._add_menu_item(
-                    menu, "No public methods. Open behavior file (F7)…",
-                    lambda: None, enabled=False,
-                )
-            for method_name in methods_list:
-                menu.add_command(
-                    label=method_name,
-                    command=lambda m=method_name:
-                    self._set_handler_method_str(
-                        widget_id, event_key, m_idx, m,
-                    ),
-                )
+        for method_name in methods:
+            menu.add_command(
+                label=method_name,
+                command=lambda m=method_name:
+                self._set_handler_method_script(
+                    widget_id, event_key, m_idx, m,
+                ),
+            )
         try:
             menu.tk_popup(
                 self.tree.winfo_pointerx(),
@@ -1491,26 +1440,6 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         if not isinstance(entry, dict):
             return
         entry["method"] = method_name
-        self.project.event_bus.publish(
-            "widget_handler_changed", widget_id, event_key, method_name,
-        )
-
-    def _set_handler_method_str(
-        self, widget_id: str, event_key: str,
-        m_idx: int, method_name: str,
-    ) -> None:
-        """Replace a page-script entry's method in place. Direct
-        mutation (no command — undo support deferred to a later
-        iteration); publishes ``widget_handler_changed`` to drive
-        the rebuild + Object Tree marker repaint.
-        """
-        node = self.project.get_widget(widget_id)
-        if node is None:
-            return
-        entries = node.handlers.get(event_key)
-        if entries is None or m_idx >= len(entries):
-            return
-        entries[m_idx] = method_name
         self.project.event_bus.publish(
             "widget_handler_changed", widget_id, event_key, method_name,
         )
@@ -1592,35 +1521,6 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         editor.bind("<Tab>", _commit)
         editor.bind("<FocusOut>", _commit)
         editor.bind("<Escape>", _cancel)
-
-    def _open_event_method(
-        self, widget_id: str, method_name: str,
-    ) -> None:
-        """Resolve the per-window behavior file + jump to the
-        method. Mirrors the canvas cascade's ``_jump_to_handler_method``
-        so editor-launch behaviour is identical from both surfaces.
-        """
-        from app.core.settings import load_settings
-        from app.io.scripts import (
-            behavior_class_name, behavior_file_path,
-            find_handler_method, launch_editor,
-            resolve_project_root_for_editor as _resolve_project_root,
-        )
-        if not getattr(self.project, "path", None):
-            return
-        document = self.project.find_document_for_widget(widget_id)
-        if document is None:
-            return
-        file_path = behavior_file_path(self.project.path, document)
-        if file_path is None or not file_path.exists():
-            return
-        class_name = behavior_class_name(document)
-        line = find_handler_method(file_path, class_name, method_name)
-        editor_command = load_settings().get("editor_command")
-        launch_editor(
-            file_path, line=line, editor_command=editor_command,
-            project_root=_resolve_project_root(self.project),
-        )
 
     def _reorder_event_method(
         self, widget_id: str, event_key: str,

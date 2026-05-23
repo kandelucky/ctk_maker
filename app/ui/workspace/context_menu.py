@@ -447,12 +447,12 @@ class ContextMenu:
 
         Each event surfaces as one row + an optional list of
         bound-method rows underneath:
-        - **unbound** → ``+ <event label>`` — click stubs a fresh
-          method and opens the editor.
-        - **bound (≥1 method)** → one ``▶ <event label> — <method>``
-          row per bound method (click → jump to editor) followed by
-          a ``+ Add another <event label> action`` row that appends
-          a new method (Decision #10 multi-method).
+        - **unbound** → ``+ <event label>`` — click opens the bind
+          dropdown to pick an attached CTkScript method.
+        - **bound (≥1 method)** → one dimmed ``<event label> —
+          <Class>.<method>`` info row per bound binding, followed by
+          a ``+ Add another <event label> action`` row that binds
+          another method.
 
         Advanced events (``EventEntry.advanced=True``) render under a
         nested ``Advanced ▸`` submenu instead of the top-level list,
@@ -477,10 +477,24 @@ class ContextMenu:
                 first = False
                 if methods:
                     for method in methods:
+                        cls = (
+                            method.get("class", "")
+                            if isinstance(method, dict) else ""
+                        )
+                        m = (
+                            method.get("method", "")
+                            if isinstance(method, dict) else ""
+                        )
+                        shown = f"{cls}.{m}" if cls and m else (cls or "script")
+                        # Info-only row (manage bindings in the
+                        # Properties panel). Dimmed foreground + inert
+                        # command instead of state="disabled" — the
+                        # latter renders as etched ghost text on the
+                        # Windows dark theme.
                         menu.add_command(
-                            label=f"{entry.label}  —  {method}",
-                            command=lambda nid=node.id, m=method:
-                                self._jump_to_handler_method(nid, m),
+                            label=f"{entry.label}  —  {shown}",
+                            command=lambda: None,
+                            foreground="#777777", activeforeground="#777777",
                         )
                     menu.add_command(
                         label=f"+  Add another {entry.label.lower()} action",
@@ -507,10 +521,9 @@ class ContextMenu:
         """Right-click → "+ <event>" / "+ Add another …" — opens
         the shared bind dropdown at the cursor.
 
-        No auto-stub creation: the user picks an existing public
-        method (Page Script group) or an Object Reference action
-        (Object References group). Empty state surfaces a hint
-        pointing at F7 for behavior-file editing.
+        The user picks a method on a CTkScript component attached to
+        the widget or its window. Empty state surfaces a hint
+        pointing at the Scripts group's ＋ to attach a script first.
         """
         from app.ui.event_bind_menu import show_event_bind_menu_at_cursor
         ws = self.workspace
@@ -518,44 +531,12 @@ class ContextMenu:
             messagebox.showinfo(
                 "Save first",
                 "Save the project before adding event handlers — the "
-                "behavior file lives in assets/scripts/ in the project "
-                "folder.",
+                "scripts/ folder lives in the project folder.",
                 parent=ws.winfo_toplevel(),
             )
             return
         show_event_bind_menu_at_cursor(
             ws, ws.project, widget_id, event_key,
-        )
-
-    def _jump_to_handler_method(
-        self, widget_id: str, method_name: str,
-    ) -> None:
-        """Open the editor at the named method on the widget's
-        per-window behavior class. Used by every bound-method row
-        in the cascade.
-        """
-        ws = self.workspace
-        from app.core.settings import load_settings
-        from app.io.scripts import (
-            behavior_class_name, behavior_file_path,
-            find_handler_method, launch_editor,
-            resolve_project_root_for_editor as _resolve_project_root,
-        )
-
-        if not method_name or not getattr(ws.project, "path", None):
-            return
-        document = ws.project.find_document_for_widget(widget_id)
-        if document is None:
-            return
-        file_path = behavior_file_path(ws.project.path, document)
-        if file_path is None or not file_path.exists():
-            return
-        class_name = behavior_class_name(document)
-        line = find_handler_method(file_path, class_name, method_name)
-        editor_command = load_settings().get("editor_command")
-        launch_editor(
-            file_path, line=line, editor_command=editor_command,
-            project_root=_resolve_project_root(ws.project),
         )
 
     # ------------------------------------------------------------------

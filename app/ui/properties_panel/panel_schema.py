@@ -503,21 +503,6 @@ class SchemaMixin:
         default_events, advanced_events = events_partitioned(node.widget_type)
         if not default_events and not advanced_events:
             return
-        # Resolve docstrings once per panel rebuild so each method
-        # row can show a human description when one is available.
-        # Empty when the project is unsaved / the behavior file is
-        # missing / the class can't be found — bare method names
-        # render fine in those cases.
-        docs = self._lookup_handler_docstrings(node)
-        # Phase 3 — set of method names that actually exist as
-        # ``def`` statements on the per-window class. Method rows
-        # whose name isn't in this set get the ``missing_method``
-        # tag + a ``❌`` prefix so orphan bindings show up before
-        # the user hits F5. Empty set means "couldn't scan" —
-        # treated as "all bindings allowed" so unsaved projects /
-        # missing files render the same as before.
-        existing_methods = self._lookup_existing_method_names(node)
-        scanned_existing = existing_methods is not None
         group_iid = "events:group"
         self.tree.insert(
             "", "end", iid=group_iid,
@@ -558,19 +543,17 @@ class SchemaMixin:
         ev_idx = 0
         for entry in default_events:
             ev_idx = self._render_event_row(
-                ev_idx, entry, group_iid, node, docs,
-                existing_methods, scanned_existing, widget_id, meta,
+                ev_idx, entry, group_iid, node, widget_id, meta,
             )
         for entry in advanced_events:
             parent_iid = _ensure_advanced_group()
             ev_idx = self._render_event_row(
-                ev_idx, entry, parent_iid, node, docs,
-                existing_methods, scanned_existing, widget_id, meta,
+                ev_idx, entry, parent_iid, node, widget_id, meta,
             )
 
     def _render_event_row(
-        self, ev_idx: int, entry, parent_iid: str, node, docs: dict,
-        existing_methods, scanned_existing: bool, widget_id: str, meta: dict,
+        self, ev_idx: int, entry, parent_iid: str, node,
+        widget_id: str, meta: dict,
     ) -> int:
         """Insert one event header + its bound-method rows under
         ``parent_iid``. Shared by ``_populate_events_group`` for both
@@ -601,8 +584,7 @@ class SchemaMixin:
         for m_idx, handler_entry in enumerate(methods):
             self._render_handler_entry(
                 ev_idx, m_idx, handler_entry, header_iid, entry,
-                node, docs, existing_methods, scanned_existing,
-                widget_id, meta,
+                node, widget_id, meta,
             )
         # Unity-style placeholder rows for outer ``[+]`` clicks that
         # haven't picked a target yet. Each shows ``Add target``
@@ -646,13 +628,11 @@ class SchemaMixin:
 
     def _render_handler_entry(
         self, ev_idx: int, m_idx: int, handler_entry,
-        header_iid: str, event_entry, node, docs: dict,
-        existing_methods, scanned_existing: bool,
+        header_iid: str, event_entry, node,
         widget_id: str, meta: dict,
     ) -> None:
         """Emit one handler entry as a Unity-style block: the parent
-        row IS the target (``dialog.py`` for a page script,
-        ``result (CTkLabel)`` for an Object Reference); the
+        row IS the target (the attached CTkScript class); the
         ``Function:`` child row appears only once a target is
         picked; ``<param>:`` child rows surface one per
         allowlisted argument when the function carries any.
@@ -666,9 +646,7 @@ class SchemaMixin:
             self._target_label_for_entry(handler_entry, node)
         )
         method_label, method_missing, param_pairs = (
-            self._method_and_params_for_entry(
-                handler_entry, existing_methods, scanned_existing,
-            )
+            self._method_and_params_for_entry(handler_entry)
         )
         # Parent row carries the target. Layout mirrors the
         # ``Function:`` child below — primary column is the
@@ -759,36 +737,16 @@ class SchemaMixin:
             if not _script_call_resolvable(self.project, node, cls, scope):
                 return "Script:", cls, "script unavailable", True
             return "Script:", cls, None, True
-        # Page-method string entry — display as the behavior file
-        # name (``dialog.py`` style) so the parent reads as the
-        # source the method lives in.
-        return "Script:", self._page_script_target_label(node), None, True
-
-    def _page_script_target_label(self, node) -> str:
-        """Behavior-file name for the document the widget lives in.
-        Falls back to ``"Page Script"`` when the project isn't saved
-        yet (no path → no file name to surface).
-        """
-        if not getattr(self.project, "path", None):
-            return "Page Script"
-        document = self.project.find_document_for_widget(node.id)
-        if document is None:
-            return "Page Script"
-        from app.core.script_paths import behavior_file_path
-        path = behavior_file_path(self.project.path, document)
-        if path is None:
-            return "Page Script"
-        return path.name
+        # Unknown legacy shape — render as an unpicked placeholder.
+        return "Target:", "Add target", None, False
 
     def _method_and_params_for_entry(
-        self, handler_entry, existing_methods,
-        scanned_existing: bool,
+        self, handler_entry,
     ) -> tuple[str, str | None, list[tuple[str, str]]]:
         """Return ``(method_display, missing_reason_or_None,
         [(param_name, param_value_text), ...])``. Empty-method
         entries (target picked, function not chosen yet) render
-        with the ``Pick function…`` placeholder; the caller decides
-        whether to highlight that as missing or just as pending.
+        with the ``Pick function…`` placeholder.
         """
         if isinstance(handler_entry, dict) and (
             handler_entry.get("kind") == "script_call"
@@ -797,66 +755,7 @@ class SchemaMixin:
             if not method:
                 return "Pick function…", None, []
             return method, None, []
-        # Page method — bare string entry. Empty string = target
-        # picked but function not chosen yet.
-        method = handler_entry
-        if not method:
-            return "Pick function…", None, []
-        missing = None
-        if (
-            scanned_existing
-            and method not in (existing_methods or set())
-        ):
-            missing = "missing in file"
-        return method, missing, []
-
-    def _lookup_existing_method_names(self, node) -> set[str] | None:
-        """Phase 3 — return the set of method names defined on the
-        widget's per-window behavior class, used to flag orphan
-        bindings in ``_populate_events_group``. ``None`` when we
-        can't reach the file (unsaved project / missing .py / class
-        not found) — caller treats that as "skip the orphan check"
-        so legacy projects without behavior files render identically
-        to the pre-Phase-3 build.
-        """
-        if not getattr(self.project, "path", None):
-            return None
-        document = self.project.find_document_for_widget(node.id)
-        if document is None:
-            return None
-        from app.core.script_paths import (
-            behavior_class_name, behavior_file_path,
-        )
-        from app.io.scripts import parse_handler_methods
-        file_path = behavior_file_path(self.project.path, document)
-        if file_path is None or not file_path.exists():
-            return None
-        return set(parse_handler_methods(
-            file_path, behavior_class_name(document),
-        ))
-
-    def _lookup_handler_docstrings(self, node) -> dict[str, str]:
-        """Build a ``{method_name: first_docstring_line}`` map for the
-        node's window's behavior class. Empty when the project is
-        unsaved, the behavior file is missing, or the class isn't
-        found. Used by ``_populate_events_group`` to label each
-        method row with the user's own description.
-        """
-        if not getattr(self.project, "path", None):
-            return {}
-        document = self.project.find_document_for_widget(node.id)
-        if document is None:
-            return {}
-        from app.core.script_paths import (
-            behavior_class_name, behavior_file_path,
-        )
-        from app.io.scripts import parse_method_docstrings
-        file_path = behavior_file_path(self.project.path, document)
-        if file_path is None or not file_path.exists():
-            return {}
-        return parse_method_docstrings(
-            file_path, behavior_class_name(document),
-        )
+        return "Pick function…", None, []
 
     def _attach_event_add_button(
         self, header_iid: str, widget_id: str, event_key: str,

@@ -37,10 +37,8 @@ class ChromeRemoval:
         doc = chrome.project.get_document(doc_id)
         if doc is None or not doc.is_toplevel:
             return
-        # Phase 2 Step 3 — the dialog surfaces script + variable
-        # counts, lets the user route the .py to recycle bin or
-        # ``assets/scripts_archive/<page>/`` before the document
-        # itself goes (Decisions C=B, K=B, send2trash default).
+        # Surface the widget + local-variable counts so the user
+        # confirms what's about to disappear before the document goes.
         if not run_window_delete_flow(
             chrome.workspace.winfo_toplevel(), chrome.project, doc,
         ):

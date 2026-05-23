@@ -1,16 +1,9 @@
 """Document lifecycle handlers extracted from ``main_window.py``.
 
-Two groupings:
-
-* **Document operations** — rename / form-settings / move up-down /
-  close project / minimise + restore / add dialog / remove document /
-  F7 edit behavior file.
-* **Behavior-file sync** — event-bus subscribers that materialise,
-  recycle, or rename the per-window ``assets/scripts/<page>/<window>.py``
-  in response to document add / remove / rename. Silent no-ops for
-  unsaved projects (no scripts folder yet); ``_set_current_path``
-  triggers the one-shot ``_ensure_behavior_files_for_all_docs``
-  catchup on first save.
+**Document operations** — rename / form-settings / move up-down /
+close project / minimise + restore / add dialog / remove document.
+Add / remove / rename publish the matching ``document_*`` event and
+auto-save via ``_auto_save_after_doc_change``.
 
 ``_auto_save_after_doc_change`` is the shared "structural change →
 persist .ctkproj" helper. Without it, adding or removing a dialog
@@ -28,9 +21,7 @@ from app.ui._main_window_host import _MainWindowHost
 
 
 class DocumentsMixin(_MainWindowHost):
-    """Document add / remove / rename / move + behavior-file sync.
-    See module docstring.
-    """
+    """Document add / remove / rename / move. See module docstring."""
 
     # ------------------------------------------------------------------
     # Rename + form settings + move up/down
@@ -144,10 +135,7 @@ class DocumentsMixin(_MainWindowHost):
         self.project.documents.append(new_doc)
         self.project.set_active_document(new_doc.id)
         self._on_project_modified()
-        # Phase 2 — fire ``document_added`` so the eager behavior-file
-        # subscriber materialises the per-window ``.py`` immediately.
-        # Without this, "Add Dialog" left the scripts folder empty
-        # until the next save and "Add Action" hit a missing file.
+        # Fire ``document_added`` so the project + pages trees refresh.
         # ``_restore_document`` (undo path) publishes the same event.
         self.project.event_bus.publish("document_added", new_doc.id)
         self.project.event_bus.publish(
