@@ -251,9 +251,10 @@ class UnbindHandlerCommand(Command):
     """Remove one handler entry from a widget's event list. Captures
     the row's index at construction so undo restores it at the same
     position (sibling order matters for execution order). The
-    ``previous_method`` argument accepts either a page-method
-    string or a handler dict — list comparison stays correct
-    for both shapes (Python equality is per-element / per-key).
+    ``previous_method`` is the removed entry — a ``script_call``
+    dict in the current model (a bare string only for legacy data).
+    List comparison stays correct for both (Python equality is
+    per-element / per-key).
     """
 
     def __init__(

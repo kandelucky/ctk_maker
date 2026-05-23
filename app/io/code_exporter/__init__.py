@@ -1897,10 +1897,9 @@ def _emit_class_body(
 
     # Pre-compute every widget's var name in DFS order. Threads the
     # user-set Properties-panel "Name" through to the emitted
-    # ``self.<var> = ctk.<Type>(...)`` line so behavior files can
-    # reference widgets as ``self.window.<user_name>`` instead of
-    # the legacy ``<type>_<N>`` shape. Same map fuels the Object
-    # Reference replay above (memoised in ``_NAME_MAP_CACHE``).
+    # ``self.<var> = ctk.<Type>(...)`` line so a window-scoped
+    # CTkScript can reference widgets as ``self.window.<user_name>``
+    # instead of the legacy ``<type>_<N>`` shape.
     id_to_var = _resolve_var_names(doc)
     # Expose components to ``_emit_handler_lines`` for the duration of
     # the subtree walk so ``script_call`` bindings resolve to the right

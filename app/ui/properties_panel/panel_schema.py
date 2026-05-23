@@ -718,8 +718,8 @@ class SchemaMixin:
         ``label_prefix`` is the primary-column text — varies by
         target kind so the user reads the row as a category:
 
-        * ``"Script:"`` — page-method entry (lives in the per-window
-          behavior ``.py`` file).
+        * ``"Script:"`` — a resolved ``script_call`` entry (a method
+          on an attached CTkScript).
         * ``"Target:"`` — pending placeholder (no target picked
           yet); the value cell carries the ``Add target`` prompt.
 

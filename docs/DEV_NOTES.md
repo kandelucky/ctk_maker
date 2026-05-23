@@ -101,7 +101,7 @@ When CTkMaker exports a project (or runs F5 preview), each widget becomes an att
 
 Source: `_resolve_var_names` in `app/io/code_exporter/__init__.py`.
 
-A CTkTextbox the user named `content_textbox` IS emitted as `self.content_textbox`. Behavior files can write `self.window.content_textbox` directly.
+A CTkTextbox the user named `content_textbox` IS emitted as `self.content_textbox`. A window-scoped CTkScript can write `self.window.content_textbox` directly.
 
 **Gap (as of 2026-05-01):** `_RESERVED_VAR_NAMES` only blocks `_behavior` and `_build_ui` (exporter's emitted symbols). It does **not** block tk root / CTk inherited methods. A widget named `title`, `geometry`, `mainloop`, `destroy`, `update`, `after`, `bind`, `configure`, `pack`, `grid`, `place`, `focus_set`, `attributes`, `protocol`, `iconify`, `deiconify`, `wm_*`, `winfo_*`, `grab_set`, `option_add`, `state`, etc. **shadows the inherited method** on the window class — any code (CTkMaker's own or user) that later calls `self.title()` / `self.geometry(...)` crashes.
 
@@ -126,61 +126,16 @@ CTkMaker-ის `code_exporter` constructor kwarg-ებს `node.properties`-�
 
 **How to apply:** ნებისმიერ Phase 2 editor batch-ზე (image tinting, font_autofit, ...) — თუ fork kwarg builder property key-ს 1:1 არ ემთხვევა, descriptor-ში `export_kwarg_overrides()` დაამატე, თორემ export-ში დაიკარგება. ხაფანგი: live workspace `transform_properties`-ით მუშაობს, ანუ live სწორი ჩანს და მხოლოდ **export** ტყდება ჩუმად — ამიტომ [[feedback_test_exports_yourself]] კრიტიკულია.
 
-## 1-handler bridge for hand-written behavior
+## Hand-written behavior — CTkScript
 
-When the user wants the CTkMaker workflow but does NOT want Phase 2's panel-driven event wiring (i.e. "I'll write the behavior in plain Python myself"), this workflow keeps F5 preview + export intact while shifting the wiring out of the panel and into a hand-written behavior file.
+As of 1.50.x the old behavior-file model (a per-window `setup(window)` class under `assets/scripts/`, gated by `_doc_has_handlers`, plus the "attach one dummy handler" trick) is **removed**. Hand-written runtime logic now lives in **CTkScript** files:
 
-### The constraint
+- Subclass `CTkScript` in the project's top-level `scripts/` folder, then attach it to a widget or window in the builder.
+- Widget-attached → `self.widget` (that widget only, no `self.window`). Window-attached → `self.window`, reaching widgets by builder name (`self.window.my_button`).
+- Lifecycle hooks: `on_start` (after the UI builds) / `on_close` (window closing).
+- Bind events to script methods in the Events panel; the exporter emits `self._script_N = ClassName()` and wires `command=self._script_N.<method>`. CTkMaker never edits the script file.
 
-`code_exporter.py:_doc_has_handlers` gates the Phase 2 plumbing. The exported file imports the behavior class + emits `self._behavior = ClassPage(); self._behavior.setup(self)` ONLY when at least one widget under the document has a non-empty `handlers` entry. Zero panel-attached handlers ⇒ no import ⇒ F5 preview shows just the visual UI with no behavior.
-
-### The trick
-
-Attach **one** dummy handler via the Events panel — to any single widget — so the gate flips. Then put **all real wiring** inside the behavior file's `setup(window)` using ordinary `widget.configure(command=...)` calls.
-
-```python
-# <project>/assets/scripts/<page>/<window>.py
-class CalculatorV5Page:
-    def setup(self, window):     # called once after UI builds
-        self.window = window
-        self.acc, self.op, self.start_new = 0.0, None, True
-
-        # Hand-wire everything — no panel involvement
-        window.btn_clear.configure(command=self.on_clear)
-        window.btn_eq.configure(command=self.on_equals)
-        window.btn_add.configure(command=lambda: self.apply_op("+"))
-        for d in "0123456789":
-            getattr(window, f"btn_{d}").configure(
-                command=lambda d=d: self.append_digit(d),
-            )
-
-    def on_init(self):   # the dummy panel handler — can stay empty
-        pass
-
-    def on_clear(self): ...
-    def on_equals(self): ...
-    def append_digit(self, d): ...
-    def apply_op(self, op): ...
-```
-
-In the page's `.ctkproj`, exactly **one** widget carries:
-
-```json
-"handlers": {"command": ["on_init"]}
-```
-
-That single line is the entire panel footprint.
-
-### When to use
-
-- User wants the visual editor for layout but prefers hand-written runtime code.
-- They explicitly do NOT want to wire every button through the Events panel.
-- They DO want F5 preview to show a working app, not just the static visual.
-
-### When NOT to use
-
-- For projects that fully embrace Phase 2 (panel-attached handlers for every button — "intended" workflow).
-- When there's no need for F5 preview to run with behavior — a standalone hand-written script next to the export is simpler.
+Base-class source of truth: `app/io/scripts/ctk_script.py`.
 
 ## Assets
 
