@@ -1,29 +1,16 @@
-"""Read / write the per-window behavior file.
+"""CTkScript model — read/scan user scripts + create new ones.
 
-A behavior file holds the user-written Python that backs widget event
-handlers. CTkMaker generates method skeletons; the user writes the
-bodies in their own editor. The file lives at
-``<project>/assets/scripts/<page>/<window>.py`` (one per Document)
-and is imported by exported code as
-``from assets.scripts.<page>.<window> import <WindowName>Page``.
-
-Sub-modules group helpers by what they do; this package re-exports
-the public surface so existing callers can keep importing from
-``app.io.scripts``.
+The user keeps ``CTkScript`` subclasses in the project's top-level
+``scripts/`` folder. CTkMaker never imports them — it only AST-scans
+them (for the attach + Function pickers) and the exporter copies the
+folder into the build. This package re-exports the public surface so
+callers can keep importing from ``app.io.scripts``.
 """
 
-from app.core.script_paths import (
-    behavior_class_name,
-    behavior_file_path,
-)
 from app.io.scripts.ast_scan import (
     find_attachable_scripts,
-    find_handler_method,
     parse_ctkscript_classes,
     parse_handler_methods,
-    parse_handler_methods_compatible,
-    parse_method_docstrings,
-    parse_module_functions,
 )
 from app.io.scripts.components import (
     iter_script_call_targets,
@@ -33,60 +20,19 @@ from app.io.scripts.editor import (
     launch_editor,
     resolve_project_root_for_editor,
 )
-from app.io.scripts.mutate import (
-    add_handler_stub,
-    collect_used_method_names,
-    delete_method_from_file,
-    ensure_imports_in_behavior_file,
-    ensure_relative_import_in_behavior_file,
-    slugify_method_part,
-    suggest_method_name,
-)
-from app.io.scripts.paths import (
-    create_user_script,
-    list_page_scripts,
-    load_or_create_behavior_file,
-    recycle_behavior_file,
-    recycle_page_scripts,
-    rename_behavior_file_and_class,
-    save_behavior_file_copy,
-)
-from app.io.scripts.runtime import ensure_runtime_helpers
+from app.io.scripts.paths import create_user_script
 
 __all__ = [
-    # core/script_paths (re-exported)
-    "behavior_class_name",
-    "behavior_file_path",
     # ast_scan
     "find_attachable_scripts",
-    "find_handler_method",
     "parse_ctkscript_classes",
     "parse_handler_methods",
-    "parse_handler_methods_compatible",
-    "parse_method_docstrings",
-    "parse_module_functions",
     # components (CTkScript resolution)
     "iter_script_call_targets",
     "resolve_script_component",
     # editor
     "launch_editor",
     "resolve_project_root_for_editor",
-    # mutate
-    "add_handler_stub",
-    "collect_used_method_names",
-    "delete_method_from_file",
-    "ensure_imports_in_behavior_file",
-    "ensure_relative_import_in_behavior_file",
-    "slugify_method_part",
-    "suggest_method_name",
     # paths
     "create_user_script",
-    "list_page_scripts",
-    "load_or_create_behavior_file",
-    "recycle_behavior_file",
-    "recycle_page_scripts",
-    "rename_behavior_file_and_class",
-    "save_behavior_file_copy",
-    # runtime
-    "ensure_runtime_helpers",
 ]
