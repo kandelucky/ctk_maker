@@ -93,17 +93,6 @@ _CURRENT_DOC_COMPONENTS: list | None = None
 # scan the file" (treated as "all bindings allowed", matching
 # pre-1.8.3 behaviour so projects without behavior files still
 # export cleanly).
-_BEHAVIOR_METHODS_BY_DOC_ID: dict[str, set[str]] = {}
-# Logged for the export caller — list of
-# ``(widget_label, event_label, message_body)`` tuples that the
-# exporter skipped because the handler entry couldn't be resolved.
-# ``message_body`` is the pre-formatted reason string
-# (``"Method not found: 'open_setings'"``,
-# ``"Object reference not found: 'my_label'"``,
-# ``"Action not allowed: 'set_text' on CTkLabel"``).
-# ``inject_missing_handler_warnings=True`` consumes these and
-# emits one ``WARNING`` line per entry at the top of preview.py.
-_MISSING_BEHAVIOR_METHODS: list[tuple[str, str, str]] = []
 _GLOBAL_VAR_ATTR: dict = {}
 _VAR_ID_TO_ATTR: dict = {}
 # Var-name fallbacks the exporter applied during this run because the
@@ -127,7 +116,6 @@ _NAME_MAP_CACHE: dict[str, dict[str, str]] = {}
 # (CTkScrollableDropdown calling ``root.title()``, CTk's own
 # scaling, ``__init__`` calling ``self.geometry(...)``, etc.).
 _RESERVED_VAR_NAMES = frozenset({
-    "_behavior",
     "_build_ui",
 })
 _CTK_INHERITED_NAMES_CACHE: frozenset[str] | None = None
@@ -897,7 +885,6 @@ def export_project(
     asset_filter: set[Path] | None = None,
     inject_preview_screenshot: bool = False,
     include_descriptions: bool = True,
-    inject_missing_handler_warnings: bool = False,
 ) -> None:
     """Generate a runnable .py from ``project`` at ``path``.
 
@@ -905,13 +892,6 @@ def export_project(
     are copied next to the .py — useful for per-page exports where
     the rest of the shared asset pool shouldn't ship. ``None``
     keeps the legacy behaviour (whole ``assets/`` copied).
-
-    ``inject_missing_handler_warnings``: when True and the export
-    skipped handler bindings whose methods don't exist in the
-    behavior file, prepend one ``print()`` per skipped binding to
-    the generated source so the in-app Console panel surfaces them
-    when the preview subprocess runs. Set True only by preview
-    launchers — distribution exports keep clean output.
     """
     if as_zip:
         # Run the normal export into a tempdir, then zip the whole
@@ -958,10 +938,6 @@ def export_project(
         )
     finally:
         _CURRENT_PROJECT_PATH = None
-    if inject_missing_handler_warnings and _MISSING_BEHAVIOR_METHODS:
-        source = _prepend_missing_handler_warnings(
-            source, list(_MISSING_BEHAVIOR_METHODS),
-        )
     out = Path(path)
     out.write_text(source, encoding="utf-8")
     # Copy the project's `assets/` folder next to the exported file
@@ -998,32 +974,8 @@ def export_project(
                             shutil.copy2(src_file, dst)
                         except OSError:
                             pass
-                    # asset_filter is built from widget property
-                    # tokens (image / font references) and doesn't
-                    # see Phase 2 behavior files. Without the copy
-                    # below, ``from assets.scripts.<page>.<window>
-                    # import <Class>Page`` lines emitted by the
-                    # exporter target a folder that doesn't exist
-                    # next to the export → ModuleNotFoundError on
-                    # first run. Walk every doc whose code was
-                    # emitted and copy its behavior subtree
-                    # alongside ``_runtime.py`` + the package
-                    # ``__init__.py`` chain.
-                    _copy_behavior_assets_for_filter(
-                        project,
-                        single_document_id,
-                        src_assets,
-                        out.parent / "assets",
-                    )
             except OSError:
                 pass
-            # Generate package ``__init__.py`` markers into the BUILD's
-            # scripts tree (the source keeps none). Makes the runnable
-            # output an explicit package so ``from assets.scripts.<page>
-            # .<window> import ...`` resolves on any Python — not only via
-            # PEP 420 namespace packages.
-            from app.io.library_scripts import write_package_markers_in
-            write_package_markers_in(out.parent / "assets" / "scripts")
     # Side-car the ScrollableDropdown helper next to the export when
     # any ComboBox / OptionMenu is in the project — the import in the
     # generated code resolves it via the export directory.
@@ -1177,16 +1129,9 @@ def generate_code(
     # Reset the var-name fallback log + DFS-walk memoisation so this
     # export run starts from a clean slate. The log survives past
     # ``generate_code`` so launchers can read it via
-    # ``get_var_name_fallbacks()`` after the export — same lifecycle
-    # as ``_MISSING_BEHAVIOR_METHODS``.
+    # ``get_var_name_fallbacks()`` after the export.
     _VAR_NAME_FALLBACKS = []
     _NAME_MAP_CACHE = {}
-    # Pre-scan every doc's behavior file so handler bindings whose
-    # methods got removed externally (user edited the .py manually,
-    # AST scanner failed, etc.) are skipped instead of emitted as
-    # ``self._behavior.<missing>`` references that crash the preview
-    # at __init__ time.
-    _scan_behavior_methods_for_export(project)
     try:
         return _generate_code_inner(
             project,
@@ -1327,31 +1272,6 @@ def _generate_code_inner(
         used_class_names.add(cls_name)
         class_names.append((doc, cls_name))
 
-    # Phase 2 — emit ``from assets.scripts.<page>.<window> import
-    # <WindowName>Page`` for every Document that actually binds at
-    # least one handler. Skipping zero-handler docs keeps generated
-    # code tidy + avoids ImportError on projects whose behavior file
-    # was never materialised (e.g. user copied a .ctkproj without
-    # the ``assets/scripts/`` folder). The behavior class instance
-    # lands on ``self._behavior`` inside each window's __init__ —
-    # see ``_emit_class_body``.
-    behavior_imports: list[tuple[Document, str]] = []
-    for doc, _cls in class_names:
-        if _doc_needs_behavior(doc):
-            behavior_imports.append((doc, _behavior_class_for_doc(doc)))
-    if behavior_imports:
-        from app.core.script_paths import (
-            behavior_file_stem, slugify_window_name,
-        )
-        page_slug = behavior_file_stem(project.path)
-        for doc, beh_cls in behavior_imports:
-            window_slug = slugify_window_name(doc.name)
-            lines.append(
-                f"from assets.scripts.{page_slug}.{window_slug} "
-                f"import {beh_cls}",
-            )
-        lines.append("")
-
     # CTkScript model — import each attached component class from the
     # project's top-level ``scripts/`` folder. Gathered across every
     # document (window-level + per-widget components) and deduped by
@@ -1450,123 +1370,6 @@ def _generate_code_inner(
 # ----------------------------------------------------------------------
 # Class + widget emission
 # ----------------------------------------------------------------------
-def _scan_behavior_methods_for_export(project: Project) -> None:
-    """Populate ``_BEHAVIOR_METHODS_BY_DOC_ID`` + reset the missing-
-    methods log. Per-doc AST parse against ``parse_handler_methods``
-    so ``_emit_handler_lines`` can answer "does method X exist on
-    the behavior class" in O(1).
-
-    Robust to unsaved projects (no path) and missing files (skip the
-    doc — its handlers fall through to "no filter" so the
-    pre-Phase-3 behaviour holds when files don't exist yet).
-    """
-    global _BEHAVIOR_METHODS_BY_DOC_ID, _MISSING_BEHAVIOR_METHODS
-    _BEHAVIOR_METHODS_BY_DOC_ID = {}
-    _MISSING_BEHAVIOR_METHODS = []
-    project_path = getattr(project, "path", None)
-    if not project_path:
-        return
-    from app.core.script_paths import (
-        behavior_class_name, behavior_file_path,
-    )
-    from app.io.scripts import parse_handler_methods
-    for doc in project.documents:
-        file_path = behavior_file_path(project_path, doc)
-        if file_path is None or not file_path.exists():
-            continue
-        methods = parse_handler_methods(
-            file_path, behavior_class_name(doc),
-        )
-        _BEHAVIOR_METHODS_BY_DOC_ID[doc.id] = set(methods)
-
-
-def _filter_handlers_to_existing_methods(
-    node: WidgetNode, event_label: str, entries: list,
-) -> list:
-    """Drop handler entries the exporter can't resolve. Each drop
-    appends a ``(widget_label, event_label, message_body)`` triple
-    to ``_MISSING_BEHAVIOR_METHODS`` so the preview-warning injector
-    can surface the broken binding in the Console.
-
-    Two entry shapes:
-      * ``str`` — page method on the window's behavior class. Dropped
-        when the per-doc AST scan didn't find a matching ``def``.
-      * ``dict`` with ``"kind": "script_call"`` — CTkScript binding,
-        kept here (resolved at emission time).
-
-    ``widget_label`` is ``node.name`` if set, otherwise
-    ``"<unnamed <widget_type>>"``.
-
-    No-op when no scan data exists for the doc — happens for
-    unsaved projects or docs whose .py never materialised; in that
-    case we keep the pre-1.8.3 "trust the model" behaviour so we
-    don't break exports that worked before.
-    """
-    if _EXPORT_PROJECT is None:
-        return entries
-    doc = _EXPORT_PROJECT.find_document_for_widget(node.id)
-    if doc is None:
-        return entries
-    available = _BEHAVIOR_METHODS_BY_DOC_ID.get(doc.id)
-    if available is None:
-        return entries
-    widget_label = node.name or f"<unnamed {node.widget_type}>"
-    kept: list = []
-    for entry in entries:
-        if isinstance(entry, str):
-            if entry in available:
-                kept.append(entry)
-            else:
-                _MISSING_BEHAVIOR_METHODS.append((
-                    widget_label, event_label,
-                    f"Method not found: {entry!r}",
-                ))
-            continue
-        if isinstance(entry, dict) and entry.get("kind") == "script_call":
-            # CTkScript binding — kept here; resolution against the
-            # doc's attached components happens at emission time
-            # (``_format_script_call`` drops it silently if the class
-            # isn't attached). Component-level validation lands later.
-            kept.append(entry)
-            continue
-        # Unknown shape — defensive drop with a generic message.
-        _MISSING_BEHAVIOR_METHODS.append((
-            widget_label, event_label,
-            "Handler entry has unrecognised shape",
-        ))
-    return kept
-
-
-def _prepend_missing_handler_warnings(
-    source: str, missing: list[tuple[str, str, str]],
-) -> str:
-    """Insert one ``print()`` per
-    ``(widget_label, event_label, method_name)`` near the top of the
-    generated source — before the first ``class`` / ``def`` so it
-    lands after any future imports and module-level imports but
-    still runs at module load.
-
-    Each line starts with ``WARNING`` so the in-app Console's
-    log-level sniffer (``_classify_stream``) tags it
-    ``preview-warning`` → yellow. Used by preview exports so the
-    Console surfaces dropped bindings via subprocess stdout capture.
-    """
-    lines = source.split("\n")
-    insert_at = len(lines)
-    for i, line in enumerate(lines):
-        stripped = line.lstrip()
-        if stripped.startswith("class ") or stripped.startswith("def "):
-            insert_at = i
-            break
-    warning_lines: list[str] = []
-    for widget_label, event_label, body in missing:
-        message = f"WARNING {body} ({widget_label} > {event_label})"
-        warning_lines.append(f"print({message!r})")
-    return "\n".join(
-        lines[:insert_at] + warning_lines + [""] + lines[insert_at:]
-    )
-
-
 def get_var_name_fallbacks() -> list[tuple[str, str, str, str]]:
     """Return ``(doc_name, intended, fallback, reason)`` rows for
     every user-set widget Name the most recent export had to drop.
@@ -1591,10 +1394,12 @@ def _emit_handler_lines(
     - a list of post-construction lines for bind-style events
       (CTkEntry / CTkTextbox <Return>, <KeyRelease>, <FocusOut>).
 
-    Single method → bare reference (``self._behavior.foo``); multiple
+    Single method → bare reference (``self._script_N.foo``); multiple
     methods on the same event → lambda chain so every method fires
     in order. Bind-style events use ``add="+"`` so each method gets
     its own bind call without clobbering the previous one.
+
+    Only ``script_call`` (CTkScript) handler entries are emitted.
 
     Empty ``handlers`` → returns ``(None, [])`` and no plumbing is
     emitted at all.
@@ -1612,11 +1417,7 @@ def _emit_handler_lines(
     for key in node.handlers:
         entries = [
             e for e in node.handlers.get(key, [])
-            if (isinstance(e, str) and e)
-            or (
-                isinstance(e, dict)
-                and e.get("kind") == "script_call"
-            )
+            if isinstance(e, dict) and e.get("kind") == "script_call"
         ]
         if not entries:
             continue
@@ -1625,19 +1426,6 @@ def _emit_handler_lines(
             # Stale binding — registry doesn't list this event for the
             # widget any more. Skip silently rather than emit broken
             # code; the Properties panel surfaces the dangling row.
-            continue
-        # Phase 3 — drop handler entries the exporter can't resolve
-        # (page methods missing from the behavior file, etc.).
-        # Pre-1.8.3 these emitted as
-        # ``self._behavior.<missing>`` and crashed the preview at
-        # widget construction with AttributeError. Now the exporter
-        # filters them and records the drop in
-        # ``_MISSING_BEHAVIOR_METHODS`` for the preview-warning
-        # injector to surface in the Console.
-        entries = _filter_handlers_to_existing_methods(
-            node, entry.label, entries,
-        )
-        if not entries:
             continue
         if entry.wiring_kind == "command":
             # Value-commands (slider / combo / option / segmented)
@@ -1654,30 +1442,16 @@ def _emit_handler_lines(
         elif entry.wiring_kind == "bind":
             seq = key.split(":", 1)[1] if ":" in key else key
             for ent in entries:
-                if isinstance(ent, str):
-                    post_lines.append(
-                        f'{full_name}.bind('
-                        f'"{seq}", self._behavior.{ent}, add="+")',
-                    )
-                    continue
-                if (
-                    isinstance(ent, dict)
-                    and ent.get("kind") == "script_call"
-                ):
-                    # CTkScript method — context is self.widget /
-                    # self.window, so the Tk event is dropped (read
-                    # state off the widget instead). Skip if the
-                    # component can't be resolved in this doc.
-                    expr = _format_script_call(ent, records, owner_id)
-                    if expr is None:
-                        continue
-                    call = f"{expr}()"
-                else:
-                    # Unrecognised entry shape — defensive skip.
+                # CTkScript method — context is self.widget /
+                # self.window, so the Tk event is dropped (read
+                # state off the widget instead). Skip if the
+                # component can't be resolved in this doc.
+                expr = _format_script_call(ent, records, owner_id)
+                if expr is None:
                     continue
                 post_lines.append(
                     f'{full_name}.bind('
-                    f'"{seq}", lambda e: {call}, add="+")',
+                    f'"{seq}", lambda e: {expr}(), add="+")',
                 )
     return command_kwarg, post_lines
 
@@ -1696,9 +1470,9 @@ def _format_handler_entries(
     argless commands (button, switch, checkbox, radio). It drives the
     lambda head.
 
-    A single page-method (str) entry stays a bare reference
-    (``command=self._behavior.foo``) — CTk forwards its native arg to
-    the method directly, so no wrapper is needed. Anything else wraps
+    A single CTkScript method on an argless command stays a bare
+    reference (``command=self._script_0.bump``) — CTk forwards its
+    native arg directly, so no wrapper is needed. Anything else wraps
     in a tuple-style lambda so fan-out is visible at the call site.
     """
     records = records or []
@@ -1714,22 +1488,12 @@ def _format_handler_entries(
         expr = _format_script_call(entries[0], records, owner_id)
         if expr is not None:
             return expr
-    if len(entries) == 1 and isinstance(entries[0], str):
-        return f"self._behavior.{entries[0]}"
     parts: list[str] = []
     for entry in entries:
-        if isinstance(entry, str):
-            parts.append(f"self._behavior.{entry}()")
-        elif (
-            isinstance(entry, dict)
-            and entry.get("kind") == "script_call"
-        ):
-            # CTkScript method — no native arg (context via self.*).
-            expr = _format_script_call(entry, records, owner_id)
-            if expr is not None:
-                parts.append(f"{expr}()")
-        # Unrecognised entry shapes are skipped — only str / script_call
-        # survive the kind filter upstream.
+        # CTkScript method — no native arg (context via self.*).
+        expr = _format_script_call(entry, records, owner_id)
+        if expr is not None:
+            parts.append(f"{expr}()")
     head = f"lambda {value_param}: " if value_param else "lambda: "
     return f"{head}({', '.join(parts)})"
 
@@ -1890,111 +1654,6 @@ def _format_script_call(entry: dict, records: list[dict], owner_id) -> str | Non
     return f"self.{var}.{method}"
 
 
-def _doc_has_handlers(doc: Document) -> bool:
-    """True when at least one widget under ``doc`` has a non-empty
-    handler list. Used to gate the per-window behavior import + the
-    ``self._behavior = …`` lines in __init__ so docs without any
-    bound events emit no Phase 2 plumbing.
-    """
-    for root in doc.root_widgets:
-        if _node_has_handlers(root):
-            return True
-    return False
-
-
-def _node_has_handlers(node: WidgetNode) -> bool:
-    if any(node.handlers.get(k) for k in node.handlers):
-        return True
-    for child in node.children:
-        if _node_has_handlers(child):
-            return True
-    return False
-
-
-def _doc_needs_behavior(doc: Document) -> bool:
-    """Behavior-class gate. Returns True when the doc has at least one
-    bound handler — the ``self._behavior = X()`` instance is only
-    emitted for docs that actually call into it.
-    """
-    return _doc_has_handlers(doc)
-
-
-def _copy_behavior_assets_for_filter(
-    project,
-    single_document_id: str | None,
-    src_assets: Path,
-    dst_assets: Path,
-) -> None:
-    """Bridge for the ``asset_filter`` export branch — Phase 2 / 3
-    behavior files don't show up in ``collect_used_assets`` (which
-    only walks widget property tokens for images + fonts), so an
-    export with the filter on emits ``from assets.scripts.<page>.
-    <window> import …`` against an ``assets/`` folder that's
-    missing the entire scripts subtree. Result: ModuleNotFoundError
-    at first run.
-
-    The fix copies, for every emitted doc that needs a behavior
-    class:
-
-    - ``assets/scripts/__init__.py`` (top-level package marker)
-    - ``assets/scripts/_runtime.py`` (Phase 3 ``ref`` marker)
-    - ``assets/scripts/<page_slug>/`` recursively (sibling helper
-      modules the user wrote — ``qr_encoder.py`` next to
-      ``qr_live.py`` — ride along automatically because we copy
-      the whole folder, not individual files)
-
-    No-op when the project isn't saved, when ``scripts_root`` can't
-    be located, or when no emitted doc actually needs behavior.
-    Errors during individual copies are swallowed so a partial
-    failure doesn't abort the rest of the export.
-    """
-    if not project.path:
-        return
-    from app.core.script_paths import page_scripts_dir, scripts_root
-    if single_document_id:
-        target = project.get_document(single_document_id)
-        docs_to_check = [target] if target is not None else []
-    else:
-        docs_to_check = list(project.documents)
-    if not any(d is not None and _doc_needs_behavior(d) for d in docs_to_check):
-        return
-    s_root = scripts_root(project.path)
-    if s_root is None or not s_root.exists():
-        return
-    src_resolved = src_assets.resolve()
-
-    # Skip ``__pycache__`` so the export bundle doesn't ship stale
-    # bytecode that the user's Python version may reject. Match the
-    # legacy whole-tree copytree fallback's silent ignore behaviour.
-    _ignore_pyc = shutil.ignore_patterns("__pycache__", "*.pyc")
-
-    def _copy_into_dst(src: Path) -> None:
-        try:
-            rel = src.resolve().relative_to(src_resolved)
-        except (OSError, ValueError):
-            return
-        dst = dst_assets / rel
-        try:
-            if src.is_dir():
-                shutil.copytree(
-                    src, dst,
-                    dirs_exist_ok=True,
-                    ignore=_ignore_pyc,
-                )
-            else:
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, dst)
-        except OSError:
-            pass
-
-    for marker in (s_root / "__init__.py", s_root / "_runtime.py"):
-        if marker.exists():
-            _copy_into_dst(marker)
-    page_dir = page_scripts_dir(project.path)
-    if page_dir is not None and page_dir.is_dir():
-        _copy_into_dst(page_dir)
-
-
 def _resolve_var_names(doc: Document) -> dict[str, str]:
     """Walk a doc's widget tree DFS and produce the canonical
     ``{widget_id: var_name}`` map for every node. Single source of
@@ -2089,15 +1748,6 @@ def _resolve_var_names(doc: Document) -> dict[str, str]:
         walk(root)
     _NAME_MAP_CACHE[doc.id] = id_map
     return id_map
-
-
-def _behavior_class_for_doc(doc: Document) -> str:
-    """Per-window behavior class name — ``<WindowSlug>Page``.
-    Centralised here so the exporter, F5 preview, and the Properties
-    panel agree on the symbol that lives in the user's .py file.
-    """
-    from app.core.script_paths import behavior_class_name
-    return behavior_class_name(doc)
 
 
 def _iter_descendants(node):
@@ -2212,18 +1862,6 @@ def _emit_class_body(
                 f'self, Path(__file__).resolve().parent / "assets" / "fonts")',
             )
 
-    # Phase 2 — instantiate the per-window behavior class. Done
-    # BEFORE _build_ui so widget constructor kwargs like
-    # ``command=self._behavior.on_click`` can resolve. The actual
-    # ``setup(self)`` call moves AFTER build + Phase 3 field
-    # assignments so user code can lean on widgets + fields being
-    # available — see the post-build block further down.
-    if _doc_needs_behavior(doc):
-        beh_cls = _behavior_class_for_doc(doc)
-        lines.append(
-            f"{INDENT}{INDENT}self._behavior = {beh_cls}()",
-        )
-
     title = str(doc.name or "Window").replace('"', '\\"')
     geometry = f"{doc.width}x{doc.height}"
     lines.append(f'{INDENT}{INDENT}self.title("{title}")')
@@ -2249,15 +1887,6 @@ def _emit_class_body(
     # (self.widget / self.window) is injected after the build.
     lines.extend(_emit_component_init_lines(_doc_components))
     lines.append(f"{INDENT}{INDENT}self._build_ui()")
-    # ``setup()`` runs AFTER _build_ui so user code can reference
-    # ``self.<widget>`` attributes without worrying about ordering.
-    # Widget command kwargs captured ``self._behavior.<method>``
-    # during _build_ui; those bindings are stable references whose
-    # call sites fire later.
-    if _doc_needs_behavior(doc):
-        lines.append(
-            f"{INDENT}{INDENT}self._behavior.setup(self)",
-        )
     # CTkScript components — widgets exist now: inject each component's
     # scope (self.widget / self.window), call on_start, and wire
     # on_close to WM_DELETE_WINDOW.

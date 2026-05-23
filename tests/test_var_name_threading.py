@@ -171,16 +171,6 @@ def test_leading_digit_name_rejected():
     assert fallbacks[0][3] == "not a valid Python identifier"
 
 
-def test_reserved_name_behavior_falls_back():
-    doc = _make_doc()
-    btn = _node("CTkButton", "_behavior")
-    doc.root_widgets.append(btn)
-    id_map = _resolve_var_names(doc)
-    assert id_map[btn.id] == "button_1"
-    fallbacks = get_var_name_fallbacks()
-    assert fallbacks[0][3] == "reserved by exported code"
-
-
 def test_reserved_name_build_ui_falls_back():
     doc = _make_doc()
     btn = _node("CTkButton", "_build_ui")

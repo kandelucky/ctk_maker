@@ -15,7 +15,7 @@ Three families of "produce a runnable Python file" actions:
   ``<project>/exports/<slug>.{py,zip}`` with a single ZIP-or-py prompt.
 
 Relies on the module-level preview helpers (``_spawn_preview``,
-``_preview_show_floater``, ``_confirm_missing_handler_methods``, …)
+``_preview_show_floater``, ``_confirm_var_name_fallbacks``, …)
 that still live in ``main_window`` — they're imported lazily inside
 each method to avoid the circular ``main_window → main_preview →
 main_window`` cycle at import time.
@@ -47,7 +47,6 @@ class PreviewMixin(_MainWindowHost):
 
     def _on_preview(self) -> None:
         from app.ui.main_window import (
-            _confirm_missing_handler_methods,
             _confirm_var_name_fallbacks, _preview_cwd, _preview_show_floater,
             _spawn_preview,
         )
@@ -70,13 +69,10 @@ class PreviewMixin(_MainWindowHost):
             export_project(
                 self.project, tmp_path,
                 inject_preview_screenshot=_preview_show_floater(),
-                inject_missing_handler_warnings=True,
             )
         except OSError:
             log_error("preview export")
             messagebox.showerror("Preview failed", "Could not generate preview file.", parent=self)
-            return
-        if not _confirm_missing_handler_methods(self):
             return
         if not _confirm_var_name_fallbacks(self):
             return
@@ -105,7 +101,6 @@ class PreviewMixin(_MainWindowHost):
         mash-of-clicks from flooding the screen with duplicate copies.
         """
         from app.ui.main_window import (
-            _confirm_missing_handler_methods,
             _confirm_var_name_fallbacks, _preview_cwd, _preview_show_floater,
             _spawn_preview,
         )
@@ -125,7 +120,6 @@ class PreviewMixin(_MainWindowHost):
             export_project(
                 self.project, tmp_path, preview_dialog_id=doc_id,
                 inject_preview_screenshot=_preview_show_floater(),
-                inject_missing_handler_warnings=True,
             )
         except OSError:
             log_error("preview dialog export")
@@ -134,8 +128,6 @@ class PreviewMixin(_MainWindowHost):
                 "Could not generate preview file.",
                 parent=self,
             )
-            return
-        if not _confirm_missing_handler_methods(self):
             return
         if not _confirm_var_name_fallbacks(self):
             return

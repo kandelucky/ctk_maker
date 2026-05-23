@@ -333,16 +333,6 @@ def _write_inapp_runner(tmp_dir: Path, tmp_path: Path) -> Path:
     return runner_path
 
 
-def _confirm_missing_handler_methods(parent) -> bool:
-    """No-op kept so existing preview call sites stay valid. The
-    pre-spawn modal was replaced by a top-of-file ``print()`` line
-    in the generated preview.py — captured by the in-app Console
-    panel via ``_attach_console_capture``. See
-    ``docs/plans/event_binding.md``.
-    """
-    return True
-
-
 def _confirm_var_name_fallbacks(parent) -> bool:
     """Surface widget Names the exporter had to drop / suffix during
     the most recent ``generate_code`` call. Behavior files that
