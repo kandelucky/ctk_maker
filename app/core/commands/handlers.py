@@ -275,6 +275,100 @@ class BindVariableCommand(Command):
         self._refresh(project)
 
 
+class SetFieldSourceCommand(Command):
+    """Set one exposed script field's source on an attached component:
+
+    * ``kind="var"``   → ``payload`` is a project variable UUID
+      (stored in ``var_bindings``),
+    * ``kind="value"`` → ``payload`` is an inline literal string
+      (stored in ``field_values``),
+    * ``kind=None``    → clear the field (back to its tk default).
+
+    A field has a single source, so setting one clears the other. Undo
+    restores both maps' previous entries for the field. ``widget_id`` is
+    the WidgetNode id or ``WINDOW_ID``; ``class_name`` selects the
+    component. See docs/plans/script_variable_binding.md.
+    """
+
+    def __init__(
+        self, widget_id: str, class_name: str, field: str,
+        kind: "str | None", payload: "str | None" = None,
+    ):
+        self.widget_id = widget_id
+        self.class_name = class_name
+        self.field = field
+        self.kind = kind
+        self.payload = payload
+        self._prev_var: tuple[bool, str | None] = (False, None)
+        self._prev_val: tuple[bool, str | None] = (False, None)
+        self.description = "Set script field"
+
+    def _target(self, project: "Project"):
+        from app.core.project import WINDOW_ID
+        if self.widget_id == WINDOW_ID:
+            return project.active_document
+        return project.get_widget(self.widget_id)
+
+    def _component(self, project: "Project") -> dict | None:
+        target = self._target(project)
+        comps = getattr(target, "attached_components", None) or []
+        return next(
+            (c for c in comps if c.get("class") == self.class_name), None,
+        )
+
+    def _refresh(self, project: "Project") -> None:
+        project.event_bus.publish(
+            "widget_handler_changed", self.widget_id, "", "",
+        )
+        project.select_widget(self.widget_id)
+
+    @staticmethod
+    def _get(comp: dict, mapname: str, field: str) -> tuple[bool, str | None]:
+        m = comp.get(mapname)
+        if isinstance(m, dict) and field in m:
+            return True, m[field]
+        return False, None
+
+    @staticmethod
+    def _put(comp: dict, mapname: str, field: str, value: "str | None") -> None:
+        m = comp.get(mapname)
+        if value is None:
+            if isinstance(m, dict):
+                m.pop(field, None)
+                if not m:
+                    comp.pop(mapname, None)
+            return
+        if not isinstance(m, dict):
+            comp[mapname] = m = {}
+        m[field] = value
+
+    def redo(self, project: "Project") -> None:
+        comp = self._component(project)
+        if comp is None:
+            return
+        self._prev_var = self._get(comp, "var_bindings", self.field)
+        self._prev_val = self._get(comp, "field_values", self.field)
+        var_val = self.payload if self.kind == "var" else None
+        inline_val = self.payload if self.kind == "value" else None
+        self._put(comp, "var_bindings", self.field, var_val)
+        self._put(comp, "field_values", self.field, inline_val)
+        self._refresh(project)
+
+    def undo(self, project: "Project") -> None:
+        comp = self._component(project)
+        if comp is None:
+            return
+        self._put(
+            comp, "var_bindings", self.field,
+            self._prev_var[1] if self._prev_var[0] else None,
+        )
+        self._put(
+            comp, "field_values", self.field,
+            self._prev_val[1] if self._prev_val[0] else None,
+        )
+        self._refresh(project)
+
+
 class ReorderHandlerCommand(Command):
     """Move a bound method up or down within its event handler list.
     Execution order matters — the exporter emits a lambda chain in

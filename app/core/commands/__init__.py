@@ -44,6 +44,7 @@ from app.core.commands.handlers import (
     BindVariableCommand,
     DetachComponentCommand,
     ReorderHandlerCommand,
+    SetFieldSourceCommand,
     UnbindHandlerCommand,
 )
 from app.core.commands.properties import (
@@ -100,6 +101,7 @@ __all__ = [
     "BindVariableCommand",
     "DetachComponentCommand",
     "ReorderHandlerCommand",
+    "SetFieldSourceCommand",
     "UnbindHandlerCommand",
     # documents
     "AddDocumentCommand",

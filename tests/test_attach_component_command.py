@@ -8,6 +8,7 @@ from app.core.commands import (
     AttachComponentCommand,
     BindVariableCommand,
     DetachComponentCommand,
+    SetFieldSourceCommand,
 )
 from app.core.project import WINDOW_ID, Project
 from app.core.widget_node import WidgetNode
@@ -123,3 +124,46 @@ def test_bind_variable_missing_component_is_noop():
     cmd = BindVariableCommand(WINDOW_ID, "Nope", "user", "u1")
     cmd.redo(project)
     assert project.active_document.attached_components == [_comp("f.py", "Form")]
+
+
+# -- SetFieldSourceCommand (inline value ↔ variable, Phase 3b-iv) ------
+
+def test_set_field_inline_value_and_undo():
+    project = Project()
+    doc = project.active_document
+    doc.attached_components = [_comp("f.py", "Form")]
+    cmd = SetFieldSourceCommand(WINDOW_ID, "Form", "count", "value", "5")
+    cmd.redo(project)
+    assert doc.attached_components[0]["field_values"] == {"count": "5"}
+    cmd.undo(project)
+    assert "field_values" not in doc.attached_components[0]
+
+
+def test_set_field_var_clears_inline_and_undo_restores():
+    project = Project()
+    doc = project.active_document
+    doc.attached_components = [
+        {"script": "f.py", "class": "Form", "field_values": {"count": "5"}},
+    ]
+    cmd = SetFieldSourceCommand(WINDOW_ID, "Form", "count", "var", "uuid-1")
+    cmd.redo(project)
+    comp = doc.attached_components[0]
+    assert comp["var_bindings"] == {"count": "uuid-1"}
+    assert "field_values" not in comp           # inline cleared (single source)
+    cmd.undo(project)
+    comp = doc.attached_components[0]
+    assert comp["field_values"] == {"count": "5"}   # restored
+    assert "var_bindings" not in comp
+
+
+def test_set_field_clear_restores_previous():
+    project = Project()
+    doc = project.active_document
+    doc.attached_components = [
+        {"script": "f.py", "class": "Form", "var_bindings": {"count": "u1"}},
+    ]
+    cmd = SetFieldSourceCommand(WINDOW_ID, "Form", "count", None)
+    cmd.redo(project)
+    assert "var_bindings" not in doc.attached_components[0]
+    cmd.undo(project)
+    assert doc.attached_components[0]["var_bindings"] == {"count": "u1"}

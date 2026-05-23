@@ -13,14 +13,18 @@ _WIDGET_TYPE_RENAMES = {
 def clean_component_dict(raw) -> dict | None:
     """Validate one serialised CTkScript component entry from a
     ``.ctkproj``. Returns a fresh
-    ``{"script", "class"[, "var_bindings"]}`` dict, or ``None`` when
-    ``script`` / ``class`` is missing or empty.
+    ``{"script", "class"[, "var_bindings"][, "field_values"]}`` dict, or
+    ``None`` when ``script`` / ``class`` is missing or empty.
 
-    ``var_bindings`` maps an exposed script field name to the bound
-    project variable's **UUID** (rename-safe — the variable's display
-    name can change without breaking the binding). Malformed pairs are
-    dropped; the key is omitted entirely when empty. Single source of
-    truth for the on-disk component shape — used by both
+    A script's exposed field carries **one** source:
+    - ``var_bindings`` — field → bound project variable **UUID**
+      (rename-safe; the variable's display name can change freely), or
+    - ``field_values`` — field → an inline literal value (a string;
+      coerced to the field's tk Variable type at export).
+
+    The editor keeps the two mutually exclusive per field. Malformed
+    pairs are dropped and an empty map's key is omitted. Single source
+    of truth for the on-disk component shape — used by both
     ``WidgetNode`` and ``Document`` loaders.
     See docs/plans/script_variable_binding.md.
     """
@@ -31,17 +35,22 @@ def clean_component_dict(raw) -> dict | None:
     if not (isinstance(script, str) and script
             and isinstance(cls, str) and cls):
         return None
-    out: dict = {"script": script, "class": cls}
-    bindings = raw.get("var_bindings")
-    if isinstance(bindings, dict):
-        cleaned = {
-            field: vid
-            for field, vid in bindings.items()
-            if isinstance(field, str) and field
-            and isinstance(vid, str) and vid
+
+    def _str_map(m):
+        if not isinstance(m, dict):
+            return {}
+        return {
+            k: v for k, v in m.items()
+            if isinstance(k, str) and k and isinstance(v, str) and v
         }
-        if cleaned:
-            out["var_bindings"] = cleaned
+
+    out: dict = {"script": script, "class": cls}
+    bindings = _str_map(raw.get("var_bindings"))
+    if bindings:
+        out["var_bindings"] = bindings
+    values = _str_map(raw.get("field_values"))
+    if values:
+        out["field_values"] = values
     return out
 
 

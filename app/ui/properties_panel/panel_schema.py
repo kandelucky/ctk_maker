@@ -45,11 +45,13 @@ from .format_utils import (
 from .overlays import (
     SLOT_BIND_BUTTON,
     SLOT_BIND_CLEAR,
+    SLOT_ENUM_BUTTON,
     SLOT_EVENT_ADD,
     SLOT_EVENT_DROPDOWN,
     SLOT_EVENT_UNBIND,
     SLOT_SCRIPT_NAME_CHIP,
     SLOT_SCRIPT_PATH,
+    SLOT_TEXT_VALUE,
     SLOT_VAR_COLOR_SWATCH,
     SLOT_VAR_TYPE_CHIP,
     place_bind_button,
@@ -61,6 +63,7 @@ from .overlays import (
     place_script_name_chip,
     place_script_open_label,
     place_script_path,
+    place_text_value,
     place_var_color_swatch,
     place_var_type_chip,
 )
@@ -225,6 +228,10 @@ class SchemaMixin:
         # object (widget + window).
         if node is not None:
             self._populate_node_scripts_group(node)
+            # Script Variables — bind the attached scripts' exposed
+            # ``name: tk.StringVar`` fields to project variables. Only
+            # shown when a field exists, so plain objects stay tidy.
+            self._populate_script_variables_group(node)
 
         # Phase 2 visual scripting — Events group for event-capable
         # widgets (button, slider, entry, …). Renders below every
@@ -324,6 +331,245 @@ class SchemaMixin:
                 row_iid, SLOT_VAR_COLOR_SWATCH, swatch,
                 place_var_color_swatch,
             )
+
+    def _populate_script_variables_group(self, node) -> None:
+        """CTkScript model — Unity-style per-script field inspector. One
+        group per attached script that exposes ``name: tk.StringVar``
+        fields (header ``ClassName (Script)``, like Unity's component
+        foldout); under it, one row per field as ``label | value``. The
+        value cell is an object-field — click to bind a project variable
+        through a type-filtered picker (globals + this window's locals).
+        A script with no exposed fields contributes no group, so plain
+        objects stay tidy. See docs/plans/script_variable_binding.md.
+        """
+        if self.project is None or node is None:
+            return
+        target = self._component_target(node)
+        if target is None:
+            return
+        from pathlib import Path
+
+        from app.core.script_paths import user_scripts_dir
+        from app.io.scripts import parse_exposed_variables
+        scripts_dir = user_scripts_dir(getattr(self.project, "path", None))
+        if not scripts_dir:
+            return
+        doc = self.project.active_document
+        locals_ = list(doc.local_variables) if doc is not None else []
+        by_id = {v.id: v for v in [*self.project.variables, *locals_]}
+        comps = list(getattr(target, "attached_components", []) or [])
+        for ci, comp in enumerate(comps):
+            cls = comp.get("class") or ""
+            script_rel = comp.get("script") or ""
+            if not cls or not script_rel:
+                continue
+            fields = parse_exposed_variables(
+                Path(scripts_dir) / script_rel, cls,
+            )
+            if not fields:
+                continue
+            bindings = comp.get("var_bindings") or {}
+            values = comp.get("field_values") or {}
+            group_iid = f"g:scriptvars:{ci}"
+            self.tree.insert(
+                "", "end", iid=group_iid,
+                text=f"{cls} (Script)", values=("",), open=True,
+                tags=("class",),
+            )
+            for fi, (field, var_type) in enumerate(fields):
+                row_iid = f"scriptvar:{ci}:{fi}"
+                self.tree.insert(
+                    group_iid, "end", iid=row_iid,
+                    text=field, values=("",),
+                )
+                self._attach_field_type_chip(row_iid, var_type)
+                self._render_field_editor(
+                    row_iid, node, cls, field, var_type,
+                    bindings.get(field), values.get(field), by_id,
+                )
+
+    def _attach_field_type_chip(self, row_iid: str, var_type: str) -> None:
+        """Dim 3-letter type chip (``str`` / ``int`` / ``flt`` / ``bol``)
+        at the right edge of a Script Variables row's name column —
+        mirrors the Local Variables list chip."""
+        if self.overlays is None:
+            return
+        from app.core.variables import VAR_TYPE_SHORT
+        chip = tk.Label(
+            self.tree,
+            text=VAR_TYPE_SHORT.get(var_type, var_type),
+            bg=TREE_BG, fg="#777777",
+            font=ui_font(9), anchor="w",
+            borderwidth=0, padx=0, pady=0,
+        )
+        self.overlays.add(
+            row_iid, SLOT_VAR_TYPE_CHIP, chip, place_var_type_chip,
+        )
+
+    def _render_field_editor(
+        self, row_iid, node, cls, field, var_type,
+        bound_id, inline_val, by_id,
+    ) -> None:
+        """Value cell of one Script Variables row — Unity-style. Bound to
+        a project variable → object-field; otherwise an inline editor for
+        the field's type (entry / checkbox / swatch). A 🔗 button at the
+        right always opens the variable picker."""
+        if self.overlays is None:
+            return
+        if bound_id is not None:
+            name = by_id[bound_id].name if bound_id in by_id else "⚠ missing"
+            color = "#a9e0b4" if bound_id in by_id else "#e0a030"
+            lbl = tk.Label(
+                self.tree, text=f"◉  {name}", bg=VALUE_BG, fg=color,
+                font=ui_font(11), anchor="w", padx=4, pady=0,
+                borderwidth=0, highlightthickness=0, cursor="hand2",
+            )
+            lbl.bind("<Button-1>", lambda _e: self._open_variable_picker(
+                node, cls, field, var_type, bound_id))
+            self.overlays.add(row_iid, SLOT_TEXT_VALUE, lbl, place_text_value)
+        elif var_type == "bool":
+            self._field_checkbox(row_iid, node, cls, field, inline_val)
+        elif var_type == "color":
+            self._field_swatch(row_iid, node, cls, field, inline_val)
+        else:
+            self._field_entry(row_iid, node, cls, field, inline_val)
+        self._field_link_button(row_iid, node, cls, field, var_type, bound_id)
+
+    def _field_link_button(self, row_iid, node, cls, field, var_type, bound_id):
+        btn = tk.Label(
+            self.tree, text="🔗", bg=VALUE_BG, fg="#888888",
+            font=ui_font(10), cursor="hand2", borderwidth=0, padx=0, pady=0,
+        )
+        btn.bind("<Enter>", lambda _e, b=btn: b.configure(fg="#a9e0b4"))
+        btn.bind("<Leave>", lambda _e, b=btn: b.configure(fg="#888888"))
+        btn.bind("<Button-1>", lambda _e: self._open_variable_picker(
+            node, cls, field, var_type, bound_id))
+        self.overlays.add(row_iid, SLOT_ENUM_BUTTON, btn, place_enum_button)
+
+    def _field_entry(self, row_iid, node, cls, field, inline_val):
+        current = "" if inline_val is None else str(inline_val)
+        e = tk.Entry(
+            self.tree, bg="#2a2a2a", fg=TREE_FG, insertbackground=TREE_FG,
+            relief="flat", font=ui_font(11), highlightthickness=1,
+            highlightbackground="#212121", highlightcolor="#5a8fd0",
+        )
+        e.insert(0, current)
+
+        def commit(_e=None):
+            new = e.get()
+            if new != current:
+                self._set_field_value(node, cls, field, new)
+        e.bind("<FocusOut>", commit)
+        e.bind("<Return>", lambda _e: (commit(), self.tree.focus_set()))
+        self.overlays.add(row_iid, SLOT_TEXT_VALUE, e, place_text_value)
+
+    def _field_checkbox(self, row_iid, node, cls, field, inline_val):
+        checked = str(inline_val).strip().lower() in ("true", "1", "yes")
+        v = tk.IntVar(value=1 if checked else 0)
+        cb = tk.Checkbutton(
+            self.tree, bg=VALUE_BG, activebackground=VALUE_BG,
+            highlightthickness=0, bd=0, cursor="hand2", variable=v,
+            command=lambda: self._set_field_value(
+                node, cls, field, "True" if v.get() else "False"),
+        )
+        cb._maker_var = v  # keep the IntVar alive with the widget
+        self.overlays.add(
+            row_iid, SLOT_VAR_COLOR_SWATCH, cb, place_var_color_swatch,
+        )
+
+    def _field_swatch(self, row_iid, node, cls, field, inline_val):
+        color = inline_val or "#000000"
+        try:
+            sw = tk.Frame(self.tree, bg=color, cursor="hand2",
+                          highlightthickness=1, highlightbackground="#212121")
+        except tk.TclError:
+            sw = tk.Frame(self.tree, bg="#2b2b2b", cursor="hand2",
+                          highlightthickness=1, highlightbackground="#212121")
+        sw.bind("<Button-1>", lambda _e: self._pick_field_color(
+            node, cls, field, inline_val))
+        self.overlays.add(
+            row_iid, SLOT_VAR_COLOR_SWATCH, sw, place_var_color_swatch,
+        )
+
+    def _pick_field_color(self, node, cls, field, current):
+        from tkinter import colorchooser
+        res = colorchooser.askcolor(
+            color=current or "#000000", parent=self.winfo_toplevel(),
+        )
+        if res and res[1]:
+            self._set_field_value(node, cls, field, res[1])
+
+    def _set_field_value(self, node, cls: str, field: str, value: str) -> None:
+        """Set a field's inline literal value via an undoable command.
+        Guarded against re-entrancy (the commit triggers a rebuild that
+        destroys the editing widget, which can re-fire FocusOut)."""
+        if self.project is None or getattr(self, "_committing_field", False):
+            return
+        self._committing_field = True
+        try:
+            from app.core.commands import SetFieldSourceCommand
+            cmd = SetFieldSourceCommand(node.id, cls, field, "value", value)
+            cmd.redo(self.project)
+            self.project.history.push(cmd)
+            self._rebuild()
+        finally:
+            self._committing_field = False
+
+    def _open_variable_picker(
+        self, node, cls: str, field: str, var_type: str, bound_id,
+    ) -> None:
+        """Pop a type-filtered menu of project variables (globals + this
+        window's locals) for one script field; picking one binds it, and
+        a "Clear binding" entry shows when the field is already bound."""
+        from app.core.variables import VAR_TYPE_SHORT, eligible_variables
+        from app.ui.properties_panel.constants import menu_style
+        doc = self.project.active_document if self.project else None
+        globals_ = list(self.project.variables) if self.project else []
+        locals_ = list(doc.local_variables) if doc is not None else []
+        choices = eligible_variables(globals_, locals_, var_type)
+        menu = tk.Menu(self.tree, tearoff=0, **menu_style())
+        if choices:
+            for v in choices:
+                short = VAR_TYPE_SHORT.get(v.type, v.type)
+                scope_lbl = "local" if v.scope == "local" else "global"
+                mark = "● " if v.id == bound_id else "    "
+                menu.add_command(
+                    label=f"{mark}{v.name}   ({short} · {scope_lbl})",
+                    command=lambda vid=v.id:
+                    self._bind_variable(node, cls, field, vid),
+                )
+        else:
+            menu.add_command(
+                label="No matching variables", command=lambda: None,
+                foreground="#777777", activeforeground="#777777",
+                activebackground="#2d2d30",
+            )
+        if bound_id is not None:
+            menu.add_separator()
+            menu.add_command(
+                label="Clear binding",
+                command=lambda: self._bind_variable(node, cls, field, None),
+            )
+        try:
+            menu.tk_popup(
+                self.tree.winfo_pointerx(), self.tree.winfo_pointery(),
+            )
+        finally:
+            menu.grab_release()
+
+    def _bind_variable(self, node, cls: str, field: str, var_id) -> None:
+        """Bind a script field to a project variable (or clear it when
+        ``var_id`` is None — back to its inline default) via an undoable
+        command, then repaint. Setting a variable clears any inline
+        value for the field (single source)."""
+        if self.project is None:
+            return
+        from app.core.commands import SetFieldSourceCommand
+        kind = "var" if var_id else None
+        cmd = SetFieldSourceCommand(node.id, cls, field, kind, var_id)
+        cmd.redo(self.project)
+        self.project.history.push(cmd)
+        self._rebuild()
 
     def _populate_node_scripts_group(self, node) -> None:
         """CTkScript model — the "Scripts" group on any object (widget

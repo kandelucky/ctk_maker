@@ -16,6 +16,7 @@ from app.io.code_exporter import (
     _emit_component_close_lines,
     _emit_component_init_lines,
     _emit_component_post_lines,
+    _field_value_literal,
     _format_script_call,
     _resolve_component_var,
 )
@@ -68,12 +69,12 @@ def test_collect_window_first_then_widgets_dfs():
         {
             "var": "_script_0", "scope": "window", "target": "self",
             "script": "login.py", "class": "LoginForm", "owner_id": None,
-            "var_bindings": {},
+            "var_bindings": {}, "field_values": {}, "fields": [],
         },
         {
             "var": "_script_1", "scope": "widget", "target": "self.my_button",
             "script": "counter.py", "class": "ClickCounter", "owner_id": "b1",
-            "var_bindings": {},
+            "var_bindings": {}, "field_values": {}, "fields": [],
         },
     ]
 
@@ -135,6 +136,7 @@ def test_post_lines_inject_bound_variables(monkeypatch):
                "var_bindings": {"user": "uuid-1"}}], []),
         {},
     )
+    recs[0]["fields"] = [("user", "str")]  # set directly (no real script)
     monkeypatch.setattr(
         "app.io.code_exporter._VAR_ID_TO_ATTR", {"uuid-1": "self.var_user"},
     )
@@ -146,18 +148,47 @@ def test_post_lines_inject_bound_variables(monkeypatch):
     ]
 
 
-def test_post_lines_skip_stale_binding(monkeypatch):
+def test_post_lines_stale_binding_falls_back_to_default(monkeypatch):
     recs = _collect_doc_components(
         _doc([{"script": "f.py", "class": "Form",
                "var_bindings": {"user": "deleted-uuid"}}], []),
         {},
     )
+    recs[0]["fields"] = [("user", "str")]
     monkeypatch.setattr("app.io.code_exporter._VAR_ID_TO_ATTR", {})
-    # Stale binding (variable deleted) → injection skipped, no crash.
+    # Stale binding (variable deleted) → field still set, fresh default.
     assert [ln.strip() for ln in _emit_component_post_lines(recs)] == [
         "self._script_0.window = self",
+        "self._script_0.user = tk.StringVar()",
         "self._script_0.on_start()",
     ]
+
+
+def test_post_lines_inline_value_and_default():
+    recs = _collect_doc_components(
+        _doc([{"script": "f.py", "class": "Form",
+               "field_values": {"count": "5", "name": "Hi"}}], []),
+        {},
+    )
+    recs[0]["fields"] = [("count", "int"), ("name", "str"), ("flag", "bool")]
+    # inline → typed value; unset field → type default.
+    assert [ln.strip() for ln in _emit_component_post_lines(recs)] == [
+        "self._script_0.window = self",
+        "self._script_0.count = tk.IntVar(value=5)",
+        "self._script_0.name = tk.StringVar(value='Hi')",
+        "self._script_0.flag = tk.BooleanVar()",
+        "self._script_0.on_start()",
+    ]
+
+
+def test_field_value_literal_coercion():
+    assert _field_value_literal("int", "5") == "5"
+    assert _field_value_literal("int", "x") == "0"      # malformed → 0
+    assert _field_value_literal("float", "1.5") == "1.5"
+    assert _field_value_literal("bool", "true") == "True"
+    assert _field_value_literal("bool", "no") == "False"
+    assert _field_value_literal("str", "hi") == "'hi'"
+    assert _field_value_literal("color", "#abc") == "'#abc'"
 
 
 def test_close_lines():

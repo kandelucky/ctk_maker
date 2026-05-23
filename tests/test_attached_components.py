@@ -144,3 +144,31 @@ def test_var_bindings_non_dict_ignored():
     ]
     node = WidgetNode.from_dict(data)
     assert node.attached_components == [{"script": "c.py", "class": "C"}]
+
+
+# -- field_values (inline literal values, Phase 3b-iv) ----------------
+
+def test_field_values_round_trip():
+    doc = Document(name="Main")
+    doc.attached_components = [
+        {"script": "f.py", "class": "Form",
+         "field_values": {"count": "5", "name": "Hi"}},
+    ]
+    restored = Document.from_dict(doc.to_dict())
+    assert restored.attached_components == doc.attached_components
+
+
+def test_field_values_malformed_dropped():
+    data = WidgetNode("CTkButton").to_dict()
+    data["attached_components"] = [
+        {"script": "c.py", "class": "C", "field_values": {
+            "ok": "5",
+            "": "x",     # empty field name
+            "bad": "",    # empty value
+            "n": 7,       # non-str value
+        }},
+    ]
+    node = WidgetNode.from_dict(data)
+    assert node.attached_components == [
+        {"script": "c.py", "class": "C", "field_values": {"ok": "5"}},
+    ]

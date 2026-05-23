@@ -1535,28 +1535,49 @@ def _collect_doc_components(doc, id_to_var: dict) -> list[dict]:
     """Component records for a document, in stable order — window
     components first, then widgets in DFS (pre-order). Each record::
 
-        {var, scope, target, script, class, owner_id, var_bindings}
+        {var, scope, target, script, class, owner_id,
+         var_bindings, field_values, fields}
 
     ``var`` is the instance attribute the window holds the component on
     (``_script_0`` ...); ``scope`` is ``"window"`` / ``"widget"``;
     ``target`` is the expression injected as the component's context
     (``self`` for window, ``self.<varname>`` for a widget); ``owner_id``
-    is ``None`` for window components, else the widget id.
+    is ``None`` for window components, else the widget id. ``fields`` is
+    the script class's exposed ``[(name, var_type)]`` (AST), so the
+    exporter can inject every field (bound / inline / default).
     """
+    from pathlib import Path
+
+    from app.core.script_paths import user_scripts_dir
+    from app.io.scripts import parse_exposed_variables
+    scripts_dir = (
+        user_scripts_dir(getattr(_EXPORT_PROJECT, "path", None))
+        if _EXPORT_PROJECT is not None else None
+    )
+
+    def _fields_for(script_rel, cls):
+        if not scripts_dir or not script_rel or not cls:
+            return []
+        return parse_exposed_variables(Path(scripts_dir) / script_rel, cls)
+
     records: list[dict] = []
     counter = 0
 
     def _add(comps, scope, target, owner_id):
         nonlocal counter
         for comp in comps or []:
+            script_rel = comp.get("script", "")
+            cls = comp.get("class", "")
             records.append({
                 "var": f"_script_{counter}",
                 "scope": scope,
                 "target": target,
-                "script": comp.get("script", ""),
-                "class": comp.get("class", ""),
+                "script": script_rel,
+                "class": cls,
                 "owner_id": owner_id,
                 "var_bindings": comp.get("var_bindings") or {},
+                "field_values": comp.get("field_values") or {},
+                "fields": _fields_for(script_rel, cls),
             })
             counter += 1
 
@@ -1616,37 +1637,71 @@ def _emit_component_init_lines(records: list[dict]) -> list[str]:
     ]
 
 
-def _emit_component_post_lines(records: list[dict]) -> list[str]:
-    """After _build_ui(): inject each component's scope, then its bound
-    variables, then call on_start.
+def _field_value_literal(ftype: str, value: str) -> str:
+    """A Python literal for an inline field value, by the field's tk
+    Variable type. ``str`` / ``color`` → quoted; ``bool`` →
+    ``True`` / ``False``; ``int`` / ``float`` → numeric with a safe
+    fallback when the user-typed string is malformed."""
+    raw = str(value).strip()
+    if ftype == "bool":
+        return "True" if raw.lower() in ("true", "1", "yes") else "False"
+    if ftype == "int":
+        try:
+            return str(int(raw))
+        except (ValueError, TypeError):
+            return "0"
+    if ftype == "float":
+        try:
+            return repr(float(raw))
+        except (ValueError, TypeError):
+            return "0.0"
+    return repr(str(value))  # str / color / unknown → quoted
 
-    Order matters at runtime: scope + variable fields must be set before
-    ``on_start`` so user setup code can use them. Variables resolve
-    through ``_VAR_ID_TO_ATTR`` (the per-class map — ``self.var_X`` or
-    ``self.master.var_X``); a stale binding (variable since deleted) is
-    skipped, so a dropped variable never crashes the export (Q7).
+
+def _emit_component_post_lines(records: list[dict]) -> list[str]:
+    """After _build_ui(): inject each component's scope, then every
+    exposed field, then call ``on_start``.
+
+    Each field is injected with its chosen source:
+
+    * bound variable → ``self.var_X`` (per-class ``_VAR_ID_TO_ATTR`` —
+      ``self.var_X`` or ``self.master.var_X``); a stale binding
+      (variable deleted) falls back to a fresh default so the field is
+      always set (Q7),
+    * inline literal  → ``tk.<Type>Var(value=<lit>)``,
+    * neither         → ``tk.<Type>Var()`` (type default).
+
+    Order matters at runtime: scope + fields must be set before
+    ``on_start`` so user setup code can use them.
     """
     inject = [
         f"{INDENT}{INDENT}self.{r['var']}."
         f"{'widget' if r['scope'] == 'widget' else 'window'} = {r['target']}"
         for r in records if r["class"]
     ]
-    var_inject: list[str] = []
+    field_inject: list[str] = []
     for r in records:
         if not r["class"]:
             continue
-        for field, var_id in (r.get("var_bindings") or {}).items():
-            attr = _VAR_ID_TO_ATTR.get(var_id)
-            if attr is None:
-                continue  # stale binding — variable deleted; skip (Q7)
-            var_inject.append(
-                f"{INDENT}{INDENT}self.{r['var']}.{field} = {attr}",
+        var_b = r.get("var_bindings") or {}
+        val_b = r.get("field_values") or {}
+        for fname, ftype in r.get("fields") or []:
+            tk_cls = _TYPE_TO_TK_CLASS.get(ftype, "tk.StringVar")
+            if fname in var_b:
+                attr = _VAR_ID_TO_ATTR.get(var_b[fname])
+                rhs = attr if attr is not None else f"{tk_cls}()"
+            elif fname in val_b:
+                rhs = f"{tk_cls}(value={_field_value_literal(ftype, val_b[fname])})"
+            else:
+                rhs = f"{tk_cls}()"
+            field_inject.append(
+                f"{INDENT}{INDENT}self.{r['var']}.{fname} = {rhs}",
             )
     starts = [
         f"{INDENT}{INDENT}self.{r['var']}.on_start()"
         for r in records if r["class"]
     ]
-    return inject + var_inject + starts
+    return inject + field_inject + starts
 
 
 def _emit_component_close_lines(records: list[dict]) -> list[str]:
