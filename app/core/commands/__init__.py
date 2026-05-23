@@ -41,6 +41,7 @@ from app.core.commands.flags import (
 from app.core.commands.handlers import (
     AttachComponentCommand,
     BindHandlerCommand,
+    BindVariableCommand,
     DetachComponentCommand,
     ReorderHandlerCommand,
     UnbindHandlerCommand,
@@ -96,6 +97,7 @@ __all__ = [
     # handlers
     "AttachComponentCommand",
     "BindHandlerCommand",
+    "BindVariableCommand",
     "DetachComponentCommand",
     "ReorderHandlerCommand",
     "UnbindHandlerCommand",

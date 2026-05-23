@@ -4,7 +4,9 @@ from app.core.variables import (
     VariableEntry,
     coerce_default_for_type,
     compatible_var_types,
+    eligible_variables,
     is_valid_hex,
+    var_type_accepts,
 )
 
 
@@ -73,3 +75,47 @@ def test_non_color_property_excludes_color():
     assert "color" not in text_compat
     bool_compat = compatible_var_types("boolean")
     assert "color" not in bool_compat
+
+
+# -- script field ↔ variable type compatibility (Q5 / A1) -------------
+
+def test_var_type_accepts_exact_match():
+    assert var_type_accepts("str", "str")
+    assert var_type_accepts("int", "int")
+    assert var_type_accepts("float", "float")
+    assert var_type_accepts("bool", "bool")
+
+
+def test_var_type_accepts_str_field_takes_color():
+    # A1: a tk.StringVar field also accepts color variables.
+    assert var_type_accepts("str", "color")
+
+
+def test_var_type_accepts_rejects_cross_type():
+    assert not var_type_accepts("int", "color")
+    assert not var_type_accepts("int", "str")
+    assert not var_type_accepts("bool", "int")
+    assert not var_type_accepts("float", "int")
+
+
+def test_eligible_variables_filters_and_orders():
+    g_int = VariableEntry(name="score", type="int", scope="global")
+    g_col = VariableEntry(name="accent", type="color", scope="global")
+    g_str = VariableEntry(name="title", type="str", scope="global")
+    l_int = VariableEntry(name="count", type="int", scope="local")
+    l_col = VariableEntry(name="bg", type="color", scope="local")
+    globals_ = [g_int, g_col, g_str]
+    locals_ = [l_int, l_col]
+
+    # str field → str + color, globals before locals.
+    assert [v.name for v in eligible_variables(globals_, locals_, "str")] == [
+        "accent", "title", "bg",
+    ]
+    # int field → only int variables.
+    assert [v.name for v in eligible_variables(globals_, locals_, "int")] == [
+        "score", "count",
+    ]
+
+
+def test_eligible_variables_empty():
+    assert eligible_variables([], [], "bool") == []

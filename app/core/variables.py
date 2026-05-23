@@ -118,6 +118,36 @@ def parse_var_token(value) -> str | None:
     return value[len(VAR_TOKEN_PREFIX):] or None
 
 
+def var_type_accepts(field_type: str, var_type: str) -> bool:
+    """True when a script field declared as ``field_type`` accepts a
+    variable of ``var_type``. Exact match, except a ``str`` field also
+    accepts ``color`` variables — color rides on a StringVar at runtime,
+    so the two are interchangeable for an injected ``tk.StringVar`` field
+    (the A1 rule). See docs/plans/script_variable_binding.md.
+    """
+    if field_type == var_type:
+        return True
+    return field_type == "str" and var_type == "color"
+
+
+def eligible_variables(
+    globals_: list[VariableEntry],
+    locals_: list[VariableEntry],
+    field_type: str,
+) -> list[VariableEntry]:
+    """Variables a script field of ``field_type`` may bind to — project
+    globals first, then the window's locals — keeping only those whose
+    type the field accepts (see ``var_type_accepts``). The caller passes
+    the scopes the script is allowed to reach: globals plus the owning
+    window's locals (Q2 — a widget script reaches its window's vars via
+    the binding, not via ``self.window``).
+    """
+    return [
+        v for v in (*globals_, *locals_)
+        if var_type_accepts(field_type, v.type)
+    ]
+
+
 def make_tk_var(var_type: str, default: str) -> tk.Variable:
     """Build a fresh ``tk.Variable`` of the right subclass with the
     string ``default`` coerced into the variable's runtime type.

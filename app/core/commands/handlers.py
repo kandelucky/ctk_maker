@@ -201,6 +201,80 @@ class DetachComponentCommand(Command):
         self._refresh(project)
 
 
+class BindVariableCommand(Command):
+    """Script variable binding — set (or clear) one exposed field's entry
+    on an attached component's ``var_bindings`` map. ``widget_id`` is the
+    WidgetNode id or ``WINDOW_ID``; ``class_name`` selects the component;
+    ``field`` is the exposed script field; ``var_id`` is the project
+    variable's UUID, or ``None`` to clear the binding. Undo restores the
+    field's previous binding (rebind, or remove when it was unbound).
+    See docs/plans/script_variable_binding.md.
+    """
+
+    def __init__(
+        self, widget_id: str, class_name: str,
+        field: str, var_id: "str | None",
+    ):
+        self.widget_id = widget_id
+        self.class_name = class_name
+        self.field = field
+        self.var_id = var_id
+        self._had_prev: bool = False
+        self._prev: str | None = None
+        self.description = "Bind variable"
+
+    def _target(self, project: "Project"):
+        from app.core.project import WINDOW_ID
+        if self.widget_id == WINDOW_ID:
+            return project.active_document
+        return project.get_widget(self.widget_id)
+
+    def _component(self, project: "Project") -> dict | None:
+        target = self._target(project)
+        comps = getattr(target, "attached_components", None) or []
+        return next(
+            (c for c in comps if c.get("class") == self.class_name), None,
+        )
+
+    def _refresh(self, project: "Project") -> None:
+        project.event_bus.publish(
+            "widget_handler_changed", self.widget_id, "", "",
+        )
+        project.select_widget(self.widget_id)
+
+    @staticmethod
+    def _set(comp: dict, field: str, var_id: "str | None") -> None:
+        bindings = comp.get("var_bindings")
+        if var_id is None:
+            if isinstance(bindings, dict):
+                bindings.pop(field, None)
+                if not bindings:
+                    comp.pop("var_bindings", None)
+            return
+        if not isinstance(bindings, dict):
+            comp["var_bindings"] = bindings = {}
+        bindings[field] = var_id
+
+    def redo(self, project: "Project") -> None:
+        comp = self._component(project)
+        if comp is None:
+            return
+        bindings = comp.get("var_bindings")
+        if isinstance(bindings, dict) and self.field in bindings:
+            self._had_prev, self._prev = True, bindings[self.field]
+        else:
+            self._had_prev, self._prev = False, None
+        self._set(comp, self.field, self.var_id)
+        self._refresh(project)
+
+    def undo(self, project: "Project") -> None:
+        comp = self._component(project)
+        if comp is None:
+            return
+        self._set(comp, self.field, self._prev if self._had_prev else None)
+        self._refresh(project)
+
+
 class ReorderHandlerCommand(Command):
     """Move a bound method up or down within its event handler list.
     Execution order matters — the exporter emits a lambda chain in
