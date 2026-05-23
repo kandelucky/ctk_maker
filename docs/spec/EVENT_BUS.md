@@ -51,16 +51,15 @@ No event introspection, no priority, no async. If an event fires no one cares ab
 
 | Event | Payload | Published by | Notes |
 |---|---|---|---|
-| `document_added` | `(doc_id)` | commands.py:1274, [main_window.py:1624](../../app/ui/main_window.py#L1624) | Triggers eager creation of the per-window behavior file. |
+| `document_added` | `(doc_id)` | commands.py:1274, [main_window.py:1624](../../app/ui/main_window.py#L1624) | Refreshes the pages + asset trees; auto-saves. |
 | `document_removed` | `(doc_id, doc_name)` | commands.py:1311, main_window.py:1675, chrome.py:720 | |
-| `document_renamed` | `(doc_id, old_name, new_name)` | [project.py:558](../../app/core/project.py#L558) | Window rename — file + class rename in behavior file. |
+| `document_renamed` | `(doc_id, old_name, new_name)` | [project.py:558](../../app/core/project.py#L558) | Window rename. |
 | `document_resized` | `(width, height)` | [project.py:448](../../app/core/project.py#L448) | |
 | `document_position_changed` | `(doc_id, x, y)` | commands.py:1245 | Canvas drag of a document. |
 | `documents_reordered` | `()` | [project.py:404](../../app/core/project.py#L404) | Tab strip reorder. |
 | `active_document_changed` | `(doc_id)` | project.py:360, project.py:372, project.py:403, commands.py:1275, project_loader.py:329, chrome.py:711 | Switches workspace + properties focus. |
 | `document_collapsed_changed` | `(doc_id, collapsed: bool)` | [project.py](../../app/core/project.py) `set_document_collapsed` | Toggle ON destroys widgets via lifecycle + adds chip to the bottom tabs bar. Toggle OFF rebuilds widgets at the saved canvas position; an auto-shift moves the doc clear of any other doc that crept into its slot while it was minimised. |
 | `document_ghost_changed` | `(doc_id, ghost: bool)` | [project.py](../../app/core/project.py) `set_document_ghost` | Toggle ON captures the doc's rect as a desaturated PIL screenshot via `GhostManager.freeze`, caches it on `Document._cached_ghost_pil`, destroys widgets, places a single canvas image item. Toggle OFF deletes the image and rebuilds widgets via `lifecycle.create_widget_subtree`. Two subscribers: workspace `_on_document_ghost_changed` redraws so the ghost statusbar repaints; main_window `_on_ghost_toggled_save` writes `.ctkproj` immediately so the base64 screenshot survives close-without-save. Load-time `freeze_pending` deliberately bypasses this event (uses `freeze_from_cache` + direct redraw) so restoring N ghosts doesn't trigger N re-saves. UI entry point: click the strip below the doc rect, or click anywhere on the screenshot when ghosted (two-step: first click focuses, second click unghosts). |
-| `document_attached_scripts_changed` | `(doc_id)` | [scripts_window.py](../../app/ui/scripts_window.py) `_toggle_attachment` + `_sweep_attached_paths` | v1.40. Fires after the Scripts panel adds, removes, or path-rewrites an entry in `Document.attached_scripts`. Properties panel rebuilds the Attached Scripts group live so the user doesn't have to reselect the Window to see the row appear / disappear. |
 
 ### Variables
 
@@ -72,15 +71,6 @@ No event introspection, no priority, no async. If an event fires no one cares ab
 | `variable_type_changed` | `(var_id, new_type)` | [project.py:1153](../../app/core/project.py#L1153) | `new_type` ∈ `"str" / "int" / "float" / "bool" / "color"`. |
 | `variable_default_changed` | `(var_id, new_default: str)` | [project.py:1175](../../app/core/project.py#L1175) | Wired bindings (`BINDING_WIRINGS` entries) update live via Tk's `textvariable` / `variable`. Cosmetic bindings (e.g. `fg_color`, `text_color`) are resolved as literals at build time, so `workspace.core` listens for this event and rebuilds the affected widget subtrees. |
 | `local_variables_migrated` | `(count)` | [project.py:1391](../../app/core/project.py#L1391) | Cross-doc paste. Triggers MainWindow status toast. |
-
-### Object References
-
-| Event | Payload | Published by | Notes |
-|---|---|---|---|
-| `object_reference_added` | `(entry: ObjectReferenceEntry)` | commands.py:1649, panel.py:1625, panel.py:1722, variables_window.py:1295 | |
-| `object_reference_removed` | `(entry)` | commands.py:1636, panel.py:1677, variables_window.py:1545 | |
-| `object_reference_renamed` | `(entry)` | commands.py:1708 | |
-| `object_reference_target_changed` | `(entry)` | commands.py:1745, commands.py:1754 | Re-target via Variables window. |
 
 ### Selection + tools
 
@@ -103,7 +93,6 @@ No event introspection, no priority, no async. If an event fires no one cares ab
 | `project_renamed` | `(new_name)` | main_window.py (4 sites), workspace/core.py:2326 | |
 | `font_defaults_changed` | `(defaults: dict)` | panel_commit.py:479 + project_window.py (4 sites) | Cascade map for font resolution. |
 | `component_library_changed` | `()` | workspace/core.py:2254, workspace/core.py:2400 | `.ctkcomp` added/removed in `<project>/components/`. |
-| `library_scripts_changed` | `()` | scripts_window.py `_publish_library_changed` (script / folder add, rename, move, delete) + project_panel_files.py / project_panel_drag.py (Assets-side script ops, path-gated to `assets/scripts/`) | Keeps the Assets tree and Scripts panel in sync when the `assets/scripts/` tree changes from either side. The Assets panel deliberately does NOT refresh on `dirty_changed` (fires on nearly every edit); the Scripts panel filters out its own echo via the `_own_library_publish` flag so a fresh script keeps its post-create selection. |
 
 ### UI requests (UI → UI routing)
 
@@ -118,8 +107,7 @@ No event introspection, no priority, no async. If an event fires no one cares ab
 | `request_edit_description` | `()` | workspace/core.py:2036, chrome.py:647 | Description editor dialog |
 | `request_close_project` | `()` | chrome.py:683 | MainWindow close flow |
 | `request_export_document` | `(doc_id)` | chrome.py:621 | Export single document |
-| `request_open_variables_window` | `(scope, doc_id, variable_id=None)` | chrome.py:654, controls.py:287, panel.py:1811, panel_commit.py:192/203, panel_commit.py:_on_double_click (bound row) | F11 Variables window. `scope` ∈ `"global" / "local" / "objrefs"`. Optional `variable_id` pre-selects that row in the panel — used when the user double-clicks a variable-bound property. |
-| `request_open_scripts_window` | `()` | controls.py (Scripts toolbar button) | F6 / View → Scripts / workspace strip → toggles the per-page Scripts panel. No payload — caller wants the panel open, that's it. |
+| `request_open_variables_window` | `(scope, doc_id, variable_id=None)` | chrome.py:654, controls.py:287, panel.py:1811, panel_commit.py:192/203, panel_commit.py:_on_double_click (bound row) | F11 Variables window. `scope` ∈ `"global" / "local"`. Optional `variable_id` pre-selects that row in the panel — used when the user double-clicks a variable-bound property. |
 | `palette_drop_request` | `(...)` | palette.py:450 | Workspace canvas — handles dropped widget type |
 | `component_drop_request` | `(...)` | components_panel.py | Workspace canvas — handles dropped `.ctkcomp` |
 
@@ -152,7 +140,6 @@ selection_changed                    → repopulate tree
 tool_changed                         → enable/disable scope-based rows
 property_changed                     → refresh affected row's overlay
 widget_renamed                       → update header label
-document_attached_scripts_changed    → rebuild Attached Scripts group
 ```
 
 ### Object Tree — `app/ui/object_tree_window.py`
@@ -161,15 +148,11 @@ Subscribes to widget add/remove/reparent/rename/visibility/locked/group/handler 
 
 ### Variables window — `app/ui/variables_window.py`
 
-Subscribes to all `variable_*` and `object_reference_*` events plus `active_document_changed` (to swap the Local tab).
+Subscribes to all `variable_*` events plus `active_document_changed` (to swap the Local tab).
 
 ### History panel — `app/ui/history_window.py`
 
 Subscribes to `history_changed`. Repaints the timeline.
-
-### Scripts panel — `app/ui/scripts_window.py`
-
-Subscribes to `document_added`, `document_removed`, `document_renamed`, `document_attached_scripts_changed`. Each callback coalesces to one `after_idle(refresh)` so a burst of document_* events during project load doesn't redraw N times.
 
 ### Main window title — [main_window.py:627](../../app/ui/main_window.py#L627)
 

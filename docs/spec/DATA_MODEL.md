@@ -10,11 +10,10 @@ Project                           (top container, in-memory only)
 │   └── root_widgets: list[WidgetNode]
 │       └── children: list[WidgetNode]
 │           └── ... (recursive tree)
-│       (each WidgetNode also has handlers: dict[event → list[method_name]])
+│       (each WidgetNode also has handlers: dict[event → list[script_call]])
 │   ├── local_variables: list[VariableEntry]      (scope="local")
-│   └── local_object_references: list[ObjectReferenceEntry]  (scope="local")
+│   └── attached_components: list[dict]           (CTkScript components on this window)
 ├── variables: list[VariableEntry]                (scope="global", page-scoped — active page only)
-├── object_references: list[ObjectReferenceEntry] (scope="global", page-scoped — active page only)
 ├── font_defaults: dict[str, str]
 ├── system_fonts: list[str]
 ├── pages: list[dict]                             (multi-page projects)
@@ -35,7 +34,6 @@ Top-level container. Single instance per loaded project. 1,811 lines, ~79 method
 | `documents` | `list[Document]` | Window list. Always at least one (Main Window). |
 | `active_document_id` | `str` | Which document the canvas is focused on. |
 | `variables` | `list[VariableEntry]` | Page-scoped shared variables (active page only). Stored in each page's `.ctkproj`, not in `project.json`. |
-| `object_references` | `list[ObjectReferenceEntry]` | Page-scoped window/dialog references (active page only). Stored in each page's `.ctkproj`, not in `project.json`. |
 | `font_defaults` | `dict[str, str]` | `{"_all": "Inter", "CTkButton": "Roboto", ...}` cascade. |
 | `system_fonts` | `list[str]` | OS fonts user added to the project palette. |
 | `folder_path` | `str \| None` | Multi-page project root. `None` for single-file projects. |
@@ -105,13 +103,6 @@ find_document_for_variable(var_id) → Document | None
 migrate_local_var_bindings(node, target_doc) → int   # cross-doc copy
 ```
 
-Object references (Phase 3 / v1.10.8):
-
-```python
-add_object_reference(entry) → None
-remove_object_reference(ref_id) → None
-```
-
 Lifecycle:
 
 ```python
@@ -140,10 +131,8 @@ One window inside a project (Main Window or Toplevel). 207 lines.
 | `root_widgets` | `list[WidgetNode]` | `[]` | Top-level widget tree for this document. |
 | `description` | `str` | `""` | AI-bridge plain-language description (emitted as code comments). |
 | `local_variables` | `list[VariableEntry]` | `[]` | Per-document variables (scope="local"). |
-| `local_object_references` | `list[ObjectReferenceEntry]` | `[]` | Per-document widget references. |
 | `name_counters` | `dict[str, int]` | `{}` | Per-doc auto-naming counter. `{"CTkButton": 3, ...}`. |
-| `attached_scripts` | `list[str]` | `[]` | **v1.38 (legacy).** Library-script paths (page-folder-relative) bound to this window. Drives event-picker scope + behavior-file imports at export. Behavior file is implicitly attached and stays out of this list. |
-| `attached_components` | `list[dict]` | `[]` | **v1.42+ (CTkScript model).** Window-scope scripts attached to this document — each `{"script": <scripts/-relative path>, "class": <ClassName>}`. Instantiated at export with `self.window` injected (the script can reach all widgets). See [script_optimization.md](../plans/script_optimization.md). |
+| `attached_components` | `list[dict]` | `[]` | Window-scope CTkScript components attached to this document — each `{"script": <scripts/-relative path>, "class": <ClassName>}`. Instantiated at export with `self.window` injected (the script can reach all widgets). See [script_optimization.md](../plans/script_optimization.md). |
 
 ### `window_properties` schema — [document.py:26](../../app/core/document.py#L26)
 
@@ -183,8 +172,8 @@ Tree node — one widget on the canvas. 129 lines.
 | `locked` | `bool` | `False` | Builder-only edit lock. Cascades through descendants. |
 | `group_id` | `str \| None` | `None` | Group membership (Ctrl+G). Skipped from export. |
 | `description` | `str` | `""` | AI-bridge — emitted as comment above the widget's constructor. |
-| `handlers` | `dict[str, list]` | `{}` | **Phase 2.** Event → ordered list of handler entries. Each entry is a `script_call` dict (CTkScript model, current), or a method-name string / `ref_call` / `library_call` dict (legacy) — see schema below. |
-| `attached_components` | `list[dict]` | `[]` | **v1.42+ (CTkScript model).** Scripts attached to this widget — each `{"script": <scripts/-relative path>, "class": <ClassName>}`. Instantiated at export with `self.widget` injected (widget scope — does **not** know the window). See [script_optimization.md](../plans/script_optimization.md). |
+| `handlers` | `dict[str, list]` | `{}` | Event → ordered list of `script_call` handler entries (CTkScript model) — see schema below. |
+| `attached_components` | `list[dict]` | `[]` | CTkScript components attached to this widget — each `{"script": <scripts/-relative path>, "class": <ClassName>}`. Instantiated at export with `self.widget` injected (widget scope — does **not** know the window). See [script_optimization.md](../plans/script_optimization.md). |
 
 ### `handlers` schema
 
@@ -195,19 +184,14 @@ Keys are event identifiers:
 
 Values are ordered lists of handler **entries**. Empty list = unbound. Multi-entry binding fans out via `lambda` chain (constructor kwarg) or repeated `.bind(seq, fn, add="+")` (Tk bind).
 
-Each entry is one of:
+Each entry is a `script_call` dict:
 
 | Shape | Meaning |
 |---|---|
-| `str` (non-empty) | Method name on the window's behavior class. The exporter resolves it to `self._behavior.<name>`. The file is the user's source of truth: no auto-stub creation, no auto-delete on unbind — the Function picker only lists `def`s actually present in the file. |
-| `str` (empty `""`) | Page Script target picked, function not chosen yet. The Properties panel renders this with the Function row showing `Pick function…`; the exporter filters it out and emits a Console warning (`Method not found: ''`). |
-| `dict` with `{"kind": "ref_call", "ref": <ref_name>, "method": <method_name>, "args": [...]}` | Direct widget-to-widget call routed through an Object Reference (v3). `args` is a list of `{"name": str, "type": "str"\|"int"\|"float"\|"bool", "value": Any, "kwarg": bool}` dicts. Method must be in [`WIDGET_ACTION_METHODS`](../../app/widgets/action_registry.py) for the referenced widget's type — out-of-allowlist entries get dropped at export with the same warning surface as missing behavior methods. Empty `method` = ref picked, function not chosen yet (same pending state as the empty-string page entry). |
-| `dict` with `{"kind": "library_call", "script": <page_folder_relative_path>, "method": <function_name>, "args": [...]}` | Module-level function call into an attached library script (v1.38). `script` must appear in the owning Document's `attached_scripts` list. `method` must be a public top-level `def` in that file (signature filtered same as page methods). Exports as `<module>.<func>(...)` — module name = basename stripped of `.py`, kept in scope by the generated file's `from assets.scripts.<page>[.<sub>] import <module>` line. Empty `method` = library script picked, function not chosen yet. |
-| `dict` with `{"kind": "script_call", "class": <ClassName>, "method": <method_name>}` | **CTkScript model (current).** Call a public method on a CTkScript component attached to this widget (its own scope), or to the owning window (fallback). `class` must match an entry in this widget's or the window's `attached_components`; the script path is resolved from there at export. Exports as `self._script_N.<method>()`. Bindings that no longer resolve (script detached after wiring) render red in the panel and are dropped at export. Empty `method` = component picked, function not chosen yet. |
+| `dict` with `{"kind": "script_call", "class": <ClassName>, "method": <method_name>, "scope": "widget"\|"window"}` | Call a public method on a CTkScript component attached to this widget (`scope="widget"`) or to the owning window (`scope="window"`). `class` must match an entry in this widget's or the window's `attached_components`; the script path is resolved from there at export. Exports as `self._script_N.<method>()`. Bindings that no longer resolve (script detached after wiring) render red in the panel and are dropped at export. Empty `method` = component picked, function not chosen yet (the Function row shows `Pick function…`). |
 
-> **Legacy vs current.** The page-method string, `ref_call`, and `library_call` shapes — plus the behavior file and Object References — are the **legacy** model. The **current** model is `script_call` + `attached_components` (CTkScript). Both coexist until the legacy machinery is retired — see [script_optimization.md](../plans/script_optimization.md).
-
-The legacy behavior file lives at `<project>/assets/scripts/<page_slug>/<window_slug>.py`. CTkScript scripts live in the top-level `<project>/scripts/` folder (outside `assets/`).
+CTkScript scripts live in the top-level `<project>/scripts/` folder
+(outside `assets/`). See [script_optimization.md](../plans/script_optimization.md).
 
 **Pending UI rows are NOT stored here.** The Unity-style "Add target" placeholder (outer `[+]` click on the event header before any target is picked) lives in `PropertiesPanel._pending_event_rows`, scoped per `(widget_id, event_key)`. Pending rows clear when the user switches widget — they exist only as transient editing state, not as model data. As soon as the user picks a target, the entry commits to ``handlers`` (with empty method, since the Function picker is a separate step).
 
@@ -225,13 +209,10 @@ Loader silently maps old names to current ones.
 
 ### Backwards-compat — handler shape
 
-`from_dict` accepts three shapes:
-
-- v1: `{event: "method"}` (single string) — wrapped into a one-element list at load.
-- v2: `{event: ["m1", "m2"]}` (multi-method list of strings).
-- v3: `{event: ["m1", {"kind": "ref_call", ...}]}` (mixed list — string entries are page methods, dict entries are widget-to-widget calls via Object Reference).
-
-Dict entries without `"kind": "ref_call"` are dropped at load to keep the live model strict.
+`from_dict` keeps only `script_call` entries. Any legacy shape — a
+method-name string (page method), or a `ref_call` / `library_call`
+dict — is **dropped on load**, so projects authored against the old
+scripting model open cleanly with their dead bindings removed.
 
 ## VariableEntry — [app/core/variables.py:31](../../app/core/variables.py#L31)
 
@@ -303,56 +284,6 @@ The Properties panel uses this to decide which variables to offer in the bind me
 
 Color rows additionally get a hue swatch in the value column next to the hex code.
 
-## ObjectReferenceEntry — [app/core/object_references.py:73](../../app/core/object_references.py#L73)
-
-v1.10.8. Replaces "Behavior Fields". Dataclass.
-
-| Field | Type | Default | Purpose |
-|---|---|---|---|
-| `id` | `str` | UUID | Stable. |
-| `name` | `str` | `""` | Python identifier. Validated — see below. |
-| `target_type` | `str` | `"CTkLabel"` | What kind of widget/window this slot points at. |
-| `scope` | `"global" \| "local"` | `"local"` | See scope rules. |
-| `target_id` | `str` | `""` | `Document.id` (global) or `WidgetNode.id` (local). `""` = unbound. |
-
-### Scope rules — [object_references.py:113](../../app/core/object_references.py#L113)
-
-```python
-required_scope_for(target_type) → "global" | "local"
-
-# target_type in ("Window", "Dialog") → must be global
-# anything else → must be local
-```
-
-Documents are referenced globally (they exist for the whole program lifetime). Inner widgets are local — they belong to one document, so cross-document refs would be phantoms.
-
-### Name validation — [object_references.py:122](../../app/core/object_references.py#L122)
-
-`is_valid_python_identifier(name)`:
-
-- Must be `str.isidentifier()`
-- Must not be a Python keyword
-
-Generated code uses `self.<name>` directly — no sanitization at export.
-
-### Suggestion — [object_references.py:137](../../app/core/object_references.py#L137)
-
-`suggest_ref_name(target_label, target_type, existing_names)` produces a default identifier:
-
-1. Use widget's user-facing name if it's already a valid identifier.
-2. Else fall back to `<lowercase_type>_ref` (with `CTk` prefix stripped — `CTkButton` → `button_ref`).
-3. Suffix `_2` / `_3` / ... if the chosen base collides.
-
-### Type short labels — [object_references.py:41](../../app/core/object_references.py#L41)
-
-`TYPE_SHORT_LABELS` maps full type names to 3-letter abbreviations for display in narrow columns:
-
-```python
-"CTkButton" → "Btn"     "CTkLabel" → "Lbl"     "Window" → "Win"
-"CTkSlider" → "Sld"     "Card" → "Crd"         "Dialog" → "Dlg"
-# ... 21 entries total
-```
-
 ## Save format
 
 JSON, schema version 2. Two layouts:
@@ -394,19 +325,18 @@ JSON, schema version 2. Two layouts:
             "name_counters": { "CTkButton": 3 },
             "description": "",
             "local_variables": [ ... ],
-            "local_object_references": [ ... ]
+            "attached_components": [ ... ]
         }
     ],
-    "variables": [ <VariableEntry.to_dict()>, ... ],
-    "object_references": [ <ObjectReferenceEntry.to_dict()>, ... ]
+    "variables": [ <VariableEntry.to_dict()>, ... ]
 }
 ```
 
-Variables and object references are **page-scoped** — each page's `.ctkproj` owns its own set. Truly project-level fields (`name`, `font_defaults`, `system_fonts`) stay in `project.json`. Pages don't share variables at runtime; they export as independent `.py` files.
+Variables are **page-scoped** — each page's `.ctkproj` owns its own set. Truly project-level fields (`name`, `font_defaults`, `system_fonts`) stay in `project.json`. Pages don't share variables at runtime; they export as independent `.py` files.
 
-Legacy migration: projects whose `project.json` still has `variables` / `object_references` from the old project-wide scheme — those values flow into the active page on first load; the next save writes them into the page `.ctkproj` and drops the legacy `project.json` copies. Non-active pages don't receive the legacy globals.
+Legacy migration: projects whose `project.json` still has `variables` from the old project-wide scheme — those values flow into the active page on first load; the next save writes them into the page `.ctkproj` and drops the legacy `project.json` copies. Non-active pages don't receive the legacy globals.
 
-Shared assets live in `<project>/assets/{images,fonts,icons,scripts,components}/`.
+Shared assets live in `<project>/assets/{images,fonts,icons,components}/`. User scripts live in the top-level `<project>/scripts/` folder.
 
 ### Legacy single-file project
 
@@ -419,7 +349,6 @@ A lone `.ctkproj` with no `project.json`. Carries everything in one file:
     "active_document": "<doc-uuid>",
     "documents": [ ... ],
     "variables": [ ... ],
-    "object_references": [ ... ],
     "font_defaults": { ... },
     "system_fonts": [ ... ]
 }
@@ -430,9 +359,8 @@ The saver keeps writing the project-level fields when `Project.folder_path is No
 ### Migration
 
 - **v1 → v2** runs on load in `project_loader.py`.
-- Legacy `behavior_field_values` JSON entries (pre-v1.10.8) → migrated to `local_object_references` directly inside `Document.from_dict`. Target type defaults to `CTkLabel` (legacy JSON didn't carry type info). Next save drops the field naturally.
 - Widget type renames (e.g. `Shape` → `Card`) applied silently at `WidgetNode.from_dict`.
-- Handler shape `{event: "method"}` (v1 single-string) wrapped to `{event: ["method"]}` at load.
+- Legacy handler entries (method-name strings, `ref_call` / `library_call` dicts) are dropped at `WidgetNode.from_dict`; only `script_call` survives.
 
 ## Sentinels and constants
 
@@ -442,11 +370,10 @@ The saver keeps writing the project-level fields when `Project.folder_path is No
 | `VAR_TOKEN_PREFIX` | [variables.py:28](../../app/core/variables.py#L28) | `"var:"` | Prefix for variable binding tokens. |
 | `DEFAULT_DOCUMENT_WIDTH` / `_HEIGHT` | [document.py:23](../../app/core/document.py#L23) | `800` / `600` | New-document defaults. |
 | `DEFAULT_WINDOW_PROPERTIES` | [document.py:26](../../app/core/document.py#L26) | dict | Fresh-document `window_properties`. |
-| `DOCUMENT_TARGET_TYPES` | [object_references.py:36](../../app/core/object_references.py#L36) | `("Window", "Dialog")` | Which target types must use `scope="global"`. |
 
 ## What's NOT a class
 
-**Handlers** are not a separate class — they live as `WidgetNode.handlers: dict[str, list[str]]`. Method names are strings; the actual `def`s live in the per-window behavior file at `<project>/assets/scripts/<page>/<window>.py`. Behavior file generation, AST scanning, and stub creation live in [app/io/scripts.py](../../app/io/scripts.py).
+**Handlers** are not a separate class — they live as `WidgetNode.handlers: dict[str, list[dict]]` (each a `script_call` dict). The actual methods live in the user's CTkScript classes under `<project>/scripts/`. Script scanning (for the attach + Function pickers) lives in [app/io/scripts/](../../app/io/scripts/).
 
 **Components** (`.ctkcomp`) are zip bundles, not in-memory model classes. Pack/unpack lives in [app/io/component_io.py](../../app/io/component_io.py); the bundle contains a `component.json` manifest plus a copy of the relevant assets.
 

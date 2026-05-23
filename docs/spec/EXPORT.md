@@ -1,6 +1,6 @@
 # CTkMaker — Export Pipeline
 
-How a `.ctkproj` becomes a runnable `.py`. Lives in [app/io/code_exporter.py](../../app/io/code_exporter.py) (3,242 lines, single file by design through v1.0) plus [app/io/scripts.py](../../app/io/scripts.py) for the per-window behavior file machinery.
+How a `.ctkproj` becomes a runnable `.py`. Lives in [app/io/code_exporter/](../../app/io/code_exporter/) plus [app/io/scripts/](../../app/io/scripts/) for CTkScript scanning.
 
 ## Entry points
 
@@ -44,12 +44,8 @@ import tkinter as tk
 from PIL import Image
 from pathlib import Path
 
-# Phase 2 — behavior file imports (one per doc with handlers)
-from assets.scripts.<page_slug>.<window_slug> import <WindowName>Page
-
-# v1.38 — library-script imports (one per unique path across docs)
-from assets.scripts.<page_slug> import helpers
-from assets.scripts.<page_slug>.services import auth
+# CTkScript components — one import per distinct attached class
+from scripts.counter import Counter
 
 # Optional helpers (only when used)
 from scrollable_dropdown import ScrollableDropdown
@@ -68,18 +64,19 @@ class MainWindow(ctk.CTk):
         self.var_username = tk.StringVar(value="")
         self.var_count = tk.IntVar(value=0)
 
-        # Phase 2 — instantiate behavior class
-        self._behavior = MainWindowPage()
+        # CTkScript components — instantiate before _build_ui()
+        self._script_0 = Counter()
 
         # Build UI
         self._build_ui()
 
-        # Phase 2 — wire setup hook
-        self._behavior.setup(self)
-
-        # Object References — typed slots on behavior class
-        self._behavior.submit_btn = self.button_submit
-        self._behavior.username_entry = self.entry_username
+        # CTkScript — inject scope, run on_start, wire on_close
+        self._script_0.window = self
+        self._script_0.on_start()
+        self.protocol(
+            "WM_DELETE_WINDOW",
+            lambda: (self._script_0.on_close(), self.destroy()),
+        )
 
     def _build_ui(self):
         self.label_title = ctk.CTkLabel(
@@ -93,7 +90,7 @@ class MainWindow(ctk.CTk):
         self.button_submit = ctk.CTkButton(
             self,
             text="Submit",
-            command=self._behavior.on_submit,  # Phase 2 — single-method
+            command=self._script_0.on_submit,  # script_call binding
         )
         self.button_submit.place(x=20, y=60, width=100, height=32)
 
@@ -121,10 +118,9 @@ The Windows-only theme patch mirrors [main.py:main()](../../main.py)'s startup. 
 | `super().__init__()` | always | required |
 | `title` / `geometry` / `resizable` / `frameless` | always | from `Document.window_properties` |
 | Phase 1 variable instantiation | only if class owns variables | page-globals on main window class only (this page's set); locals on owning class |
-| `self._behavior = <WindowName>Page()` | only if doc has handlers OR object refs | Phase 2 |
+| `self._script_N = <Class>()` | only if doc has attached components | one per attached CTkScript |
 | `self._build_ui()` call | always | constructs widget tree |
-| `self._behavior.setup(self)` | only if behavior class exists | Phase 2 setup hook |
-| Object reference assignments | only if doc has refs | `self._behavior.<ref> = self.<widget>` |
+| scope inject + `on_start()` + `on_close` wiring | only if doc has attached components | `self._script_N.window`/`.widget`, then `on_start()`, `WM_DELETE_WINDOW → on_close()` |
 
 ## Phase contributions
 
@@ -194,80 +190,9 @@ Locals live on the owning class as `self.var_X` regardless of main/toplevel.
 
 When `single_document_id` exports a single Toplevel as a standalone `.py`, `force_main=True` flattens that doc's globals into locals so it runs without a parent.
 
-### Phase 2 — Event handlers + behavior files (legacy)
+### Phase 2 — Event handlers (CTkScript)
 
-> Superseded by the **CTkScript model** below (`script_call` + attached components). Kept until the legacy machinery is retired — see [script_optimization.md](../plans/script_optimization.md).
-
-Per-window behavior file at `<project>/assets/scripts/<page_slug>/<window_slug>.py` holds the user's hand-written method bodies:
-
-```python
-# assets/scripts/main_window/main_window.py
-class MainWindowPage:
-    def setup(self, window):
-        # Optional — runs once after _build_ui()
-        ...
-
-    def on_submit(self):
-        # Hand-written body
-        ...
-```
-
-Exporter emits the import + instantiation + setup call:
-
-```python
-from assets.scripts.main_window.main_window import MainWindowPage
-
-class MainWindow(ctk.CTk):
-    def __init__(self):
-        ...
-        self._behavior = MainWindowPage()
-        self._build_ui()
-        self._behavior.setup(self)
-```
-
-Widget handlers wire as constructor kwargs (single page method) or `lambda` chains (multi-entry or `ref_call`):
-
-```python
-# Single page method on "command" event
-command=self._behavior.on_submit
-
-# Multiple page methods — fan-out via lambda
-command=lambda: (self._behavior.validate(), self._behavior.on_submit())
-
-# ref_call entry (widget-to-widget direct call via Object Reference)
-command=lambda: self._behavior.status_label.configure(text='Submitted')
-
-# library_call entry (module-level function in an attached script)
-command=lambda: helpers.save_log()
-
-# Mixed list — page method + ref_call + library_call
-command=lambda: (
-    self._behavior.on_submit(),
-    self._behavior.status_label.configure(text='Submitted'),
-    helpers.save_log(),
-)
-
-# Tk bind-style — page method routes as a bare bound method
-self.entry_email.bind("<Return>", self._behavior.on_email_enter, add="+")
-
-# Tk bind-style — ref_call wrapped in a lambda that swallows the event arg
-self.label_status.bind("<Button-1>", lambda e: self._behavior.lbl.configure(text='Hit'), add="+")
-```
-
-Helpers:
-
-- `_emit_handler_lines(...)` — resolves a widget's `handlers` mapping into the constructor `command=` kwarg and post-construction `.bind()` lines.
-- `_format_handler_entries(entries)` — renders a mixed list of page-method strings, `ref_call` dicts, and `library_call` dicts as the `command=` source (bare reference for a single page-method, tuple-style lambda otherwise).
-- `_format_ref_call(entry)` / `_format_library_call(entry)` / `_format_ref_arg(arg)` — render a single dict entry and its typed args as the Python expression that invokes it.
-- `_library_import_line(page_slug, rel_path)` / `_library_script_module_name(rel_path)` — convert a page-folder-relative path into the matching `from … import …` statement plus the bare module name used in lambda bodies.
-- `_doc_has_handlers(doc)` / `_node_has_handlers(node)` / `_doc_needs_behavior(doc)` — gate the per-doc behavior-class plumbing.
-- `_scan_behavior_methods_for_export(project)` — AST scan; populates `_BEHAVIOR_METHODS_BY_DOC_ID`.
-- `_filter_handlers_to_existing_methods(node, event_label, entries)` — drop handler entries the exporter can't resolve. Validates page-method strings against the per-doc AST, `ref_call` dicts against the Object Reference list + [`WIDGET_ACTION_METHODS`](../../app/widgets/action_registry.py), and `library_call` dicts against the document's `attached_scripts` list + AST module-function scan.
-- `_validate_ref_call(doc, entry)` / `_validate_library_call(doc, entry)` — return the pre-formatted reason string when an entry doesn't resolve, or `None` when it does.
-
-### CTkScript model — attached components (current)
-
-The current scripting model attaches user `CTkScript` subclasses to widgets or the window via `attached_components` (see [DATA_MODEL.md](DATA_MODEL.md)) and binds events through `script_call` handler entries. Scripts live in the top-level `<project>/scripts/` folder (outside `assets/`). The exported build is **self-contained**: the `CTkScript` base is inlined as a `ctkmaker.py` sidecar and the `scripts/` folder is copied next to the exported window — no `pip install` of CTkMaker needed at runtime.
+The scripting model attaches user `CTkScript` subclasses to widgets or the window via `attached_components` (see [DATA_MODEL.md](DATA_MODEL.md)) and binds events through `script_call` handler entries. Scripts live in the top-level `<project>/scripts/` folder (outside `assets/`). The exported build is **self-contained**: the `CTkScript` base is inlined as a `ctkmaker.py` sidecar and the `scripts/` folder is copied next to the exported window — no `pip install` of CTkMaker needed at runtime.
 
 Per attached object the exporter instantiates the script, injects its scope, and runs lifecycle hooks:
 
@@ -305,48 +230,6 @@ Helpers:
 - `_emit_component_init_lines` / `_emit_component_post_lines` / `_emit_component_close_lines` — instantiation before `_build_ui()`, scope injection + `on_start()` after, `on_close()` on `WM_DELETE_WINDOW`.
 - `_format_script_call(entry, records, owner_id)` — `self._script_N.<method>`, or `None` when unresolved.
 - `_ctkscript_base_source()` / `_project_uses_components()` — the inlined `ctkmaker.py` base + the gate that copies `scripts/` and writes the sidecar **only** when components exist (component-less exports stay byte-identical).
-
-### Phase 3 — Object References
-
-Typed `self.<name>: <Type>` slots in the behavior class let handler code reach widgets / windows by name:
-
-```python
-# In behavior file (declared via Properties panel ◆ toggle):
-class MainWindowPage:
-    submit_btn: ref[CTkButton] = ref()
-    username_entry: ref[CTkEntry] = ref()
-```
-
-Exporter emits the assignments after `_build_ui()`:
-
-```python
-self._build_ui()
-self._behavior.setup(self)
-self._behavior.submit_btn = self.button_submit
-self._behavior.username_entry = self.entry_username
-```
-
-Cross-window refs (target = `Window` / `Dialog`) live on `Project.object_references`. The exporter resolves the target document's class symbol via `_DOC_ID_TO_CLASS`.
-
-**Name match is verbatim.** `self._behavior.<entry.name>` is assigned with no fuzzy match, suffix-stripping, or normalisation. If the Properties-panel ref says `counter_label_ref` but the behavior class has `counter_label: ref[CTkLabel]`, the runtime sets `self._behavior.counter_label_ref` (the GUI name) and the user's `self.counter_label` access raises `AttributeError` at the first widget interaction. Both ends must match exactly.
-
-Auto-stub paths keep the two in sync on the GUI side: `panel.py:_maybe_write_ref_annotation` writes the annotation when a ref is created, `_maybe_delete_ref_annotation` strips it on remove, and `variables_window.py:_maybe_rename_annotation` propagates renames. Manual edits to the behavior file bypass these — `_scan_ref_annotations_for_export` walks every doc at the top of `generate_code` and populates `_REF_ANNOTATION_ISSUES` with `(doc_name, kind, ref_name, detail)` rows so launchers can warn the user.
-
-Issue kinds:
-
-| Kind | Meaning |
-|---|---|
-| `missing_annotation` | A Properties-panel local ref has no matching `<name>: ref[<Type>]` line in the behavior class. |
-| `orphan_annotation` | A `ref[<Type>]` annotation has no matching ref in `doc.local_object_references` or `project.object_references`. |
-| `type_mismatch` | Both sides exist but the annotation's type disagrees with the ref's `target_type`. |
-
-Read via `get_ref_annotation_issues()`. F5 preview asks the user via `_confirm_ref_annotation_issues`; export + quick export show a `messagebox.showwarning` after a successful write.
-
-Helpers:
-
-- `_emit_object_reference_lines(...)` — [:1875](../../app/io/code_exporter.py#L1875)
-- `_behavior_class_for_doc(doc)` — [:1920](../../app/io/code_exporter.py#L1920)
-- `_scan_ref_annotations_for_export(project)` / `get_ref_annotation_issues()` — annotation-vs-model diff
 
 ## Per-widget construction
 
@@ -393,71 +276,32 @@ The exporter uses module-level globals as a per-export context (alternative to t
 |---|---|
 | `_CURRENT_PROJECT_PATH` | Active project disk path — for `_path_for_export` (image asset rewrites) |
 | `_EXPORT_PROJECT` | Active `Project` reference — for descriptor helpers that need it |
-| `_BEHAVIOR_METHODS_BY_DOC_ID` | `{doc_id → set of method names}` from AST scan |
-| `_MISSING_BEHAVIOR_METHODS` | List of `(widget_label, event_label, method_name)` whose `def` couldn't be resolved — consumed by `_prepend_missing_handler_warnings` when `inject_missing_handler_warnings=True` (preview only) |
 | `_GLOBAL_VAR_ATTR` | `{var_id → "var_<name>"}` for all global variables |
 | `_VAR_ID_TO_ATTR` | `{var_id → "self.var_X" | "self.master.var_X"}` for current class — swapped per `_emit_class` |
-| `_DOC_ID_TO_CLASS` | `{doc_id → generated class name}` for object reference target resolution |
 | `_VAR_NAME_FALLBACKS` | Warnings when user-set names were rewritten (duplicates, reserved, invalid) |
 
 The pattern is intentional — the export call tree is deep, threading every context arg would 10× the parameter count without making the flow clearer.
 
-## Behavior file machinery — `app/io/scripts.py`
+## CTkScript scanning — `app/io/scripts/`
 
-[scripts.py](../../app/io/scripts.py) handles the per-window `.py` file lifecycle.
+[app/io/scripts/](../../app/io/scripts/) handles read-only inspection of the user's `scripts/` folder (CTkMaker never imports user scripts — it only AST-parses them) plus creating new ones.
 
-### Skeleton creation
-
-```python
-load_or_create_behavior_file(project_path, page_slug, window_slug, class_name, ...) → Path
-```
-
-Called eagerly on `document_added` (so a fresh dialog gets its file before any handler is attached). Creates parent directories only — package `__init__.py` markers are **not** written to source. CTkMaker never imports user scripts (it only AST-parses them), so the source tree stays clean; the markers are generated into the build at export time (see [Asset copying](#asset-copying) → `write_package_markers_in`).
-
-### AST-driven introspection
-
-| Function | What it returns |
+| Function | What it does |
 |---|---|
-| `parse_handler_methods(file_path, class_name) → set[str]` | Method names defined on the behavior class. Used by exporter to filter out handler entries with no matching `def`. |
-| `parse_object_reference_fields(file_path, class_name) → list[FieldSpec]` | `ref[Type] = ref()` annotations — Object Reference slots. |
-| `existing_object_reference_names(...)` | Dedupe helper. |
-
-### Mutation
-
-Done via text manipulation (preserves blank lines, comments, formatting):
-
-| Function | Purpose |
-|---|---|
-| `add_handler_stub(...)` | Append a new `def method_name(self):` skeleton when the user attaches a handler that doesn't exist yet. |
-| `add_object_reference_annotation(...)` | Insert a `ref[Type] = ref()` class field. |
-| `delete_object_reference_annotation(...)` | Remove same. Warns the caller if the field is referenced by a method body. |
-| `delete_method_from_file(...)` | Remove a `def method` block when the user un-binds + chooses delete. |
-| `rename_behavior_file_and_class(...)` | When the document is renamed: rename the file AND the class. |
-| `recycle_behavior_file(...)` | On document delete (default): send to Recycle Bin via `Send2Trash`. |
-| `save_behavior_file_copy(...)` | On document delete (alternative): copy to `<project>/assets/scripts_archive/`. |
-
-### `ref` runtime helper — [scripts.py:636](../../app/io/scripts.py#L636)
-
-The exported behavior file imports a tiny generic descriptor so `ref[CTkButton] = ref()` works without external dependencies:
-
-```python
-from typing import Generic, TypeVar
-T = TypeVar("T")
-
-class ref(Generic[T]):
-    """Typed slot — populated by the host class's __init__ after _build_ui()."""
-    ...
-```
-
-`ensure_runtime_helpers(...)` injects this into the behavior file the first time an Object Reference is added to a doc that doesn't already have it.
+| `parse_ctkscript_classes(file_path) → list[str]` | Names of every top-level `CTkScript` subclass in a file. Feeds the attach picker. |
+| `find_attachable_scripts(scripts_dir) → list[(rel_path, class)]` | Walk `scripts/` for attachable classes. |
+| `parse_handler_methods(file_path, class_name) → list[str]` | Method names on a class. Feeds the Function picker. |
+| `create_user_script(scripts_dir, class_name) → (rel, class)` | Write a new `<snake>.py` CTkScript skeleton (auto-suffixed on collision). |
+| `iter_script_call_targets` / `resolve_script_component` | Which attached component a `script_call` binds to (shared by panel + pickers). |
+| `launch_editor` / `resolve_project_root_for_editor` | Open a script file in the user's editor. |
 
 ## Asset copying
 
-`export_project` copies `<project>/assets/` next to the output file:
+`export_project` copies `<project>/assets/` next to the output file, and (when any CTkScript component is attached) the top-level `scripts/` folder plus a `ctkmaker.py` sidecar:
 
-- Default — full copy (`shutil.copytree(..., dirs_exist_ok=True)`)
-- With `asset_filter` — only the listed asset files (per-page exports). Behavior subtree is copied separately via `_copy_behavior_assets_for_filter` ([:1692](../../app/io/code_exporter.py#L1692)) so `from assets.scripts.<page>.<window> import <Class>Page` resolves.
-- Package markers — after the asset copy, `write_package_markers_in` writes empty `__init__.py` into the build's `assets/scripts/` tree (root + every sub-folder). The source keeps no markers; the explicit package is materialised only in the build, so the import resolves on any Python (not just via PEP 420 namespace packages).
+- Default — full `assets/` copy (`shutil.copytree(..., dirs_exist_ok=True)`)
+- With `asset_filter` — only the listed asset files (per-page exports).
+- CTkScript bundle — `_project_uses_components` gates copying `<project>/scripts/` next to the output, writing the inlined `ctkmaker.py` base, and seeding package markers via `write_package_markers_in` so `from scripts.<mod> import <Class>` resolves on any Python. Component-less exports skip all of this (byte-identical output).
 - ScrollableDropdown helper — sidecar-copied next to the export when any `CTkComboBox` / `CTkOptionMenu` is present.
 
 ## Variable name resolution
@@ -465,8 +309,7 @@ class ref(Generic[T]):
 Widget-level emit needs each widget's Python attribute name. Resolved at:
 
 ```python
-_resolve_var_names(doc) → dict[widget_id → "var_name"]      # [:1768]
-_build_id_to_var_name(doc) → dict[widget_id → "var_name"]   # [:1865]
+_resolve_var_names(doc) → dict[widget_id → "var_name"]      # per-doc DFS map
 ```
 
 Pipeline:
@@ -546,8 +389,7 @@ Phase 4b (planned): `dropdown_*` (CTkOptionMenu / CTkComboBox dropdown styling �
 
 | Mechanism | Trigger | Notes |
 |---|---|---|
-| `_MISSING_BEHAVIOR_METHODS` (internal) | Handler entry can't be resolved (missing page method, unknown Object Reference, action not in `WIDGET_ACTION_METHODS`) | When called with `inject_missing_handler_warnings=True` (preview only), `_prepend_missing_handler_warnings` emits one `WARNING <reason> (<widget> > <event>)` line per entry at the top of the generated source — reasons include `Method not found: '<name>'`, `Object reference not found: '<name>'`, `Action not allowed: '<method>' on <widget_type>`. The Console panel's log-level sniffer tags these `preview-warning` → yellow. See [event_binding.md](../plans/event_binding.md). |
-| `get_var_name_fallbacks()` | User-set widget name had to be rewritten | Returns `list[(doc_name, widget_label, requested_name, actual_name)]`. UI surfaces in a post-export status toast / dialog. |
+| `get_var_name_fallbacks()` | User-set widget name had to be rewritten | Returns `list[(doc_name, widget_label, requested_name, actual_name)]`. UI surfaces in a post-export status toast / dialog. A `script_call` whose component/method no longer resolves is dropped silently at emission (the panel already shows it red). |
 
 ## What does NOT export
 

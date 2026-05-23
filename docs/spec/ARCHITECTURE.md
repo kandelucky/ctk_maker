@@ -23,7 +23,7 @@ Top-down. Each layer depends only on layers below it (with two documented except
 | **UI** | [app/ui/](../../app/ui/) | `MainWindow`, panels, dialogs, workspace canvas, properties inspector |
 | **Model** | [app/core/](../../app/core/) | In-memory project state, event bus, undo/redo, autosave, settings |
 | **Widgets** | [app/widgets/](../../app/widgets/) | Per-widget descriptors (schema, defaults, runtime, export rules) |
-| **I/O** | [app/io/](../../app/io/) | Project save/load, code export, behavior file generation, component zip pack/unpack |
+| **I/O** | [app/io/](../../app/io/) | Project save/load, code export, CTkScript scanning, component zip pack/unpack |
 
 The PyPI package at [ctkmaker/](../../ctkmaker/) is a name-reservation stub. Runtime entry is always `python main.py`.
 
@@ -43,17 +43,16 @@ See [AI_CHEATSHEET.md](AI_CHEATSHEET.md) "CustomTkinter is editable" for the dec
 
 | File | Class / role | Purpose |
 |---|---|---|
-| `project.py` | `Project` | Top-level container — documents, global variables, global object references, event bus, history. Public API contract. |
-| `document.py` | `Document` | One window in a project (Main or Toplevel). Widget tree + window properties + local variables + local references. |
-| `widget_node.py` | `WidgetNode` | Tree node — properties, children, handlers, group_id. |
+| `project.py` | `Project` | Top-level container — documents, global variables, event bus, history. Public API contract. |
+| `document.py` | `Document` | One window in a project (Main or Toplevel). Widget tree + window properties + local variables + attached components. |
+| `widget_node.py` | `WidgetNode` | Tree node — properties, children, handlers (`script_call`), attached components, group_id. |
 | `variables.py` | `VariableEntry`, `make_var_token`, `BINDING_WIRINGS` | Tk `*Var` schema (`str` / `int` / `float` / `bool` / `color`) + `var:<uuid>` token system + property→Tk-kwarg binding map. Cosmetic bindings (no `BINDING_WIRINGS` entry — e.g. `fg_color`) are resolved as literals at build time and rebuilt by `workspace.core` on `variable_default_changed`; wired bindings update live via Tk's `textvariable` / `variable`. |
-| `object_references.py` | `ObjectReferenceEntry` | Typed widget references for behavior code. |
 | `event_bus.py` | `EventBus` | Pub/sub. Single instance per `Project`. |
 | `history.py` | `History` | Undo/redo with coalesce window. |
 | `commands.py` | `Command` subclasses | Every undo-able mutation goes through a `Command`. |
 | `autosave.py` | autosave timer | Periodic snapshots to `.autosave/` sidecar. |
-| `project_folder.py` | folder layout | Multi-page project scaffolding (`project.json`, `assets/pages/`, `assets/scripts/`). |
-| `script_paths.py` | path helpers | `<project>/assets/scripts/<page>/<window>.py` resolution. |
+| `project_folder.py` | folder layout | Multi-page project scaffolding (`project.json`, `assets/pages/`). |
+| `script_paths.py` | path helpers | `<project>/scripts/` (CTkScript folder) resolution. |
 | `component_paths.py` | path helpers | `<project>/components/*.ctkcomp` resolution. |
 | `recent_files.py` | recent list | `~/.ctk_visual_builder/recent.json`. |
 | `settings.py` | settings | `~/.ctk_visual_builder/settings.json` (theme, editor, panel state). |
@@ -72,8 +71,7 @@ Two cross-cutting registries sit next to the descriptors:
 
 | File | Purpose |
 |---|---|
-| [event_registry.py](../../app/widgets/event_registry.py) | Per-widget event definitions — `command` / `bind:<seq>` keys, human-readable labels, signatures. Drives the Properties panel Events group + handler stub signature. |
-| [action_registry.py](../../app/widgets/action_registry.py) | Curated allowlist of methods callable via widget-to-widget binding (`WIDGET_ACTION_METHODS`) — Properties-panel "Object References → action" picker draws from this. v1 covers `CTkLabel.configure(text=…)`. |
+| [event_registry.py](../../app/widgets/event_registry.py) | Per-widget event definitions — `command` / `bind:<seq>` keys, human-readable labels, signatures. Drives the Properties panel Events group. |
 
 ### `app/ui/` — interface
 
@@ -83,7 +81,7 @@ Two cross-cutting registries sit next to the descriptors:
 | **Controllers** | `selection_controller.py`, `zoom_controller.py` | App-level coordinators outside `workspace/` — `SelectionController` runs the single / marquee / group state machine + bbox pool; `ZoomController` owns the canvas zoom factor + DPI rule + fit-to-window. |
 | **Workspace** | [workspace/](../../app/ui/workspace/) (`core.py`, `render.py`, `drag.py`, `widget_lifecycle.py`, `layout_overlay.py`, `chrome.py`, `controls.py`, `grid_drop_indicator.py`, `collapsed_tabs_bar.py`, `ghost_manager.py`) | Canvas — real CTk widgets via `Canvas.create_window`. `collapsed_tabs_bar.py` mounts a strip above the status bar listing minimised docs as click-to-restore chips. `ghost_manager.py` swaps an inactive doc's live widgets for a desaturated PIL screenshot on canvas (square-check icon on the chrome strip toggles it). |
 | **Properties** | [properties_panel/](../../app/ui/properties_panel/) (`panel.py`, `panel_commit.py`, `panel_schema.py`, `editors/*.py`, `overlays.py`, `drag_scrub.py`, `type_icons.py`, `format_utils.py`, `constants.py`, `property_help.py`, `tooltip.py`) | ttk.Treeview-based inspector with overlay editor widgets + label-column hover tooltips. |
-| **Floating panels** | `variables_window.py`, `object_tree_window.py`, `history_window.py`, `components_panel.py`, `console_window.py`, `scripts_window.py` | F11 / F8 / F10 docked panels + View → Console (in-app preview log) + F6 Scripts panel (per-page library `.py` files). |
+| **Floating panels** | `variables_window.py`, `object_tree_window.py`, `history_window.py`, `components_panel.py`, `console_window.py` | F11 / F8 / F10 docked panels + View → Console (in-app preview log). |
 | **Event binding** | [event_bind_menu.py](../../app/ui/event_bind_menu.py) | Shared dropdown helpers for the Properties-panel Events group + Workspace right-click cascade. `populate_target_only_menu` drives the Unity-style "pick target first, then function" flow; `populate_event_bind_menu` is the one-shot cascade used by quick-add surfaces. |
 | **Tool windows** | `widget_inspector_window.py`, `transitions_demo_window.py`, `color_palette_window.py` | Tools menu. **Inspector** — widget schema (props + inherited methods) for any CTk class. **Transitions Demo** — 6 tabs (Button / Card / Text / Loaders / Popups / Toasts) with 25+ demos sharing one easing + duration control. Generate code exports a self-contained `.py` per demo (imports + easings + `Tween` engine + helpers + animation + `__main__` runner) via the `_assemble_module` builder; popups reuse a `_make_popup` preamble that includes the dark-titlebar `withdraw + deiconify` trick. **Color Palette** — designer reference: 15 named palettes (3 muted variants + black-mono + white-mono + 10 popular schemes — Material / Tailwind / Nord / Dracula / Gruvbox / Tokyo Night / Catppuccin / Solarized / Monokai / One Dark) × 9 colors. Click any swatch to copy hex. Window auto-fits content on first-ever open via `update_idletasks` + `winfo_reqheight` (hardcoded `default_size` is unreliable across DPI/font scaling); subsequent opens restore the user's last size as usual. |
 | **Dialogs** | `startup_dialog.py`, `splash.py`, `export_dialog.py`, `quick_export_dialog.py`, `save_as_dialog.py`, `new_project_form.py`, `settings_dialog.py`, `widget_picker_dialog.py`, `font_picker_dialog.py`, `image_picker_dialog.py`, `lucide_icon_picker_dialog.py`, `dialogs/cursor_advanced.py`, `bug_reporter.py`, `crash_dialog.py`, `handler_delete_dialogs.py`, 9× `component_*_dialog.py` | Modal flows. `bug_reporter.py` powers Help → Report a Bug (guided form → GitHub issue tracker or markdown export). `recent_list.py` is a list widget reused inside `startup_dialog.py` and `new_project_form.py`. `cursor_advanced.py` opens from the cursor property's "Advanced…" dropdown row — three tabs (Windows / macOS / Linux-X11) of OS-specific cursor names with live hover-preview; rows whose cursor name the host Tk rejects fall back to arrow + dim text. |
@@ -93,11 +91,11 @@ Two cross-cutting registries sit next to the descriptors:
 
 | File | Purpose |
 |---|---|
-| `project_loader.py` | Load `.ctkproj` (v1→v2 migration on load; v2/v3 handler shapes accepted). |
+| `project_loader.py` | Load `.ctkproj` (v1→v2 migration on load; only `script_call` handler entries kept, legacy shapes dropped). |
 | `project_saver.py` | Save `.ctkproj`. |
 | `code_exporter/` | `.ctkproj` → runnable `.py` (per-window class). Package: `__init__.py` (main pipeline + filter / formatter / warning injection), `runtime_helpers.py`, `_utils.py`, `ctk_defaults.py`, `auto_trace_templates.py`, `preview_screenshot.py`. |
-| `scripts/` | Per-window behavior file generation + AST scan (`assets/scripts/<page>/<window>.py`). Package: `ast_scan.py` (incl. `parse_handler_methods_compatible` — signature-filtered class methods; `parse_module_functions` — public top-level functions in library scripts for the v1.38 library_call picker), `mutate.py`, `paths.py`, `editor.py`, `runtime.py`. |
-| `library_scripts.py` | Per-page library script management — list / create / rename / recycle user-authored `.py` files alongside the window behavior files. Behavior-file rows are flagged via `LibraryEntry.is_behavior` so the Scripts panel renders them distinctly but blocks rename / delete (those go through the window chrome). |
+| `scripts/` | CTkScript scanning + creation. Package: `ast_scan.py` (`parse_ctkscript_classes`, `find_attachable_scripts`, `parse_handler_methods`), `components.py` (`script_call` resolution), `paths.py` (`create_user_script`), `editor.py` (open in editor). |
+| `library_scripts.py` | `write_package_markers_in` — seeds `__init__.py` markers into the build's copied `scripts/` tree at export time. |
 | `component_io.py`, `component_assets.py` | `.ctkcomp` zip pack/unpack with asset bundling. |
 
 ## Entry points
@@ -146,19 +144,19 @@ User input (canvas drag, panel edit, shortcut, menu)
 ```
 Project.to_dict()
   → json.dump → .ctkproj
-  + per-page assets/ folder kept in sync (image / font / icon / behavior file)
+  + per-page assets/ folder kept in sync (image / font / icon)
 ```
 
-Multi-page projects: each page is a separate `.ctkproj` under `<project>/assets/pages/`, with shared assets in `<project>/assets/{images,fonts,icons,scripts,components}/` and a top-level `project.json`.
+Multi-page projects: each page is a separate `.ctkproj` under `<project>/assets/pages/`, with shared assets in `<project>/assets/{images,fonts,icons,components}/`, user scripts in a top-level `<project>/scripts/`, and a top-level `project.json`.
 
 ### Export
 
 ```
 Project (+ optional doc filter)
-  → app/io/code_exporter.py:export_project()
+  → app/io/code_exporter:export_project()
   → per-window Python class
-  + import from assets/scripts/<page>/<window>.py
-  + variable / handler / object-reference wiring
+  + import attached CTkScript classes from scripts/
+  + variable / handler (script_call) wiring
   → runnable .py file (caller writes to disk, optional .zip bundle)
 ```
 
@@ -199,7 +197,7 @@ These are intentionally large. Every one has a multi-paragraph module-level docs
 
 ## Conventions
 
-- **Identifiers:** UUID strings for `WidgetNode.id`, `Document.id`, `VariableEntry.id`, `ObjectReferenceEntry.id`. Stable across save/load.
+- **Identifiers:** UUID strings for `WidgetNode.id`, `Document.id`, `VariableEntry.id`. Stable across save/load.
 - **Tokens:** `var:<uuid>` for variable bindings in property values. Resolved at runtime + export.
 - **Asset references:** `asset:<kind>/<filename>` (e.g. `asset:icons/save.png`). Resolved against the active project folder.
 - **Names vs IDs:** Display names are user-mutable and not unique. IDs are stable. Generated code uses sanitized names; collisions resolved with `<type>_<N>` fallback.

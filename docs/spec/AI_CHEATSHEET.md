@@ -6,7 +6,7 @@ For full reference: [CONCEPTS.md](CONCEPTS.md), [WIDGETS.md](WIDGETS.md), [DATA_
 
 ## What CTkMaker is
 
-A visual designer for [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) Python GUIs. Users drag widgets onto a canvas, edit properties, attach event handlers, and export to runnable `.py` code. Visual design lives in `.ctkproj` files; behavior lives in hand-written Python alongside.
+A visual designer for [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) Python GUIs. Users drag widgets onto a canvas, edit properties, attach event handlers, and export to runnable `.py` code. Visual design lives in `.ctkproj` files; behavior lives in `CTkScript` classes in a top-level `scripts/` folder.
 
 ## CustomTkinter is editable — this is a fork
 
@@ -33,10 +33,10 @@ CTkMaker runs on **[ctkmaker-core](https://github.com/kandelucky/ctkmaker-core)*
 ```
 MyProject/
 ├── project.json                          page list, project name
+├── scripts/<name>.py                     your CTkScript classes (you own this folder)
 └── assets/
     ├── pages/<page>.ctkproj              per-page design (one window or more)
     ├── images/, fonts/, icons/           shared assets
-    ├── scripts/<page>/<window>.py        hand-written behavior, one class per window
     └── components/*.ctkcomp              reusable widget bundles (zip)
 ```
 
@@ -48,9 +48,8 @@ A **Window** lives inside a page — exactly one Main Window (`ctk.CTk`) plus ze
 ```
 Project → has → Pages → has → Windows → has → Widgets (nested tree)
                                           → has → Variables (local)
-                                          → has → Object References (local)
        → has → Variables (global)
-       → has → Object References (global, target = Window/Dialog)
+       → has → Scripts (CTkScript classes attached to widgets/windows)
 ```
 
 ## Widgets — quick list
@@ -158,7 +157,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self.label.configure(textvariable=self.master.var_username)
 ```
 
-## Scripts (CTkScript) — current model
+## Scripts (CTkScript)
 
 Add behavior by attaching a `CTkScript` subclass to a widget or the window, then binding events to its public methods. Scripts live in a top-level `scripts/` folder (project root, outside `assets/`):
 
@@ -182,83 +181,32 @@ Export is self-contained — `CTkScript` is inlined as `ctkmaker.py` and `script
 
 ## Event handlers
 
-> The **event styles** below apply to the current model too. The **behavior-file** target (a method on a per-window class) is **legacy** — prefer a CTkScript method (above).
-
-Bind a method to a widget event from the Properties panel **Events** group:
+Bind a CTkScript method to a widget event from the Properties panel **Events** group (pick the attached script + a public method):
 
 - **`command`** — click / change events: Button, Switch, CheckBox, RadioButton, Slider, ComboBox, OptionMenu, SegmentedButton.
 - **`bind:<sequence>`** — Tk bind events:
   - **Entry / Textbox** — `<Return>`, `<KeyRelease>`, `<FocusOut>`.
   - **Label** — 16 events split into 5 default + 11 advanced. Default (flat list): `<Button-1>` / `<Double-Button-1>` / `<Enter>` / `<Leave>` / `<MouseWheel>`. Advanced (collapsible "Advanced" sub-section in cascade + panel): `<Button-2>` / `<Button-3>` / `<ButtonRelease-1>` / `<Motion>` / `<Configure>` / `<Map>` / `<Unmap>` / `<FocusIn>` / `<FocusOut>` / `<KeyPress>` / `<KeyRelease>`. Focus / key events require `takefocus=True`. CTkLabel routes binds onto both inner canvas and inner Tk Label so the rounded-corner area is also clickable. `<Motion>` and `<Configure>` fire at 60+ Hz — keep handlers cheap.
 
-**Legacy** — methods live in a per-window behavior file at `<project>/assets/scripts/<page>/<window>.py`:
-
-```python
-# assets/scripts/login/login.py
-class LoginPage:
-    def setup(self, window):
-        # Optional — called once after _build_ui().
-        pass
-
-    def on_submit(self):
-        # Hand-written body. Triggered by button "command" handler.
-        pass
-```
-
-Exported code wires it:
+Exported code wires the picked method:
 
 ```python
 class MainWindow(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self._behavior = LoginPage()
+        self._script_0 = Counter()
         self._build_ui()
-        self._behavior.setup(self)
+        self._script_0.window = self
+        self._script_0.on_start()
 
     def _build_ui(self):
         self.button_submit = ctk.CTkButton(
             self, text="Submit",
-            command=self._behavior.on_submit,
+            command=self._script_0.on_submit,
         )
 ```
 
 Multi-method binding fans out via `lambda` for `command`-style or repeated `.bind(seq, fn, add="+")` for bind-style.
-
-## Object References
-
-> **Legacy** — superseded by Scripts (CTkScript). Still works for existing projects.
-
-Typed slots on the behavior class for clean widget access:
-
-```python
-# In assets/scripts/login/login.py
-from typing import Generic, TypeVar
-T = TypeVar("T")
-class ref(Generic[T]): ...
-
-class LoginPage:
-    username_entry: ref[CTkEntry] = ref()
-    submit_btn: ref[CTkButton] = ref()
-
-    def on_submit(self):
-        text = self.username_entry.get()
-```
-
-Exported `__init__` populates them after `_build_ui()`:
-
-```python
-self._build_ui()
-self._behavior.setup(self)
-self._behavior.username_entry = self.entry_username
-self._behavior.submit_btn = self.button_submit
-```
-
-Two scopes (mirror Variables):
-
-- **Local** — points at a widget. Lives on Document.
-- **Global** — points at a `Window` or `Dialog`. Lives on Project. Lets one window reach another.
-
-Names must be valid Python identifiers (used directly as `self.<name>`). Annotation name = Properties-panel ref name verbatim — export warns on mismatch.
 
 ## Save format
 
@@ -282,11 +230,10 @@ Names must be valid Python identifiers (used directly as `self.<name>`). Annotat
             },
             "widgets": [ ...WidgetNode tree... ],
             "local_variables": [ ... ],
-            "local_object_references": [ ... ]
+            "attached_components": [ ... ]
         }
     ],
-    "variables": [ <global vars> ],
-    "object_references": [ <global refs> ]
+    "variables": [ <global vars> ]
 }
 ```
 
@@ -303,7 +250,8 @@ A `WidgetNode`:
         "fg_color": "#6366f1"
     },
     "children": [],
-    "handlers": {"command": ["on_submit"]}
+    "handlers": {"command": [{"kind": "script_call", "class": "Counter", "method": "on_submit", "scope": "window"}]},
+    "attached_components": []
 }
 ```
 
@@ -321,10 +269,10 @@ The runtime resolves them against the project folder. The exporter copies the as
 
 ## Don't-do list
 
-- **Don't reference widgets across documents** — their variables are scoped. Cross-doc widget access must go through Object References (which only work for `Window` / `Dialog` targets at the document level, not for inner widgets).
-- **Don't put behavior code in the `.ctkproj`** — bodies live in `assets/scripts/<page>/<window>.py`. The `.ctkproj` only stores the binding (event → method name).
+- **Don't reference widgets across documents** — their variables are scoped. For cross-widget logic within one window, attach a script to the **window** (`self.window` reaches every widget on it).
+- **Don't put behavior code in the `.ctkproj`** — bodies live in your `CTkScript` classes under `scripts/`. The `.ctkproj` only stores the binding (event → script class + method).
 - **Don't nest layout containers** — current limitation (one layout-deep). A vbox inside an hbox doesn't work; use `place` inside the inner one.
-- **Don't hand-edit auto-generated `_build_ui()`** — re-export overwrites it. Customizations go in the behavior file, in `setup(self, window)` or in handler methods.
+- **Don't hand-edit auto-generated `_build_ui()`** — re-export overwrites it. Behavior goes in your CTkScript methods (`on_start` + the handler methods you bind).
 - **Don't rename widgets to non-identifiers if you have handlers wired to them** — exported code uses widget names as Python attribute names. Invalid names get sanitized fallbacks.
 
 ## Quick "build me" prompt template
@@ -341,12 +289,12 @@ Requirements:
 Constraints:
 - Use the property schemas in WIDGETS.md
 - Layout: place (absolute) for top-level
-- Reference style: prefer Object References for handler code
+- Behavior: CTkScript classes — attach to the window for cross-widget logic
 - Keep behavior bodies short — focus on wiring + state changes
 
 Output:
 1. The `.ctkproj` content (JSON, version 2)
-2. The behavior file (.py at assets/scripts/<page>/<window>.py)
+2. The CTkScript class(es) (.py in scripts/)
 3. Any Lucide icon names I need to download to assets/icons/
 ```
 

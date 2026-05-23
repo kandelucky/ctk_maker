@@ -12,11 +12,9 @@ Project
 │   └── Window (one Main + zero or more Dialogs per page)
 │       └── Widget (nested tree)
 │
-├── Variables (Global)
-├── Object References (Global)
-├── Assets (images, fonts, icons, scripts, components)
-├── Behavior files (one .py per Window — hand-written code)
-├── Library scripts (per-page shared .py modules)
+├── Variables (Global + Local)
+├── Scripts (CTkScript classes in the top-level scripts/ folder)
+├── Assets (images, fonts, icons)
 └── Components (reusable widget bundles)
 ```
 
@@ -27,6 +25,10 @@ A **Project** is a folder on disk holding one or more **Pages**, plus shared ass
 ```
 MyProject/
 ├── project.json                    Multi-page metadata (page list, name, etc.)
+├── scripts/                        Your CTkScript classes (you own this folder)
+│   ├── counter.py                     class Counter(CTkScript)
+│   └── services/
+│       └── auth.py                    sub-package — class Auth(CTkScript)
 └── assets/
     ├── pages/
     │   ├── login.ctkproj           Page 1
@@ -35,18 +37,14 @@ MyProject/
     ├── images/                     Shared image pool
     ├── fonts/                      Shared font files
     ├── icons/                      Lucide icons used in this project
-    ├── scripts/                    Per-window behavior files + per-page library scripts (one folder per page)
-    │   ├── login/
-    │   │   ├── login.py               Behavior file for the Login window
-    │   │   ├── forgot_password.py     Behavior file for the Forgot Password dialog
-    │   │   ├── helpers.py             Library script (shared across login's behavior files)
-    │   │   └── services/
-    │   │       └── auth.py            Library script (sub-package)
-    │   └── dashboard/
-    │       └── dashboard.py
     └── components/                 .ctkcomp library
         └── *.ctkcomp
 ```
+
+The `scripts/` folder sits at the project root, **outside** `assets/`
+(which holds media only). CTkMaker never writes into your script files —
+it only AST-scans them for the attach + Function pickers and copies the
+folder into the export.
 
 **Single-file projects** (legacy) skip the folder — the whole project is one `.ctkproj` file with no shared assets. New projects always use the folder layout.
 
@@ -88,7 +86,7 @@ Each widget has:
 - **Position + size** — `x`, `y`, `width`, `height` in pixels (when the parent is `place`-type).
 - **Properties** — schema-keyed values (text, fg_color, font, image, etc.). See [WIDGETS.md](WIDGETS.md).
 - **Children** — direct children in the tree. Containers only.
-- **Handlers** — event → method name(s) on the window's behavior class. See Event Handlers below.
+- **Handlers** — event → method(s) on an attached CTkScript. See Event Handlers below.
 - **Description** — plain-language note. Emitted as Python comments above the widget at export, for AI use.
 - **Visibility / Lock / Group** — design-time only. Never exported.
 
@@ -130,15 +128,15 @@ Bind a property to a variable from the Properties panel:
 
 Bound properties: `text` (Label), `initial_value` (Entry, Slider, ComboBox, OptionMenu), `initially_checked` (Switch, CheckBox), `segment_initial` (SegmentedButton). See [DATA_MODEL.md — BINDING_WIRINGS](DATA_MODEL.md#binding_wirings-table--variablespy163) for the full table.
 
-Properties not in the binding table can still bind cosmetically — the widget gets the variable's current value at create time but won't auto-update when the variable changes. (Bigger plumbing arrives with the visual scripting Phase 5.)
+Properties not in the binding table can still bind cosmetically — the widget gets the variable's current value at create time but won't auto-update when the variable changes.
 
 ### Multi-radio groups
 
 The classic Tk pattern — multiple `CTkRadioButton` widgets sharing a single `IntVar` so only one can be selected at a time. CTkMaker: bind every radio's `variable` slot to the same variable; set each radio's `value` to a unique number. The exporter wires the rest.
 
-## Scripts (CTkScript) — the current model
+## Scripts (CTkScript)
 
-A **Script** is a Python class you write that subclasses `CTkScript`. You attach it to an object — one widget OR the whole window — and bind events to its methods. This is the current way to add behavior; the Object References + behavior-file model below is the legacy path.
+A **Script** is a Python class you write that subclasses `CTkScript`. You attach it to an object — one widget OR the whole window — and bind events to its methods. This is how you add behavior in CTkMaker.
 
 ### Where scripts live
 
@@ -182,54 +180,9 @@ The binding is saved in the project file (`.ctkproj`) — never written into you
 
 Self-contained: the `CTkScript` base is inlined as `ctkmaker.py` and your `scripts/` folder is copied next to the exported window — the exported app needs no CTkMaker install.
 
-## Object References
-
-> **Legacy** — superseded by [Scripts (CTkScript)](#scripts-ctkscript--the-current-model) above. Still supported for existing projects.
-
-An **Object Reference** is a typed pointer slot on a window's behavior class — a way for hand-written behavior code to reach a widget by name without manual lookup.
-
-Two scopes (mirroring Variables):
-
-- **Global** — points at a `Window` or `Dialog`. Only valid for top-level documents. Lives on the Project. Lets one window's behavior reach another window.
-- **Local** — points at a widget inside one specific window. Lives on the Document.
-
-### Why
-
-Without references, behavior code reaches widgets via attribute access:
-
-```python
-def on_submit(self):
-    text = self.window.entry_username.get()    # window is the host CTk class
-```
-
-That works but couples your code to the widget's internal name. Object References give you a typed slot:
-
-```python
-class LoginPage:
-    username_entry: ref[CTkEntry] = ref()
-    submit_btn: ref[CTkButton] = ref()
-
-    def on_submit(self):
-        text = self.username_entry.get()       # cleaner; type-checked in IDEs
-```
-
-The exporter emits `self._behavior.username_entry = self.entry_username` after `_build_ui()`, so the slot is populated by the time `setup()` runs.
-
-### Creating
-
-From the Properties panel: click the **+** button next to a widget's name in the Properties header. The Variables window's Object References tab (F11) shows them all and lets you rename / re-target.
-
-For window-level references: Window / Dialog panel has a global toggle in the Properties header.
-
-The Window properties panel's `Object References` group lists every reference visible from that window: the document's own locals plus every project-level global pointing at another window or widget. Each row carries a 3-letter chip (`Win` / `Dlg` / `Btn` / `Lbl` / …) next to the ref name. Double-clicking a `Win`/`Dlg` row switches the canvas to that document; right-click → `Open` does the same. The current window's own global entry is not duplicated here — the per-Window toggle row at the top of the panel already surfaces it.
-
-Name match is verbatim — the `ref[<Type>]` annotation name in the behavior file must equal the Properties-panel ref name exactly. CTkMaker keeps the annotation in sync on create / rename / delete; if you edit the behavior file by hand and drift, the next export warns before the runtime hits `AttributeError`.
-
 ## Event Handlers
 
-> The **event styles** below (`command` / `bind:<sequence>`) still apply to the current model. The **behavior-file targeting** (a method on the window's behavior class) is **legacy** — for new behavior, bind to a [CTkScript](#scripts-ctkscript--the-current-model) method instead.
-
-A widget **Handler** is a method invoked when the user interacts with the widget. In the current model it is a public method on an attached CTkScript; in the legacy model it is a method on the window's behavior class.
+A widget **Handler** is a CTkScript method invoked when the user interacts with the widget — bound Unity `OnClick`-style by picking the attached script's method (no forced parameters; read state via `self.widget` / `self.window`).
 
 Two event styles:
 
@@ -238,96 +191,21 @@ Two event styles:
 
 A widget can have multiple handlers per event (they fan out via lambda chain or repeated `.bind` with `add="+"`).
 
-### Behavior file
-
-Hand-written method bodies live at:
-
-```
-<project>/assets/scripts/<page_slug>/<window_slug>.py
-```
-
-with one class per window:
-
-```python
-# assets/scripts/login/login.py
-from typing import Generic, TypeVar
-T = TypeVar("T")
-class ref(Generic[T]):
-    """Typed slot — populated by host class after _build_ui()."""
-
-class LoginPage:
-    username_entry: ref[CTkEntry] = ref()    # Object Reference
-
-    def setup(self, window):
-        # Optional — runs once after the window's _build_ui()
-        ...
-
-    def on_submit(self):
-        # Hand-written body
-        text = self.username_entry.get()
-        ...
-```
-
-The file is created automatically when you create the window. Methods are added as stubs when you bind a handler; you fill the body in your editor of choice (Settings → Editor lets you pick VS Code / Notepad++ / IDLE).
-
 ### Attaching a handler
 
-1. Select the widget on the canvas
-2. Properties panel → **Events** group (below the Behavior cluster, near the bottom)
-3. Click `[+]` on an event → enter or pick a method name
-4. Open in editor (F7 or double-click) to write the body
+1. Select the widget (or the window) on the canvas.
+2. Properties panel → **Scripts** group → attach a CTkScript (see [Scripts](#scripts-ctkscript) above).
+3. Properties panel → **Events** group (below the Behavior cluster, near the bottom) → click `[+]` on an event → pick the script + a public method.
 
-The exporter wires the rest:
+The binding is stored in the `.ctkproj` (never written into your script). The exporter wires the rest:
 
 ```python
 self.button_submit = ctk.CTkButton(
     self,
     text="Submit",
-    command=self._behavior.on_submit,    # ← wired automatically
+    command=self._script_0.on_submit,    # ← wired automatically
 )
 ```
-
-## Library scripts
-
-A **Library script** is a user-authored `.py` module that lives alongside the per-window behavior files at `<project>/assets/scripts/<page>/`. Behavior files run handler bodies for one window; library scripts hold shared utilities (`helpers.py`, `api.py`, sub-packages like `services/auth.py`) that any behavior file in the same page can import.
-
-### Scope
-
-Page-scoped, mirroring Variables' Global scope. Cross-page sharing is intentionally out of scope — pages export as independent `.py` files, so a project-wide layer would break the per-page export invariant. If two pages need the same utility today, duplicate it.
-
-### Import pattern
-
-Behavior files reach library scripts via relative import:
-
-```python
-# assets/scripts/login/login.py  (behavior)
-from . import helpers
-from .services import auth
-
-class LoginPage:
-    def on_submit(self):
-        if helpers.validate_email(self.email_entry.get()):
-            auth.sign_in(...)
-```
-
-Survives export: the entire `assets/scripts/<page>/` subtree is copied next to the output `.py` (see [EXPORT.md](EXPORT.md) `_copy_behavior_assets_for_filter`), so the same import resolves at runtime.
-
-### Scripts panel (F6 / View → Scripts / workspace strip → Scripts button)
-
-Floating window listing every `.py` under the active page's scripts folder, plus sub-folders. Entries fall into two kinds:
-
-| Kind | Visual | Available actions |
-|---|---|---|
-| Behavior file (matches a window slug) | orange `🪟` color + ``(window)`` suffix | Open in editor only |
-| Library file | default color | Open in editor / Rename / Delete (recycle bin) |
-
-Behavior files are managed via the window chrome (rename = window rename, delete = window delete); the panel surfaces them as a read-mostly view so the user can find and edit the file without leaving the builder. Library files are fully editable from the panel.
-
-Sub-folders display read-only — folder creation / deletion / renaming lives in the Assets panel (F10), not here. The Scripts panel mirrors whatever folder structure exists there.
-
-Panel auto-refreshes on `FocusIn` so external-editor changes (VS Code Save As, file explorer copy, etc.) appear as soon as the user clicks back into the builder. No manual refresh button.
-
-Backed by [`app/io/library_scripts.py`](../../app/io/library_scripts.py); UI in [`app/ui/scripts_window.py`](../../app/ui/scripts_window.py).
 
 ## Assets
 
@@ -371,12 +249,9 @@ To share: **Publish to Community** → MIT agreement form → post in the repo's
 |---|---|---|
 | Widget | Document | Its own document |
 | Local Variable | Document | All widgets in that document |
-| Local Object Reference | Document | The behavior file of that document |
 | Global Variable | Page | Every widget in every document of **that one page** |
-| Global Object Reference | Page | Every behavior file in that one page (cross-window references within the page) |
-| Handler | WidgetNode | One method on the window's behavior class |
-| Behavior file | `assets/scripts/<page>/<window>.py` | One class per window |
-| Library script | `assets/scripts/<page>/*.py` (non-window stems) | Every behavior file in the same page — imported via relative import |
+| Handler | WidgetNode | A method on an attached CTkScript |
+| Script | `<project>/scripts/*.py` | Attached per object (widget or window) |
 | Component | `<project>/components/*.ctkcomp` | All projects (after import) |
 | Asset | `<project>/assets/{images,fonts,icons}/` | Every page in this project |
 
