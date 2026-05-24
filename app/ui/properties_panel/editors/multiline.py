@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import tkinter as tk
 
-from ..constants import TEXT_BG, TREE_BG
+from ..constants import TEXT_BG, VALUE_BG
 from ..overlays import (
     SLOT_TEXT_EDIT,
     SLOT_TEXT_VALUE,
@@ -25,11 +25,14 @@ class MultilineEditor(Editor):
         first_line = text_val.partition("\n")[0] + (
             " …" if "\n" in text_val else ""
         )
+        # Darker fill + thin frame so the editable text field reads as a
+        # text *input*, distinct from the picker value-boxes (enum / font).
         value_label = tk.Label(
             panel.tree, text=first_line,
             bg=TEXT_BG, fg="#cccccc",
             font=ui_font(11), anchor="w",
             relief="flat", bd=0, padx=6, cursor="xterm",
+            highlightthickness=1, highlightbackground="#3a3a3a",
         )
         value_label.bind(
             "<Double-Button-1>",
@@ -41,7 +44,7 @@ class MultilineEditor(Editor):
 
         edit_btn = tk.Label(
             panel.tree, text="✎",
-            bg=TREE_BG, fg="#aaaaaa",
+            bg=VALUE_BG, fg="#aaaaaa",
             font=("Segoe UI Symbol", 12),
             cursor="hand2", borderwidth=0,
         )

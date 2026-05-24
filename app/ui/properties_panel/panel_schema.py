@@ -35,7 +35,9 @@ from app.ui.system_fonts import ui_font
 
 from app.ui.system_fonts import derive_ui_font
 
-from .constants import STYLE_BOOL_NAMES, TREE_BG, TREE_FG, VALUE_BG
+from .constants import (
+    DISABLED_FG, STYLE_BOOL_NAMES, TREE_BG, TREE_FG, VALUE_BG,
+)
 from .editors import get_editor
 from .format_utils import (
     compute_subgroup_preview,
@@ -728,7 +730,9 @@ class SchemaMixin:
         btn = tk.Label(
             self.tree,
             text="+", bg="#262626", fg="#888888",
-            font=ui_font(11, "bold"),
+            # The thin "+" glyph reads smaller than "✕" at the same size,
+            # so bump it to sit at the ✕'s visual size (the panel standard).
+            font=ui_font(13, "bold"),
             cursor="hand2", borderwidth=0, padx=0, pady=0,
         )
         btn.bind("<Enter>", lambda _e, b=btn: b.configure(fg="#ffffff"))
@@ -1598,23 +1602,24 @@ class SchemaMixin:
     def _is_boxed_value_prop(self, prop: dict) -> bool:
         """True for rows that render their value in a VALUE_BG box (the
         script-variable / Scripts look) instead of plain cell text.
-        Scoped to the Interaction group's text values — checkboxes and
-        colour swatches keep their own editors."""
-        return (
-            prop.get("group") == "Interaction"
-            and prop["type"] not in ("boolean", "color", "image")
-        )
+        Applies to every enum-family row — a text value + ▾ dropdown
+        (cursor / anchor / justify / compound / wrap / …) — so they all
+        read as ``[ value ] … [ ▾ ]`` consistently across widgets."""
+        from .editors.enum import EnumEditor
+        return isinstance(get_editor(prop["type"]), EnumEditor)
 
     def _add_boxed_value_overlay(
         self, iid: str, pname: str, ptype: str, display: str,
     ) -> None:
-        """Render an Interaction-group text value inside a VALUE_BG box so
-        the row reads as ``[ value ] … [ ▾ ]``. Clears the native cell
-        text (the overlay carries the value; _refresh_cell keeps it in
-        sync) and tints the dropdown button to match the box."""
+        """Render an enum-family value inside a VALUE_BG box so the row
+        reads as ``[ value ] … [ ▾ ]``. Clears the native cell text (the
+        overlay carries the value; _refresh_cell keeps it in sync) and
+        tints the dropdown button to match the box. Dimmed when the row's
+        ``disabled_when`` is active (e.g. Icon Side with no image)."""
         if self.overlays is None:
             return
         self.tree.set(iid, "value", "")
+        disabled = bool(self._disabled_states.get(pname))
         # Tint the dropdown button so it reads as its own box beside the
         # value — mirrors the variable row's value + 🔗 pairing.
         btn = self.overlays.get(iid, SLOT_ENUM_BUTTON)
@@ -1624,7 +1629,8 @@ class SchemaMixin:
             except tk.TclError:
                 pass
         lbl = tk.Label(
-            self.tree, text=display, bg=VALUE_BG, fg=TREE_FG,
+            self.tree, text=display, bg=VALUE_BG,
+            fg=DISABLED_FG if disabled else TREE_FG,
             font=ui_font(11), anchor="w", padx=4, pady=0,
             borderwidth=0, highlightthickness=0, cursor="hand2",
         )
@@ -1829,3 +1835,12 @@ class SchemaMixin:
         get_editor(prop["type"]).set_disabled(
             self, iid, pname, prop, disabled,
         )
+        # Boxed enum value label dims with the row (its ▾ is handled by
+        # the editor's set_disabled above).
+        if iid in self._boxed_value_iids and self.overlays is not None:
+            lbl = self.overlays.get(iid, SLOT_TEXT_VALUE)
+            if lbl is not None:
+                try:
+                    lbl.configure(fg=DISABLED_FG if disabled else TREE_FG)
+                except tk.TclError:
+                    pass

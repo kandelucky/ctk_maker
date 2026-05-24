@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import tkinter as tk
 
-from ..constants import TEXT_BG, TREE_BG
+from ..constants import TREE_BG, VALUE_BG
 from ..overlays import (
     SLOT_IMAGE_BUTTONS,
     SLOT_IMAGE_VALUE,
@@ -37,7 +37,7 @@ class FontEditor(Editor):
     def populate(self, panel, iid, pname, prop, value) -> None:
         value_label = tk.Label(
             panel.tree, text=_display(value),
-            bg=TEXT_BG, fg="#cccccc",
+            bg=VALUE_BG, fg="#cccccc",
             font=ui_font(11), anchor="w",
             relief="flat", bd=0, padx=6,
         )
@@ -45,20 +45,25 @@ class FontEditor(Editor):
             iid, SLOT_IMAGE_VALUE, value_label, place_image_value,
         )
 
+        # Frame on the row bg so the gap between the two button chips shows
+        # through — keeps ⋯ and ✕ reading as separate buttons, not one block.
         btn_frame = tk.Frame(panel.tree, bg=TREE_BG)
         open_btn = tk.Label(
-            btn_frame, text="⋯", bg=TREE_BG, fg="#aaaaaa",
-            font=ui_font(14, "bold"),
+            btn_frame, text="...", bg=VALUE_BG, fg="#aaaaaa",
+            # Literal "..." (not the ⋯ glyph) renders three dots at any
+            # size, so it can sit at the small ✕ symbol size — the ⋯ glyph
+            # collapses to a single dash below ~13.
+            font=ui_font(12, "bold"),
             padx=4, cursor="hand2",
         )
-        open_btn.pack(side="left", padx=(0, 2))
+        open_btn.pack(side="left", padx=(0, 4))
         open_btn.bind(
             "<Button-1>",
             lambda _e, p=pname: panel._pick_font(p),
         )
         clear_btn = tk.Label(
-            btn_frame, text="✕", bg=TREE_BG, fg="#aaaaaa",
-            font=ui_font(11, "bold"),
+            btn_frame, text="✕", bg=VALUE_BG, fg="#aaaaaa",
+            font=ui_font(9),
             padx=4, cursor="hand2",
         )
         clear_btn.pack(side="left")

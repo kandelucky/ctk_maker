@@ -129,9 +129,12 @@ def place_image_value(tree: tk.Widget, widget: tk.Widget, iid: str) -> None:
         widget.place_forget()
         return
     x, y, w, h = bbox
+    # Reserve an extra 4px beyond the button band so the value box reads as
+    # its own box with a gap before the buttons (the [ value ] … [ btns ]
+    # rhythm), not a continuous block.
     widget.place(
         x=x + 4, y=y + 3,
-        width=max(1, w - _IMAGE_BTN_RESERVE - 4),
+        width=max(1, w - _IMAGE_BTN_RESERVE - 8),
         height=max(1, h - 6),
     )
     widget.lift()
