@@ -179,6 +179,15 @@ Attach + bind: Properties → **Scripts** group → `+ Add Script` (new or exist
 
 Export is self-contained — `CTkScript` is inlined as `ctkmaker.py` and `scripts/` is copied next to the exported window.
 
+Script variables (fields): declare an exposed field — a class-level `tk.Variable` annotation with no value — then set it in the Properties panel's per-script `ClassName (Script)` group:
+
+```python
+class Counter(CTkScript):
+    score: tk.IntVar          # exposed field
+```
+
+Per field: type an inline value (box / checkbox / swatch) → a fresh `tk.Variable` for this object, OR 🔗 link a project variable (type-filtered: globals + this window's locals) → the shared one, so widgets bound to it stay in sync (a `str` field also accepts `color`). Stored in `.ctkproj` by UUID (rename-safe). At export, before `on_start`: `self.score = self.var_hp` (bound) / `tk.IntVar(value=5)` (inline) / `tk.IntVar()` (unset).
+
 ## Event handlers
 
 Bind a CTkScript method to a widget event from the Properties panel **Events** group (pick the attached script + a public method):

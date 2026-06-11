@@ -94,7 +94,7 @@ Two cross-cutting registries sit next to the descriptors:
 | `project_loader.py` | Load `.ctkproj` (v1→v2 migration on load; only `script_call` handler entries kept, legacy shapes dropped). |
 | `project_saver.py` | Save `.ctkproj`. |
 | `code_exporter/` | `.ctkproj` → runnable `.py` (per-window class). Package: `__init__.py` (main pipeline + filter / formatter / warning injection), `runtime_helpers.py`, `_utils.py`, `ctk_defaults.py`, `auto_trace_templates.py`, `preview_screenshot.py`. |
-| `scripts/` | CTkScript scanning + creation. Package: `ast_scan.py` (`parse_ctkscript_classes`, `find_attachable_scripts`, `parse_handler_methods`), `components.py` (`script_call` resolution), `paths.py` (`create_user_script`), `editor.py` (open in editor). |
+| `scripts/` | CTkScript scanning + creation. Package: `ast_scan.py` (`parse_ctkscript_classes`, `find_attachable_scripts`, `parse_handler_methods`, `parse_exposed_variables`), `components.py` (`script_call` resolution), `variable_fields.py` (`build_variable_rows` — Script Variables panel rows), `paths.py` (`create_user_script`), `editor.py` (open in editor). |
 | `library_scripts.py` | `write_package_markers_in` — seeds `__init__.py` markers into the build's copied `scripts/` tree at export time. |
 | `component_io.py`, `component_assets.py` | `.ctkcomp` zip pack/unpack with asset bundling. |
 

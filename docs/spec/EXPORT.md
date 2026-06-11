@@ -206,6 +206,9 @@ class MainWindow(ctk.CTk):
         self._build_ui()
         self._script_0.window = self          # window-attach → self.window
         # (a widget-attach injects self._script_0.widget = self.<var> instead)
+        self._script_0.score = self.var_hp               # field → bound variable
+        self._script_0.title = tk.StringVar(value="Hi")  # … or inline value
+        self._script_0.label = tk.StringVar()            # … or tk default (unset)
         self._script_0.on_start()
         self.protocol(
             "WM_DELETE_WINDOW",
@@ -225,9 +228,9 @@ self.btn.bind("<Button-1>", lambda e: self._script_0.increment(), add="+")
 
 Helpers:
 
-- `_collect_doc_components(doc, id_to_var)` — stable component records (`{var, scope, target, script, class, owner_id}`); window components first, then widgets in DFS.
+- `_collect_doc_components(doc, id_to_var)` — stable component records (`{var, scope, target, script, class, owner_id, var_bindings, field_values, fields}`); window components first, then widgets in DFS. `fields` is the class's exposed `[(name, var_type)]` (AST), so the exporter can inject every field.
 - `_resolve_component_var(records, owner_id, class_name)` — instance var for a `script_call`: a component of that class on the owning widget wins, else a window component; `None` → the binding is dropped.
-- `_emit_component_init_lines` / `_emit_component_post_lines` / `_emit_component_close_lines` — instantiation before `_build_ui()`, scope injection + `on_start()` after, `on_close()` on `WM_DELETE_WINDOW`.
+- `_emit_component_init_lines` / `_emit_component_post_lines` / `_emit_component_close_lines` — instantiation before `_build_ui()`; after it: scope injection + **field injection** (each exposed field → bound `self.var_X`, inline `tk.<Type>Var(value=…)`, or `tk.<Type>Var()` default — a stale binding falls back to default) + `on_start()`; `on_close()` on `WM_DELETE_WINDOW`. `_field_value_literal` coerces an inline string to its tk type.
 - `_format_script_call(entry, records, owner_id)` — `self._script_N.<method>`, or `None` when unresolved.
 - `_ctkscript_base_source()` / `_project_uses_components()` — the inlined `ctkmaker.py` base + the gate that copies `scripts/` and writes the sidecar **only** when components exist (component-less exports stay byte-identical).
 

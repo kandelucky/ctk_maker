@@ -176,6 +176,23 @@ The binding is saved in the project file (`.ctkproj`) — never written into you
 - `on_start(self)` — runs once after the object is built.
 - `on_close(self)` — runs when a window script's window is closed.
 
+### Script Variables (fields)
+
+A script can declare **exposed fields** — a class-level `tk.Variable` annotation with no value:
+
+```python
+class Counter(CTkScript):
+    score: tk.IntVar      # exposed field
+    title: tk.StringVar
+```
+
+In the Properties panel each attached script gets its own **`ClassName (Script)`** group (Unity-Inspector style) listing those fields. Per field you either:
+
+- **type an inline value** (box / checkbox / colour swatch) — a fresh `tk.Variable` just for this object, or
+- **🔗 link a project variable** (type-filtered: globals + this window's locals) — the *shared* `tk.Variable`, so widgets bound to it stay in sync. A `str` field also accepts `color` variables (both ride on `StringVar`).
+
+The binding is stored in `.ctkproj` by variable **UUID** (rename-safe), never in your script. At export each field is set before `on_start`: `self.score = self.var_hp` (bound), `tk.IntVar(value=5)` (inline), or `tk.IntVar()` (unset). `on_start` can read / write / `trace_add` them as live tk Variables.
+
 ### Export
 
 Self-contained: the `CTkScript` base is inlined as `ctkmaker.py` and your `scripts/` folder is copied next to the exported window — the exported app needs no CTkMaker install.
