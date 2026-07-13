@@ -1511,13 +1511,15 @@ def _format_handler_entries(
 #   4. WM_DELETE_WINDOW: call on_close on each, then destroy.
 # ---------------------------------------------------------------------
 def _ctkscript_base_source() -> str:
-    """The ``CTkScript`` base-class definition as text, for the exporter
-    to inline into a self-contained build (no ``pip install``)."""
-    import inspect
+    """The ``CTkScript`` base module as text, for the exporter to inline
+    into a self-contained build (no ``pip install``). The whole module —
+    not just the class — so the ``TYPE_CHECKING`` scaffold that gives
+    ``self.widget`` / ``self.window`` autocomplete ships with it."""
+    from pathlib import Path
 
-    from app.io.scripts.ctk_script import CTkScript
+    from app.io.scripts import ctk_script
 
-    return inspect.getsource(CTkScript)
+    return Path(ctk_script.__file__).read_text(encoding="utf-8")
 
 
 def _component_module_path(script: str) -> str:

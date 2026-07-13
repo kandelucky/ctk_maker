@@ -10,15 +10,23 @@ from pathlib import Path
 # Skeleton for a brand-new CTkScript file created from the attach
 # picker's "New script…". Plain string (``{class_name}`` filled via
 # ``.format`` at call time). Imports the base from ``ctkmaker`` — the
-# exporter ships ``ctkmaker.py`` beside the build so this resolves
-# self-contained.
-_CTKSCRIPT_SKELETON = '''from ctkmaker import CTkScript
+# project scaffold writes ``ctkmaker.py`` at the project root and the
+# exporter ships the same file beside the build, so this resolves
+# self-contained both while editing and in exports.
+_CTKSCRIPT_SKELETON = '''from __future__ import annotations
+
+import tkinter as tk
+
+from ctkmaker import CTkScript
 
 
 class {class_name}(CTkScript):
+    # Exposed fields — uncomment, then set the value in the Properties panel:
+    # score: tk.IntVar
+
     def on_start(self):
-        """Runs once after the object is built. self.widget / self.window
-        give you the object this script is attached to."""
+        # Runs once after the object is built. self.widget / self.window
+        # is the object this script is attached to.
         pass
 '''
 

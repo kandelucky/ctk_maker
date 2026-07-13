@@ -31,9 +31,17 @@ never edits this file.
 
 This module is the single source of truth for the class. The exporter
 inlines its source into the build so exported apps stay self-contained
-(no ``pip install`` needed) — hence: no imports, nothing here the
-runtime would have to pull in.
+(no ``pip install`` needed) — hence only runtime-free stdlib imports
+here; the ``customtkinter`` names live under ``TYPE_CHECKING`` and are
+never imported when the app runs — they only feed the editor's
+autocomplete and type checker.
 """
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import customtkinter as ctk
 
 
 class CTkScript:
@@ -41,6 +49,13 @@ class CTkScript:
     the lifecycle hooks you need, and add public methods to bind to
     events. See the module docstring for the widget-vs-window scope.
     """
+
+    # Type-only declarations so ``self.widget`` / ``self.window``
+    # autocomplete in the editor. At runtime only the one matching the
+    # attach target exists (strict scope) — the other raises
+    # AttributeError, by design.
+    widget: ctk.CTkBaseClass
+    window: ctk.CTk | ctk.CTkToplevel
 
     def __init__(self, *, widget=None, window=None):
         # CTkMaker injects the matching context after building the

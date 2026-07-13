@@ -334,9 +334,27 @@ def _build_pyrightconfig_json() -> str:
     return json.dumps(config, indent=4) + "\n"
 
 
+def _ctkscript_sidecar_source() -> str | None:
+    """Full source of the ``CTkScript`` base module, for the editor-side
+    ``ctkmaker.py`` sidecar at the project root — the same text the
+    exporter inlines beside every build. Makes ``from ctkmaker import
+    CTkScript`` in ``scripts/*.py`` resolve (with autocomplete) while
+    the user is still editing, not only after export. ``None`` when the
+    source isn't readable (e.g. a frozen build without .py files).
+    """
+    try:
+        from app.io.scripts import ctk_script
+
+        return Path(ctk_script.__file__).read_text(encoding="utf-8")
+    except Exception:
+        log_error("ctkscript sidecar source")
+        return None
+
+
 def write_python_env_scaffold(folder: str | Path) -> list[str]:
     """Write ``requirements.txt`` + ``pyrightconfig.json`` + ``.gitignore``
-    at the project root if they don't already exist.
+    + the ``ctkmaker.py`` CTkScript sidecar at the project root if they
+    don't already exist.
 
     Idempotent — files the user has already customised are left alone.
     Returns the list of filenames actually written (for caller logging).
@@ -347,7 +365,8 @@ def write_python_env_scaffold(folder: str | Path) -> list[str]:
     since v1.41.3 (which reference ``customtkinter`` types under
     ``TYPE_CHECKING``) resolve cleanly in any IDE that reads Pyright
     configs. ``requirements.txt`` covers the distribute-to-another-
-    machine flow.
+    machine flow. ``ctkmaker.py`` resolves the ``from ctkmaker import
+    CTkScript`` line in user scripts while editing.
     """
     folder = Path(folder)
     files = {
@@ -367,6 +386,9 @@ def write_python_env_scaffold(folder: str | Path) -> list[str]:
             "*.pyc\n"
         ),
     }
+    sidecar = _ctkscript_sidecar_source()
+    if sidecar is not None:
+        files["ctkmaker.py"] = sidecar
     written: list[str] = []
     for name, content in files.items():
         target = folder / name

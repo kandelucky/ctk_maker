@@ -1659,7 +1659,7 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         from tkinter import messagebox
 
         from app.core.script_paths import user_scripts_dir
-        from app.io.scripts import create_user_script, launch_editor
+        from app.io.scripts import create_user_script
         from app.ui.dialogs.rename import RenameDialog
         parent = self.winfo_toplevel()
         scripts_dir = user_scripts_dir(getattr(self.project, "path", None))
@@ -1692,18 +1692,32 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             return
         rel, cls = result
         self._attach_script_component(node, rel, cls)
-        launch_editor(Path(scripts_dir) / rel)
+        self._launch_script_editor(Path(scripts_dir) / rel)
 
     def _open_script_in_editor(self, rel_path: str) -> None:
         """Open an attached script in the user's editor (F7-style)."""
         from pathlib import Path
 
         from app.core.script_paths import user_scripts_dir
-        from app.io.scripts import launch_editor
         scripts_dir = user_scripts_dir(getattr(self.project, "path", None))
         if scripts_dir is None or not rel_path:
             return
-        launch_editor(Path(scripts_dir) / rel_path)
+        self._launch_script_editor(Path(scripts_dir) / rel_path)
+
+    def _launch_script_editor(self, file_path) -> None:
+        """Open a script with the project folder as workspace, so
+        VS Code / PyCharm pick up ``pyrightconfig.json`` + the root
+        ``ctkmaker.py`` sidecar (import resolution + autocomplete)
+        without the user opening the folder by hand."""
+        from app.core.settings import load_settings
+        from app.io.scripts import (
+            launch_editor, resolve_project_root_for_editor,
+        )
+        launch_editor(
+            file_path,
+            editor_command=load_settings().get("editor_command"),
+            project_root=resolve_project_root_for_editor(self.project),
+        )
 
     def _attach_script_component(self, node, script: str, cls: str) -> None:
         """Attach a CTkScript class to ``node`` (widget or window) via an

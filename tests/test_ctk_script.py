@@ -71,16 +71,18 @@ def test_subclass_overrides_lifecycle():
 # -- Inline-readiness -------------------------------------------------
 
 def test_no_runtime_imports():
-    # The base must stay import-free so the exporter can inline it
-    # verbatim into a self-contained build.
+    # The base must stay runtime-import-free so the exporter can inline
+    # it verbatim into a self-contained build. Only __future__ / typing
+    # are allowed at module level (both runtime-free); customtkinter may
+    # appear solely inside the TYPE_CHECKING guard.
     import ast
     import inspect
 
     from app.io.scripts import ctk_script
 
     tree = ast.parse(inspect.getsource(ctk_script))
-    imports = [
-        n for n in tree.body
-        if isinstance(n, (ast.Import, ast.ImportFrom))
-    ]
-    assert imports == []
+    for n in tree.body:
+        if isinstance(n, ast.ImportFrom):
+            assert n.module in ("__future__", "typing"), n.module
+        else:
+            assert not isinstance(n, ast.Import)

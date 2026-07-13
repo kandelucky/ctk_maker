@@ -51,12 +51,21 @@ def _comp(script, cls):
 # -- base source ------------------------------------------------------
 
 def test_base_source_is_valid_classless_of_imports():
+    # Self-contained rule: at module level only runtime-free imports are
+    # allowed (__future__ / typing); customtkinter may appear solely
+    # inside the TYPE_CHECKING guard, never as a real runtime import.
     src = _ctkscript_base_source()
     assert "class CTkScript" in src
     tree = ast.parse(src)  # parses standalone
-    assert not [
-        n for n in tree.body if isinstance(n, (ast.Import, ast.ImportFrom))
-    ]
+    for n in tree.body:
+        if isinstance(n, ast.ImportFrom):
+            assert n.module in ("__future__", "typing"), n.module
+        else:
+            assert not isinstance(n, ast.Import)
+    # the editor-scaffold names ship with the base
+    assert "TYPE_CHECKING" in src
+    assert "widget: ctk.CTkBaseClass" in src
+    assert "window: ctk.CTk | ctk.CTkToplevel" in src
 
 
 # -- collection -------------------------------------------------------
