@@ -22,9 +22,9 @@ Project                           (top container, in-memory only)
 
 Identity is by UUID at every level. Names are user-mutable display strings; bindings/references resolve through IDs.
 
-## Project — [app/core/project.py:192](../../app/core/project.py#L192)
+## Project — [app/core/project.py:191](../../app/core/project.py#L191)
 
-Top-level container. Single instance per loaded project. 1,811 lines, ~79 methods — the public API contract.
+Top-level container. Single instance per loaded project. ~1,950 lines — the public API contract.
 
 ### Persistent fields (round-trip via [project_saver.py](../../app/io/project_saver.py) / [project_loader.py](../../app/io/project_loader.py))
 
@@ -107,12 +107,13 @@ Lifecycle:
 
 ```python
 clear() → None    # reset to empty single-document state
-to_dict() / from_dict(...) → ...   # save/load (driven by io/project_saver,loader)
 ```
 
-## Document — [app/core/document.py:49](../../app/core/document.py#L49)
+Serialization is **not** on `Project` — save/load lives entirely in [io/project_saver.py](../../app/io/project_saver.py) / [io/project_loader.py](../../app/io/project_loader.py), which walk the model and call the per-class `to_dict` / `from_dict` (`Document`, `WidgetNode`, `VariableEntry`).
 
-One window inside a project (Main Window or Toplevel). 207 lines.
+## Document — [app/core/document.py:48](../../app/core/document.py#L48)
+
+One window inside a project (Main Window or Toplevel). ~250 lines.
 
 ### Persistent fields
 
@@ -132,9 +133,9 @@ One window inside a project (Main Window or Toplevel). 207 lines.
 | `description` | `str` | `""` | AI-bridge plain-language description (emitted as code comments). |
 | `local_variables` | `list[VariableEntry]` | `[]` | Per-document variables (scope="local"). |
 | `name_counters` | `dict[str, int]` | `{}` | Per-doc auto-naming counter. `{"CTkButton": 3, ...}`. |
-| `attached_components` | `list[dict]` | `[]` | Window-scope CTkScript components attached to this document — each `{"script": <scripts/-relative path>, "class": <ClassName>, "var_bindings"?: {<field>: <variable UUID>}, "field_values"?: {<field>: <inline literal>}}`. Each exposed field (`name: tk.StringVar`) has one source — `var_bindings` links it to a project variable **by UUID** (rename-safe), or `field_values` holds an inline literal value; neither → the field's tk default. Instantiated at export with `self.window` injected (the script can reach all widgets). See [script_optimization.md](../plans/script_optimization.md) / [script_variable_binding.md](../plans/script_variable_binding.md). |
+| `attached_components` | `list[dict]` | `[]` | Window-scope CTkScript components attached to this document — each `{"script": <scripts/-relative path>, "class": <ClassName>, "var_bindings"?: {<field>: <variable UUID>}, "field_values"?: {<field>: <inline literal>}}`. Each exposed field (`name: tk.StringVar`) has one source — `var_bindings` links it to a project variable **by UUID** (rename-safe), or `field_values` holds an inline literal value; neither → the field's tk default. Instantiated at export with `self.window` injected (the script can reach all widgets). See [script_optimization.md](../plans/script_optimization.md) / [script_variable_binding.md](../plans/archive/script_variable_binding.md). |
 
-### `window_properties` schema — [document.py:26](../../app/core/document.py#L26)
+### `window_properties` schema — [document.py:25](../../app/core/document.py#L25)
 
 ```python
 {
@@ -153,9 +154,9 @@ One window inside a project (Main Window or Toplevel). 207 lines.
 
 `grid_*`, `alignment_lines_enabled`, `snap_enabled` are design-time only — never reach the exported `.py`.
 
-## WidgetNode — [app/core/widget_node.py:12](../../app/core/widget_node.py#L12)
+## WidgetNode — [app/core/widget_node.py:57](../../app/core/widget_node.py#L57)
 
-Tree node — one widget on the canvas. 129 lines.
+Tree node — one widget on the canvas. ~200 lines.
 
 ### Fields
 
@@ -173,7 +174,7 @@ Tree node — one widget on the canvas. 129 lines.
 | `group_id` | `str \| None` | `None` | Group membership (Ctrl+G). Skipped from export. |
 | `description` | `str` | `""` | AI-bridge — emitted as comment above the widget's constructor. |
 | `handlers` | `dict[str, list]` | `{}` | Event → ordered list of `script_call` handler entries (CTkScript model) — see schema below. |
-| `attached_components` | `list[dict]` | `[]` | CTkScript components attached to this widget — each `{"script": <scripts/-relative path>, "class": <ClassName>, "var_bindings"?: {<field>: <variable UUID>}, "field_values"?: {<field>: <inline literal>}}`. Each exposed field has one source — `var_bindings` links it to a project variable **by UUID** (rename-safe; picker offers globals + the widget's window locals), or `field_values` holds an inline literal; neither → the field's tk default. Instantiated at export with `self.widget` injected (widget scope — does **not** know the window). See [script_optimization.md](../plans/script_optimization.md) / [script_variable_binding.md](../plans/script_variable_binding.md). |
+| `attached_components` | `list[dict]` | `[]` | CTkScript components attached to this widget — each `{"script": <scripts/-relative path>, "class": <ClassName>, "var_bindings"?: {<field>: <variable UUID>}, "field_values"?: {<field>: <inline literal>}}`. Each exposed field has one source — `var_bindings` links it to a project variable **by UUID** (rename-safe; picker offers globals + the widget's window locals), or `field_values` holds an inline literal; neither → the field's tk default. Instantiated at export with `self.widget` injected (widget scope — does **not** know the window). See [script_optimization.md](../plans/script_optimization.md) / [script_variable_binding.md](../plans/archive/script_variable_binding.md). |
 
 ### `handlers` schema
 
@@ -197,7 +198,7 @@ CTkScript scripts live in the top-level `<project>/scripts/` folder
 
 ### Backwards-compat — type renames
 
-[widget_node.py:7](../../app/core/widget_node.py#L7):
+[widget_node.py:8](../../app/core/widget_node.py#L8):
 
 ```python
 _WIDGET_TYPE_RENAMES = {
@@ -214,14 +215,14 @@ method-name string (page method), or a `ref_call` / `library_call`
 dict — is **dropped on load**, so projects authored against the old
 scripting model open cleanly with their dead bindings removed.
 
-## VariableEntry — [app/core/variables.py:31](../../app/core/variables.py#L31)
+## VariableEntry — [app/core/variables.py:58](../../app/core/variables.py#L58)
 
 Phase 1 / 1.5. Dataclass.
 
 | Field | Type | Default | Purpose |
 |---|---|---|---|
 | `id` | `str` | UUID | Stable. Referenced by `var:<uuid>` tokens. |
-| `name` | `str` | `""` | Display name. Sanitized for export — see [variables.py:242](../../app/core/variables.py#L242). |
+| `name` | `str` | `""` | Display name. Sanitized for export — see [variables.py:320](../../app/core/variables.py#L320). |
 | `type` | `"str" \| "int" \| "float" \| "bool" \| "color"` | `"str"` | Maps to `tk.StringVar` / `IntVar` / `DoubleVar` / `BooleanVar`. `color` reuses `StringVar` — the type tag only changes the editor surface (swatch + picker) and bind-picker filtering for color-typed properties. |
 | `default` | `str` | `""` | String form of initial value. Coerced at runtime. For `color`, must be `#rgb` / `#rrggbb`; invalid input falls back to `#000000`. |
 | `scope` | `"global" \| "local"` | `"global"` | Lives on `Project.variables` (global — page-scoped, active page only) or `Document.local_variables` (local). |
@@ -236,7 +237,7 @@ is_var_token(value) → bool
 parse_var_token(value) → str | None    # returns the UUID, or None
 ```
 
-### Runtime resolution — [variables.py:191](../../app/core/variables.py#L191)
+### Runtime resolution — [variables.py:269](../../app/core/variables.py#L269)
 
 `resolve_bindings(project, widget_type, properties)` walks a property dict:
 
@@ -244,7 +245,7 @@ parse_var_token(value) → str | None    # returns the UUID, or None
 2. For tokens without a wiring entry (cosmetic bindings — e.g. `fg_color`) → replace token with current literal value.
 3. For tokens pointing at a deleted variable → strip the property; descriptor falls back to its default.
 
-### `BINDING_WIRINGS` table — [variables.py:163](../../app/core/variables.py#L163)
+### `BINDING_WIRINGS` table — [variables.py:235](../../app/core/variables.py#L235)
 
 ```python
 {
@@ -261,19 +262,20 @@ parse_var_token(value) → str | None    # returns the UUID, or None
 
 Properties in this table get live two-way / one-way Tk syncing for free. Properties NOT in this table can still be bound; they just snapshot the variable's current value at create time.
 
-### Variable type ↔ property type compatibility — [variables.py:175](../../app/core/variables.py#L175)
+### Variable type ↔ property type compatibility — [variables.py:247](../../app/core/variables.py#L247)
 
 ```python
 _PTYPE_VAR_COMPAT = {
     "boolean": ("bool", "int"),
     "number":  ("int", "float"),
+    "color":   ("color", "str"),
 }
 # default: ("str",)
 ```
 
 The Properties panel uses this to decide which variables to offer in the bind menu for a given property.
 
-### Type short labels — [variables.py:36](../../app/core/variables.py#L36)
+### Type short labels — [variables.py:40](../../app/core/variables.py#L40)
 
 `VAR_TYPE_SHORT` maps each variable type to a 3-letter chip the Window Properties panel renders next to the variable's name (mirrors `TYPE_SHORT_LABELS` for widget refs):
 
@@ -366,10 +368,10 @@ The saver keeps writing the project-level fields when `Project.folder_path is No
 
 | Constant | Where | Value | Purpose |
 |---|---|---|---|
-| `WINDOW_ID` | [project.py:60](../../app/core/project.py#L60) | `"__window__"` | Sentinel ID for the virtual "Window" node — selected when the user clicks the document chrome. Routes property reads through `Project.window_properties`. |
-| `VAR_TOKEN_PREFIX` | [variables.py:28](../../app/core/variables.py#L28) | `"var:"` | Prefix for variable binding tokens. |
-| `DEFAULT_DOCUMENT_WIDTH` / `_HEIGHT` | [document.py:23](../../app/core/document.py#L23) | `800` / `600` | New-document defaults. |
-| `DEFAULT_WINDOW_PROPERTIES` | [document.py:26](../../app/core/document.py#L26) | dict | Fresh-document `window_properties`. |
+| `WINDOW_ID` | [project.py:59](../../app/core/project.py#L59) | `"__window__"` | Sentinel ID for the virtual "Window" node — selected when the user clicks the document chrome. Routes property reads through `Project.window_properties`. |
+| `VAR_TOKEN_PREFIX` | [variables.py:54](../../app/core/variables.py#L54) | `"var:"` | Prefix for variable binding tokens. |
+| `DEFAULT_DOCUMENT_WIDTH` / `_HEIGHT` | [document.py:22](../../app/core/document.py#L22) | `800` / `600` | New-document defaults. |
+| `DEFAULT_WINDOW_PROPERTIES` | [document.py:25](../../app/core/document.py#L25) | dict | Fresh-document `window_properties`. |
 
 ## What's NOT a class
 

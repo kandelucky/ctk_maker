@@ -348,7 +348,7 @@ class SchemaMixin:
         value cell is an object-field — click to bind a project variable
         through a type-filtered picker (globals + this window's locals).
         A script with no exposed fields contributes no group, so plain
-        objects stay tidy. See docs/plans/script_variable_binding.md.
+        objects stay tidy. See docs/plans/archive/script_variable_binding.md.
         """
         if self.project is None or node is None:
             return

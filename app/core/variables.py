@@ -123,7 +123,7 @@ def var_type_accepts(field_type: str, var_type: str) -> bool:
     variable of ``var_type``. Exact match, except a ``str`` field also
     accepts ``color`` variables — color rides on a StringVar at runtime,
     so the two are interchangeable for an injected ``tk.StringVar`` field
-    (the A1 rule). See docs/plans/script_variable_binding.md.
+    (the A1 rule). See docs/plans/archive/script_variable_binding.md.
     """
     if field_type == var_type:
         return True

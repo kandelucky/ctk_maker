@@ -208,7 +208,7 @@ class BindVariableCommand(Command):
     ``field`` is the exposed script field; ``var_id`` is the project
     variable's UUID, or ``None`` to clear the binding. Undo restores the
     field's previous binding (rebind, or remove when it was unbound).
-    See docs/plans/script_variable_binding.md.
+    See docs/plans/archive/script_variable_binding.md.
     """
 
     def __init__(
@@ -287,7 +287,7 @@ class SetFieldSourceCommand(Command):
     A field has a single source, so setting one clears the other. Undo
     restores both maps' previous entries for the field. ``widget_id`` is
     the WidgetNode id or ``WINDOW_ID``; ``class_name`` selects the
-    component. See docs/plans/script_variable_binding.md.
+    component. See docs/plans/archive/script_variable_binding.md.
     """
 
     def __init__(

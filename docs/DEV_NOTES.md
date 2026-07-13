@@ -35,7 +35,7 @@ The recurring pattern for adding pages to a CTkMaker project programmatically (w
   - `project.json` — version 1, holds the `pages` list (each entry: `id` / `file` / `name`)
   - `assets/pages/<name>.ctkproj` — version 2 page files (one per page)
 - **Clean widget library (variant source):** `C:\Users\likak\Documents\CTkMaker\Templates\assets\pages\<type>_clean.ctkproj` — one file per widget type, curated by the user. Files being unified to `_clean` suffix (`buttons_clean.ctkproj`, `labels_clean.ctkproj`, `selections_clean.ctkproj`); pre-rename names (`main.ctkproj` = buttons, `labels.ctkproj` = labels, `selections.ctkproj` = selections) may still appear mid-migration. The builder helper auto-scans all `*.ctkproj` in the pages dir; any widget whose name matches `^[a-z]+_\d+$` (e.g. `button_1`, `checkbox_3`) is treated as a template. Showcase widgets use descriptive names (`color_primary`, `h_sizes`) and are skipped automatically by the regex. If a required variant is missing from the clean library, ASK the user to add it — do not invent property names.
-- **Showcases / projects:** `<type>_showcase.ctkproj` (e.g. `buttons_showcase.ctkproj`). Behavior scripts at `assets\scripts\<page_stem>\<doc>.py`. Note: page rename and its scripts folder are NOT auto-migrated together — renaming a `.ctkproj` orphans the existing scripts folder. Avoid renaming `.ctkproj` once behavior is wired.
+- **Showcases / projects:** `<type>_showcase.ctkproj` (e.g. `buttons_showcase.ctkproj`). Behavior lives in `CTkScript` classes in the project's top-level `scripts/` folder — attached in the builder, bindings stored inside the `.ctkproj` (script path + class + method). Renaming a `.ctkproj` no longer orphans anything (the old per-page `assets/scripts/` layout is gone).
 - **Builder helper:** `C:\tmp\ctkproj_builder.py` — see API below. Loaded by every build script via `sys.path.insert(0, ...)`.
 - **Build scripts:** `C:\tmp\build_<demo>.py` — one-shot generators, throwaway. Each script reads an EXISTING page file (user creates the empty page in CTkMaker GUI first) and replaces only its `widgets` + `name_counters`. **Never** write `project.json`; never create new pages programmatically.
 
@@ -103,11 +103,7 @@ Source: `_resolve_var_names` in `app/io/code_exporter/__init__.py`.
 
 A CTkTextbox the user named `content_textbox` IS emitted as `self.content_textbox`. A window-scoped CTkScript can write `self.window.content_textbox` directly.
 
-**Gap (as of 2026-05-01):** `_RESERVED_VAR_NAMES` only blocks `_behavior` and `_build_ui` (exporter's emitted symbols). It does **not** block tk root / CTk inherited methods. A widget named `title`, `geometry`, `mainloop`, `destroy`, `update`, `after`, `bind`, `configure`, `pack`, `grid`, `place`, `focus_set`, `attributes`, `protocol`, `iconify`, `deiconify`, `wm_*`, `winfo_*`, `grab_set`, `option_add`, `state`, etc. **shadows the inherited method** on the window class — any code (CTkMaker's own or user) that later calls `self.title()` / `self.geometry(...)` crashes.
-
-Concrete repro: CTkScrollableDropdown's `__init__` does `self.top.title(root.title())`. If the user has a widget named `title`, the preview crashes during dropdown construction for any CTkOptionMenu / CTkComboBox.
-
-Workaround: don't name widgets after tk method names — use `title_label`, `header_geometry`, etc.
+**Reserved names (fixed since the 2026-05-01 gap):** `_RESERVED_VAR_NAMES` holds only the exporter's own emitted symbols (`_build_ui`) and is joined at validation time with `_ctk_inherited_names()` — every non-dunder attribute of `ctk.CTk` ∪ `ctk.CTkToplevel`. A widget named `title`, `geometry`, `mainloop`, `bind`, `configure`, `wm_*`, `winfo_*`, etc. is therefore rejected and falls back to `<type>_<N>` (reported via `_VAR_NAME_FALLBACKS`) instead of shadowing the inherited method. The old crash (CTkScrollableDropdown calling `root.title()` while a widget named `title` shadowed it) can no longer happen.
 
 Handler signatures (per `app/widgets/event_registry.py`):
 - Buttons / Switches / RadioButtons → `(self)`

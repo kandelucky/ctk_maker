@@ -71,12 +71,20 @@ def _format_values(prop: dict) -> str:
     return ""
 
 
+def _condition_text(cond) -> str:
+    # A callable condition would str() to "<function ... at 0x...>" —
+    # a live memory address that churns every regeneration.
+    if callable(cond):
+        return "_dynamic_"
+    return str(cond)
+
+
 def _conditional(prop: dict) -> str:
     bits = []
     if "disabled_when" in prop:
-        bits.append(f"disabled when {prop['disabled_when']}")
+        bits.append(f"disabled when {_condition_text(prop['disabled_when'])}")
     if "hidden_when" in prop:
-        bits.append(f"hidden when {prop['hidden_when']}")
+        bits.append(f"hidden when {_condition_text(prop['hidden_when'])}")
     if prop.get("recreate_triggers"):
         bits.append("**recreates on change**")
     return "; ".join(bits)

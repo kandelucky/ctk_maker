@@ -4,7 +4,7 @@ How a `.ctkproj` becomes a runnable `.py`. Lives in [app/io/code_exporter/](../.
 
 ## Entry points
 
-### `export_project` — [code_exporter.py:974](../../app/io/code_exporter.py#L974)
+### `export_project` — [code_exporter/\_\_init\_\_.py:880](../../app/io/code_exporter/__init__.py#L880)
 
 ```python
 export_project(
@@ -27,9 +27,9 @@ Top-level entry. Three jobs:
 
 When `as_zip=True`: runs the same flow into a tempdir, then zips into a `.zip` archive next to `path`.
 
-### `generate_code` — [code_exporter.py:1148](../../app/io/code_exporter.py#L1148)
+### `generate_code` — [code_exporter/\_\_init\_\_.py:1087](../../app/io/code_exporter/__init__.py#L1087)
 
-Pure code generation — returns the source as a string. No disk side-effects. Calls `_generate_code_inner` ([:1224](../../app/io/code_exporter.py#L1224)) which orchestrates per-document emission.
+Pure code generation — returns the source as a string. No disk side-effects. Calls `_generate_code_inner` ([:1151](../../app/io/code_exporter/__init__.py#L1151)) which orchestrates per-document emission.
 
 ## Output structure
 
@@ -54,6 +54,11 @@ from scrollable_dropdown import ScrollableDropdown
 class MainWindow(ctk.CTk):
     def __init__(self):
         super().__init__()
+
+        # Only when the project ships custom fonts (assets/fonts/):
+        # registered once against the Tk root; Toplevels share it.
+        ctk.register_project_fonts(
+            self, Path(__file__).resolve().parent / "assets" / "fonts")
 
         # Window metadata
         self.title("...")
@@ -101,21 +106,20 @@ class SettingsDialog(ctk.CTkToplevel):
         # ... (same shape; globals reach via self.master.var_X)
 
 if __name__ == "__main__":
-    import sys
     ctk.set_appearance_mode("dark")
-    if sys.platform == "win32":
-        ctk.ThemeManager.theme["CTkFont"]["family"] = "Segoe UI"
     app = MainWindow()
+    # settings_dialog = SettingsDialog(app)  # open the 'Settings Dialog' dialog
     app.mainloop()
 ```
 
-The Windows-only theme patch mirrors [main.py:main()](../../main.py)'s startup. CTk ships only `Roboto-Regular.ttf` and `Roboto-Medium.ttf` — there is no `Roboto-Bold.ttf`, so `CTkFont(weight="bold")` silently falls back to a synthetic bold that is barely visible at large font sizes. Roboto on Windows also lacks coverage for many non-Latin scripts. Patching `theme["CTkFont"]["family"]` to Segoe UI fixes both. macOS (`SF Display`) and Linux (Roboto) are left at the CTk default — Linux currently inherits the same Roboto-bold limitation as the editor itself.
+Toplevel constructor lines are emitted commented-out so the user can copy them into an event handler. Font handling is fork-side: when the project has custom fonts, the main class calls `ctk.register_project_fonts(...)` (ctkmaker-core API) right after `super().__init__()` — no theme patching in the generated file. A dialog-only preview (`single_document_id` on a Toplevel) instead builds a hidden `ctk.CTk()` host, registers fonts against it, and mirrors the page globals onto the host before `wait_window`.
 
 ## Per-class structure
 
 | Section | When emitted | Source |
 |---|---|---|
 | `super().__init__()` | always | required |
+| `ctk.register_project_fonts(...)` | only if project has custom fonts; main (non-toplevel) class only | fork-side font registration against the Tk root |
 | `title` / `geometry` / `resizable` / `frameless` | always | from `Document.window_properties` |
 | Phase 1 variable instantiation | only if class owns variables | page-globals on main window class only (this page's set); locals on owning class |
 | `self._script_N = <Class>()` | only if doc has attached components | one per attached CTkScript |
@@ -151,7 +155,7 @@ self.var_<name> = tk.DoubleVar(value=0.0)          # float
 self.var_<name> = tk.BooleanVar(value=False)       # bool
 ```
 
-Properties bound to a variable token (`var:<uuid>`) emit as constructor kwargs per the [BINDING_WIRINGS table](DATA_MODEL.md#binding_wirings-table--variablespy163):
+Properties bound to a variable token (`var:<uuid>`) emit as constructor kwargs per the [BINDING_WIRINGS table](DATA_MODEL.md#binding_wirings-table--variablespy235):
 
 ```python
 self.label_status = ctk.CTkLabel(
@@ -163,9 +167,9 @@ self.label_status = ctk.CTkLabel(
 
 Build helpers:
 
-- `_build_global_var_attrs(project)` — [:817](../../app/io/code_exporter.py#L817) — stable per-project map `{var_id → "var_<name>"}`
-- `_build_class_var_map(project, doc, force_main)` — [:841](../../app/io/code_exporter.py#L841) — per-class context. Returns `{var_id → "self.var_X" | "self.master.var_X"}`
-- `_emit_class_variables(project, doc, force_main)` — [:911](../../app/io/code_exporter.py#L911) — emits the `self.var_X = ...` lines
+- `_build_global_var_attrs(project)` — [:696](../../app/io/code_exporter/__init__.py#L696) — stable per-project map `{var_id → "var_<name>"}`
+- `_build_class_var_map(project, doc, force_main)` — [:720](../../app/io/code_exporter/__init__.py#L720) — per-class context. Returns `{var_id → "self.var_X" | "self.master.var_X"}`
+- `_emit_class_variables(project, doc, force_main)` — [:790](../../app/io/code_exporter/__init__.py#L790) — emits the `self.var_X = ...` lines
 
 ### Phase 1.5 — Global vs local scope split
 
@@ -229,7 +233,7 @@ self.btn.bind("<Button-1>", lambda e: self._script_0.increment(), add="+")
 Helpers:
 
 - `_collect_doc_components(doc, id_to_var)` — stable component records (`{var, scope, target, script, class, owner_id, var_bindings, field_values, fields}`); window components first, then widgets in DFS. `fields` is the class's exposed `[(name, var_type)]` (AST), so the exporter can inject every field.
-- `_resolve_component_var(records, owner_id, class_name)` — instance var for a `script_call`: a component of that class on the owning widget wins, else a window component; `None` → the binding is dropped.
+- `_resolve_component_var(records, owner_id, class_name, scope=None)` — instance var for a `script_call`. When the entry carries `scope` (`"widget"` / `"window"`), that scope is matched directly; legacy entries without scope fall back to: owning widget's component wins, else a window component. `None` → the binding is dropped.
 - `_emit_component_init_lines` / `_emit_component_post_lines` / `_emit_component_close_lines` — instantiation before `_build_ui()`; after it: scope injection + **field injection** (each exposed field → bound `self.var_X`, inline `tk.<Type>Var(value=…)`, or `tk.<Type>Var()` default — a stale binding falls back to default) + `on_start()`; `on_close()` on `WM_DELETE_WINDOW`. `_field_value_literal` coerces an inline string to its tk type.
 - `_format_script_call(entry, records, owner_id)` — `self._script_N.<method>`, or `None` when unresolved.
 - `_ctkscript_base_source()` / `_project_uses_components()` — the inlined `ctkmaker.py` base + the gate that copies `scripts/` and writes the sidecar **only** when components exist (component-less exports stay byte-identical).
@@ -238,14 +242,14 @@ Helpers:
 
 Each widget's emit goes through:
 
-1. **Resolve var bindings** — [variables.py:191](../../app/core/variables.py#L191) `resolve_bindings(project, widget_type, properties)`. Returns `(cleaned_props, extra_kwargs)`.
+1. **Resolve var bindings** — [variables.py:269](../../app/core/variables.py#L269) `resolve_bindings(project, widget_type, properties)`. Returns `(cleaned_props, extra_kwargs)`.
 2. **Descriptor-controlled transformation** — `descriptor.transform_properties(cleaned)` strips `_NODE_ONLY_KEYS`, maps builder-side keys to CTk constructor kwargs.
 3. **Special handling**:
    - `state` ← `button_enabled` / `state_disabled` toggles
    - `font` ← `font_*` keys → `ctk.CTkFont(family=..., size=..., weight=..., slant=..., underline=..., overstrike=...)`
    - `image` path → `ctk.CTkImage(light_image=Image.open(...), dark_image=...)`
    - `state` post-construct → `widget.set(initial)`, `widget.select()`, etc. via `descriptor.export_state(...)`
-4. **Default-skip** — kwargs that match the CTk constructor's default are dropped to keep the output compact. See `_kwarg_matches_defaults` ([:495](../../app/io/code_exporter.py#L495)) and `_ctk_constructor_defaults` ([:466](../../app/io/code_exporter.py#L466)).
+4. **Default-skip** — kwargs that match the CTk constructor's default are dropped to keep the output compact. See `_kwarg_matches_defaults` ([ctk_defaults.py:53](../../app/io/code_exporter/ctk_defaults.py#L53)) and `_ctk_constructor_defaults` ([ctk_defaults.py:24](../../app/io/code_exporter/ctk_defaults.py#L24)).
 
 ## Layout managers
 
@@ -269,7 +273,7 @@ Each child of a `vbox` / `hbox` parent carries a `stretch` mode (per-child prope
 | `fill` | nominal | fills container |
 | `grow` | shares remaining space among `grow` siblings | fills container |
 
-Shrink floor: `grow` siblings shrink down to text + icon + chrome padding before clipping; `fixed` siblings keep their nominal size. Pack-balance helper (`_project_needs_pack_balance`) emits filler frames when needed so `grow` distribution stays consistent at runtime. The `prefers_fill_in_layout` descriptor flag (see [EXTENSION.md](EXTENSION.md)) auto-picks `fill` for widgets that should default to filling — Frame, Label, Button — when dropped into a flex container. Project loader infers `stretch` for legacy projects from sibling layout: see [project_loader.py:584](../../app/io/project_loader.py#L584).
+Shrink floor: `grow` siblings shrink down to text + icon + chrome padding before clipping; `fixed` siblings keep their nominal size. Pack-balance helper (`_project_needs_pack_balance`) emits filler frames when needed so `grow` distribution stays consistent at runtime. The `prefers_fill_in_layout` descriptor flag (see [EXTENSION.md](EXTENSION.md)) auto-picks `fill` for widgets that should default to filling — Frame, Label, Button — when dropped into a flex container. Project loader infers `stretch` for legacy projects from sibling layout: see `_migrate_child_pack_to_stretch` — [project_loader.py:615](../../app/io/project_loader.py#L615).
 
 ## Module-level state
 
@@ -380,11 +384,11 @@ Phase 4b (planned): `dropdown_*` (CTkOptionMenu / CTkComboBox dropdown styling �
 
 | Helper | Purpose |
 |---|---|
-| `_emit_auto_trace_bindings(...)` — [:751](../../app/io/code_exporter.py#L751) | Wire `Variable.trace_add("write", _update)` for properties bound to a non-textvariable variable (cosmetic bindings). Routes font composites through `_bind_var_to_font`; other CTk-native cosmetic keys through `_bind_var_to_widget`. |
-| `_collect_radio_groups(...)` — [:1939](../../app/io/code_exporter.py#L1939) | Cluster `CTkRadioButton` widgets sharing a variable into one group for correct `value=` emission. |
-| `_resolve_var_tokens_to_values(...)` — [:790](../../app/io/code_exporter.py#L790) | Replace `var:<uuid>` tokens with the variable's current literal value (for tokens not in `BINDING_WIRINGS`). |
-| `_format_var_value_lit(v)` — [:880](../../app/io/code_exporter.py#L880) | Coerce a string-form variable default into a Python literal of the right type. |
-| `_preview_screenshot_lines(target)` — [:343](../../app/io/code_exporter.py#L343) | F12 floater + orange ring template, expanded inline when `inject_preview_screenshot=True`. |
+| `_emit_auto_trace_bindings(...)` — [:431](../../app/io/code_exporter/__init__.py#L431) | Wire `Variable.trace_add("write", _update)` for properties bound to a non-textvariable variable (cosmetic bindings). Routes font composites through `_bind_var_to_font`; other CTk-native cosmetic keys through `_bind_var_to_widget`. |
+| `_collect_radio_groups(...)` — [:1840](../../app/io/code_exporter/__init__.py#L1840) | Cluster `CTkRadioButton` widgets sharing a variable into one group for correct `value=` emission. |
+| `_resolve_var_tokens_to_values(...)` — [:640](../../app/io/code_exporter/__init__.py#L640) | Replace `var:<uuid>` tokens with the variable's current literal value (for tokens not in `BINDING_WIRINGS`). |
+| `_format_var_value_lit(v)` — [:759](../../app/io/code_exporter/__init__.py#L759) | Coerce a string-form variable default into a Python literal of the right type. |
+| `_preview_screenshot_lines(target)` — [preview_screenshot.py:350](../../app/io/code_exporter/preview_screenshot.py#L350) | F12 floater + orange ring template, expanded inline when `inject_preview_screenshot=True`. |
 
 ## Error reporting back to the UI
 

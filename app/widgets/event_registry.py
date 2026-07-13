@@ -32,8 +32,9 @@ Properties panel "Handlers" group. Each ``EventEntry`` pairs:
   Properties panel hover tooltip on event-header rows. Default
   empty falls back to the capitalised ``label``.
 
-Adding a new widget's events: extend ``EVENT_REGISTRY`` here and the
-matching wiring in (Part 3) ``app/widgets/event_wirings.py``.
+Adding a new widget's events: extend ``EVENT_REGISTRY`` here — the
+Properties panel, the right-click cascade, and the export wiring all
+read this registry directly.
 """
 
 from __future__ import annotations

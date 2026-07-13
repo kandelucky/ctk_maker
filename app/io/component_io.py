@@ -1,20 +1,21 @@
 """Read / write ``.ctkcomp`` files — saved widget bundles per project.
 
-A ``.ctkcomp`` is a ZIP archive holding a single ``component.json``.
-Phase B will add a sibling ``assets/`` folder for bundled images /
-fonts.
+A ``.ctkcomp`` is a ZIP archive holding a single ``component.json``
+payload plus flat copies of any referenced asset files under
+``assets/<archive_name>`` (written by ``write_assets_into_zip``).
 
-Schema (v1):
+Schema (v2):
     {
-      "schema_version": 1,
+      "schema_version": 2,
       "type": "fragment" | "window",
       "name": "Login Card",
+      "author": "",
       "created_at": "2026-04-30T12:00:00",
       "ctk_maker_version": "1.3.1",
       "view_size": {"w": 320, "h": 240},
       "nodes": [ /* WidgetNode dicts */ ],
       "variables": [ /* {id, name, type, default} */ ],
-      "assets": []
+      "assets": [ /* manifest (id + size) for the assets/* members */ ]
     }
 
 Variable bundling: every resolvable ``var:<uuid>`` token (local OR

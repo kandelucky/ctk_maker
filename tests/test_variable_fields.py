@@ -1,5 +1,5 @@
 """Row assembly for the Script Variables panel group — build_variable_rows.
-Pure-Python, no Tk. See docs/plans/script_variable_binding.md.
+Pure-Python, no Tk. See docs/plans/archive/script_variable_binding.md.
 """
 from __future__ import annotations
 

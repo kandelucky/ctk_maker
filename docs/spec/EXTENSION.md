@@ -1,6 +1,6 @@
 # CTkMaker — Extension Points
 
-Where the system is designed to be extended. Three subsystems:
+Where the system is designed to be extended. Four subsystems:
 
 1. **Widget descriptors** — adding a new widget type
 2. **Property editors** — adding a new schema property type
@@ -171,13 +171,14 @@ That's the whole extension. No registration in palette, no manual import in Main
 
 ### Existing descriptors — [app/widgets/registry.py](../../app/widgets/registry.py)
 
-20 descriptor classes. Three palette entries (Vertical Layout, Horizontal Layout, Grid Layout) share `CTkFrame` with different preset overrides — see [app/ui/palette.py:CATALOG](../../app/ui/palette.py) for the 21 palette entries that map onto these descriptors. One descriptor (`WindowDescriptor`) is not a real palette widget — it represents window-level properties.
+20 descriptor classes. Three palette entries (Vertical Layout, Horizontal Layout, Grid Layout) share `CTkFrame` with different preset overrides — see [app/ui/palette.py:CATALOG](../../app/ui/palette.py) for the 22 palette entries that map onto these descriptors. One descriptor (`WindowDescriptor`) is not a real palette widget — it represents window-level properties.
 
 | Type name | File | Display | Container | Notes |
 |---|---|---|---|---|
 | `Window` | `window_descriptor.py` | — | — | Document metadata, not a palette widget |
 | `CTkButton` | `ctk_button.py` | Button | | Fork-native `full_circle` pill/full-circle shape support |
 | `CTkLabel` | `ctk_label.py` | Label | | Fork-native `full_circle` shape + `unified_bind` event routing, image + text composition |
+| `CTkRichLabel` | `ctk_rich_label.py` | Rich Label | | Per-segment styled text runs (opt-in `rich_text` + toolbar, v1.33+) |
 | `CTkEntry` | `ctk_entry.py` | Entry | | textvariable binding |
 | `CTkTextbox` | `ctk_textbox.py` | Textbox | | Multiline |
 | `CTkCheckBox` | `ctk_check_box.py` | Check Box | | variable binding |
@@ -293,7 +294,9 @@ class EventEntry:
     key: str           # WidgetNode.handlers key — "command" or "bind:<seq>"
     label: str         # human-readable: "on click", "on Return"
     verb: str          # method name suffix: on_<widget>_<verb>
-    signature: str     # "(self)" or "(self, value)" or "(self, event=None)"
+    signature: str     # annotated: "(self) -> None",
+                       # "(self, value: float) -> None",
+                       # "(self, event: 'tk.Event | None' = None) -> None"
     wiring_kind: str   # "command" → constructor kwarg
                        # "bind"    → post-construction widget.bind(seq, fn, add="+")
     warning: str = ""  # optional caveat shown alongside the event in
@@ -310,11 +313,19 @@ class EventEntry:
                             # surfaced in the Properties panel hover
                             # tooltip on event-header rows. Empty
                             # falls back to the capitalised label.
+    command_passes_value: bool = False
+                            # True when CTk's command callback passes
+                            # the new value (Slider, OptionMenu,
+                            # ComboBox, SegmentedButton) — the export
+                            # wires the method reference directly;
+                            # False → lambda-wrapped no-arg call.
+                            # Ignored for "bind" events (always carry
+                            # a Tk event).
 ```
 
 `events_partitioned(widget_type)` returns `(default, advanced)` in registration order — the cascade builder ([app/ui/workspace/core.py](../../app/ui/workspace/core.py)) and the Properties panel ([app/ui/properties_panel/panel_schema.py](../../app/ui/properties_panel/panel_schema.py)) both call it so they stay in sync without re-implementing the partition.
 
-### Existing entries — [event_registry.py:41](../../app/widgets/event_registry.py#L41)
+### Existing entries — [event_registry.py:81](../../app/widgets/event_registry.py#L81)
 
 ```python
 EVENT_REGISTRY = {
@@ -343,43 +354,49 @@ Extend the `EVENT_REGISTRY` dict. The Properties panel "Events" group reads it t
 
 ## Components — `.ctkcomp`
 
-User-facing extension. Components are zip bundles with a `component.json` manifest plus a copy of the relevant assets. Pack/unpack lives in [app/io/component_io.py](../../app/io/component_io.py).
+User-facing extension. Components are zip bundles built around a single JSON payload. Pack/unpack lives in [app/io/component_io.py](../../app/io/component_io.py) (asset bundling in [component_assets.py](../../app/io/component_assets.py)).
 
 ### Bundle structure
 
 ```
-my_component.ctkcomp     (zip file)
-├── component.json       (manifest — name, author, license, version, ...)
-├── widgets.json         (WidgetNode tree snapshot)
-├── variables.json       (optional — bundled variable declarations)
-├── assets/              (only the assets this component references)
-│   ├── images/
-│   ├── fonts/
-│   └── icons/
-└── thumbnail.png        (optional — preview)
+my_component.ctkcomp     (zip archive)
+├── component.json       (the whole payload, schema v2 — name, author,
+│                         created_at, ctk_maker_version, view_size,
+│                         nodes [WidgetNode dicts], variables,
+│                         assets [manifest entries])
+└── assets/<file>        (flat copies of the asset files the component
+                          references — present only when it has any)
 ```
 
-### Save flow — [component_io.py](../../app/io/component_io.py)
+There are no separate `widgets.json` / `variables.json` members — nodes and variables are folded into `component.json`. The `assets` key inside the payload is the manifest (id + size) for the `assets/*` zip members.
+
+### Save flow — [component_io.py:69](../../app/io/component_io.py#L69)
 
 ```python
-save_fragment(target_path, name, nodes, project, source_window_id)
+save_fragment(target_path, name, nodes, project, source_window_id, author="")
 ```
 
-1. Snapshot nodes → dicts (`WidgetNode.to_dict()` recursive)
-2. Collect asset references from properties (image tokens, font families)
-3. Bundle variables (local + global, demoted to local on insert)
-4. Zip into `.ctkcomp` with `component.json` manifest
+1. Snapshot nodes → dicts (`WidgetNode.to_dict()` recursive; handlers stripped)
+2. Collect asset references from properties and rewrite them to bundle tokens (`collect_assets_from_nodes` / `rewrite_image_props_to_bundle_tokens`)
+3. Bundle variables (local + global — every resolvable `var:<uuid>` token; demoted to local on insert)
+4. Zip: asset files under `assets/` (`write_assets_into_zip`) + one `component.json` payload
+
+`save_window` is the same flow for a whole-window component (`type: "window"`).
 
 ### Load flow
 
 ```python
-load_fragment(ctkcomp_path) → (nodes, variables, assets)
+load_payload(path) → dict | None                 # read component.json
+analyze_var_conflicts(...) / apply_var_resolutions(...)   # name clashes vs target
+extract_component_assets(...) → {archive_name: Path}      # unpack assets/*
+instantiate_fragment(payload, drop_offset,
+                     var_uuid_map, asset_extracted_map) → list[WidgetNode]
 ```
 
-1. Unzip, read `component.json`
-2. Re-UUID widget nodes + variables (avoid collisions with target project)
-3. Rewrite asset tokens to new project paths
-4. Return for caller to insert via `Project.add_widget(...)`
+1. `load_payload` unzips and reads `component.json` (`load_metadata` for the picker preview)
+2. Variable conflicts against the target window resolve via the var-conflict dialog (`analyze_var_conflicts` → `apply_var_resolutions`)
+3. `extract_component_assets` unpacks `assets/*` into the project and returns the token→path map
+4. `instantiate_fragment` rebuilds `WidgetNode` trees — rewrites bundle/var tokens, re-UUIDs every node (`_reassign_ids`), applies the drop offset — for the caller to insert via `Project.add_widget(...)`
 
 ### Publish flow — [app/ui/component_publish_form_dialog.py](../../app/ui/component_publish_form_dialog.py)
 
@@ -387,7 +404,7 @@ Multi-step dialog cascade:
 1. `component_save_dialog.py` — pick widgets, name the component
 2. `component_export_choice_dialog.py` — local save vs publish to community
 3. `component_publish_form_dialog.py` — author, category, description, MIT license agreement
-4. Output: `.ctkproj_signed.zip` for the user to attach to a Community Hub Discussion post
+4. Output: `<name>.ctkcomp.zip` (`PUBLISH_COMPONENT_EXT` — [component_paths.py:25](../../app/core/component_paths.py#L25)) for the user to attach to a Community Hub Discussion post
 
 ## What's NOT extensible without code changes
 

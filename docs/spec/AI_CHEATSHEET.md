@@ -33,11 +33,13 @@ CTkMaker runs on **[ctkmaker-core](https://github.com/kandelucky/ctkmaker-core)*
 ```
 MyProject/
 ├── project.json                          page list, project name
+├── ctkmaker.py                           CTkScript base sidecar (auto-written; don't edit)
+├── requirements.txt, pyrightconfig.json  editor scaffolding (auto-written)
 ├── scripts/<name>.py                     your CTkScript classes (you own this folder)
+├── components/*.ctkcomp                  reusable widget bundles (zip)
 └── assets/
     ├── pages/<page>.ctkproj              per-page design (one window or more)
-    ├── images/, fonts/, icons/           shared assets
-    └── components/*.ctkcomp              reusable widget bundles (zip)
+    └── images/, fonts/, icons/           shared assets
 ```
 
 A **Page** is one `.ctkproj` (one screen — login, dashboard, settings, ...).

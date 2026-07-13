@@ -1,6 +1,6 @@
 """Visual reference windows for the unified design tokens.
 
-Triggered via Ctrl+Shift+Alt+1..4 from the main window. Each renders
+Triggered via Ctrl+Alt+H/J/K/L from the main window. Each renders
 a different content pattern (list, form, log, cards) over the shared
 ``app.ui.style`` palette so the visual language can be evaluated as a
 whole. Visuals only — no logic.

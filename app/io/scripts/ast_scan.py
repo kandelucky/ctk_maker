@@ -53,7 +53,7 @@ def parse_handler_methods(
 # field the builder can bind to a project variable. Mapped to the
 # editor VAR_TYPE the class corresponds to. ``color`` has no distinct
 # tk class (it rides on StringVar), so a StringVar field accepts both
-# str and color variables — see docs/plans/script_variable_binding.md.
+# str and color variables — see docs/plans/archive/script_variable_binding.md.
 _TK_VAR_CLASSES = {
     "StringVar": "str",
     "IntVar": "int",

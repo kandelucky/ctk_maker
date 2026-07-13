@@ -26,7 +26,7 @@ def clean_component_dict(raw) -> dict | None:
     pairs are dropped and an empty map's key is omitted. Single source
     of truth for the on-disk component shape — used by both
     ``WidgetNode`` and ``Document`` loaders.
-    See docs/plans/script_variable_binding.md.
+    See docs/plans/archive/script_variable_binding.md.
     """
     if not isinstance(raw, dict):
         return None

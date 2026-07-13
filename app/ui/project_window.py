@@ -810,18 +810,18 @@ def _truncate_path(text: str, max_len: int = 32) -> str:
 def _python_starter_template(stem: str) -> str:
     """Body of every newly-created ``.py`` in the Assets panel.
     Plain helper module — write functions / classes here and import
-    them from per-window behavior files when you want to share
-    logic between windows.
+    them from your CTkScript files when you want to share logic
+    between scripts.
     """
     return (
         f'"""{stem}.py — helper module.\n'
         f"\n"
         f"Free-form Python file. Use it to share helpers / classes\n"
-        f"between per-window behavior files (the .py files under\n"
-        f"assets/scripts/<page>/ that back each window's events).\n"
+        f"between your CTkScript classes (the .py files in the\n"
+        f"project's top-level scripts/ folder).\n"
         f"\n"
-        f"Per-widget event handlers belong in those per-window\n"
-        f"files (Events group in the Properties panel), not here.\n"
+        f"Event handlers belong in CTkScript methods (bound via the\n"
+        f"Events group in the Properties panel), not here.\n"
         f'"""\n'
         f"\n"
     )

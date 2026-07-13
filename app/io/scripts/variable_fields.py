@@ -10,7 +10,7 @@ picker fills):
 - ``eligible_variables`` — the project variables a field of that type
   may bind to (globals + the window's locals, type-filtered).
 
-Pure data — no Tk. See docs/plans/script_variable_binding.md.
+Pure data — no Tk. See docs/plans/archive/script_variable_binding.md.
 """
 from __future__ import annotations
 

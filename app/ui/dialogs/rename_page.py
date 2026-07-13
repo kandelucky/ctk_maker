@@ -1,4 +1,4 @@
-"""Rename-page modal — shows file/folder rename preview + backup tip."""
+"""Rename-page modal — shows the file rename preview + backup tip."""
 
 from __future__ import annotations
 
@@ -16,9 +16,9 @@ from app.ui.dialogs._colors import (
 class RenamePageDialog(DarkDialog):
     """Modal page-rename dialog with explicit consequences + backup
     tip. Replaces the bare ``simpledialog.askstring`` so the user
-    sees what the rename will touch (page file, scripts folder,
-    archive folder) before committing — and is reminded to copy the
-    project folder first.
+    sees what the rename will touch (the page's ``.ctkproj`` file)
+    before committing — and is reminded to copy the project folder
+    first.
 
     ``result`` is the new page name (string) on Rename, ``None`` on
     Cancel / Esc / X.
@@ -32,7 +32,7 @@ class RenamePageDialog(DarkDialog):
         self._current_slug = slugify_page_name(current_name)
         self._build()
         # Fixed dimensions — the dialog content is static at compile
-        # time (label text + entry + 3 bullet preview + tip + button
+        # time (label text + entry + bullet preview + tip + button
         # row) so reqheight measurement isn't worth it. Pumping the
         # event loop with self.update() to coax a tighter measurement
         # also dispatches stale key events from the right-click menu
@@ -117,8 +117,8 @@ class RenamePageDialog(DarkDialog):
         tk.Label(
             self,
             text=(
-                "Exported .py files reference the old scripts path —\n"
-                "re-export after renaming."
+                "Previously exported .py files keep the old name —\n"
+                "re-export after renaming if you want it updated."
             ),
             bg=_ABT_BG, fg=_ABT_DIM, font=f_dim,
             justify="left",
@@ -170,11 +170,7 @@ class RenamePageDialog(DarkDialog):
             self._ok_btn.configure(state="disabled")
             return
         old = self._current_slug
-        bullets = (
-            f"  • {old}.ctkproj → {new_slug}.ctkproj\n"
-            f"  • assets/scripts/{old}/ → {new_slug}/\n"
-            f"  • assets/scripts_archive/{old}/ → {new_slug}/"
-        )
+        bullets = f"  • {old}.ctkproj → {new_slug}.ctkproj"
         self._preview_label.configure(text=bullets, fg=_ABT_FG)
         self._ok_btn.configure(state="normal")
 

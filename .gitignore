@@ -43,9 +43,9 @@ test_scripts/
 # Personal task list — kept local only
 TODO.md
 
-# Plan / design notes — local only by default. The two plans tracked
-# pre-rule (behavior_sidebar.md, export_test_plan.md) stay tracked
-# until removed explicitly; new plans live local.
+# Plan / design notes — local only by default. export_test_plan.md was
+# tracked pre-rule and stays tracked until removed explicitly; other
+# plans live local (finished / obsolete ones under docs/plans/archive/).
 docs/plans/
 
 # Tutorial drafts — local only until ready to publish.

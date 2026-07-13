@@ -19,7 +19,7 @@ Top-down. Each layer depends only on layers below it (with two documented except
 
 | Layer | Path | Responsibility |
 |---|---|---|
-| **Entry** | [main.py](../../main.py) | CTk theme + appearance, crash handler, dark titlebar, instantiate `MainWindow`, `mainloop()` |
+| **Entry** | [main.py](../../main.py) | CTk theme + appearance, crash handlers, instantiate `MainWindow`, `mainloop()` |
 | **UI** | [app/ui/](../../app/ui/) | `MainWindow`, panels, dialogs, workspace canvas, properties inspector |
 | **Model** | [app/core/](../../app/core/) | In-memory project state, event bus, undo/redo, autosave, settings |
 | **Widgets** | [app/widgets/](../../app/widgets/) | Per-widget descriptors (schema, defaults, runtime, export rules) |
@@ -49,7 +49,7 @@ See [AI_CHEATSHEET.md](AI_CHEATSHEET.md) "CustomTkinter is editable" for the dec
 | `variables.py` | `VariableEntry`, `make_var_token`, `BINDING_WIRINGS` | Tk `*Var` schema (`str` / `int` / `float` / `bool` / `color`) + `var:<uuid>` token system + property→Tk-kwarg binding map. Cosmetic bindings (no `BINDING_WIRINGS` entry — e.g. `fg_color`) are resolved as literals at build time and rebuilt by `workspace.core` on `variable_default_changed`; wired bindings update live via Tk's `textvariable` / `variable`. |
 | `event_bus.py` | `EventBus` | Pub/sub. Single instance per `Project`. |
 | `history.py` | `History` | Undo/redo with coalesce window. |
-| `commands.py` | `Command` subclasses | Every undo-able mutation goes through a `Command`. |
+| `commands/` | `Command` subclasses | Every undo-able mutation goes through a `Command`. Package: `base.py`, `documents.py`, `flags.py`, `handlers.py`, `properties.py`, `tree.py`, `variables.py`. |
 | `autosave.py` | autosave timer | Periodic snapshots to `.autosave/` sidecar. |
 | `project_folder.py` | folder layout | Multi-page project scaffolding (`project.json`, `assets/pages/`). |
 | `script_paths.py` | path helpers | `<project>/scripts/` (CTkScript folder) resolution. |
@@ -65,9 +65,9 @@ See [AI_CHEATSHEET.md](AI_CHEATSHEET.md) "CustomTkinter is editable" for the dec
 
 ### `app/widgets/` — descriptors
 
-21 widget descriptors (one file per type) registered via [registry.py](../../app/widgets/registry.py). Each declares schema, defaults, and runtime/export hooks. See [EXTENSION.md](EXTENSION.md) and [WIDGETS.md](WIDGETS.md).
+20 descriptor classes (19 widget types + `WindowDescriptor`, one file per type) registered via [registry.py](../../app/widgets/registry.py). Each declares schema, defaults, and runtime/export hooks. See [EXTENSION.md](EXTENSION.md) and [WIDGETS.md](WIDGETS.md).
 
-Two cross-cutting registries sit next to the descriptors:
+One cross-cutting registry sits next to the descriptors:
 
 | File | Purpose |
 |---|---|
@@ -83,8 +83,8 @@ Two cross-cutting registries sit next to the descriptors:
 | **Properties** | [properties_panel/](../../app/ui/properties_panel/) (`panel.py`, `panel_commit.py`, `panel_schema.py`, `editors/*.py`, `overlays.py`, `drag_scrub.py`, `type_icons.py`, `format_utils.py`, `constants.py`, `property_help.py`, `tooltip.py`) | ttk.Treeview-based inspector with overlay editor widgets + label-column hover tooltips. |
 | **Floating panels** | `variables_window.py`, `object_tree_window.py`, `history_window.py`, `components_panel.py`, `console_window.py` | F11 / F8 / F10 docked panels + View → Console (in-app preview log). |
 | **Event binding** | [event_bind_menu.py](../../app/ui/event_bind_menu.py) | Shared dropdown helpers for the Properties-panel Events group + Workspace right-click cascade. `populate_target_only_menu` drives the Unity-style "pick target first, then function" flow; `populate_event_bind_menu` is the one-shot cascade used by quick-add surfaces. |
-| **Tool windows** | `widget_inspector_window.py`, `transitions_demo_window.py`, `color_palette_window.py` | Tools menu. **Inspector** — widget schema (props + inherited methods) for any CTk class. **Transitions Demo** — 6 tabs (Button / Card / Text / Loaders / Popups / Toasts) with 25+ demos sharing one easing + duration control. Generate code exports a self-contained `.py` per demo (imports + easings + `Tween` engine + helpers + animation + `__main__` runner) via the `_assemble_module` builder; popups reuse a `_make_popup` preamble that includes the dark-titlebar `withdraw + deiconify` trick. **Color Palette** — designer reference: 15 named palettes (3 muted variants + black-mono + white-mono + 10 popular schemes — Material / Tailwind / Nord / Dracula / Gruvbox / Tokyo Night / Catppuccin / Solarized / Monokai / One Dark) × 9 colors. Click any swatch to copy hex. Window auto-fits content on first-ever open via `update_idletasks` + `winfo_reqheight` (hardcoded `default_size` is unreliable across DPI/font scaling); subsequent opens restore the user's last size as usual. |
-| **Dialogs** | `startup_dialog.py`, `splash.py`, `export_dialog.py`, `quick_export_dialog.py`, `save_as_dialog.py`, `new_project_form.py`, `settings_dialog.py`, `widget_picker_dialog.py`, `font_picker_dialog.py`, `image_picker_dialog.py`, `lucide_icon_picker_dialog.py`, `dialogs/cursor_advanced.py`, `bug_reporter.py`, `crash_dialog.py`, `handler_delete_dialogs.py`, 9× `component_*_dialog.py` | Modal flows. `bug_reporter.py` powers Help → Report a Bug (guided form → GitHub issue tracker or markdown export). `recent_list.py` is a list widget reused inside `startup_dialog.py` and `new_project_form.py`. `cursor_advanced.py` opens from the cursor property's "Advanced…" dropdown row — three tabs (Windows / macOS / Linux-X11) of OS-specific cursor names with live hover-preview; rows whose cursor name the host Tk rejects fall back to arrow + dim text. |
+| **Tool windows** | `widget_inspector_window.py`, `transitions_demo/` (package: `colors.py`, `constants.py`, `easings.py`, `tween.py`, `code_generators/`), `color_palette_window.py` | Tools menu. **Inspector** — widget schema (props + inherited methods) for any CTk class. **Transitions Demo** — 6 tabs (Button / Card / Text / Loaders / Popups / Toasts) with 25+ demos sharing one easing + duration control. Generate code exports a self-contained `.py` per demo (imports + easings + `Tween` engine + helpers + animation + `__main__` runner) via the `_assemble_module` builder; popups reuse a `_make_popup` preamble that includes the dark-titlebar `withdraw + deiconify` trick. **Color Palette** — designer reference: 15 named palettes (3 muted variants + black-mono + white-mono + 10 popular schemes — Material / Tailwind / Nord / Dracula / Gruvbox / Tokyo Night / Catppuccin / Solarized / Monokai / One Dark) × 9 colors. Click any swatch to copy hex. Window auto-fits content on first-ever open via `update_idletasks` + `winfo_reqheight` (hardcoded `default_size` is unreliable across DPI/font scaling); subsequent opens restore the user's last size as usual. |
+| **Dialogs** | `startup_dialog.py`, `splash.py`, `export_dialog.py`, `quick_export_dialog.py`, `save_as_dialog.py`, `new_project_form.py`, `settings_dialog.py`, `widget_picker_dialog.py`, `font_picker_dialog.py`, `image_picker_dialog.py`, `lucide_icon_picker_dialog.py`, `dialogs/cursor_advanced.py`, `bug_reporter.py`, `crash_dialog.py`, `handler_delete_dialogs.py`, 7× `component_*_dialog.py` | Modal flows. `bug_reporter.py` powers Help → Report a Bug (guided form → GitHub issue tracker or markdown export). `recent_list.py` is a list widget reused inside `startup_dialog.py` and `new_project_form.py`. `cursor_advanced.py` opens from the cursor property's "Advanced…" dropdown row — three tabs (Windows / macOS / Linux-X11) of OS-specific cursor names with live hover-preview; rows whose cursor name the host Tk rejects fall back to arrow + dim text. |
 | **Helpers** | `dialogs.py`, `dialog_utils.py`, `icons.py`, `system_fonts.py`, `dialogs/_base.py` | Shared dialog scaffolding (`safe_grab_set`, `prepare_dialog`/`reveal_dialog` alpha-hide pair) + icon loader + `ui_font` / `derive_ui_font` / `derive_mono_font` for cross-platform font kwargs (raw tk + ttk) + `DarkDialog` (`CTkToplevel` base for the raw-tk dialog family). Dark titlebar is now fork-side (`ctkmaker-core` `CTkToplevel`), no longer an app-level monkey-patch. |
 
 ### `app/io/` — persistence + export
@@ -94,13 +94,13 @@ Two cross-cutting registries sit next to the descriptors:
 | `project_loader.py` | Load `.ctkproj` (v1→v2 migration on load; only `script_call` handler entries kept, legacy shapes dropped). |
 | `project_saver.py` | Save `.ctkproj`. |
 | `code_exporter/` | `.ctkproj` → runnable `.py` (per-window class). Package: `__init__.py` (main pipeline + filter / formatter / warning injection), `runtime_helpers.py`, `_utils.py`, `ctk_defaults.py`, `auto_trace_templates.py`, `preview_screenshot.py`. |
-| `scripts/` | CTkScript scanning + creation. Package: `ast_scan.py` (`parse_ctkscript_classes`, `find_attachable_scripts`, `parse_handler_methods`, `parse_exposed_variables`), `components.py` (`script_call` resolution), `variable_fields.py` (`build_variable_rows` — Script Variables panel rows), `paths.py` (`create_user_script`), `editor.py` (open in editor). |
+| `scripts/` | CTkScript scanning + creation. Package: `ctk_script.py` (the `CTkScript` base class — source of truth, inlined into exports as the `ctkmaker.py` sidecar), `ast_scan.py` (`parse_ctkscript_classes`, `find_attachable_scripts`, `parse_handler_methods`, `parse_exposed_variables`), `components.py` (`script_call` resolution), `variable_fields.py` (`build_variable_rows` — Script Variables panel rows), `paths.py` (`create_user_script`), `editor.py` (open in editor), `_internals.py`. |
 | `library_scripts.py` | `write_package_markers_in` — seeds `__init__.py` markers into the build's copied `scripts/` tree at export time. |
 | `component_io.py`, `component_assets.py` | `.ctkcomp` zip pack/unpack with asset bundling. |
 
 ## Entry points
 
-- [main.py:main()](../../main.py) — appearance mode, default color theme, font fallback for non-Latin scripts (Segoe UI on Windows), `_patch_ctk_toplevel_icon`, `MainWindow()`, crash handlers, `mainloop()`.
+- [main.py:main()](../../main.py) — appearance mode, default color theme, `MainWindow()`, crash handlers (`_install_crash_handlers`), `mainloop()`. Font handling and the dark titlebar live fork-side (ctkmaker-core), not here.
 - [app/ui/main_window.py:MainWindow](../../app/ui/main_window.py) — instantiates a fresh `Project`, mounts UI, wires shortcuts, subscribes to events, optionally restores recent project.
 - [app/core/project.py:Project()](../../app/core/project.py) — empty project ready for `add_widget` / `load_from_dict`.
 
@@ -111,8 +111,6 @@ Two cross-cutting registries sit next to the descriptors:
 ```
 main.py
   → set_appearance_mode + theme
-  → patch CTkToplevel icon
-  → install dark titlebar persistence
   → MainWindow()
         → withdraw + alpha=0 (hidden until project loads)
         → SplashScreen (frameless logo + version + Loading...)
@@ -173,21 +171,21 @@ Two documented exceptions to the strict layering:
 
 | File | Lines | Note |
 |---|---|---|
-| `app/io/code_exporter/__init__.py` | 3,100 | Main export pipeline — class emission, handler wiring, missing-binding warnings. Package now (was single file pre-v1.36); split planned post-v1.0. |
-| `app/ui/properties_panel/panel.py` | 2,300 | Panel base + tree management + event-binding popups (target / function pickers, param edit) |
-| `app/core/project.py` | 1,956 | God-class by design — public API surface |
-| `app/ui/properties_panel/panel_schema.py` | 1,400 | Schema-to-tree population — incl. Unity-style event-row block (parent = target, Function child, param children) |
-| `app/ui/properties_panel/panel_commit.py` | 1,100 | Commit pipeline + click routing (param edit dispatch) |
+| `app/io/code_exporter/__init__.py` | 2,900 | Main export pipeline — class emission, handler wiring, missing-binding warnings. Package now (was single file pre-v1.36); split planned post-v1.0. |
+| `app/ui/properties_panel/panel.py` | 2,100 | Panel base + tree management + event-binding popups (target / function pickers, param edit) |
+| `app/core/project.py` | 1,950 | God-class by design — public API surface |
+| `app/ui/properties_panel/panel_schema.py` | 1,850 | Schema-to-tree population — incl. Unity-style event-row block (parent = target, Function child, param children) + per-script `(Script)` variable groups |
+| `app/ui/properties_panel/panel_commit.py` | 1,070 | Commit pipeline + click routing (param edit dispatch) |
 
 These are intentionally large. Every one has a multi-paragraph module-level docstring explaining structure.
 
 ## Mixin pattern
 
-`MainWindow(ShortcutsMixin, MenuMixin, ctk.CTk)` and `PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame)` — the largest UI classes are composed across files via mixins. Look for the matching `*_mixin.py` / `_main_window_host.py` files when reading the main class.
+`MainWindow(ShortcutsMixin, MenuMixin, FilesMixin, DocumentsMixin, PreviewMixin, WindowsMixin, ActionsMixin, ctk.CTk)` and `PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame)` — the largest UI classes are composed across files via mixins (`main_shortcuts.py`, `main_menu.py`, `main_files.py`, `main_documents.py`, `main_preview.py`, `main_windows.py`, `main_actions.py`). Look for the matching mixin files / `_main_window_host.py` when reading the main class.
 
 ## Runtime widget overrides
 
-[`app/widgets/runtime/`](../../app/widgets/runtime/) — pure-Python subclasses of CTk widgets that work around CTk / Tk behaviors not reachable from the schema. Each module is standalone (no CTkMaker imports) so [`code_exporter`](../../app/io/code_exporter.py) inlines its source verbatim into generated `.py` files; the same fix applies to preview and exported scripts.
+[`app/widgets/runtime/`](../../app/widgets/runtime/) — pure-Python subclasses of CTk widgets that work around CTk / Tk behaviors not reachable from the schema. Each module is standalone (no CTkMaker imports) so [`code_exporter`](../../app/io/code_exporter/__init__.py) inlines its source verbatim into generated `.py` files; the same fix applies to preview and exported scripts.
 
 | Override | Fixes |
 |---|---|

@@ -175,9 +175,8 @@ class ProjectPanelTree:
                 (
                     e for e in entries
                     if e.is_dir()
-                    # Hide Python's bytecode cache — it appears inside
-                    # ``assets/scripts/`` once behavior files get
-                    # imported and is pure plumbing, never user content.
+                    # Hide Python's bytecode cache — pure plumbing,
+                    # never user content.
                     and e.name != "__pycache__"
                 ),
                 key=lambda p: p.name.lower(),
