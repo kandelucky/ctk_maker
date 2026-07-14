@@ -98,6 +98,13 @@ class ContextMenu:
             command=lambda d=doc: self._save_window_as_component(d),
             state=save_state,
         )
+        dup_label = (
+            "Duplicate Dialog" if doc.is_toplevel else "Duplicate Window"
+        )
+        menu.add_command(
+            label=dup_label,
+            command=lambda d=doc: self._duplicate_window(d),
+        )
         menu.add_separator()
         menu.add_command(
             label="Minimize Window",
@@ -677,6 +684,96 @@ class ContextMenu:
         # tk widget for it. Appending to doc.root_widgets directly
         # leaves the tree invisible (model present, never rendered) —
         # same trap delete-snapshot restore hits.
+        for root in root_nodes:
+            _add_subtree_recursive(
+                ws.project, root, parent_id=None, document_id=new_doc.id,
+            )
+        ws.project.history.push(
+            AddDocumentCommand(new_doc.to_dict(), index),
+        )
+        ws.project.event_bus.publish(
+            "project_renamed", ws.project.name,
+        )
+
+    def _duplicate_window(self, document) -> None:
+        """Clone a whole Window/Dialog into a brand-new Toplevel
+        document — the window-component insert pipeline run in-memory,
+        minus the zip round-trip. Unlike the component path, handlers
+        stay bound (the scripts live in this same project) and asset
+        paths are already valid, so nothing is stripped or rewritten.
+        Local variables get fresh UUIDs + in-tree token rewrite via
+        ``instantiate_window_document``; a main-window source still
+        lands as a Toplevel — a project only has one main-window slot.
+        """
+        import copy
+
+        ws = self.workspace
+        from app.core.commands import (
+            AddDocumentCommand, _add_subtree_recursive,
+        )
+        from app.io.component_io import instantiate_window_document
+        from app.ui.window_duplicate_dialog import WindowDuplicateDialog
+
+        toplevel = ws.winfo_toplevel()
+        dialog = WindowDuplicateDialog(
+            toplevel,
+            source_name=document.name,
+            default_name=self._pick_unique_document_name(document.name),
+            taken_names={d.name for d in ws.project.documents},
+            source_is_main=not document.is_toplevel,
+        )
+        toplevel.wait_window(dialog)
+        if not dialog.result:
+            return
+        target_name = dialog.result
+
+        # deepcopy detaches nested property values (handler lists,
+        # window-attached script lists) so later edits on one window
+        # can't alias into the other.
+        payload = copy.deepcopy({
+            "type": "window",
+            "is_toplevel": True,
+            "view_size": {
+                "w": int(document.width), "h": int(document.height),
+            },
+            "window_properties": dict(document.window_properties),
+            "description": document.description or "",
+            "nodes": [w.to_dict() for w in document.root_widgets],
+            "variables": [
+                {
+                    "id": v.id,
+                    "name": v.name,
+                    "type": v.type,
+                    "default": v.default,
+                }
+                for v in getattr(document, "local_variables", [])
+            ],
+        })
+        # Re-check uniqueness — another document could have appeared
+        # while the modal was open (matches the insert flow's guard).
+        if any(d.name == target_name for d in ws.project.documents):
+            target_name = self._pick_unique_document_name(target_name)
+        new_doc, root_nodes = instantiate_window_document(
+            payload,
+            project=ws.project,
+            target_name=target_name,
+            asset_extracted_map=None,
+        )
+        # Same canvas-placement rule as component insert / Add Dialog:
+        # right of the rightmost existing document.
+        max_right = 0
+        for doc in ws.project.documents:
+            right = doc.canvas_x + doc.width
+            if right > max_right:
+                max_right = right
+        new_doc.canvas_x = max_right + 120
+        new_doc.canvas_y = 0
+        index = len(ws.project.documents)
+        ws.project.documents.append(new_doc)
+        ws.project.set_active_document(new_doc.id)
+        # Register each root subtree through add_widget so the
+        # workspace renderer fires widget_added per node — appending
+        # to doc.root_widgets directly leaves the tree invisible.
         for root in root_nodes:
             _add_subtree_recursive(
                 ws.project, root, parent_id=None, document_id=new_doc.id,
