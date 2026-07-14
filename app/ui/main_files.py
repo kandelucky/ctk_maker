@@ -210,7 +210,7 @@ class FilesMixin(_MainWindowHost):
         # in the walked-up folder) and offer a one-shot conversion
         # to the multi-page format. Skipped for already-converted
         # projects + when the user just declined a previous prompt
-        # in this session (don't nag — they can use File menu).
+        # in this session (don't nag — a fresh session re-offers it).
         if (
             self.project.folder_path is None
             and not getattr(self, "_convert_prompt_dismissed", False)
@@ -398,8 +398,8 @@ class FilesMixin(_MainWindowHost):
         the multi-page folder format. Auto-prompt fires once per
         session; further loads of legacy files in the same session
         skip the prompt so the user can keep working without
-        repeated nags. ``File → Convert to Multi-Page Project...``
-        is always available as an explicit entry point.
+        repeated nags. Reopening the file in a fresh session
+        re-offers the conversion.
         """
         choice = messagebox.askyesno(
             "Convert to multi-page project?",
@@ -416,29 +416,6 @@ class FilesMixin(_MainWindowHost):
         )
         if not choice:
             self._convert_prompt_dismissed = True
-            return
-        self._do_legacy_convert()
-
-    def _on_convert_to_multi_page(self) -> None:
-        """File menu entry — same conversion as the auto-prompt, but
-        triggered explicitly. Refuses gracefully when already on a
-        multi-page project.
-        """
-        if self.project.folder_path is not None:
-            messagebox.showinfo(
-                "Already converted",
-                "This project is already in multi-page format.",
-                parent=self,
-            )
-            return
-        if not self._current_path:
-            messagebox.showinfo(
-                "Nothing to convert",
-                "Open or create a project first.",
-                parent=self,
-            )
-            return
-        if not self._confirm_discard_if_dirty():
             return
         self._do_legacy_convert()
 

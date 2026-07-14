@@ -9,7 +9,8 @@ Owns the entire tree right-click flow:
   get New Subfolder + Add cascade + Rename + Delete; page rows get
   Switch / Duplicate / Rename / Delete; file rows get Open / Show
   in Explorer / Reimport / Rename / Remove. Empty-area menu shows
-  New Folder + Add cascade + "Show assets folder in Explorer".
+  New Page + New Folder + Add cascade + "Show assets folder in
+  Explorer".
 
 Action handlers exposed by the menu's command targets:
 
@@ -91,8 +92,14 @@ class ProjectPanelMenu:
         meta = panel._iid_meta.get(iid)
         if meta is None:
             # Right-clicked on the empty area below all rows.
-            # Compact: New Folder + an "Add ▶" cascade for the
-            # four content-import actions, then Show in Explorer.
+            # Compact: New Page + New Folder + an "Add ▶" cascade
+            # for the four content-import actions, then Show in
+            # Explorer. The page lands in assets/pages/ regardless
+            # of the click spot — placement is owned by add_page.
+            panel._menu_command(
+                menu, "New Page...", "app-window",
+                panel._on_new_page,
+            )
             panel._menu_command(
                 menu, "New Folder...", "folder", panel._on_new_folder,
             )
@@ -119,7 +126,7 @@ class ProjectPanelMenu:
                     # asset-files inside a directory the schema
                     # expects to hold .ctkproj pages only.
                     panel._menu_command(
-                        menu, "New Page...", "layout-template",
+                        menu, "New Page...", "app-window",
                         panel._on_new_page,
                     )
                     menu.add_separator()

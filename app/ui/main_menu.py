@@ -180,11 +180,6 @@ class MenuMixin(_MainWindowHost):
         self._add_cmd(file_menu, "Save", self._on_save, icon="save", accelerator=f"{MOD_LABEL_PLUS}S")
         self._add_cmd(file_menu, "Save As...", self._on_save_as, icon="save-all", accelerator=f"{MOD_LABEL_PLUS}Shift+S")
         file_menu.add_separator()
-        self._add_cmd(
-            file_menu, "Convert to Multi-Page Project...",
-            self._on_convert_to_multi_page, icon="layout-template",
-        )
-        file_menu.add_separator()
         self._add_cmd(file_menu, "Export to Python...", self._on_export, icon="file-code")
         self._add_cmd(
             file_menu, "Export Active Document...",

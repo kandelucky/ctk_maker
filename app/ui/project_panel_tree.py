@@ -317,11 +317,11 @@ class ProjectPanelTree:
             "text": "file-text",
             "code": "file-code",
             "other": "file",
-            # Page (.ctkproj inside assets/pages/) — same icon as
-            # the canvas/window concept so it reads "this is a UI
-            # design", distinct from generic files.
-            "page": "layout-template",
-            "page_active": "layout-template",
+            # Page (.ctkproj inside assets/pages/) — a window with
+            # a title bar, so it reads "this is an app screen",
+            # distinct from generic files.
+            "page": "app-window",
+            "page_active": "app-window",
         }
         for kind, icon_name in kind_to_icon_name.items():
             try:

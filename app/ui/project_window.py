@@ -360,16 +360,21 @@ class ProjectPanel(ctk.CTkFrame):
 
     def _on_show_add_menu(self) -> None:
         """Pop the + menu anchored under the button. Order:
-        Folder (organise) → Image / Font (assets) → Python /
-        Text (text content). Same kind icons the tree uses so
-        the menu reads as a preview of what a new row would
-        look like.
+        Page / Folder (structure) → Image / Font (assets) →
+        Python / Text (text content). Same kind icons the tree
+        uses so the menu reads as a preview of what a new row
+        would look like.
         """
         menu = tk.Menu(
             self, tearoff=0,
             bg="#2d2d30", fg=HEADER_FG,
             activebackground="#094771", activeforeground="#ffffff",
             relief="flat", bd=0, font=ui_font(10),
+        )
+        # Page lands in assets/pages/ regardless of tree selection —
+        # placement is owned by add_page, not the click target.
+        self._menu_command(
+            menu, "Page...", "app-window", self._on_new_page,
         )
         self._menu_command(menu, "Folder", "folder", self.files.on_new_folder)
         menu.add_separator()
