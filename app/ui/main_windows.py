@@ -232,6 +232,7 @@ class WindowsMixin(_MainWindowHost):
     def _on_toggle_variables_window(
         self, scope: str = "global",
         variable_id: str | None = None,
+        document_id: str | None = None,
     ) -> None:
         want_open = bool(self._variables_var.get())
         alive = (
@@ -244,10 +245,13 @@ class WindowsMixin(_MainWindowHost):
                 on_close=self._on_variables_window_closed,
                 initial_scope=scope,
                 initial_variable_id=variable_id,
+                initial_document_id=document_id,
             )
         elif want_open and alive:
             if self._variables_window is not None:
-                self._variables_window.show_scope(scope, variable_id)
+                self._variables_window.show_scope(
+                    scope, variable_id, document_id,
+                )
         elif not want_open and alive:
             if self._variables_window is not None:
                 try:
@@ -257,15 +261,17 @@ class WindowsMixin(_MainWindowHost):
             self._variables_window = None
 
     def _on_request_open_variables_window(
-        self, scope: str = "global", _doc_id: str | None = None,
+        self, scope: str = "global", doc_id: str | None = None,
         variable_id: str | None = None,
     ) -> None:
         """Bus-routed open. Sets the toggle var so menubar / F11 stay
         in sync, then switches to the requested scope tab. Optional
         ``variable_id`` pre-selects the matching row — used by the
-        properties panel's double-click on a bound row."""
+        properties panel's double-click on a bound row. ``doc_id``
+        lands the local panel's document dropdown on the caller's
+        window (chrome ⓥ button, Properties panel jumps)."""
         self._variables_var.set(True)
-        self._on_toggle_variables_window(scope, variable_id)
+        self._on_toggle_variables_window(scope, variable_id, doc_id)
 
     def _on_variables_window_closed(self) -> None:
         self._variables_window = None

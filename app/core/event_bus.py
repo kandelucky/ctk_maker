@@ -10,5 +10,11 @@ class EventBus:
             self._listeners[event].remove(callback)
 
     def publish(self, event: str, *args, **kwargs) -> None:
+        # Iterate over a snapshot so subscribe/unsubscribe during a
+        # publish can't corrupt iteration — but skip callbacks that an
+        # earlier subscriber unsubscribed mid-publish (their owner may
+        # already be destroyed).
         for callback in list(self._listeners.get(event, [])):
+            if callback not in self._listeners.get(event, []):
+                continue
             callback(*args, **kwargs)

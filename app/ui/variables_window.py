@@ -4,8 +4,9 @@
 parametrised by scope: a panel either lists ``project.variables``
 (``scope="global"``) or one document's ``local_variables``
 (``scope="local"`` + ``document_id``). ``VariablesWindow`` is a
-floating wrapper that holds one global panel and one rebuildable
-local panel switched by tabs. Variables are the foundation of the
+floating wrapper that holds one global panel and one local panel
+switched by tabs; the local panel picks its document through a
+toolbar dropdown rather than following the workspace's active window. Variables are the foundation of the
 visual scripting story (Phase 1): widgets bind to a variable via the
 Properties panel, and the runtime keeps every bound widget in sync
 via Tkinter's built-in ``textvariable`` / ``variable`` mechanism.
@@ -32,6 +33,7 @@ from app.core.commands import (
 from app.ui import style
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
+from app.ui.toolbar import _attach_tooltip
 from app.core.variables import (
     COLOR_DEFAULT,
     VAR_TYPES,
@@ -127,6 +129,7 @@ class VariablesPanel(ctk.CTkFrame):
         self.project = project
         self.scope = scope if scope in ("global", "local") else "global"
         self.document_id = document_id if self.scope == "local" else None
+        self._doc_label_to_id: dict[str, str] = {}
         self._bus_subs: list[tuple[str, Callable]] = []
         # ttk.Treeview cells render text or one image per row (#0 column
         # only), so colour swatches live as cached PhotoImages keyed by
@@ -135,6 +138,7 @@ class VariablesPanel(ctk.CTkFrame):
         # a handful of colour vars per project.
         self._swatch_cache: dict[str, tk.PhotoImage] = {}
         self._build_toolbar()
+        self._build_doc_row()
         self._build_tree()
         bus = project.event_bus
         for event_name in (
@@ -148,6 +152,11 @@ class VariablesPanel(ctk.CTkFrame):
             # don't fire when ``project.variables`` is replaced
             # wholesale by the loader.
             "active_document_changed",
+            # Keep the local panel's document dropdown (and its
+            # fallback re-point when the picked doc disappears) in
+            # step with the project's window list.
+            "document_added", "document_removed",
+            "document_renamed", "documents_reordered",
         ):
             bus.subscribe(event_name, self._on_changed)
             self._bus_subs.append((event_name, self._on_changed))
@@ -184,6 +193,43 @@ class VariablesPanel(ctk.CTkFrame):
             bar, "Delete", command=self._on_delete, width=64,
         )
         style.pack_toolbar_button(self._del_btn)
+
+    def _build_doc_row(self) -> None:
+        """Bottom strip (local scope only): a labelled dropdown
+        picking which window's local variables the panel lists. The
+        panel deliberately does NOT follow the workspace's active
+        window — the choice here is the single source of truth."""
+        self._doc_menu: ctk.CTkOptionMenu | None = None
+        if self.scope != "local":
+            return
+        row = tk.Frame(
+            self, bg=TOOLBAR_BG, height=46, highlightthickness=0,
+        )
+        row.pack_propagate(False)
+        row.pack(side="bottom", fill="x")
+        tk.Label(
+            row, text="Variables of window:",
+            bg=TOOLBAR_BG, fg="#999999", font=ui_font(11),
+        ).pack(side="left", padx=(style.TOOLBAR_PADX, 8))
+        self._doc_menu = ctk.CTkOptionMenu(
+            row, values=[""],
+            command=self._on_doc_selected,
+            width=210, height=32,
+            dynamic_resizing=False,
+            corner_radius=BUTTON_RADIUS,
+            font=ui_font(style.BUTTON_FONT_SIZE),
+            fg_color=SECONDARY_BG, button_color=SECONDARY_BG,
+            button_hover_color=SECONDARY_HOVER,
+            text_color=TREE_FG,
+            dropdown_fg_color=HEADER_BG,
+            dropdown_hover_color=TREE_SELECTED_BG,
+            dropdown_text_color=TREE_FG,
+        )
+        self._doc_menu.pack(side="left", pady=7)
+        _attach_tooltip(
+            self._doc_menu,
+            "To see another window's local variables, pick that window here",
+        )
 
     def _build_tree(self) -> None:
         wrap = tk.Frame(self, bg=BG, highlightthickness=0)
@@ -259,6 +305,17 @@ class VariablesPanel(ctk.CTkFrame):
         return img
 
     def _refresh(self) -> None:
+        # The initial refresh arrives via after(0) and bus events can
+        # race widget teardown — a dead tree means the panel is gone,
+        # so there is nothing left to redraw.
+        try:
+            if not self.tree.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        if self.scope == "local":
+            self._ensure_valid_document()
+            self._sync_doc_dropdown()
         for iid in self.tree.get_children(""):
             self.tree.delete(iid)
         variables = self._scope_variables()
@@ -286,6 +343,66 @@ class VariablesPanel(ctk.CTkFrame):
                     kwargs["image"] = swatch
             self.tree.insert("", "end", iid=v.id, **kwargs)
         self._set_buttons_enabled(True)
+
+    # ------------------------------------------------------------------
+    # Document picker (local scope)
+    # ------------------------------------------------------------------
+    def set_document(self, document_id: str | None) -> None:
+        """Re-point the local panel at another document and refresh.
+        No-op for the global panel, unknown ids, and same-doc calls."""
+        if self.scope != "local" or not document_id:
+            return
+        doc = self.project.get_document(document_id)
+        if doc is None or doc.id == self.document_id:
+            return
+        self.document_id = doc.id
+        self._refresh()
+
+    def _ensure_valid_document(self) -> None:
+        """Fall back to the active document when the picked one no
+        longer exists (deleted / project switch). The panel must never
+        sit on a dangling id while other windows are available."""
+        if self.document_id is not None:
+            if self.project.get_document(self.document_id) is not None:
+                return
+        docs = self.project.documents
+        self.document_id = (
+            self.project.active_document.id if docs else None
+        )
+
+    def _sync_doc_dropdown(self) -> None:
+        """Rebuild the dropdown's window list and re-select the row
+        for ``document_id``. Duplicate document names are disambiguated
+        with a ``(n)`` suffix so every label maps to exactly one id."""
+        if self._doc_menu is None:
+            return
+        self._doc_label_to_id = {}
+        labels: list[str] = []
+        for doc in self.project.documents:
+            base = doc.name or "Window"
+            if len(base) > 24:
+                base = base[:23] + "…"
+            label, n = base, 2
+            while label in self._doc_label_to_id:
+                label = f"{base} ({n})"
+                n += 1
+            self._doc_label_to_id[label] = doc.id
+            labels.append(label)
+        current = next(
+            (
+                lbl for lbl, did in self._doc_label_to_id.items()
+                if did == self.document_id
+            ),
+            labels[0] if labels else "",
+        )
+        try:
+            self._doc_menu.configure(values=labels or [""])
+            self._doc_menu.set(current)
+        except tk.TclError:
+            pass
+
+    def _on_doc_selected(self, label: str) -> None:
+        self.set_document(self._doc_label_to_id.get(label))
 
     def _set_buttons_enabled(self, has_any: bool) -> None:
         state = "normal" if has_any else "disabled"
@@ -1062,10 +1179,13 @@ class VariablesWindow(ManagedToplevel):
     """Floating window wrapper around two ``VariablesPanel`` instances.
 
     Two tabs at the top — **Global** (blue, page-scoped — shared by
-    every window in the active page) and **Local: <doc-name>**
-    (orange, per-document). The local panel is rebuilt against the
-    active document whenever it changes, so the label and contents
-    always match what the workspace is showing.
+    every window in the active page) and **Local** (orange,
+    per-document). The local panel is NOT tied to the workspace's
+    active window: a "Variables of window:" dropdown at the bottom
+    of the panel picks which window's locals to inspect, and the
+    choice survives canvas focus changes. Entry points that know
+    their document (chrome ⓥ button, Properties panel jumps) pass a
+    ``document_id`` to land the dropdown on the right window.
     """
 
     window_key = "variables"
@@ -1077,40 +1197,38 @@ class VariablesWindow(ManagedToplevel):
     # wrapper, so suppress ManagedToplevel's outer padding.
     panel_padding = (0, 0)
 
+    # Tab-strip colour pairs. Every token already lives elsewhere in
+    # the app: the blue pair is TREE_SELECTED_BG / PRIMARY_BG, the
+    # orange pair is the local + Add button's fg / hover. Inactive =
+    # near-black tint of the scope accent (still reads as a button),
+    # active = the calmer mid tone — not the bright chrome accent.
+    TAB_COLORS = {
+        "global": {
+            "inactive": TREE_SELECTED_BG,   # "#094771"
+            "active": style.PRIMARY_BG,     # "#0e639c"
+        },
+        "local": {
+            "inactive": "#8a541a",
+            "active": "#a0651e",
+        },
+    }
+
     def __init__(
         self, parent, project: "Project",
         on_close: Callable[[], None] | None = None,
         initial_scope: str = "global",
         initial_variable_id: str | None = None,
+        initial_document_id: str | None = None,
     ):
-        from app.ui.icons import (
-            VARIABLES_GLOBAL_COLOR, VARIABLES_LOCAL_COLOR,
-        )
         self.project = project
-        self._global_color = VARIABLES_GLOBAL_COLOR
-        self._local_color = VARIABLES_LOCAL_COLOR
         self._active_scope = "global"
-        self._local_doc_id: str | None = None
-        self._bus_subs: list[tuple[str, Callable]] = []
+        self._local_doc_id = self._resolve_initial_doc_id(
+            initial_document_id, initial_scope, initial_variable_id,
+        )
         self._initial_scope = initial_scope
         self._initial_variable_id = initial_variable_id
         super().__init__(parent)
         self.set_on_close(on_close)
-
-        # Subscribe so a doc switch / rename behind the scenes reflows
-        # the Local tab. Stored on the instance so destroy() can clean
-        # up — leaving subscribers behind would keep the closed window
-        # alive across the project's lifetime.
-        self._subscribe(
-            "active_document_changed",
-            lambda *_a, **_k: self._on_active_doc_changed(),
-        )
-        # ``widget_renamed`` doubles as the doc-rename signal because
-        # renaming the virtual Window node mutates ``Document.name``.
-        # Filter for that case so unrelated widget renames are no-ops.
-        self._subscribe(
-            "widget_renamed", self._on_widget_renamed,
-        )
 
         self._show_scope(self._initial_scope)
         if self._initial_variable_id is not None:
@@ -1132,12 +1250,34 @@ class VariablesWindow(ManagedToplevel):
         self._global_panel = VariablesPanel(
             self._panel_area, self.project, scope="global",
         )
-        # Local panel — built against the currently active document.
-        # Rebuilt on active_document_changed so the title and the
-        # backing list track the workspace's current selection.
-        self._local_panel: VariablesPanel | None = None
-        self._build_local_panel()
+        # Local panel — built once; its "Window:" dropdown re-points
+        # it at other documents without a rebuild.
+        self._local_panel = VariablesPanel(
+            self._panel_area, self.project,
+            scope="local", document_id=self._local_doc_id,
+        )
         return wrapper
+
+    def _resolve_initial_doc_id(
+        self, initial_document_id: str | None,
+        initial_scope: str, initial_variable_id: str | None,
+    ) -> str | None:
+        """Pick the document the Local tab starts on: explicit id →
+        the id's document; local variable pre-select → its owner doc;
+        otherwise the active document."""
+        if initial_document_id is not None:
+            doc = self.project.get_document(initial_document_id)
+            if doc is not None:
+                return doc.id
+        if initial_scope == "local" and initial_variable_id is not None:
+            owner = self.project.find_document_for_variable(
+                initial_variable_id,
+            )
+            if owner is not None:
+                return owner.id
+        if self.project.documents:
+            return self.project.active_document.id
+        return None
 
     def default_offset(self, parent) -> tuple[int, int]:
         try:
@@ -1161,50 +1301,6 @@ class VariablesWindow(ManagedToplevel):
             if panel.select_variable(var_id):
                 return
 
-    def _subscribe(self, event_name: str, handler: Callable) -> None:
-        self.project.event_bus.subscribe(event_name, handler)
-        self._bus_subs.append((event_name, handler))
-
-    def _build_local_panel(self) -> None:
-        doc = self.project.active_document
-        self._local_doc_id = doc.id if doc is not None else None
-        self._local_panel = VariablesPanel(
-            self._panel_area, self.project,
-            scope="local", document_id=self._local_doc_id,
-        )
-
-    def _on_active_doc_changed(self) -> None:
-        """Active document switched — drop the old Local panel and
-        build a fresh one against the new document. Keeps the panel's
-        backing list and the displayed tab label in sync."""
-        was_visible = self._active_scope == "local"
-        if self._local_panel is not None:
-            try:
-                self._local_panel.pack_forget()
-            except tk.TclError:
-                pass
-            try:
-                self._local_panel.destroy()
-            except tk.TclError:
-                pass
-        self._build_local_panel()
-        self._refresh_local_tab_label()
-        if was_visible and self._local_panel is not None:
-            self._local_panel.pack(fill="both", expand=True)
-
-    def _refresh_local_tab_label(self) -> None:
-        try:
-            self._local_tab.configure(text=self._local_tab_label())
-        except (tk.TclError, AttributeError):
-            pass
-
-    def _on_widget_renamed(self, widget_id, *_args, **_kwargs) -> None:
-        # The virtual Window node renames the active Document, so a
-        # WINDOW_ID rename is the only case relevant to our tab label.
-        from app.core.project import WINDOW_ID
-        if widget_id == WINDOW_ID:
-            self._refresh_local_tab_label()
-
     # ------------------------------------------------------------------
     # Tab strip
     # ------------------------------------------------------------------
@@ -1216,24 +1312,24 @@ class VariablesWindow(ManagedToplevel):
         for col in (0, 1):
             strip.grid_columnconfigure(col, weight=1, uniform="tab")
         self._global_tab = self._make_tab_button(
-            strip, "Global", self._global_color,
+            strip, "Global",
             command=lambda: self._show_scope("global"),
         )
         self._global_tab.grid(row=0, column=0, sticky="ew", padx=(0, 2))
         self._local_tab = self._make_tab_button(
-            strip, self._local_tab_label(), self._local_color,
+            strip, "Local",
             command=lambda: self._show_scope("local"),
         )
         self._local_tab.grid(row=0, column=1, sticky="ew", padx=(2, 0))
+        self._set_tab_state(self._global_tab, "global", False)
+        self._set_tab_state(self._local_tab, "local", False)
 
-    def _make_tab_button(
-        self, parent, text: str, accent: str, command,
-    ) -> ctk.CTkButton:
+    def _make_tab_button(self, parent, text: str, command) -> ctk.CTkButton:
         # Solid background instead of ``fg_color="transparent"`` —
         # CTk 5.2 occasionally resolves transparent fg_color to an
         # empty bg string in `_on_enter`, raising
-        # ``TclError: unknown color name ""``. Matching the strip's
-        # bg gives the same visual result without the hover risk.
+        # ``TclError: unknown color name ""``. _set_tab_state paints
+        # the real scope colours right after creation.
         return ctk.CTkButton(
             parent, text=text, width=10, height=28,
             corner_radius=4, font=ui_font(11, "bold"),
@@ -1242,13 +1338,6 @@ class VariablesWindow(ManagedToplevel):
             border_width=0,
             command=command,
         )
-
-    def _local_tab_label(self) -> str:
-        doc = self.project.active_document
-        name = (doc.name if doc is not None else "Local") or "Local"
-        if len(name) > 18:
-            name = name[:17] + "…"
-        return f"Local: {name}"
 
     def _show_scope(self, scope: str) -> None:
         if scope not in ("global", "local"):
@@ -1270,50 +1359,50 @@ class VariablesWindow(ManagedToplevel):
         else:  # local
             if self._local_panel is not None:
                 self._local_panel.pack(fill="both", expand=True)
-            self.title(
-                f"Data — {self._local_tab_label()}",
-            )
+            self.title("Data — Local Variables")
         self._set_tab_state(
-            self._global_tab, self._global_color, scope == "global",
+            self._global_tab, "global", scope == "global",
         )
         self._set_tab_state(
-            self._local_tab, self._local_color, scope == "local",
+            self._local_tab, "local", scope == "local",
         )
 
     def _set_tab_state(
-        self, btn: ctk.CTkButton, accent: str, active: bool,
+        self, btn: ctk.CTkButton, scope_key: str, active: bool,
     ) -> None:
-        if active:
-            btn.configure(
-                text_color="#ffffff",
-                fg_color=accent,
-                hover_color=accent,
-            )
-        else:
-            btn.configure(
-                text_color="#888888",
-                fg_color=BG,
-                hover_color="#2a2a2a",
-            )
+        colors = self.TAB_COLORS[scope_key]
+        btn.configure(
+            text_color="#ffffff" if active else "#bbbbbb",
+            fg_color=colors["active"] if active else colors["inactive"],
+            # Hovering an inactive tab previews its active tone.
+            hover_color=colors["active"],
+        )
 
     # ------------------------------------------------------------------
     # External hooks
     # ------------------------------------------------------------------
     def show_scope(
         self, scope: str, variable_id: str | None = None,
+        document_id: str | None = None,
     ) -> None:
         """Public switcher used by the chrome / toolbar entry points.
         ``variable_id`` (optional) pre-selects the matching row in the
         scope's tree — used by panel double-click to land the user on
-        the bound variable."""
-        # Active doc may have changed since this window was last
-        # opened — rebuild the local panel so we don't show another
-        # doc's variables under the wrong tab title.
-        doc = self.project.active_document
-        new_doc_id = doc.id if doc is not None else None
-        if new_doc_id != self._local_doc_id:
-            self._on_active_doc_changed()
-        self._refresh_local_tab_label()
+        the bound variable. ``document_id`` (optional) re-points the
+        local panel's dropdown; without it, a local ``variable_id``'s
+        owner document is used, and otherwise the current dropdown
+        choice stays put."""
+        if self._local_panel is not None:
+            target_doc_id = document_id
+            if target_doc_id is None and (
+                scope == "local" and variable_id is not None
+            ):
+                owner = self.project.find_document_for_variable(
+                    variable_id,
+                )
+                target_doc_id = owner.id if owner is not None else None
+            if target_doc_id is not None:
+                self._local_panel.set_document(target_doc_id)
         self._show_scope(scope)
         if variable_id is not None:
             self._select_variable(variable_id)

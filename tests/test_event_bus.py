@@ -66,11 +66,16 @@ def test_unsubscribe_unknown_callback_is_noop():
     bus.unsubscribe("never_published", listener)
 
 
-def test_unsubscribe_during_publish_does_not_skip_later_listeners():
-    """Critical correctness property — the publish snapshot
-    (``list(self._listeners.get(...))``) protects against listeners
-    that unsubscribe themselves or others mid-dispatch from skipping
-    the next listener in the original list.
+def test_unsubscribe_during_publish_skips_removed_but_not_later():
+    """Critical correctness properties of mid-dispatch unsubscribe:
+
+    1. The publish snapshot (``list(self._listeners.get(...))``)
+       protects against corrupted iteration — listeners AFTER the
+       removed one still fire.
+    2. The removed listener itself does NOT receive the in-flight
+       event. An unsubscribe means "I'm done" — its owner may already
+       be destroyed (Variables window's local panel was torn down by
+       an earlier subscriber and then crashed on the same publish).
     """
     bus = EventBus()
     received: list[str] = []
@@ -90,10 +95,9 @@ def test_unsubscribe_during_publish_does_not_skip_later_listeners():
     bus.subscribe("evt", third)
     bus.publish("evt")
 
-    # second's removal during dispatch should NOT skip third —
-    # publish iterates a snapshot taken at the start of dispatch.
-    assert received == ["first", "second", "third"]
-    # On the next publish, second is gone.
+    # second is skipped (already unsubscribed), third still fires.
+    assert received == ["first", "third"]
+    # On the next publish, second stays gone.
     received.clear()
     bus.publish("evt")
     assert received == ["first", "third"]
