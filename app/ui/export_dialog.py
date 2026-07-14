@@ -679,6 +679,8 @@ class ExportDialog(ManagedToplevel):
                 parent=self,
             )
             return
+        if not self._confirm_overwrite(target):
+            return
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
@@ -721,6 +723,35 @@ class ExportDialog(ManagedToplevel):
                 "Export", f"Saved to:\n{target}", parent=self,
             )
         self.destroy()
+
+    def _confirm_overwrite(self, target: Path) -> bool:
+        """Ask before writing over an existing same-name export.
+
+        A .py export owns its ``<dir>/<name>/`` bundle folder — if
+        that folder already exists the new files land on top of the
+        old ones. A .zip replaces ``<name>.zip`` outright. Either
+        way the name is already taken, so ask first; No keeps the
+        dialog open so the user can pick another name.
+        """
+        if self._as_zip_var.get():
+            if not target.exists():
+                return True
+            question = (
+                f'A file named "{target.name}" already exists in:\n'
+                f"{target.parent}\n\nReplace it?"
+            )
+        else:
+            bundle = target.parent
+            if not bundle.exists():
+                return True
+            question = (
+                f'A folder named "{bundle.name}" already exists in:\n'
+                f"{bundle.parent}\n\nExport into it anyway? Files "
+                "with the same names will be overwritten."
+            )
+        return messagebox.askyesno(
+            "Export", question, icon="warning", parent=self,
+        )
 
     def _dispatch_export(self, scope_id: str, target: Path) -> None:
         """Route the chosen scope to the right export call:
