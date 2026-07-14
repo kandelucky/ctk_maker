@@ -338,7 +338,7 @@ Variables are **page-scoped** — each page's `.ctkproj` owns its own set. Truly
 
 Legacy migration: projects whose `project.json` still has `variables` from the old project-wide scheme — those values flow into the active page on first load; the next save writes them into the page `.ctkproj` and drops the legacy `project.json` copies. Non-active pages don't receive the legacy globals.
 
-Shared assets live in `<project>/assets/{images,fonts,icons,components}/`. User scripts live in the top-level `<project>/scripts/` folder.
+Shared assets live in `<project>/assets/{images,fonts,icons,components}/` — where `assets/components/<slug>/` holds asset payloads extracted from inserted components. The `.ctkcomp` bundles themselves live in the top-level `<project>/components/` library folder (next to `assets/`). User scripts live in the top-level `<project>/scripts/` folder.
 
 ### Legacy single-file project
 
@@ -377,6 +377,6 @@ The saver keeps writing the project-level fields when `Project.folder_path is No
 
 **Handlers** are not a separate class — they live as `WidgetNode.handlers: dict[str, list[dict]]` (each a `script_call` dict). The actual methods live in the user's CTkScript classes under `<project>/scripts/`. Script scanning (for the attach + Function pickers) lives in [app/io/scripts/](../../app/io/scripts/).
 
-**Components** (`.ctkcomp`) are zip bundles, not in-memory model classes. Pack/unpack lives in [app/io/component_io.py](../../app/io/component_io.py); the bundle contains a `component.json` manifest plus a copy of the relevant assets.
+**Components** (`.ctkcomp`) are zip bundles, not in-memory model classes. Pack/unpack lives in [app/io/component_io.py](../../app/io/component_io.py); the bundle contains a `component.json` manifest plus a copy of the relevant assets. The bundles are stored in the top-level `<project>/components/` library folder; on insert, any bundled assets are extracted into `<project>/assets/components/<slug>/`.
 
 **Selection groups** are not a separate class — `WidgetNode.group_id` is a string tag. All widgets sharing a tag select / drag / delete together. Skipped from code export.

@@ -1084,6 +1084,35 @@ def _project_uses_components(
     return False
 
 
+def _docs_have_exposed_script_fields(
+    project: Project, docs_to_emit, scoped_widgets,
+) -> bool:
+    """True when any attached CTkScript component in the emitted docs
+    declares an exposed variable field — field injection emits
+    ``tk.<Type>Var(...)`` lines (see ``_emit_component_post_lines``),
+    so the export needs ``import tkinter as tk`` even when the project
+    itself has no variables."""
+    from app.core.script_paths import user_scripts_dir
+    from app.io.scripts import parse_exposed_variables
+    scripts_dir = user_scripts_dir(getattr(project, "path", None))
+    if not scripts_dir:
+        return False
+    comps: list[dict] = []
+    for doc in docs_to_emit:
+        comps.extend(getattr(doc, "attached_components", None) or [])
+    for w in scoped_widgets:
+        comps.extend(getattr(w, "attached_components", None) or [])
+    seen: set[tuple[str, str]] = set()
+    for comp in comps:
+        script_rel, cls = comp.get("script", ""), comp.get("class", "")
+        if not script_rel or not cls or (script_rel, cls) in seen:
+            continue
+        seen.add((script_rel, cls))
+        if parse_exposed_variables(Path(scripts_dir) / script_rel, cls):
+            return True
+    return False
+
+
 def generate_code(
     project: Project,
     preview_dialog_id: str | None = None,
@@ -1204,6 +1233,12 @@ def _generate_code_inner(
             and w.properties.get("layout_type") == "place"
             and w.children
             for w in scoped_widgets
+        )
+        # Attached scripts with exposed fields are injected as
+        # ``tk.<Type>Var(...)`` even when the project has no variables
+        # of its own.
+        or _docs_have_exposed_script_fields(
+            project, docs_to_emit, scoped_widgets,
         )
     )
     needs_font_register = _project_uses_custom_fonts(project, scoped_widgets)

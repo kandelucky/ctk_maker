@@ -112,3 +112,51 @@ def test_no_components_leaves_export_clean():
     assert "_script_0" not in src
     assert "on_start()" not in src
     assert "from scripts." not in src
+
+
+def _script_file(tmp_path, body: str) -> None:
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "counter.py").write_text(body, encoding="utf-8")
+
+
+def test_exposed_field_triggers_tk_import(tmp_path):
+    # Regression: a script exposing a field in a project with no
+    # variables of its own must still pull in ``import tkinter as tk``
+    # — the field injection emits ``tk.StringVar()``.
+    _script_file(
+        tmp_path,
+        "import tkinter as tk\n"
+        "from ctkmaker import CTkScript\n\n\n"
+        "class ClickCounter(CTkScript):\n"
+        "    title: tk.StringVar\n\n"
+        "    def bump(self):\n"
+        "        pass\n",
+    )
+    project = Project()
+    project.path = str(tmp_path / "page.ctkproj")
+    _button(
+        project, "my_button",
+        components=[{"script": "counter.py", "class": "ClickCounter"}],
+    )
+    src = generate_code(project)
+    assert "self._script_0.title = tk.StringVar()" in src
+    assert "import tkinter as tk" in src
+
+
+def test_fieldless_script_keeps_tk_import_out(tmp_path):
+    _script_file(
+        tmp_path,
+        "from ctkmaker import CTkScript\n\n\n"
+        "class ClickCounter(CTkScript):\n"
+        "    def bump(self):\n"
+        "        pass\n",
+    )
+    project = Project()
+    project.path = str(tmp_path / "page.ctkproj")
+    _button(
+        project, "my_button",
+        components=[{"script": "counter.py", "class": "ClickCounter"}],
+    )
+    src = generate_code(project)
+    assert "import tkinter as tk" not in src
