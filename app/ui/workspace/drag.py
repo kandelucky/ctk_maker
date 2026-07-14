@@ -340,7 +340,13 @@ class WidgetDragController:
         # the tk geometry manager has settled. Clear first so the
         # stale edge frames are torn down, then redraw once the
         # event loop is idle — the new bbox reflects the committed
-        # position.
-        if self.project.selected_id is not None:
+        # position. Only after an actual move — a plain click hasn't
+        # shifted anything, and the clear + idle-draw would just make
+        # the selection chrome blink on every click.
+        if (
+            drag is not None
+            and drag.get("moved")
+            and self.project.selected_id is not None
+        ):
             ws.selection.clear()
             self.workspace.after_idle(ws.selection.draw)

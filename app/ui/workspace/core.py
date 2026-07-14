@@ -685,7 +685,14 @@ class Workspace(ctk.CTkFrame):
         # edit, so without this re-walk the new segments would have
         # no workspace bindings and the widget would look "dead" on
         # the canvas after any property change).
-        already_bound = getattr(widget, "_ws_bound_nid", None) == nid
+        bound_nid = getattr(widget, "_ws_bound_nid", None)
+        if bound_nid is not None and bound_nid != nid:
+            # This subtree belongs to a nested user widget — its own
+            # bind pass owns the handlers. Re-stripping + rebinding
+            # under THIS nid would replace them and every press would
+            # then report the wrong widget id.
+            return
+        already_bound = bound_nid == nid
         if not already_bound:
             def _safe_bind(seq, cb):
                 try:
@@ -694,6 +701,29 @@ class Workspace(ctk.CTkFrame):
                     pass
                 except tk.TclError:
                     pass
+
+            # Canvas widgets are inert: every state-changing pointer
+            # interaction (slider jump/scrub, switch/checkbox toggle,
+            # radio invoke, segmented/tab switch, dropdown open) is
+            # stripped so the widget's visual state can only come from
+            # the Properties panel — never drift out of sync with it.
+            # Live interaction belongs to Preview.
+            #
+            # The strip runs on the plain-tk internals (CTkCanvas /
+            # tk.Label / ...) where tkinter's unbind clears the whole
+            # script. CTk composites are skipped: their own unbind()
+            # re-creates the internal callbacks straight after
+            # (`_create_bindings(sequence=...)` restore), so stripping
+            # them at the wrapper level would be undone immediately.
+            if not isinstance(widget, ctk.CTkBaseClass):
+                for _seq in (
+                    "<Button-1>", "<B1-Motion>",
+                    "<MouseWheel>", "<Button-4>", "<Button-5>",
+                ):
+                    try:
+                        widget.unbind(_seq)
+                    except tk.TclError:
+                        pass
 
             _safe_bind(
                 "<ButtonPress-1>",
@@ -722,56 +752,25 @@ class Workspace(ctk.CTkFrame):
                 "<Button-3>",
                 lambda e, n=nid: self.context_menu.on_widget_right_click(e, n),
             )
+            # Class- and all-tag handlers survive the widget-level
+            # strip above (tk.Text wheel scroll, CTkScrollableFrame's
+            # bind_all wheel, Text/Entry double-click selection) — a
+            # widget-level "break" binding stops those tags from ever
+            # running. Ctrl+wheel zoom still works: its exact-match
+            # sequence outranks plain <MouseWheel> on the same tag.
+            def _block_event(_event):
+                return "break"
+
+            for _seq in (
+                "<MouseWheel>", "<Button-4>", "<Button-5>",
+                "<Double-Button-1>", "<Triple-Button-1>",
+            ):
+                _safe_bind(_seq, _block_event)
             try:
                 widget.configure(cursor="fleur")
             except (tk.TclError, NotImplementedError, ValueError):
                 pass
             widget._ws_bound_nid = nid
-        # CTkOptionMenu opens its dropdown on every Button-1, which
-        # makes selecting it without firing the menu impossible. Gate
-        # _open_dropdown_menu so the first click only selects, then
-        # arm a short window in which a follow-up click opens the
-        # menu. After the window expires, plain clicks just keep the
-        # selection without surprising the user with a popup.
-        if (
-            isinstance(widget, ctk.CTkOptionMenu)
-            and not getattr(widget, "_builder_two_click_wrapped", False)
-        ):
-            _orig_open = widget._open_dropdown_menu
-
-            def _gated_open(_o=_orig_open, _n=nid, _ws=self, _w=widget):
-                is_selected = _n in _ws.project.selected_ids
-                armed = getattr(_w, "_builder_open_armed", False)
-                if is_selected and armed:
-                    _w._builder_open_armed = False
-                    _o()
-                    return
-                # Arm only if this click is the one that actually
-                # selects the widget (drag_press runs after _clicked
-                # so we schedule the check to after_idle).
-                def _maybe_arm(w=_w, n=_n, ws=_ws):
-                    try:
-                        if (
-                            n in ws.project.selected_ids
-                            and not getattr(w, "_builder_open_armed", False)
-                        ):
-                            w._builder_open_armed = True
-                            w.after(
-                                500,
-                                lambda ww=w: setattr(
-                                    ww, "_builder_open_armed", False,
-                                ) if ww.winfo_exists() else None,
-                            )
-                    except tk.TclError:
-                        pass
-
-                try:
-                    _w.after_idle(_maybe_arm)
-                except tk.TclError:
-                    pass
-
-            widget._open_dropdown_menu = _gated_open
-            widget._builder_two_click_wrapped = True
         # Always recurse — even if THIS widget is already bound, a
         # composite CTk widget may have spawned brand-new children
         # since the last walk that still need their handlers.
