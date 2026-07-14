@@ -6,10 +6,12 @@ designer (rounded panel + label-aligned rows + section title +
 prominent primary button in the footer).
 
 Lets the user pick:
-    - save location (folder + filename); defaults to
-      ``<project>/exports/<scope>.py``
+    - save location (folder + name); a .py export bundles everything
+      in ``<folder>/<name>/`` (defaults under ``<project>/exports/``),
+      a .zip lands flat as ``<folder>/<name>.zip``
     - scope: whole project (all forms) or one specific document
-    - open the .py with the OS edit-verb after export
+    - after-export actions: open the .py in an editor, run it like
+      Preview ▶, open the bundle folder in the file manager
 
 Used by File → Export and the per-document chrome Export icon (via
 the ``request_export_document`` event bus).
@@ -33,6 +35,7 @@ from app.core.settings import load_settings, save_setting
 from app.io.code_exporter import export_project
 from app.ui.icons import load_icon
 from app.ui.managed_window import ManagedToplevel
+from app.ui.properties_panel.tooltip import PropertyTooltip
 from app.ui.system_fonts import ui_font
 
 SETTING_INCLUDE_DESCRIPTIONS = "export_include_descriptions"
@@ -63,6 +66,16 @@ _DROPDOWN_STYLE: dict[str, Any] = {
     "dropdown_hover_color": "#094771",
     "dropdown_text_color": FIELD_FG,
 }
+
+
+def folder_to_open(target: Path) -> Path:
+    """Folder the "Show in Explorer" toggle reveals after an export.
+
+    A .py export bundles into ``<dir>/<name>/<name>.py`` — reveal the
+    bundle folder itself. A .zip lands flat as ``<dir>/<name>.zip`` —
+    reveal the containing folder. Both are ``target.parent``.
+    """
+    return target.parent
 
 
 class ExportDialog(ManagedToplevel):
@@ -104,8 +117,11 @@ class ExportDialog(ManagedToplevel):
         self._name_var = tk.StringVar(master=parent)
         self._dir_var = tk.StringVar(master=parent)
         self._preview_var = tk.StringVar(master=parent)
-        self._open_editor_var = tk.BooleanVar(master=parent, value=True)
+        self._open_editor_var = tk.BooleanVar(master=parent, value=False)
         self._run_preview_var = tk.BooleanVar(master=parent, value=False)
+        # Default ON — landing in the bundle folder is the most common
+        # follow-up (double-click the .bat, grab the files, share).
+        self._open_folder_var = tk.BooleanVar(master=parent, value=True)
         self._as_zip_var = tk.BooleanVar(master=parent, value=False)
         # Asset filter: default ON for multi-page projects (avoid
         # shipping unused assets per page); OFF for legacy projects
@@ -125,6 +141,8 @@ class ExportDialog(ManagedToplevel):
         )
         self._open_editor_cb: ctk.CTkCheckBox | None = None
         self._run_preview_cb: ctk.CTkCheckBox | None = None
+        self._open_folder_cb: ctk.CTkCheckBox | None = None
+        self._tooltip: PropertyTooltip | None = None
         self._user_edited_name = False
         self._initial_label = initial_label
 
@@ -234,6 +252,9 @@ class ExportDialog(ManagedToplevel):
     # ------------------------------------------------------------------
     def _build(self, container) -> None:
         self._container = container
+        # One shared dark tooltip instance serves every control in the
+        # dialog (created before the rows so builders can attach).
+        self._tooltip = PropertyTooltip(self)
         self._panel = ctk.CTkFrame(
             container, fg_color=PANEL_BG, corner_radius=6,
         )
@@ -258,19 +279,6 @@ class ExportDialog(ManagedToplevel):
         self._add_row("Comments", self._build_descriptions_checkbox)
         self._add_separator()
         self._add_row("After", self._build_after_checkbox)
-        # Sub-hint pinned under the After row, indented past the
-        # label gutter so it lines up with the checkboxes.
-        tk.Label(
-            self._panel,
-            text=(
-                "Editor: IDLE / VSCode / Notepad++ for code review.   "
-                "Preview: runs the .py like Preview ▶."
-            ),
-            font=ui_font(9, "italic"),
-            fg=PREVIEW_FG, bg=PANEL_BG,
-            anchor="w", justify="left",
-        ).pack(fill="x", padx=(LABEL_WIDTH + 28, 14), pady=(2, 0))
-
         self._build_footer()
 
     def _add_row(self, label: str, builder) -> None:
@@ -288,27 +296,64 @@ class ExportDialog(ManagedToplevel):
         )
 
     def _build_name_entry(self, row) -> None:
-        ctk.CTkEntry(
+        self._name_entry = ctk.CTkEntry(
             row, textvariable=self._name_var, height=26,
             corner_radius=3, font=ui_font(11), justify="left",
             border_color=ENTRY_BORDER_NORMAL, border_width=1,
-        ).pack(side="left", fill="x", expand=True)
+        )
+        self._name_entry.pack(side="left", fill="x", expand=True)
+        self._name_entry.bind("<FocusIn>", self._on_name_focus_in)
+        self._attach_tooltip(
+            self._name_entry, "name",
+            "Name for the export — a .py export bundles into a "
+            "<name>/ folder holding <name>.py, a ZIP becomes "
+            "<name>.zip.",
+        )
+
+    @staticmethod
+    def _on_name_focus_in(event) -> None:
+        # Click / Tab into the field selects the whole name — the
+        # seeded default is usually replaced wholesale. Deferred to
+        # idle so the click's own cursor placement (which clears the
+        # selection) runs first. event.widget is the inner tk.Entry —
+        # CTkEntry delegates binds to it.
+        widget = event.widget
+
+        def _select() -> None:
+            try:
+                widget.select_range(0, "end")
+                widget.icursor("end")
+            except tk.TclError:
+                pass
+
+        widget.after_idle(_select)
 
     def _build_save_row(self, row) -> None:
-        ctk.CTkEntry(
+        entry = ctk.CTkEntry(
             row, textvariable=self._dir_var, height=26,
             corner_radius=3, font=ui_font(10), justify="left",
             border_color=ENTRY_BORDER_NORMAL, border_width=1,
-        ).pack(side="left", fill="x", expand=True, padx=(0, 4))
+        )
+        entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
+        self._attach_tooltip(
+            entry, "save_to",
+            "Folder the export lands in — a .py export creates its "
+            "bundle folder inside it, a .zip is written directly "
+            "here.",
+        )
 
         folder_icon = load_icon("folder", size=14)
-        ctk.CTkButton(
+        browse = ctk.CTkButton(
             row, text="" if folder_icon else "…",
             image=folder_icon, width=28, height=26,
             corner_radius=3,
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_browse_folder,
-        ).pack(side="left")
+        )
+        browse.pack(side="left")
+        self._attach_tooltip(
+            browse, "browse", "Browse for the export folder.",
+        )
 
     def _build_preview_label(self) -> None:
         # Mirror NewProjectForm — italic preview line under Save to
@@ -325,12 +370,18 @@ class ExportDialog(ManagedToplevel):
 
     def _build_scope_row(self, row) -> None:
         labels = [label for label, _ in self._scope_options]
-        ctk.CTkOptionMenu(
+        dropdown = ctk.CTkOptionMenu(
             row, values=labels, variable=self._scope_label_var,
             width=220, height=26, dynamic_resizing=False,
             corner_radius=3,
             **_DROPDOWN_STYLE,
-        ).pack(side="left")
+        )
+        dropdown.pack(side="left")
+        self._attach_tooltip(
+            dropdown, "scope",
+            "What to export — every page, one page, or a single "
+            "form of the active page.",
+        )
         n_forms = len(self.project.documents)
         info = f"{n_forms} form{'s' if n_forms != 1 else ''} in project"
         tk.Label(
@@ -347,39 +398,39 @@ class ExportDialog(ManagedToplevel):
         wrap.pack(side="left", fill="x", expand=True)
         zip_row = ctk.CTkFrame(wrap, fg_color="transparent")
         zip_row.pack(fill="x", anchor="w")
-        ctk.CTkCheckBox(
+        zip_cb = ctk.CTkCheckBox(
             zip_row, text="Export as ZIP archive",
             variable=self._as_zip_var,
             checkbox_width=18, checkbox_height=18,
             font=ui_font(11),
             text_color=FIELD_FG,
             fg_color="#0e639c", hover_color="#1177bb",
-        ).pack(side="left")
-        tk.Label(
-            zip_row,
-            text="Python code + assets bundled into one .zip — easy to share",
-            bg=PANEL_BG, fg=PREVIEW_FG,
-            font=ui_font(9, "italic"),
-        ).pack(side="left", padx=(10, 0))
+        )
+        zip_cb.pack(side="left")
+        self._attach_tooltip(
+            zip_cb, "zip",
+            "Python code + assets bundled into one .zip — easy to "
+            "share by email or chat.",
+        )
         # Asset filter — only meaningful for multi-page projects
         # (legacy projects always copy the whole asset pool).
         if self.project.folder_path:
             filter_row = ctk.CTkFrame(wrap, fg_color="transparent")
             filter_row.pack(fill="x", anchor="w", pady=(4, 0))
-            ctk.CTkCheckBox(
+            filter_cb = ctk.CTkCheckBox(
                 filter_row, text="Include only used assets",
                 variable=self._only_used_assets_var,
                 checkbox_width=18, checkbox_height=18,
                 font=ui_font(11),
                 text_color=FIELD_FG,
                 fg_color="#0e639c", hover_color="#1177bb",
-            ).pack(side="left")
-            tk.Label(
-                filter_row,
-                text="Skip fonts / images / icons not referenced by the exported pages",
-                bg=PANEL_BG, fg=PREVIEW_FG,
-                font=ui_font(9, "italic"),
-            ).pack(side="left", padx=(10, 0))
+            )
+            filter_cb.pack(side="left")
+            self._attach_tooltip(
+                filter_cb, "used_assets",
+                "Skip fonts / images / icons not referenced by the "
+                "exported pages — smaller bundle.",
+            )
 
     def _build_descriptions_checkbox(self, row) -> None:
         # Phase 0 AI bridge: toggle whether widget descriptions emit
@@ -391,29 +442,24 @@ class ExportDialog(ManagedToplevel):
         wrap.pack(side="left", fill="x", expand=True)
         desc_row = ctk.CTkFrame(wrap, fg_color="transparent")
         desc_row.pack(fill="x", anchor="w")
-        ctk.CTkCheckBox(
+        desc_cb = ctk.CTkCheckBox(
             desc_row, text="Include descriptions as comments",
             variable=self._include_descriptions_var,
             checkbox_width=18, checkbox_height=18,
             font=ui_font(11),
             text_color=FIELD_FG,
             fg_color="#0e639c", hover_color="#1177bb",
-        ).pack(side="left")
-        tk.Label(
-            desc_row,
-            text=(
-                "Widget descriptions emitted as # lines — "
-                "uncheck for clean production code"
-            ),
-            bg=PANEL_BG, fg=PREVIEW_FG,
-            font=ui_font(9, "italic"),
-        ).pack(side="left", padx=(10, 0))
+        )
+        desc_cb.pack(side="left")
+        self._attach_tooltip(
+            desc_cb, "descriptions",
+            "Widget descriptions emitted as # comment lines above "
+            "each constructor — uncheck for clean production code.",
+        )
 
     def _build_after_checkbox(self, row) -> None:
-        # Two independent toggles. "Open in editor" routes through the
-        # OS edit verb (IDLE / VSCode / Notepad++) — for code review.
-        # "Run preview" launches the exported .py exactly like Preview
-        # ▶ does — for verifying the result visually.
+        # Three independent toggles; each explains itself via a hover
+        # tooltip.
         self._open_editor_cb = ctk.CTkCheckBox(
             row, text="Open in editor",
             variable=self._open_editor_var,
@@ -423,6 +469,12 @@ class ExportDialog(ManagedToplevel):
             fg_color="#0e639c", hover_color="#1177bb",
         )
         self._open_editor_cb.pack(side="left")
+        self._attach_tooltip(
+            self._open_editor_cb, "after_editor",
+            "Open the exported .py with your code editor "
+            "(IDLE / VSCode / Notepad++) — for reviewing the "
+            "generated code.",
+        )
         self._run_preview_cb = ctk.CTkCheckBox(
             row, text="Run preview",
             variable=self._run_preview_var,
@@ -432,20 +484,61 @@ class ExportDialog(ManagedToplevel):
             fg_color="#0e639c", hover_color="#1177bb",
         )
         self._run_preview_cb.pack(side="left", padx=(20, 0))
+        self._attach_tooltip(
+            self._run_preview_cb, "after_preview",
+            "Run the exported .py right away — same as Preview ▶, "
+            "but from the export folder.",
+        )
+        self._open_folder_cb = ctk.CTkCheckBox(
+            row, text="Show in Explorer",
+            variable=self._open_folder_var,
+            checkbox_width=18, checkbox_height=18,
+            font=ui_font(11),
+            text_color=FIELD_FG,
+            fg_color="#0e639c", hover_color="#1177bb",
+        )
+        self._open_folder_cb.pack(side="left", padx=(20, 0))
+        self._attach_tooltip(
+            self._open_folder_cb, "after_folder",
+            "Show the export in File Explorer — the bundle folder "
+            "for a .py export, the .zip's folder for an archive.",
+        )
+
+    def _attach_tooltip(self, widget, key: str, text: str) -> None:
+        # CTk widgets' .bind targets their canvas / label / entry
+        # leaves, so Enter/Leave fire without parent-frame flicker.
+        # Click hides — once the user acts, the explanation is noise.
+        widget.bind(
+            "<Enter>",
+            lambda e: self._tooltip.schedule(
+                e.x_root, e.y_root, text, key=key,
+            ),
+        )
+        widget.bind("<Leave>", lambda _e: self._tooltip.cancel())
+        widget.bind("<Button-1>", lambda _e: self._tooltip.cancel())
 
     def _build_footer(self) -> None:
         footer = ctk.CTkFrame(self._container, fg_color="transparent")
         footer.pack(fill="x", padx=20, pady=(0, 16))
-        ctk.CTkButton(
+        export_btn = ctk.CTkButton(
             footer, text="Export", width=160, height=32,
             corner_radius=4, command=self._on_export,
-        ).pack(side="right")
-        ctk.CTkButton(
+        )
+        export_btn.pack(side="right")
+        self._attach_tooltip(
+            export_btn, "export",
+            "Write the export to the path shown in the preview line.",
+        )
+        cancel_btn = ctk.CTkButton(
             footer, text="Cancel", width=90, height=32,
             corner_radius=4,
             fg_color="#3c3c3c", hover_color="#4a4a4a",
             command=self._on_cancel,
-        ).pack(side="right", padx=(0, 8))
+        )
+        cancel_btn.pack(side="right", padx=(0, 8))
+        self._attach_tooltip(
+            cancel_btn, "cancel", "Close without exporting.",
+        )
 
     # ------------------------------------------------------------------
     # Path defaults
@@ -504,8 +597,12 @@ class ExportDialog(ManagedToplevel):
             name = name[:-4]
         if not name:
             return None
-        ext = ".zip" if self._as_zip_var.get() else ".py"
-        return Path(directory) / f"{name}{ext}"
+        if self._as_zip_var.get():
+            # A .zip is already a single self-contained bundle.
+            return Path(directory) / f"{name}.zip"
+        # Multi-file output (.py + launcher + ctkmaker.py + scripts/ +
+        # assets/) — gather everything in a folder named by the user.
+        return Path(directory) / name / f"{name}.py"
 
     def _on_scope_change(self) -> None:
         # Only refresh the name when the user hasn't typed a custom
@@ -543,7 +640,9 @@ class ExportDialog(ManagedToplevel):
         # ZIP output: editor + preview don't apply to an archive, so
         # disable both checkboxes (also force them off so a stale
         # checked state doesn't survive when the user toggles ZIP back
-        # off and on). Refresh the preview so the path extension flips.
+        # off and on). "Show in Explorer" stays enabled — revealing
+        # the .zip's folder is just as useful as revealing a bundle.
+        # Refresh the preview so the path extension flips.
         is_zip = self._as_zip_var.get()
         new_state = "disabled" if is_zip else "normal"
         if is_zip:
@@ -610,11 +709,14 @@ class ExportDialog(ManagedToplevel):
         self.result = str(target)
         do_editor = self._open_editor_var.get()
         do_preview = self._run_preview_var.get()
+        do_folder = self._open_folder_var.get()
         if do_editor:
             self._open_exported_file(target)
         if do_preview:
             self._run_exported_preview(target)
-        if not (do_editor or do_preview):
+        if do_folder:
+            self._open_export_folder(target)
+        if not (do_editor or do_preview or do_folder):
             messagebox.showinfo(
                 "Export", f"Saved to:\n{target}", parent=self,
             )
@@ -651,6 +753,7 @@ class ExportDialog(ManagedToplevel):
             as_zip=as_zip,
             asset_filter=asset_filter,
             include_descriptions=self._include_descriptions_var.get(),
+            emit_launcher=True,
         )
 
     def _export_single_page(
@@ -674,6 +777,7 @@ class ExportDialog(ManagedToplevel):
                 as_zip=as_zip,
                 asset_filter=asset_filter,
                 include_descriptions=self._include_descriptions_var.get(),
+                emit_launcher=True,
             )
             return
         clone = self._build_temp_project_for_page(page_id)
@@ -693,6 +797,7 @@ class ExportDialog(ManagedToplevel):
             as_zip=as_zip,
             asset_filter=asset_filter,
             include_descriptions=self._include_descriptions_var.get(),
+            emit_launcher=True,
         )
 
     def _export_all_pages(
@@ -728,6 +833,7 @@ class ExportDialog(ManagedToplevel):
                 as_zip=as_zip,
                 asset_filter=asset_filter,
                 include_descriptions=self._include_descriptions_var.get(),
+                emit_launcher=True,
             )
 
     def _build_temp_project_for_page(self, page_id: str):
@@ -806,5 +912,27 @@ class ExportDialog(ManagedToplevel):
         except Exception:
             log_error("export dialog open after export")
 
+    def _open_export_folder(self, path: Path) -> None:
+        # Reveal the export location in the OS file manager — same
+        # platform ladder as _open_exported_file.
+        folder = folder_to_open(path)
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(folder))
+                return
+            if sys.platform == "darwin":
+                subprocess.Popen(["open", str(folder)])
+                return
+            subprocess.Popen(["xdg-open", str(folder)])
+        except Exception:
+            log_error("export dialog open folder")
+
     def _on_cancel(self) -> None:
         self.destroy()
+
+    def destroy(self) -> None:
+        # Kill any pending/visible tooltip first — its after-callback
+        # would otherwise fire against a dead master.
+        if self._tooltip is not None:
+            self._tooltip.cancel()
+        super().destroy()

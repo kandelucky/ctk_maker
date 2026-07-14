@@ -885,6 +885,7 @@ def export_project(
     asset_filter: set[Path] | None = None,
     inject_preview_screenshot: bool = False,
     include_descriptions: bool = True,
+    emit_launcher: bool = False,
 ) -> None:
     """Generate a runnable .py from ``project`` at ``path``.
 
@@ -892,6 +893,10 @@ def export_project(
     are copied next to the .py — useful for per-page exports where
     the rest of the shared asset pool shouldn't ship. ``None``
     keeps the legacy behaviour (whole ``assets/`` copied).
+
+    ``emit_launcher``: also write a ``<name>.bat`` beside the .py so
+    the exported app opens on double-click (``pythonw``, no console).
+    User-facing exports set it; previews keep their temp dirs clean.
     """
     if as_zip:
         # Run the normal export into a tempdir, then zip the whole
@@ -912,6 +917,7 @@ def export_project(
                 as_zip=False,
                 asset_filter=asset_filter,
                 include_descriptions=include_descriptions,
+                emit_launcher=emit_launcher,
             )
             with zipfile.ZipFile(
                 out_zip, "w", zipfile.ZIP_DEFLATED,
@@ -940,6 +946,17 @@ def export_project(
         _CURRENT_PROJECT_PATH = None
     out = Path(path)
     out.write_text(source, encoding="utf-8")
+    if emit_launcher:
+        # Double-click launcher: pythonw = no console window; cd to the
+        # bundle first so the relative assets/ paths resolve. The
+        # bytecode toggle keeps __pycache__/ out of the bundle folder.
+        out.with_suffix(".bat").write_text(
+            "@echo off\n"
+            'cd /d "%~dp0"\n'
+            "set PYTHONDONTWRITEBYTECODE=1\n"
+            f'start "" pythonw "{out.name}"\n',
+            encoding="utf-8",
+        )
     # Copy the project's `assets/` folder next to the exported file
     # so the relative `assets/images/x.png` paths emitted in the
     # generated code resolve correctly when the user runs it.

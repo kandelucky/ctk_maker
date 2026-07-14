@@ -103,3 +103,46 @@ def test_no_components_ships_neither(tmp_path):
 
     assert not (out.parent / "ctkmaker.py").exists()
     assert not (out.parent / "scripts").exists()
+
+
+def test_emit_launcher_ships_double_click_bat(tmp_path):
+    page = _bootstrap(tmp_path, with_component=False)
+    project = _load(page)
+    out = tmp_path / "out" / "Main.py"
+    out.parent.mkdir(parents=True)
+    export_project(project, out, emit_launcher=True)
+
+    bat = out.parent / "Main.bat"
+    assert bat.is_file()
+    content = bat.read_text(encoding="utf-8")
+    assert 'start "" pythonw "Main.py"' in content
+    assert 'cd /d "%~dp0"' in content
+    # No __pycache__ litter on double-click runs — the env var must be
+    # set before the start line to reach the pythonw child.
+    assert "set PYTHONDONTWRITEBYTECODE=1" in content
+    assert content.index("PYTHONDONTWRITEBYTECODE") < content.index("start ")
+
+
+def test_no_launcher_by_default(tmp_path):
+    # Previews call export_project without the flag — their temp dirs
+    # must stay free of user-facing launcher files.
+    page = _bootstrap(tmp_path, with_component=False)
+    project = _load(page)
+    out = tmp_path / "out" / "Main.py"
+    out.parent.mkdir(parents=True)
+    export_project(project, out)
+
+    assert not (out.parent / "Main.bat").exists()
+
+
+def test_open_folder_reveals_bundle_for_py_and_parent_for_zip(tmp_path):
+    # "Show in Explorer" decision: a .py export bundles into
+    # <dir>/<name>/, so that folder opens; a .zip is a flat file, so
+    # its containing folder opens.
+    from app.ui.export_dialog import folder_to_open
+
+    py_target = tmp_path / "exports" / "MyApp" / "MyApp.py"
+    assert folder_to_open(py_target) == tmp_path / "exports" / "MyApp"
+
+    zip_target = tmp_path / "exports" / "MyApp.zip"
+    assert folder_to_open(zip_target) == tmp_path / "exports"
