@@ -938,10 +938,27 @@ class MainWindow(
     def _refresh_title(self) -> None:
         from app import __version__
         base = f"CTkMaker v{__version__}"
+        name = self.project.name
+        if name == "Untitled":
+            name = ""
         if self._current_path:
-            base += f" — {Path(self._current_path).stem}"
-        elif self.project.name and self.project.name != "Untitled":
-            base += f" — {self.project.name}"
+            # "<project> / <page>" — page display name from the pages
+            # list, not the file stem, so the titlebar matches what the
+            # Pages panel shows. Legacy single-file projects have no
+            # pages list and fall back to the stem; skip the pair when
+            # the two would just repeat each other.
+            file = Path(self._current_path)
+            page = file.stem
+            for entry in getattr(self.project, "pages", None) or []:
+                if entry.get("file") == file.name:
+                    page = entry.get("name") or page
+                    break
+            if name and page.lower() != name.lower():
+                base += f" — {name} / {page}"
+            else:
+                base += f" — {name or page}"
+        elif name:
+            base += f" — {name}"
         if self._dirty:
             base += " •"
         self.title(base)

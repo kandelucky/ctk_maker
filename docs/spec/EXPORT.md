@@ -120,7 +120,7 @@ Toplevel constructor lines are emitted commented-out so the user can copy them i
 |---|---|---|
 | `super().__init__()` | always | required |
 | `ctk.register_project_fonts(...)` | only if project has custom fonts; main (non-toplevel) class only | fork-side font registration against the Tk root |
-| `title` / `geometry` / `resizable` / `frameless` | always | from `Document.window_properties` |
+| `title` / `geometry` / `resizable` / `frameless` | always | title from `Document.name` — except a main window still named `DEFAULT_MAIN_WINDOW_NAME`, which gets `project.name`; rest from `Document.window_properties` |
 | Phase 1 variable instantiation | only if class owns variables | page-globals on main window class only (this page's set); locals on owning class |
 | `self._script_N = <Class>()` | only if doc has attached components | one per attached CTkScript |
 | `self._build_ui()` call | always | constructs widget tree |

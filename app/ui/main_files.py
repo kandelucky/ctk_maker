@@ -92,7 +92,6 @@ class FilesMixin(_MainWindowHost):
                 self.project.clear()
                 self.project.resize_document(w, h)
                 self.project.name = name
-                self.project.active_document.name = name
                 from app.core.project_folder import seed_multi_page_meta_from_disk
                 seed_multi_page_meta_from_disk(self.project, path)
                 try:
@@ -107,6 +106,22 @@ class FilesMixin(_MainWindowHost):
                     return
                 clear_autosave(path)
                 self._set_current_path(path)
+                # Same deferred re-focus as the open path below —
+                # ``clear()`` fired ``active_document_changed`` →
+                # ``focus_document`` while the window was still
+                # alpha-hidden and the paned layout unsettled, so the
+                # canvas reported placeholder dimensions and the view
+                # landed offset toward the bottom-right. One idle
+                # round + a frame lets the layout settle, then
+                # re-center on the fresh document.
+                active_id = self.project.active_document_id
+                if active_id is not None:
+                    self.after_idle(
+                        lambda: self.after(
+                            100,
+                            lambda: self.workspace.focus_document(active_id),
+                        ),
+                    )
         finally:
             try:
                 self.update_idletasks()

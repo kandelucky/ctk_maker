@@ -22,6 +22,13 @@ from app.core.widget_node import WidgetNode, clean_component_dict
 DEFAULT_DOCUMENT_WIDTH = 800
 DEFAULT_DOCUMENT_HEIGHT = 600
 
+# Name given to a fresh project's first window. The exporter treats
+# a main window still carrying this exact name specially — it emits
+# ``self.title(<project name>)`` instead of the generic name — so
+# renaming the window remains the way to set a custom title, while
+# untouched projects get their own name on the titlebar.
+DEFAULT_MAIN_WINDOW_NAME = "Main Window"
+
 DEFAULT_WINDOW_PROPERTIES = {
     "fg_color": "transparent",
     "resizable_x": True,

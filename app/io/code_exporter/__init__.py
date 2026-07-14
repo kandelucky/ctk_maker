@@ -27,7 +27,7 @@ import re
 import shutil
 from pathlib import Path
 
-from app.core.document import Document
+from app.core.document import DEFAULT_MAIN_WINDOW_NAME, Document
 from app.core.project import Project
 from app.core.widget_node import WidgetNode
 from app.widgets.layout_schema import (
@@ -1939,7 +1939,19 @@ def _emit_class_body(
                 f'self, Path(__file__).resolve().parent / "assets" / "fonts")',
             )
 
-    title = str(doc.name or "Window").replace('"', '\\"')
+    # A main window still carrying the fresh-project default name gets
+    # the project name on the titlebar; any other name — the user's
+    # rename, or a dialog — is used verbatim. Keyed on ``is_toplevel``
+    # (not ``force_main``) so a dialog exported standalone keeps its
+    # own name.
+    title_source = doc.name
+    if (
+        not doc.is_toplevel
+        and doc.name == DEFAULT_MAIN_WINDOW_NAME
+        and getattr(_EXPORT_PROJECT, "name", "")
+    ):
+        title_source = _EXPORT_PROJECT.name
+    title = str(title_source or "Window").replace('"', '\\"')
     geometry = f"{doc.width}x{doc.height}"
     lines.append(f'{INDENT}{INDENT}self.title("{title}")')
     lines.append(f'{INDENT}{INDENT}self.geometry("{geometry}")')

@@ -300,7 +300,7 @@ JSON, schema version 2. Two layouts:
     "name": "MyProject",
     "active_page": "<page-uuid>",
     "pages": [
-        { "id": "<page-uuid>", "file": "main.ctkproj", "name": "Main" },
+        { "id": "<page-uuid>", "file": "mainpage.ctkproj", "name": "MainPage" },
         ...
     ],
     "font_defaults": { "_all": "Inter", "CTkButton": "Roboto" },

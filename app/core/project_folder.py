@@ -11,11 +11,12 @@ reference the same logo without duplicating files.
         project.json                  ← marker + page list + project name
         assets/
             pages/
-                main.ctkproj          ← page 1
+                mainpage.ctkproj      ← page 1 ("MainPage")
                 login.ctkproj         ← page 2
             fonts/
             images/
             icons/
+        scripts/    ← user CTkScript files (created by the env scaffold)
         .backups/   (future)
         .autosave/  (future)
 
@@ -33,6 +34,7 @@ from pathlib import Path
 
 from app.core.logger import log_error
 from app.core.paths import ASSETS_DIR_NAME
+from app.core.script_paths import USER_SCRIPTS_DIR_NAME
 
 PROJECT_META_FILE = "project.json"
 PROJECT_META_VERSION = 1
@@ -268,20 +270,28 @@ def read_project_meta(folder: str | Path) -> dict:
 def write_project_meta(folder: str | Path, data: dict) -> None:
     """Atomically write ``project.json``. Rotates the previous file
     to ``project.json.bak`` first so a corrupted write still leaves
-    a recoverable copy.
+    a recoverable copy. An identical rewrite is a no-op — no write, no
+    rotation — so ``.bak`` only ever holds a genuinely older version
+    (the New Project flow saves twice back-to-back; without this a
+    fresh project grows a pointless twin ``.bak``).
     """
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
     target = project_meta_path(folder)
+    payload = json.dumps(data, indent=2, ensure_ascii=False)
     if target.exists():
+        try:
+            if target.read_text(encoding="utf-8") == payload:
+                return
+        except OSError:
+            pass
         bak = target.with_name(target.name + PROJECT_META_BAK_SUFFIX)
         try:
             os.replace(target, bak)
         except OSError:
             log_error("write_project_meta bak rotate")
     try:
-        with target.open("w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        target.write_text(payload, encoding="utf-8")
     except OSError as exc:
         raise ProjectMetaError(
             f"project.json could not be written: {exc}"
@@ -334,6 +344,65 @@ def _build_pyrightconfig_json() -> str:
     return json.dumps(config, indent=4) + "\n"
 
 
+def _is_generated_pyrightconfig(data: object) -> bool:
+    """True when *data* matches the scaffold's own output shape — the
+    guard that keeps the staleness refresh from touching a config the
+    user has customised. Any extra key, changed value, or a multi-entry
+    ``extraPaths`` means the user took ownership of the file.
+    """
+    if not isinstance(data, dict):
+        return False
+    if set(data) - {"venvPath", "venv", "extraPaths", "reportMissingImports"}:
+        return False
+    if (
+        data.get("venvPath") != "."
+        or data.get("venv") != ".venv"
+        or data.get("reportMissingImports") != "warning"
+    ):
+        return False
+    extra = data.get("extraPaths")
+    if extra is None:
+        return "extraPaths" not in data
+    return (
+        isinstance(extra, list)
+        and len(extra) == 1
+        and isinstance(extra[0], str)
+    )
+
+
+def _refresh_stale_pyrightconfig(target: Path) -> bool:
+    """Rewrite an existing machine-generated ``pyrightconfig.json``
+    whose ``extraPaths`` entry went stale. The entry is an absolute
+    per-machine path (see ``_detect_customtkinter_path``), so it dies
+    whenever the project changes machines or the install moves — and
+    since the scaffold skips existing files, it would otherwise stay
+    dead forever.
+
+    Conservative on purpose: only a file that still matches our own
+    generated shape is touched, and a path that still exists on disk
+    is never replaced (it may be deliberate, and it still serves
+    autocomplete). Returns True when the file was rewritten.
+    """
+    try:
+        data = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not _is_generated_pyrightconfig(data):
+        return False
+    extra = data.get("extraPaths")
+    if extra:
+        if Path(extra[0]).exists():
+            return False
+    elif _detect_customtkinter_path() is None:
+        return False
+    try:
+        target.write_text(_build_pyrightconfig_json(), encoding="utf-8")
+    except OSError:
+        log_error("refresh pyrightconfig.json")
+        return False
+    return True
+
+
 def _ctkscript_sidecar_source() -> str | None:
     """Full source of the ``CTkScript`` base module, for the editor-side
     ``ctkmaker.py`` sidecar at the project root — the same text the
@@ -351,12 +420,45 @@ def _ctkscript_sidecar_source() -> str | None:
         return None
 
 
+def _refresh_stale_sidecar(target: Path, source: str) -> bool:
+    """Rewrite the project-root ``ctkmaker.py`` sidecar when it no
+    longer matches the installed ``CTkScript`` source, so edit-time
+    autocomplete tracks the same API the exporter inlines. Unlike
+    ``pyrightconfig.json`` there is no customised-shape tolerance:
+    the sidecar's own docstring declares it machine-generated, so any
+    mismatch — stale version or a stray edit — is overwritten.
+    Returns True when the file was rewritten.
+    """
+    try:
+        if target.read_text(encoding="utf-8") == source:
+            return False
+    except OSError:
+        pass
+    try:
+        target.write_text(source, encoding="utf-8")
+    except OSError:
+        log_error("refresh ctkmaker.py sidecar")
+        return False
+    return True
+
+
 def write_python_env_scaffold(folder: str | Path) -> list[str]:
     """Write ``requirements.txt`` + ``pyrightconfig.json`` + ``.gitignore``
-    + the ``ctkmaker.py`` CTkScript sidecar at the project root if they
-    don't already exist.
+    + the ``ctkmaker.py`` CTkScript sidecar + an empty ``scripts/``
+    folder at the project root if they don't already exist. ``scripts/``
+    exists up-front (Unity-style) so the user sees where behavior
+    scripts go before attaching the first one — the ``ctkmaker.py``
+    docstring points there.
 
     Idempotent — files the user has already customised are left alone.
+    Two exceptions: an existing ``pyrightconfig.json`` that still matches
+    our generated shape but whose ``extraPaths`` went dead (absolute
+    per-machine path — dies on machine change or install move) is
+    rewritten with a fresh detection. That's also why the generated
+    ``.gitignore`` excludes it: the file never travels with the project,
+    each machine regrows its own on open. And the ``ctkmaker.py``
+    sidecar is kept byte-identical to the installed ``CTkScript``
+    source — see ``_refresh_stale_sidecar``.
     Returns the list of filenames actually written (for caller logging).
 
     Goal: a fresh project folder is type-check ready immediately —
@@ -379,6 +481,9 @@ def write_python_env_scaffold(folder: str | Path) -> list[str]:
             "# CTkMaker\n"
             ".autosave/\n"
             ".backups/\n"
+            "*.bak\n"
+            "# machine-local paths, regenerated on open\n"
+            "pyrightconfig.json\n"
             "\n"
             "# Python\n"
             ".venv/\n"
@@ -393,6 +498,14 @@ def write_python_env_scaffold(folder: str | Path) -> list[str]:
     for name, content in files.items():
         target = folder / name
         if target.exists():
+            if name == "pyrightconfig.json" and _refresh_stale_pyrightconfig(
+                target
+            ):
+                written.append(name)
+            elif name == "ctkmaker.py" and _refresh_stale_sidecar(
+                target, content
+            ):
+                written.append(name)
             continue
         try:
             with target.open("w", encoding="utf-8") as f:
@@ -400,13 +513,22 @@ def write_python_env_scaffold(folder: str | Path) -> list[str]:
             written.append(name)
         except OSError:
             log_error(f"write_python_env_scaffold {name}")
+    scripts_dir = folder / USER_SCRIPTS_DIR_NAME
+    if not scripts_dir.exists():
+        try:
+            scripts_dir.mkdir()
+            written.append(USER_SCRIPTS_DIR_NAME + "/")
+        except OSError:
+            log_error("write_python_env_scaffold scripts dir")
     return written
 
 
 def bootstrap_project_folder(
     parent_dir: str | Path,
     project_name: str,
-    first_page_name: str = "Main",
+    # Role-stating default: the hero bar shows "<project> / <page>",
+    # so the name itself says it's a page.
+    first_page_name: str = "MainPage",
 ) -> tuple[Path, dict, Path]:
     """Create a fresh project folder + asset skeleton + a single empty
     page reference. Returns ``(folder, meta_dict, page_path)``.
@@ -429,7 +551,10 @@ def bootstrap_project_folder(
         (assets / sub).mkdir()
 
     page_id = uuid.uuid4().hex
-    page_filename = "main.ctkproj"
+    # Same name → filename convention as ``add_page``, so the first
+    # page and later-added pages follow one rule (MainPage →
+    # mainpage.ctkproj). Fresh folder — no collision handling needed.
+    page_filename = slugify_page_name(first_page_name) + ".ctkproj"
     page_path = pages_dir(folder) / page_filename
     meta = {
         "version": PROJECT_META_VERSION,

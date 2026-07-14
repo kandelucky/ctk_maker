@@ -26,15 +26,21 @@ You choose what to attach to; that alone decides what the script sees.
             name = self.window.username.get()
             self.window.status.configure(text=f"Hi {name}")
 
-Add public methods and bind events to them in the builder; CTkMaker
-never edits this file.
+Add public methods and bind events to them in the builder — bindings
+live in the page's ``.ctkproj``, so CTkMaker never writes into your
+script files.
 
-This module is the single source of truth for the class. The exporter
-inlines its source into the build so exported apps stay self-contained
-(no ``pip install`` needed) — hence only runtime-free stdlib imports
-here; the ``customtkinter`` names live under ``TYPE_CHECKING`` and are
-never imported when the app runs — they only feed the editor's
-autocomplete and type checker.
+This module is the single source of truth for the class. CTkMaker
+copies it into each project root as ``ctkmaker.py`` — that's what makes
+``from ctkmaker import CTkScript`` resolve (with autocomplete) while
+you edit — and refreshes the copy on project open. Don't edit that
+copy: it is machine-generated and any change gets overwritten; your own
+code belongs in ``scripts/``. The exporter inlines the same source into
+the build so exported apps stay self-contained (no ``pip install``
+needed) — hence only runtime-free stdlib imports here; the
+``customtkinter`` names live under ``TYPE_CHECKING`` and are never
+imported when the app runs — they only feed the editor's autocomplete
+and type checker.
 """
 from __future__ import annotations
 

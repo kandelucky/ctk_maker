@@ -33,8 +33,8 @@ CTkMaker runs on **[ctkmaker-core](https://github.com/kandelucky/ctkmaker-core)*
 ```
 MyProject/
 ├── project.json                          page list, project name
-├── ctkmaker.py                           CTkScript base sidecar (auto-written; don't edit)
-├── requirements.txt, pyrightconfig.json  editor scaffolding (auto-written)
+├── ctkmaker.py                           CTkScript base sidecar (auto-written, re-synced on open; don't edit)
+├── requirements.txt, pyrightconfig.json  editor scaffolding (auto-written; pyrightconfig is per-machine + gitignored)
 ├── scripts/<name>.py                     your CTkScript classes (you own this folder)
 ├── components/*.ctkcomp                  reusable widget bundles (zip)
 └── assets/

@@ -27,6 +27,18 @@ Top-down. Each layer depends only on layers below it (with two documented except
 
 The PyPI package at [ctkmaker/](../../ctkmaker/) is a name-reservation stub. Runtime entry is always `python main.py`.
 
+## Naming model — project / page / window
+
+Fresh-project defaults (2026-07-14). Each level's name states its role; no level borrows a neighbour's name:
+
+| Level | Default | Shows in | Feeds |
+|---|---|---|---|
+| **Project** | user-chosen (e.g. `Demo`) | hero bar; exported main-window titlebar | project folder name |
+| **Page** | `MainPage` → file `mainpage.ctkproj` (via `slugify_page_name`, same rule as `add_page`) | hero bar (`CTkMaker vX — Demo / MainPage •`); Pages panel | export scope naming |
+| **Window** | `Main Window` (`DEFAULT_MAIN_WINDOW_NAME` in `document.py`) | canvas chrome | exported class name (`class MainWindow(ctk.CTk)`) |
+
+Exported title rule: a main window still named `DEFAULT_MAIN_WINDOW_NAME` emits `self.title(<project name>)`; a renamed main window or a dialog emits its own name verbatim. Projects created before this scheme (main window named after the project) export byte-identical output — the rule falls through — so there is no migration.
+
 ## Runtime dependency — modifiable CustomTkinter fork
 
 `import customtkinter as ctk` in ctk_maker source resolves to **[ctkmaker-core](https://github.com/kandelucky/ctkmaker-core)**, a maintained CustomTkinter fork at `c:/Users/likak/Desktop/ctkmaker_core/` (installed editable, so source changes are picked up live).
@@ -51,7 +63,7 @@ See [AI_CHEATSHEET.md](AI_CHEATSHEET.md) "CustomTkinter is editable" for the dec
 | `history.py` | `History` | Undo/redo with coalesce window. |
 | `commands/` | `Command` subclasses | Every undo-able mutation goes through a `Command`. Package: `base.py`, `documents.py`, `flags.py`, `handlers.py`, `properties.py`, `tree.py`, `variables.py`. |
 | `autosave.py` | autosave timer | Periodic snapshots to `.autosave/` sidecar. |
-| `project_folder.py` | folder layout | Multi-page project scaffolding (`project.json`, `assets/pages/`). |
+| `project_folder.py` | folder layout | Multi-page project scaffolding (`project.json`, `assets/pages/`) + the Python env scaffold (`requirements.txt`, `pyrightconfig.json`, `.gitignore`, `ctkmaker.py` sidecar, empty `scripts/`), re-run on every open. **Decision:** `pyrightconfig.json` is per-machine — its `extraPaths` carries the absolute path of the live `customtkinter` install (detected via `customtkinter.__file__`) so a fresh project type-checks without a `.venv`. Because that path dies on machine change or install move, the file is excluded by the generated `.gitignore` and self-heals on open: a config still matching our generated shape whose `extraPaths` no longer exists on disk is rewritten with a fresh detection; a user-customised config is never touched. **Decision:** `write_project_meta` treats an identical rewrite as a no-op (no write, no `.bak` rotation), so `project.json.bak` only ever holds a genuinely older version — the New Project flow saves twice back-to-back and would otherwise ship every fresh project with a twin `.bak`. `*.bak` recovery sidecars are gitignored. **Decision:** `scripts/` exists up-front (Unity-style) so the user sees where behavior scripts go before attaching the first one. **Decision:** the `ctkmaker.py` sidecar is kept byte-identical to the installed `CTkScript` source on every open — the file is declared machine-generated, so any mismatch (stale copy after an app update, or a stray user edit) is overwritten; edit-time autocomplete thus always shows the API the exporter will inline. User code belongs in `scripts/`. |
 | `script_paths.py` | path helpers | `<project>/scripts/` (CTkScript folder) resolution. |
 | `component_paths.py` | path helpers | `<project>/components/*.ctkcomp` resolution. |
 | `recent_files.py` | recent list | `~/.ctk_visual_builder/recent.json`. |

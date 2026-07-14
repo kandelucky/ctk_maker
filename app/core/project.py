@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 from app.core.document import (
     DEFAULT_DOCUMENT_HEIGHT,
     DEFAULT_DOCUMENT_WIDTH,
+    DEFAULT_MAIN_WINDOW_NAME,
     DEFAULT_WINDOW_PROPERTIES,
     Document,
 )
@@ -205,11 +206,10 @@ class Project:
         # ``document_width`` / ``window_properties`` accessors for
         # code paths that haven't been ported to multi-doc yet.
         #
-        # Default doc name = project name (``Untitled`` until the New
-        # dialog overwrites both). Runtime ``self.title(...)`` in the
-        # exported .py ends up as the project name, not a generic
-        # "Main Window" that confuses users into thinking the field is
-        # just an editor label.
+        # First doc gets the generic default name; the exporter maps
+        # that exact name to ``self.title(<project name>)``, so the
+        # exported titlebar still shows the project name while a
+        # renamed window keeps the user's title.
         self.name: str = "Untitled"
         # Disk path of the currently-loaded ``.ctkproj``, or ``None``
         # while the project is fresh and unsaved. Mirrored from
@@ -242,7 +242,9 @@ class Project:
         # Adding goes through the secondary "+ Add system font"
         # dialog. Persisted as ``system_fonts`` in the .ctkproj.
         self.system_fonts: list[str] = []
-        self.documents: list[Document] = [Document(name=self.name)]
+        self.documents: list[Document] = [
+            Document(name=DEFAULT_MAIN_WINDOW_NAME)
+        ]
         self.active_document_id: str = self.documents[0].id
         # Widget auto-name counters moved to Document.name_counters —
         # each doc (including every Dialog) now has its own count
@@ -938,10 +940,9 @@ class Project:
                 self.remove_widget(node.id)
         self._id_index.clear()
         self._doc_index.clear()
-        # Default doc name = project name so a clear() right after
-        # load keeps the doc name in sync with whatever the user
-        # picked for the project title.
-        self.documents = [Document(name=self.name or "Untitled")]
+        # Fresh doc gets the generic default name — the exporter
+        # resolves it to the project name at title-emission time.
+        self.documents = [Document(name=DEFAULT_MAIN_WINDOW_NAME)]
         self.active_document_id = self.documents[0].id
         self.history.clear()
         # Reset font cascade + system_fonts list — without this, the

@@ -317,7 +317,7 @@ Things you see in the builder that **don't** survive into the exported `.py`:
 
 Minimum viable export:
 
-- The window has a name (defaults to `"Main Window"` — exports as `MainWindow` class)
+- The window has a name (defaults to `"Main Window"` — exports as `MainWindow` class; while the default name is kept, the exported titlebar shows the **project** name)
 - At least one widget OR a window the user wants to launch as-is
 
 Without any widgets, the export still produces a runnable `.py` — just an empty CTk window with the configured size + title.
