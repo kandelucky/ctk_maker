@@ -723,6 +723,17 @@ class WidgetLifecycle:
         doc = self.project.get_document(doc_id)
         if doc is None:
             return
+        if doc.ghosted:
+            # Ghosted docs have no live widgets — their on-canvas
+            # presence is the screenshot item owned by the ghost
+            # manager. Peel it on collapse (the cached PIL survives
+            # on the doc), re-place it from cache on expand.
+            gm = self.workspace.ghost_manager
+            if collapsed:
+                gm.purge(doc_id)
+            else:
+                gm.freeze_from_cache(doc)
+            return
         if collapsed:
             for node in list(doc.root_widgets):
                 self.destroy_widget_subtree(node)

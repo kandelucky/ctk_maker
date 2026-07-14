@@ -60,6 +60,15 @@ class CollapsedTabsBar(ctk.CTkFrame):
         bus.subscribe(
             "documents_reordered", lambda *_a, **_k: self.refresh(),
         )
+        # ``project_renamed`` doubles as the "project swapped" poke —
+        # New / Open / Save As all flow through ``_set_current_path``,
+        # which fires it after ``project.documents`` was replaced
+        # wholesale (the loader adds docs without ``document_added``,
+        # so collapsed docs restored from a saved project would
+        # otherwise never reach the strip).
+        bus.subscribe(
+            "project_renamed", lambda *_a, **_k: self.refresh(),
+        )
         # Window renames route through ``widget_renamed`` with the
         # WINDOW_ID sentinel — pick those up too so the tab title
         # tracks the chrome title.

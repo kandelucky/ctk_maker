@@ -233,6 +233,13 @@ class GhostManager:
             if doc.id == active_id:
                 continue
             doc.ghosted = True
+            if doc.collapsed:
+                # Collapsed docs are hidden — placing the screenshot
+                # would strand it at the doc's old rect (nothing else
+                # draws there). The expand path re-places it from the
+                # cached PIL (widget_lifecycle.on_document_collapsed
+                # _changed routes ghosted docs to freeze_from_cache).
+                continue
             self.freeze_from_cache(doc)
             any_frozen = True
         if any_frozen:
