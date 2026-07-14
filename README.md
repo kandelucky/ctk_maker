@@ -4,12 +4,12 @@ Drag-and-drop visual designer for **[CustomTkinter](https://github.com/TomSchima
 
 **Community Hub:** [kandelucky.github.io/ctkmaker-hub](https://kandelucky.github.io/ctkmaker-hub/) — browse and share reusable components built in CTkMaker.
 
-> **What changed since v1.36.0:**
-> - **v1.41.0** — **Window properties surface — Attached Scripts group + Object References flat list with Win/Dlg/Btn/Lbl chips + Local Variables 3-letter type chip + color swatch + Edit tool click on focused window opens Properties.**
-> - **v1.40.0** — **Scripts panel folder UI** — folder creation, Attached column with per-window cascade + drag-and-drop between folders.
-> - **v1.39.0** — **Library scripts as event handler targets** — picker shows attached scripts, bindings export as `from assets.scripts.<page>... import <module>` plus the call site.
-> - **v1.38.0** — **Event binding Unity-style row layout** — parent row is the target, Function child appears once target is picked, param children appear with function args.
-> - **v1.36.0** — **Scripts panel** — per-page library `.py` files under `assets/scripts/<page>/`, opens via F6 / View → Scripts.
+> **What changed since v1.56.0:**
+> - **v1.61.0** — **Window duplication** — right-click → Duplicate Window/Dialog with a naming + confirmation modal; full in-project copy, undoable.
+> - **v1.60.0** — **Inert canvas widgets** — clicking a slider/switch on the canvas selects it instead of changing it; widget state is edited only in the Properties panel.
+> - **v1.58.0** — **Self-contained export bundle** — export writes a standalone folder and asks before overwriting an existing one.
+> - **v1.57.0** — **New Page from the assets panel** — add a page via the "+" menu or right-click; it lands in `assets/pages/` automatically.
+> - **v1.56.0** — **Unified naming model** — project / page / window rename rules unified; the Python env scaffold self-heals on open.
 >
 > ⚠️ **Tested on Windows only.** macOS and Linux are not verified — see [issue #5](https://github.com/kandelucky/ctk_maker/issues/5) for the running list of known incompatibilities + how to help.
 
