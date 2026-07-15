@@ -4,12 +4,12 @@ Drag-and-drop visual designer for **[CustomTkinter](https://github.com/TomSchima
 
 **Community Hub:** [kandelucky.github.io/ctkmaker-hub](https://kandelucky.github.io/ctkmaker-hub/) — browse and share reusable components built in CTkMaker.
 
-> **What changed since v1.56.0:**
+> **What changed since v1.57.0:**
+> - **v1.62.0** — **Unified dark dialogs** — every message/confirm dialog uses one dark hero-line style, DPI-aware and clamped on-screen (v1.62.1).
 > - **v1.61.0** — **Window duplication** — right-click → Duplicate Window/Dialog with a naming + confirmation modal; full in-project copy, undoable.
 > - **v1.60.0** — **Inert canvas widgets** — clicking a slider/switch on the canvas selects it instead of changing it; widget state is edited only in the Properties panel.
 > - **v1.58.0** — **Self-contained export bundle** — export writes a standalone folder and asks before overwriting an existing one.
 > - **v1.57.0** — **New Page from the assets panel** — add a page via the "+" menu or right-click; it lands in `assets/pages/` automatically.
-> - **v1.56.0** — **Unified naming model** — project / page / window rename rules unified; the Python env scaffold self-heals on open.
 >
 > ⚠️ **Tested on Windows only.** macOS and Linux are not verified — see [issue #5](https://github.com/kandelucky/ctk_maker/issues/5) for the running list of known incompatibilities + how to help.
 
