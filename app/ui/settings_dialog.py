@@ -26,6 +26,7 @@ import customtkinter as ctk
 
 from app.core.settings import load_settings, save_setting
 from app.ui import style
+import app.ui.stk as stk
 from app.ui.dialogs.message import show_info, show_warning
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
@@ -168,20 +169,20 @@ class SettingsDialog(ManagedToplevel):
     # ------------------------------------------------------------------
     def build_content(self) -> ctk.CTkFrame:
         container = ctk.CTkFrame(self, fg_color="transparent")
-        outer = tk.Frame(container, bg=BG)
+        outer = stk.Frame(container, bg=BG)
         outer.pack(fill="both", expand=True)
 
-        body = tk.Frame(outer, bg=BG)
+        body = stk.Frame(outer, bg=BG)
         body.pack(fill="both", expand=True)
 
         # Sidebar — fixed-width column of clickable rows on the left.
-        sidebar = tk.Frame(body, bg=SIDEBAR_BG, width=SIDEBAR_W)
+        sidebar = stk.Frame(body, bg=SIDEBAR_BG, width=SIDEBAR_W)
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
         self._sidebar = sidebar
 
         # Content host — selected pane fills the remaining width.
-        content = tk.Frame(body, bg=BG)
+        content = stk.Frame(body, bg=BG)
         content.pack(side="left", fill="both", expand=True)
         self._content = content
 
@@ -216,7 +217,7 @@ class SettingsDialog(ManagedToplevel):
         return container
 
     def _make_sidebar_row(self, name: str) -> tk.Label:
-        row = tk.Label(
+        row = stk.Label(
             self._sidebar, text=name, anchor="w",
             bg=SIDEBAR_ROW_BG, fg=SIDEBAR_ROW_FG,
             font=ui_font(11),
@@ -250,17 +251,17 @@ class SettingsDialog(ManagedToplevel):
         self._selected_tab = name
 
     def _tab_frame(self, parent: tk.Misc) -> tk.Frame:
-        f = tk.Frame(parent, bg=BG, padx=14, pady=12)
+        f = stk.Frame(parent, bg=BG, padx=14, pady=12)
         return f
 
     def _section_label(self, parent: tk.Misc, text: str) -> tk.Label:
-        return tk.Label(
+        return stk.Label(
             parent, text=text, bg=BG, fg=SECTION_FG,
             font=ui_font(11, "bold"), anchor="w",
         )
 
     def _hint(self, parent: tk.Misc, text: str) -> tk.Label:
-        return tk.Label(
+        return stk.Label(
             parent, text=text, bg=BG, fg=DIM_FG,
             font=ui_font(10), anchor="w", justify="left",
             # Sidebar takes SIDEBAR_W on the left + tab_frame padx — give
@@ -274,9 +275,9 @@ class SettingsDialog(ManagedToplevel):
     def _build_appearance(self, parent: tk.Misc) -> tk.Frame:
         tab = self._tab_frame(parent)
         self._section_label(tab, "Theme").pack(anchor="w")
-        row = tk.Frame(tab, bg=BG)
+        row = stk.Frame(tab, bg=BG)
         row.pack(anchor="w", pady=(8, 4))
-        tk.Label(
+        stk.Label(
             row, text="Mode:", bg=BG, fg=HEADER_FG,
             font=ui_font(11), width=12, anchor="w",
         ).pack(side="left")
@@ -305,9 +306,9 @@ class SettingsDialog(ManagedToplevel):
         tab = self._tab_frame(parent)
         self._section_label(tab, "New Project").pack(anchor="w")
 
-        loc_row = tk.Frame(tab, bg=BG)
+        loc_row = stk.Frame(tab, bg=BG)
         loc_row.pack(fill="x", pady=(6, 4))
-        tk.Label(
+        stk.Label(
             loc_row, text="Save location:", bg=BG, fg=HEADER_FG,
             font=ui_font(11), width=14, anchor="w",
         ).pack(side="left")
@@ -325,9 +326,9 @@ class SettingsDialog(ManagedToplevel):
         browse_btn.configure(height=24)
         browse_btn.pack(side="left")
 
-        size_row = tk.Frame(tab, bg=BG)
+        size_row = stk.Frame(tab, bg=BG)
         size_row.pack(fill="x")
-        tk.Label(
+        stk.Label(
             size_row, text="Project size:", bg=BG, fg=HEADER_FG,
             font=ui_font(11), width=14, anchor="w",
         ).pack(side="left")
@@ -339,7 +340,7 @@ class SettingsDialog(ManagedToplevel):
         style.styled_entry(
             size_row, textvariable=self._w_var, width=80, height=24,
         ).pack(side="left", padx=(8, 4))
-        tk.Label(
+        stk.Label(
             size_row, text="×", bg=BG, fg=DIM_FG,
             font=ui_font(11),
         ).pack(side="left")
@@ -351,7 +352,7 @@ class SettingsDialog(ManagedToplevel):
         style.styled_entry(
             size_row, textvariable=self._h_var, width=80, height=24,
         ).pack(side="left", padx=(4, 0))
-        tk.Label(
+        stk.Label(
             size_row, text="px", bg=BG, fg=DIM_FG,
             font=ui_font(11),
         ).pack(side="left", padx=(6, 0))
@@ -380,9 +381,9 @@ class SettingsDialog(ManagedToplevel):
         tab = self._tab_frame(parent)
         self._section_label(tab, "Builder grid").pack(anchor="w")
 
-        style_row = tk.Frame(tab, bg=BG)
+        style_row = stk.Frame(tab, bg=BG)
         style_row.pack(fill="x", pady=(6, 4))
-        tk.Label(
+        stk.Label(
             style_row, text="Style:", bg=BG, fg=HEADER_FG,
             font=ui_font(11), width=14, anchor="w",
         ).pack(side="left")
@@ -398,9 +399,9 @@ class SettingsDialog(ManagedToplevel):
             **_DROPDOWN_STYLE,
         ).pack(side="left", padx=(8, 0))
 
-        color_row = tk.Frame(tab, bg=BG)
+        color_row = stk.Frame(tab, bg=BG)
         color_row.pack(fill="x", pady=(0, 6))
-        tk.Label(
+        stk.Label(
             color_row, text="Color:", bg=BG, fg=HEADER_FG,
             font=ui_font(11), width=14, anchor="w",
         ).pack(side="left")
@@ -413,7 +414,7 @@ class SettingsDialog(ManagedToplevel):
             color_row, textvariable=self._grid_color_var,
             width=110, height=24,
         ).pack(side="left", padx=(8, 6))
-        self._grid_swatch = tk.Frame(
+        self._grid_swatch = stk.Frame(
             color_row, bg=self._grid_color_var.get(),
             width=24, height=24, relief="solid", bd=1, cursor="hand2",
         )
@@ -425,9 +426,9 @@ class SettingsDialog(ManagedToplevel):
             "write", lambda *_: self._sync_grid_swatch(),
         )
 
-        spacing_row = tk.Frame(tab, bg=BG)
+        spacing_row = stk.Frame(tab, bg=BG)
         spacing_row.pack(fill="x")
-        tk.Label(
+        stk.Label(
             spacing_row, text="Spacing (px):", bg=BG, fg=HEADER_FG,
             font=ui_font(11), width=14, anchor="w",
         ).pack(side="left")
@@ -495,9 +496,9 @@ class SettingsDialog(ManagedToplevel):
         preset_label = self._editor_preset_label_for(current_cmd)
         self._editor_preset_var = tk.StringVar(value=preset_label)
 
-        preset_row = tk.Frame(tab, bg=BG)
+        preset_row = stk.Frame(tab, bg=BG)
         preset_row.pack(fill="x", pady=(6, 4))
-        tk.Label(
+        stk.Label(
             preset_row, text="Editor:", bg=BG, fg=HEADER_FG,
             font=ui_font(11), width=14, anchor="w",
         ).pack(side="left")
@@ -510,9 +511,9 @@ class SettingsDialog(ManagedToplevel):
             **_DROPDOWN_STYLE,
         ).pack(side="left", padx=(8, 0))
 
-        cmd_row = tk.Frame(tab, bg=BG)
+        cmd_row = stk.Frame(tab, bg=BG)
         cmd_row.pack(fill="x", pady=(0, 6))
-        tk.Label(
+        stk.Label(
             cmd_row, text="Command:", bg=BG, fg=HEADER_FG,
             font=ui_font(11), width=14, anchor="w",
         ).pack(side="left")
@@ -541,16 +542,16 @@ class SettingsDialog(ManagedToplevel):
         # most heavily and what the planned CTkMaker extension will
         # plug into. The download link is a clickable text label so
         # the user can grab it without leaving the dialog.
-        rec_frame = tk.Frame(tab, bg=BG)
+        rec_frame = stk.Frame(tab, bg=BG)
         rec_frame.pack(anchor="w", pady=(12, 0), fill="x")
-        tk.Label(
+        stk.Label(
             rec_frame,
             text="★ Recommended:  VS Code",
             bg=BG, fg="#7dd3fc",
             font=ui_font(11, "bold"),
             anchor="w",
         ).pack(anchor="w")
-        tk.Label(
+        stk.Label(
             rec_frame,
             text=(
                 "Best fit for CTkMaker — Python tooling, integrated "
@@ -561,7 +562,7 @@ class SettingsDialog(ManagedToplevel):
             anchor="w", justify="left",
             wraplength=DIALOG_W - 80,
         ).pack(anchor="w", pady=(2, 4))
-        link_lbl = tk.Label(
+        link_lbl = stk.Label(
             rec_frame,
             text="https://code.visualstudio.com/download",
             bg=BG, fg="#5eb3ff",
@@ -574,16 +575,16 @@ class SettingsDialog(ManagedToplevel):
             lambda _e: self._open_vs_code_download(),
         )
 
-        fix_frame = tk.Frame(tab, bg=BG)
+        fix_frame = stk.Frame(tab, bg=BG)
         fix_frame.pack(anchor="w", pady=(14, 0), fill="x")
-        tk.Label(
+        stk.Label(
             fix_frame,
             text="VS Code showing red import errors?",
             bg=BG, fg=HEADER_FG,
             font=ui_font(10, "bold"),
             anchor="w",
         ).pack(anchor="w")
-        tk.Label(
+        stk.Label(
             fix_frame,
             text=(
                 "Writes .vscode/settings.json with the correct Python path "
@@ -600,7 +601,7 @@ class SettingsDialog(ManagedToplevel):
         )
         vscode_btn.configure(height=26)
         vscode_btn.pack(anchor="w")
-        tk.Label(
+        stk.Label(
             fix_frame,
             textvariable=self._vscode_fix_status,
             bg=BG, fg="#4ade80",
@@ -707,7 +708,7 @@ class SettingsDialog(ManagedToplevel):
             value=self._resolve_initial_console_mode(),
         )
 
-        cb_row = tk.Frame(tab, bg=BG)
+        cb_row = stk.Frame(tab, bg=BG)
         cb_row.pack(fill="x", pady=(6, 2))
         ctk.CTkCheckBox(
             cb_row, text="Show preview tools (orange ring + Save/Copy buttons + title prefix)",
@@ -723,7 +724,7 @@ class SettingsDialog(ManagedToplevel):
             (CONSOLE_MODE_WINDOWS, "Windows console (separate cmd window)"),
             (CONSOLE_MODE_INAPP, "In-app console (View → Console)"),
         ):
-            row = tk.Frame(tab, bg=BG)
+            row = stk.Frame(tab, bg=BG)
             row.pack(fill="x", pady=(4, 0))
             ctk.CTkRadioButton(
                 row, text=label,
@@ -763,9 +764,9 @@ class SettingsDialog(ManagedToplevel):
         tab = self._tab_frame(parent)
         self._section_label(tab, "Autosave").pack(anchor="w")
 
-        row = tk.Frame(tab, bg=BG)
+        row = stk.Frame(tab, bg=BG)
         row.pack(fill="x", pady=(10, 0))
-        tk.Label(
+        stk.Label(
             row, text="Interval (minutes):", bg=BG, fg=HEADER_FG,
             font=ui_font(11), width=18, anchor="w",
         ).pack(side="left")
@@ -794,7 +795,7 @@ class SettingsDialog(ManagedToplevel):
         self._section_label(tab, "Dismissed warnings").pack(anchor="w")
 
         self._reset_advisories_var = tk.BooleanVar(value=False)
-        cb_row = tk.Frame(tab, bg=BG)
+        cb_row = stk.Frame(tab, bg=BG)
         cb_row.pack(fill="x", pady=(6, 2))
         ctk.CTkCheckBox(
             cb_row, text="Reset dismissed warnings on OK",
@@ -818,9 +819,9 @@ class SettingsDialog(ManagedToplevel):
     # ----- Footer -----
 
     def _build_footer(self, parent) -> None:
-        sep = tk.Frame(parent, bg=ENTRY_BORDER, height=1)
+        sep = stk.Frame(parent, bg=ENTRY_BORDER, height=1)
         sep.pack(fill="x")
-        foot = tk.Frame(parent, bg=BG)
+        foot = stk.Frame(parent, bg=BG)
         foot.pack(fill="x", padx=14, pady=10)
         style.primary_button(
             foot, "OK", command=self._on_ok, width=80,

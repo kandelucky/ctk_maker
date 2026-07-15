@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 
 import customtkinter as ctk
 
+import app.ui.stk as stk
+
 from app.core.assets import copy_to_assets, resolve_asset_token
 from app.core.logger import log_error
 from app.core.paths import ASSETS_DIR_NAME
@@ -104,7 +106,7 @@ class ImagePickerDialog(ManagedToplevel):
         return container
 
     def _build_header(self, parent) -> None:
-        bar = tk.Frame(parent, bg=HEADER_BG)
+        bar = stk.Frame(parent, bg=HEADER_BG)
         bar.pack(fill="x")
         style.primary_button(
             bar, "+ Import image...",
@@ -119,7 +121,7 @@ class ImagePickerDialog(ManagedToplevel):
         # tk.Label needs a tk.PhotoImage; CTkImage from load_icon()
         # doesn't render on a tk widget.
         help_img = load_tk_icon("circle-help", size=20, color="#aaaaaa")
-        self._help_lbl = tk.Label(
+        self._help_lbl = stk.Label(
             bar, bg=HEADER_BG, image=help_img if help_img else "",
             text="" if help_img else "?", fg=HEADER_FG,
             font=ui_font(12, "bold"), cursor="hand2",
@@ -138,7 +140,7 @@ class ImagePickerDialog(ManagedToplevel):
         self._list_wrap = wrap
 
     def _build_footer(self, parent) -> None:
-        foot = tk.Frame(parent, bg=BG)
+        foot = stk.Frame(parent, bg=BG)
         foot.pack(fill="x", padx=10, pady=(4, 10))
         self._ok_btn = style.primary_button(
             foot, "OK", command=self._on_ok, width=90,
@@ -203,11 +205,11 @@ class ImagePickerDialog(ManagedToplevel):
             self._set_selected(None)
 
     def _build_row(self, path: Path) -> None:
-        row = tk.Frame(self._list_wrap, bg=PANEL_BG, cursor="hand2")
+        row = stk.Frame(self._list_wrap, bg=PANEL_BG, cursor="hand2")
         row.pack(fill="x", padx=2, pady=1)
 
         thumb = self._thumb_for(path)
-        thumb_lbl = tk.Label(
+        thumb_lbl = stk.Label(
             row, bg=PANEL_BG,
             image=thumb if thumb else "",
             text="" if thumb else "?",
@@ -215,7 +217,7 @@ class ImagePickerDialog(ManagedToplevel):
         )
         thumb_lbl.pack(side="left", padx=8, pady=4)
 
-        name_lbl = tk.Label(
+        name_lbl = stk.Label(
             row, text=path.name, bg=PANEL_BG, fg=HEADER_FG,
             font=ui_font(11), anchor="w",
         )
@@ -432,9 +434,9 @@ class ImagePickerDialog(ManagedToplevel):
         except tk.TclError:
             pass
         tip.configure(bg=BG)
-        frame = tk.Frame(tip, bg=BG, padx=10, pady=8)
+        frame = stk.Frame(tip, bg=BG, padx=10, pady=8)
         frame.pack()
-        tk.Label(
+        stk.Label(
             frame, text=HELP_TEXT, bg=BG, fg=HEADER_FG,
             font=ui_font(11), justify="left", anchor="w",
         ).pack()

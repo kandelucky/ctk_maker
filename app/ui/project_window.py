@@ -39,6 +39,8 @@ from typing import TYPE_CHECKING, Callable
 
 import customtkinter as ctk
 
+import app.ui.stk as stk
+
 from app.core.logger import log_error
 from app.core.paths import assets_dir, ensure_project_folder
 from app.ui.dialogs.message import show_error, show_warning
@@ -316,10 +318,10 @@ class ProjectPanel(ctk.CTkFrame):
 
         # Path row — similar height to Properties' name row but
         # static text only (no edit affordance).
-        path_row = tk.Frame(self, bg=BG, height=22, highlightthickness=0)
+        path_row = stk.Frame(self, bg=BG, height=22, highlightthickness=0)
         path_row.pack(fill="x", pady=(0, 4), padx=6)
         path_row.pack_propagate(False)
-        tk.Label(
+        stk.Label(
             path_row, textvariable=self._path_var,
             bg=BG, fg=DIM_FG,
             font=ui_font(9), anchor="w",
@@ -497,7 +499,7 @@ class ProjectPanel(ctk.CTkFrame):
         # Multiline-friendly label with a fixed height so the panel
         # doesn't resize when switching between selections of
         # different metadata depth.
-        self._info_label = tk.Label(
+        self._info_label = stk.Label(
             wrap, textvariable=self._info_var,
             bg=PANEL_BG, fg=DIM_FG,
             font=ui_font(9), justify="left", anchor="nw",
@@ -509,7 +511,7 @@ class ProjectPanel(ctk.CTkFrame):
         # no preview is showing; the image swap drives the actual
         # height. Tk holds the PhotoImage by attribute reference so
         # GC doesn't blank the widget after the next refresh.
-        self._preview_label = tk.Label(
+        self._preview_label = stk.Label(
             wrap, bg=PANEL_BG, anchor="center",
         )
         self._preview_thumb_ref = None  # PhotoImage retain

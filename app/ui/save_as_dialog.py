@@ -30,6 +30,8 @@ from tkinter import filedialog
 
 import customtkinter as ctk
 
+import app.ui.stk as stk
+
 from app.core.paths import get_default_projects_dir
 from app.ui.dialogs.message import show_warning
 from app.ui.icons import load_icon
@@ -229,7 +231,7 @@ class SaveAsDialog(ManagedToplevel):
         self._save_to_btn = btn
 
     def _build_preview_label(self, parent) -> None:
-        lbl = tk.Label(
+        lbl = stk.Label(
             parent, textvariable=self._preview_var,
             font=ui_font(9, "italic"),
             fg=PREVIEW_FG, bg=PANEL_BG,

@@ -23,6 +23,8 @@ from typing import TYPE_CHECKING, Callable
 
 import customtkinter as ctk
 
+import app.ui.stk as stk
+
 from app.core.commands import (
     AddVariableCommand,
     ChangeVariableDefaultCommand,
@@ -201,12 +203,12 @@ class VariablesPanel(ctk.CTkFrame):
         self._doc_menu: ctk.CTkOptionMenu | None = None
         if self.scope != "local":
             return
-        row = tk.Frame(
+        row = stk.Frame(
             self, bg=TOOLBAR_BG, height=46, highlightthickness=0,
         )
         row.pack_propagate(False)
         row.pack(side="bottom", fill="x")
-        tk.Label(
+        stk.Label(
             row, text="Variables of window:",
             bg=TOOLBAR_BG, fg="#999999", font=ui_font(11),
         ).pack(side="left", padx=(style.TOOLBAR_PADX, 8))
@@ -231,7 +233,7 @@ class VariablesPanel(ctk.CTkFrame):
         )
 
     def _build_tree(self) -> None:
-        wrap = tk.Frame(self, bg=BG, highlightthickness=0)
+        wrap = stk.Frame(self, bg=BG, highlightthickness=0)
         wrap.pack(fill="both", expand=True)
 
         style_name = "Variables.Treeview"
@@ -729,7 +731,7 @@ class ReparentVariablesDialog(ManagedToplevel):
         ROW_HEIGHT_PX = 17
         VISIBLE_ROWS = 3
         WRAP_HEIGHT = ROW_HEIGHT_PX * VISIBLE_ROWS + 8
-        wrap = tk.Frame(
+        wrap = stk.Frame(
             parent, bg=PANEL_BG,
             height=WRAP_HEIGHT, highlightthickness=0,
         )
@@ -942,7 +944,7 @@ class VariableEditDialog(ManagedToplevel):
 
         # Error / hint line — pinned under the Default row so the user
         # sees validation feedback without the dialog reflowing.
-        tk.Label(
+        stk.Label(
             panel,
             textvariable=self._error_var,
             bg=PANEL_BG, fg=DANGER_HOVER,
@@ -1006,8 +1008,8 @@ class VariableEditDialog(ManagedToplevel):
         # Color editor: swatch label + Pick… button. The swatch is a
         # plain ``tk.Label`` with a ``bg=hex`` so it tracks the hex
         # value live (no PhotoImage churn per stroke).
-        self._color_frame = tk.Frame(row, bg=PANEL_BG, highlightthickness=0)
-        self._color_swatch = tk.Label(
+        self._color_frame = stk.Frame(row, bg=PANEL_BG, highlightthickness=0)
+        self._color_swatch = stk.Label(
             self._color_frame, bg=COLOR_DEFAULT,
             width=4, height=1,
             relief="solid", bd=1, highlightthickness=0,
@@ -1019,7 +1021,7 @@ class VariableEditDialog(ManagedToplevel):
         )
         self._color_pick_btn.configure(height=28)
         self._color_pick_btn.pack(side="left")
-        self._color_hex_label = tk.Label(
+        self._color_hex_label = stk.Label(
             self._color_frame,
             textvariable=self._default_var,
             bg=PANEL_BG, fg=TREE_FG,
@@ -1030,14 +1032,14 @@ class VariableEditDialog(ManagedToplevel):
         # _default_var stays the source of truth ("True"/"False" strings)
         # — switch command writes it; trace reflects external writes
         # (type-swap auto-fill, manual edits) back onto the switch.
-        self._bool_frame = tk.Frame(row, bg=PANEL_BG, highlightthickness=0)
+        self._bool_frame = stk.Frame(row, bg=PANEL_BG, highlightthickness=0)
         self._bool_switch = ctk.CTkSwitch(
             self._bool_frame, text="",
             command=self._on_bool_toggle,
             width=44, height=20,
         )
         self._bool_switch.pack(side="left", pady=4)
-        self._bool_state_label = tk.Label(
+        self._bool_state_label = stk.Label(
             self._bool_frame,
             text="False",
             bg=PANEL_BG, fg=TREE_FG,
@@ -1241,9 +1243,9 @@ class VariablesWindow(ManagedToplevel):
             )
 
     def build_content(self) -> tk.Frame:
-        wrapper = tk.Frame(self, bg=BG, highlightthickness=0)
+        wrapper = stk.Frame(self, bg=BG, highlightthickness=0)
         self._build_tab_strip(wrapper)
-        self._panel_area = tk.Frame(wrapper, bg=BG, highlightthickness=0)
+        self._panel_area = stk.Frame(wrapper, bg=BG, highlightthickness=0)
         self._panel_area.pack(fill="both", expand=True, padx=6, pady=(0, 6))
 
         # Global panel — never rebuilt; always points at project.variables.
@@ -1305,7 +1307,7 @@ class VariablesWindow(ManagedToplevel):
     # Tab strip
     # ------------------------------------------------------------------
     def _build_tab_strip(self, parent) -> None:
-        strip = tk.Frame(parent, bg=BG, highlightthickness=0)
+        strip = stk.Frame(parent, bg=BG, highlightthickness=0)
         strip.pack(fill="x", padx=6, pady=(6, 0))
         # Two equal columns so Global / Local tabs share the window's
         # full width.

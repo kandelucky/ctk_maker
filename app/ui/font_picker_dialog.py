@@ -27,6 +27,8 @@ from pathlib import Path
 from tkinter import filedialog
 import customtkinter as ctk
 
+import app.ui.stk as stk
+
 from app.core.assets import copy_to_assets, resolve_asset_token
 from app.core.fonts import (
     FONT_EXTS, list_project_fonts, list_system_families,
@@ -156,7 +158,7 @@ class FontPickerDialog(ManagedToplevel):
         return container
 
     def _build_header(self, parent) -> None:
-        bar = tk.Frame(parent, bg=HEADER_BG)
+        bar = stk.Frame(parent, bg=HEADER_BG)
         bar.pack(fill="x")
         style.primary_button(
             bar, "+ Import file...",
@@ -168,7 +170,7 @@ class FontPickerDialog(ManagedToplevel):
         ).pack(side="left", padx=(0, 4), pady=10)
 
         help_img = load_tk_icon("circle-help", size=20, color="#aaaaaa")
-        self._help_lbl = tk.Label(
+        self._help_lbl = stk.Label(
             bar, bg=HEADER_BG, image=help_img if help_img else "",
             text="" if help_img else "?", fg=HEADER_FG,
             font=ui_font(12, "bold"), cursor="hand2",
@@ -201,17 +203,17 @@ class FontPickerDialog(ManagedToplevel):
         # tk.Frame instead of CTkFrame here so pack_propagate(False)
         # is reliably supported — CTkFrame's geometry knobs can
         # silently restore propagation on theme reapply.
-        wrap = tk.Frame(parent, bg=PANEL_BG, height=110)
+        wrap = stk.Frame(parent, bg=PANEL_BG, height=110)
         wrap.pack(side="top", fill="x", padx=8, pady=(8, 0))
         wrap.pack_propagate(False)
 
-        head = tk.Frame(wrap, bg=PANEL_BG)
+        head = stk.Frame(wrap, bg=PANEL_BG)
         head.pack(fill="x", padx=6, pady=(4, 2))
-        tk.Label(
+        stk.Label(
             head, text="Preview", bg=PANEL_BG, fg=HEADER_FG,
             font=ui_font(9, "bold"),
         ).pack(side="left")
-        entry = tk.Entry(
+        entry = stk.Entry(
             head, textvariable=self._preview_var,
             bg=BG, fg=HEADER_FG, insertbackground=HEADER_FG,
             relief="flat", bd=1, font=ui_font(10),
@@ -220,13 +222,13 @@ class FontPickerDialog(ManagedToplevel):
         )
         entry.pack(side="right", fill="x", expand=True, padx=(8, 0), ipady=2)
 
-        self._preview_body = tk.Frame(wrap, bg=PANEL_BG)
+        self._preview_body = stk.Frame(wrap, bg=PANEL_BG)
         # Body also pinned — labels grow with font size, but the
         # body frame's fixed height contains them so neighbours
         # don't shift.
         self._preview_body.pack(fill="x", padx=6, pady=(2, 6))
         for size in PREVIEW_SIZES:
-            lbl = tk.Label(
+            lbl = stk.Label(
                 self._preview_body,
                 text=PREVIEW_TEXT, bg=PANEL_BG, fg=HEADER_FG,
                 font=ui_font(size), anchor="w", justify="left",
@@ -253,8 +255,8 @@ class FontPickerDialog(ManagedToplevel):
         # — both pack ``side="bottom"`` and Tk's pack manager makes
         # earlier ``bottom`` siblings sit lowest. Visually ends up
         # top→bottom: scope segmented → action buttons.
-        scope_wrap = tk.Frame(parent, bg=BG)
-        tk.Label(
+        scope_wrap = stk.Frame(parent, bg=BG)
+        stk.Label(
             scope_wrap, text="Apply to:", bg=BG, fg=HEADER_FG,
             font=ui_font(10, "bold"), anchor="w",
         ).pack(fill="x", pady=(0, 4))
@@ -285,7 +287,7 @@ class FontPickerDialog(ManagedToplevel):
             value_to_scope.get(self._scope_var.get(), scope_labels[0]),
         )
 
-        foot = tk.Frame(parent, bg=BG)
+        foot = stk.Frame(parent, bg=BG)
         # Pack ``foot`` first → bottommost; ``scope_wrap`` packs
         # second → sits just above the buttons.
         foot.pack(side="bottom", fill="x", padx=10, pady=(10, 14))
@@ -359,10 +361,10 @@ class FontPickerDialog(ManagedToplevel):
         self._set_selected(target)
 
     def _build_row(self, family: str) -> None:
-        row = tk.Frame(self._list_wrap, bg=PANEL_BG, cursor="hand2")
+        row = stk.Frame(self._list_wrap, bg=PANEL_BG, cursor="hand2")
         row.pack(fill="x", padx=2, pady=1)
 
-        name_lbl = tk.Label(
+        name_lbl = stk.Label(
             row, text=family, bg=PANEL_BG, fg=HEADER_FG,
             font=ui_font(10), anchor="w",
         )
@@ -370,12 +372,12 @@ class FontPickerDialog(ManagedToplevel):
 
         try:
             preview_font = (family, 13)
-            preview_lbl = tk.Label(
+            preview_lbl = stk.Label(
                 row, text=PREVIEW_TEXT, bg=PANEL_BG, fg=HEADER_FG,
                 font=preview_font, anchor="w",
             )
         except tk.TclError:
-            preview_lbl = tk.Label(
+            preview_lbl = stk.Label(
                 row, text=PREVIEW_TEXT, bg=PANEL_BG, fg=DIM_FG,
                 font=ui_font(11), anchor="w",
             )
@@ -617,9 +619,9 @@ class FontPickerDialog(ManagedToplevel):
         except tk.TclError:
             pass
         tip.configure(bg=BG)
-        frame = tk.Frame(tip, bg=BG, padx=10, pady=8)
+        frame = stk.Frame(tip, bg=BG, padx=10, pady=8)
         frame.pack()
-        tk.Label(
+        stk.Label(
             frame, text=HELP_TEXT, bg=BG, fg=HEADER_FG,
             font=ui_font(11), justify="left", anchor="w",
         ).pack()
@@ -687,15 +689,15 @@ class SystemFontPickerDialog(ManagedToplevel):
         return container
 
     def _build_header(self, parent) -> None:
-        bar = tk.Frame(parent, bg=HEADER_BG)
+        bar = stk.Frame(parent, bg=HEADER_BG)
         bar.pack(fill="x")
-        tk.Label(
+        stk.Label(
             bar, text="System fonts", bg=HEADER_BG, fg=HEADER_FG,
             font=ui_font(11, "bold"),
         ).pack(side="left", padx=12, pady=8)
         # Search entry — narrows the long OS list to substring matches.
         self._search_var = tk.StringVar()
-        entry = tk.Entry(
+        entry = stk.Entry(
             bar, textvariable=self._search_var,
             bg=BG, fg=HEADER_FG, insertbackground=HEADER_FG,
             relief="flat", bd=1, font=ui_font(10),
@@ -713,7 +715,7 @@ class SystemFontPickerDialog(ManagedToplevel):
         self._list_wrap = wrap
 
     def _build_footer(self, parent) -> None:
-        foot = tk.Frame(parent, bg=BG)
+        foot = stk.Frame(parent, bg=BG)
         foot.pack(fill="x", padx=10, pady=(4, 10))
         self._ok_btn = style.primary_button(
             foot, "Add", command=self._on_ok, width=90,
@@ -756,21 +758,21 @@ class SystemFontPickerDialog(ManagedToplevel):
         self._set_selected(None)
 
     def _build_row(self, family: str) -> None:
-        row = tk.Frame(self._list_wrap, bg=PANEL_BG, cursor="hand2")
+        row = stk.Frame(self._list_wrap, bg=PANEL_BG, cursor="hand2")
         row.pack(fill="x", padx=2, pady=1)
-        name_lbl = tk.Label(
+        name_lbl = stk.Label(
             row, text=family, bg=PANEL_BG, fg=HEADER_FG,
             font=ui_font(10), anchor="w",
         )
         name_lbl.pack(side="left", padx=(8, 6), pady=4)
         try:
             preview_font = (family, 13)
-            preview_lbl = tk.Label(
+            preview_lbl = stk.Label(
                 row, text=PREVIEW_TEXT, bg=PANEL_BG, fg=HEADER_FG,
                 font=preview_font, anchor="w",
             )
         except tk.TclError:
-            preview_lbl = tk.Label(
+            preview_lbl = stk.Label(
                 row, text=PREVIEW_TEXT, bg=PANEL_BG, fg=DIM_FG,
                 font=ui_font(11), anchor="w",
             )

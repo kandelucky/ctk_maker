@@ -30,6 +30,8 @@ from typing import Any
 
 import customtkinter as ctk
 
+import app.ui.stk as stk
+
 from app.core.logger import log_error
 from app.core.settings import load_settings, save_setting
 from app.io.code_exporter import export_project
@@ -360,7 +362,7 @@ class ExportDialog(ManagedToplevel):
         # Mirror NewProjectForm — italic preview line under Save to
         # showing the resolved full path. Width-bounded so a long path
         # doesn't reflow the dialog.
-        lbl = tk.Label(
+        lbl = stk.Label(
             self._panel, textvariable=self._preview_var,
             font=ui_font(9, "italic"),
             fg=PREVIEW_FG, bg=PANEL_BG,
@@ -385,7 +387,7 @@ class ExportDialog(ManagedToplevel):
         )
         n_forms = len(self.project.documents)
         info = f"{n_forms} form{'s' if n_forms != 1 else ''} in project"
-        tk.Label(
+        stk.Label(
             row, text=info, bg=PANEL_BG, fg=PREVIEW_FG,
             font=ui_font(9, "italic"),
         ).pack(side="left", padx=(10, 0))

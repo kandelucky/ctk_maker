@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, Callable
 
 import customtkinter as ctk
 
+import app.ui.stk as stk
+
 from app.core.commands import (
     BulkAddCommand,
     BulkToggleFlagCommand,
@@ -343,7 +345,7 @@ class ObjectTreePanel(ctk.CTkFrame):
 
         # Accent-coloured border wrap — 1px of the active document's
         # theme colour.
-        wrap = tk.Frame(
+        wrap = stk.Frame(
             self, bg=BG,
             highlightthickness=0,
         )
@@ -351,7 +353,7 @@ class ObjectTreePanel(ctk.CTkFrame):
         wrap.pack_propagate(False)
         self._accent_wrap = wrap
 
-        container = tk.Frame(wrap, bg=BG, highlightthickness=0)
+        container = stk.Frame(wrap, bg=BG, highlightthickness=0)
         container.pack(fill="both", expand=True, padx=6, pady=(8, 6))
         container.pack_propagate(False)
         self._tree_container = container
@@ -359,7 +361,7 @@ class ObjectTreePanel(ctk.CTkFrame):
         # Active-document status strip — pinned to the BOTTOM of the
         # container. Shows which form is currently being edited.
         # Accent fg matches the border.
-        doc_header = tk.Frame(
+        doc_header = stk.Frame(
             container, bg=BG, highlightthickness=0, height=20,
         )
         doc_header.pack(side="bottom", fill="x", pady=(4, 0))
@@ -367,14 +369,14 @@ class ObjectTreePanel(ctk.CTkFrame):
         self._doc_header_icon = load_tk_icon(
             "app-window", size=14, color=accent,
         )
-        self._doc_header_icon_label = tk.Label(
+        self._doc_header_icon_label = stk.Label(
             doc_header,
             image=self._doc_header_icon,
             bg=BG,
             borderwidth=0,
         )
         self._doc_header_icon_label.pack(side="left", padx=(2, 6))
-        self._doc_header_label = tk.Label(
+        self._doc_header_label = stk.Label(
             doc_header,
             text="",
             bg=BG,
@@ -391,7 +393,7 @@ class ObjectTreePanel(ctk.CTkFrame):
 
         # Filter row: dropdown (type) + entry (name search). Both
         # apply together (AND).
-        filter_row = tk.Frame(container, bg=BG, highlightthickness=0)
+        filter_row = stk.Frame(container, bg=BG, highlightthickness=0)
         filter_row.pack(side="top", fill="x", pady=(0, 6))
         self._filter_menu = ctk.CTkOptionMenu(
             filter_row,
@@ -435,7 +437,7 @@ class ObjectTreePanel(ctk.CTkFrame):
         ).pack(side="left")
 
 
-        tree_row = tk.Frame(container, bg=BG, highlightthickness=0)
+        tree_row = stk.Frame(container, bg=BG, highlightthickness=0)
         tree_row.pack(side="top", fill="both", expand=True)
         tree_row.pack_propagate(False)
         self._tree_row = tree_row
@@ -495,7 +497,7 @@ class ObjectTreePanel(ctk.CTkFrame):
         self.tree.tag_configure("group-member", foreground="#d49764")
 
         # Insertion line overlay — placed on demand above the tree row.
-        self._insert_line = tk.Frame(tree_row, bg=DROP_TARGET_BG, height=2)
+        self._insert_line = stk.Frame(tree_row, bg=DROP_TARGET_BG, height=2)
 
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
         self.tree.bind("<ButtonPress-1>", self._on_drag_press, add="+")
@@ -1755,7 +1757,7 @@ class ObjectTreePanel(ctk.CTkFrame):
         w = max(40, cell_w - prefix_px - 4)
         before = node.name or ""
 
-        entry = tk.Entry(
+        entry = stk.Entry(
             self.tree,
             font=ui_font(TREE_FONT_SIZE),
             bg="#2d2d30", fg="#cccccc",

@@ -16,6 +16,8 @@ import tkinter as tk
 
 import customtkinter as ctk
 
+import app.ui.stk as stk
+
 from app.core.settings import load_settings
 from app.ui.managed_window import ManagedToplevel
 from app.ui.style import (
@@ -262,25 +264,25 @@ class ColorPaletteWindow(ManagedToplevel):
     # ---- chrome -------------------------------------------------------------
 
     def _build_header(self, parent: tk.Misc) -> None:
-        bar = tk.Frame(
+        bar = stk.Frame(
             parent, bg=TOOLBAR_BG,
             height=TOOLBAR_HEIGHT, highlightthickness=0,
         )
         bar.pack(side="top", fill="x")
         bar.pack_propagate(False)
-        tk.Label(
+        stk.Label(
             bar, text="Color Palette",
             bg=TOOLBAR_BG, fg=TREE_FG,
             font=ui_font(12, "bold"),
         ).pack(side="left", padx=12)
-        tk.Label(
+        stk.Label(
             bar, text="click a swatch to copy hex",
             bg=TOOLBAR_BG, fg=EMPTY_FG,
             font=ui_font(10),
         ).pack(side="left", padx=4)
 
     def _build_status(self, parent: tk.Misc) -> None:
-        self._status = tk.Label(
+        self._status = stk.Label(
             parent, text=" ",
             bg=PANEL_BG, fg=EMPTY_FG,
             font=ui_font(10), anchor="w",
@@ -304,10 +306,10 @@ class ColorPaletteWindow(ManagedToplevel):
         self, parent: tk.Misc, pid: str, plabel: str,
         colors: list[tuple[str, str]],
     ) -> None:
-        col = tk.Frame(parent, bg=PANEL_BG)
+        col = stk.Frame(parent, bg=PANEL_BG)
         col.pack(side="left", padx=(COL_GAP, 0), pady=8, anchor="n")
 
-        tk.Label(
+        stk.Label(
             col, text=f"{pid} — {plabel}",
             bg=PANEL_BG, fg=TREE_FG,
             font=ui_font(11, "bold"),
@@ -320,21 +322,21 @@ class ColorPaletteWindow(ManagedToplevel):
     def _build_color_card(
         self, parent: tk.Misc, name: str, hex_code: str,
     ) -> None:
-        card = tk.Frame(
+        card = stk.Frame(
             parent, bg=BORDER, width=CARD_W, height=CARD_H,
             highlightthickness=0,
         )
         card.pack(pady=2)
         card.pack_propagate(False)
 
-        swatch = tk.Frame(card, bg=hex_code, width=SWATCH_W)
+        swatch = stk.Frame(card, bg=hex_code, width=SWATCH_W)
         swatch.pack(side="left", fill="y", padx=(1, 0), pady=1)
         swatch.pack_propagate(False)
 
-        text_frame = tk.Frame(card, bg=HEADER_BG)
+        text_frame = stk.Frame(card, bg=HEADER_BG)
         text_frame.pack(side="left", fill="both", expand=True, padx=(1, 1), pady=1)
 
-        name_lbl = tk.Label(
+        name_lbl = stk.Label(
             text_frame, text=name,
             bg=HEADER_BG, fg=TREE_FG,
             font=ui_font(10, "bold"),
@@ -342,7 +344,7 @@ class ColorPaletteWindow(ManagedToplevel):
         )
         name_lbl.pack(fill="x", padx=8, pady=(3, 0))
 
-        hex_lbl = tk.Label(
+        hex_lbl = stk.Label(
             text_frame, text=hex_code,
             bg=HEADER_BG, fg=EMPTY_FG,
             font=("Consolas", 9),

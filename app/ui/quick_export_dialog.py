@@ -23,6 +23,8 @@ import tkinter as tk
 
 import customtkinter as ctk
 
+import app.ui.stk as stk
+
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
@@ -117,7 +119,7 @@ class QuickExportDialog(ManagedToplevel):
             "Only this form's widgets and the assets it references will "
             "be included. Other dialogs and pages stay behind."
         )
-        tk.Label(
+        stk.Label(
             outer, text=body_text,
             font=ui_font(10), fg=BODY_FG, bg=PANEL_BG,
             anchor="w", justify="left",
@@ -127,11 +129,11 @@ class QuickExportDialog(ManagedToplevel):
         # Output preview line so the user knows where the file lands.
         out_row = ctk.CTkFrame(outer, fg_color="transparent")
         out_row.pack(fill="x", padx=14, pady=(0, 12))
-        tk.Label(
+        stk.Label(
             out_row, text="Output:",
             font=ui_font(9), fg=SUBTITLE_FG, bg=PANEL_BG,
         ).pack(side="left")
-        tk.Label(
+        stk.Label(
             out_row, text=self._output_path_preview,
             font=ui_font(9, "italic"), fg=PATH_FG, bg=PANEL_BG,
         ).pack(side="left", padx=(6, 0))
@@ -163,18 +165,18 @@ class QuickExportDialog(ManagedToplevel):
         ):
             row = ctk.CTkFrame(outer, fg_color="transparent")
             row.pack(fill="x", padx=14, pady=(0, 4))
-            tk.Label(
+            stk.Label(
                 row, text=icon,
                 font=ui_font(11), fg=ACCENT, bg=PANEL_BG,
             ).pack(side="left", padx=(2, 6), anchor="n")
             text = ctk.CTkFrame(row, fg_color="transparent")
             text.pack(side="left", fill="x", expand=True)
-            tk.Label(
+            stk.Label(
                 text, text=title,
                 font=ui_font(10, "bold"),
                 fg=HEADER_FG, bg=PANEL_BG, anchor="w",
             ).pack(fill="x")
-            tk.Label(
+            stk.Label(
                 text, text=blurb,
                 font=ui_font(9), fg=BODY_FG, bg=PANEL_BG,
                 anchor="w", justify="left",

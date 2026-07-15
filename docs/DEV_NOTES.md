@@ -146,6 +146,31 @@ When a new Lucide icon is needed:
 
 Icon parameters per project policy: 16×16 px, stroke 2, color `#888888`, PNG RGBA.
 
+## DPI scaling — raw-tk dialogs (`stk`)
+
+Raw `tk` widgets do **not** DPI-scale: `tk.Frame(width=170)` is 170 physical px on any monitor, and tuple fonts (`ui_font(11)`) render at Tk's 96-DPI baseline. Meanwhile the `CTkToplevel` frame and all `ctk.*` widgets scale by the DPI factor. On a 150 % display that leaves raw-tk content under-sized inside a correctly-scaled window — cramped controls, tiny text, dead margins.
+
+**Rule: for the visual raw-tk widgets in any dialog, use `app.ui.stk` instead of `tkinter`.**
+
+```python
+import app.ui.stk as stk
+row = stk.Frame(parent, width=170, padx=14)          # width/padx scaled
+stk.Label(row, text="Editor:", font=ui_font(11)).pack(padx=(0, 8))  # font + pack padx scaled
+```
+
+`stk` provides drop-in `Frame / Label / Button / Entry / Canvas / Checkbutton / Radiobutton / Message`. Each scales, at build time (and on later `configure`), by the widget's CTk widget-scaling factor:
+
+- pixel `width`/`height` **only on Frame/Canvas** (on Label/Button/Entry `width` counts characters and is left alone — it already grows with the scaled font);
+- `padx / pady / wraplength / bd / highlightthickness`;
+- tuple fonts (the size element);
+- `pack / grid / place` padding (`padx / pady / ipadx / ipady`).
+
+Leave `tk.StringVar / BooleanVar`, `tk.Menu`, `tk.Toplevel`, `tk.Listbox`, `tk.Text`, and **type annotations** (`-> tk.Frame`) as `tk.*` — `stk.Frame` is a `tk.Frame` subclass, so annotations and `isinstance` still hold. Migration of an existing dialog is a mechanical `tk.Frame(` → `stk.Frame(` (etc.) swap plus the import.
+
+Do **not** hand-multiply by a scale factor as well — that double-scales. The newer `DarkDialog` family (`app/ui/dialogs/`) already scales manually via `s = dialog_scaling(self)`; it and `stk` read the same `ScalingTracker` source, so don't mix the two on one widget.
+
+Source: `app/ui/stk.py`. Scaling probe pattern: instantiate the dialog under a `ctk.CTk()` parent and compare `winfo_reqwidth/height` before/after (Preferences went 653×307 → 970×386 at 150 %).
+
 ## Competitor — CTkDesigner
 
 **URL:** https://ctkdesigner.akascape.com/

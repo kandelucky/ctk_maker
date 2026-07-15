@@ -19,6 +19,8 @@ import tkinter as tk
 from pathlib import Path
 
 import customtkinter as ctk
+
+import app.ui.stk as stk
 from PIL import Image, ImageTk
 
 from app.ui import style
@@ -138,7 +140,7 @@ class LucideIconPickerDialog(ManagedToplevel):
     def build_content(self) -> ctk.CTkFrame:
         container = ctk.CTkFrame(self, fg_color="transparent")
         self._build_header(container)
-        body = tk.Frame(container, bg=BG)
+        body = stk.Frame(container, bg=BG)
         body.pack(fill="both", expand=True, padx=8, pady=(4, 4))
         self._build_sidebar(body)
         self._build_grid(body)
@@ -147,10 +149,10 @@ class LucideIconPickerDialog(ManagedToplevel):
         return container
 
     def _build_header(self, parent) -> None:
-        bar = tk.Frame(parent, bg=HEADER_BG)
+        bar = stk.Frame(parent, bg=HEADER_BG)
         bar.pack(fill="x")
 
-        tk.Label(
+        stk.Label(
             bar, text="Search:", bg=HEADER_BG, fg=HEADER_FG,
             font=ui_font(10),
         ).pack(side="left", padx=(12, 6), pady=8)
@@ -164,13 +166,13 @@ class LucideIconPickerDialog(ManagedToplevel):
             placeholder_text="filter by name or tag...",
         ).pack(side="left", padx=(0, 8), pady=6)
 
-        self._count_lbl = tk.Label(
+        self._count_lbl = stk.Label(
             bar, text="", bg=HEADER_BG, fg=DIM_FG, font=ui_font(10),
         )
         self._count_lbl.pack(side="left", padx=(8, 0), pady=8)
 
     def _build_sidebar(self, parent: tk.Misc) -> None:
-        wrap = tk.Frame(parent, bg=PANEL_BG, width=SIDEBAR_W)
+        wrap = stk.Frame(parent, bg=PANEL_BG, width=SIDEBAR_W)
         wrap.pack(side="left", fill="y", padx=(0, 6))
         wrap.pack_propagate(False)
 
@@ -191,32 +193,32 @@ class LucideIconPickerDialog(ManagedToplevel):
             )
 
     def _build_preview(self, parent: tk.Misc) -> None:
-        wrap = tk.Frame(parent, bg=PANEL_BG, width=PREVIEW_W)
+        wrap = stk.Frame(parent, bg=PANEL_BG, width=PREVIEW_W)
         wrap.pack(side="left", fill="y", padx=(6, 0))
         wrap.pack_propagate(False)
 
-        self._preview_lbl = tk.Label(
+        self._preview_lbl = stk.Label(
             wrap, bg=PANEL_BG, width=PREVIEW_SIZE, height=PREVIEW_SIZE,
         )
         self._preview_lbl.pack(pady=(20, 8))
 
-        self._name_lbl = tk.Label(
+        self._name_lbl = stk.Label(
             wrap, text="(no selection)", bg=PANEL_BG, fg=HEADER_FG,
             font=ui_font(11, "bold"),
             wraplength=PREVIEW_W - 16,
         )
         self._name_lbl.pack(pady=(0, 4))
 
-        self._tags_lbl = tk.Label(
+        self._tags_lbl = stk.Label(
             wrap, text="", bg=PANEL_BG, fg=DIM_FG,
             font=ui_font(9), wraplength=PREVIEW_W - 16,
             justify="center",
         )
         self._tags_lbl.pack(pady=(0, 12))
 
-        tint_row = tk.Frame(wrap, bg=PANEL_BG)
+        tint_row = stk.Frame(wrap, bg=PANEL_BG)
         tint_row.pack(pady=(8, 0))
-        tk.Label(
+        stk.Label(
             tint_row, text="Tint:", bg=PANEL_BG, fg=HEADER_FG,
             font=ui_font(10),
         ).pack(side="left", padx=(0, 4))
@@ -235,16 +237,16 @@ class LucideIconPickerDialog(ManagedToplevel):
         )
         self._tint_entry.pack(side="left")
 
-        self._swatch = tk.Frame(
+        self._swatch = stk.Frame(
             tint_row, bg=self._tint, width=24, height=24,
             cursor="hand2", relief="solid", bd=1,
         )
         self._swatch.pack(side="left", padx=(6, 0))
         self._swatch.bind("<Button-1>", lambda _e: self._open_color_picker())
 
-        size_row = tk.Frame(wrap, bg=PANEL_BG)
+        size_row = stk.Frame(wrap, bg=PANEL_BG)
         size_row.pack(pady=(8, 0))
-        tk.Label(
+        stk.Label(
             size_row, text="Size:", bg=PANEL_BG, fg=HEADER_FG,
             font=ui_font(10),
         ).pack(side="left", padx=(0, 4))
@@ -265,7 +267,7 @@ class LucideIconPickerDialog(ManagedToplevel):
         self._size_menu.pack(side="left")
 
     def _build_footer(self, parent) -> None:
-        foot = tk.Frame(parent, bg=BG)
+        foot = stk.Frame(parent, bg=BG)
         foot.pack(fill="x", padx=10, pady=(4, 10))
         self._apply_btn = style.primary_button(
             foot, "Apply", command=self._on_apply, width=140,
@@ -292,9 +294,9 @@ class LucideIconPickerDialog(ManagedToplevel):
     def _build_cat_button(
         self, key: str, title: str, count: int,
     ) -> None:
-        row = tk.Frame(self._cat_scroll, bg=PANEL_BG, cursor="hand2")
+        row = stk.Frame(self._cat_scroll, bg=PANEL_BG, cursor="hand2")
         row.pack(fill="x", padx=2, pady=1)
-        lbl = tk.Label(
+        lbl = stk.Label(
             row, text=f"  {title}  ({count})", bg=PANEL_BG, fg=HEADER_FG,
             font=ui_font(10), anchor="w",
         )
@@ -394,14 +396,14 @@ class LucideIconPickerDialog(ManagedToplevel):
             self._highlight_cell(self._selected, True)
 
     def _build_cell(self, name: str, row: int, col: int) -> None:
-        cell = tk.Frame(
+        cell = stk.Frame(
             self._grid_scroll, bg=GRID_BG, cursor="hand2",
             width=THUMB + 16, height=THUMB + 16,
         )
         cell.grid(row=row, column=col, padx=2, pady=2, sticky="nsew")
         cell.grid_propagate(False)
         thumb = self._thumb_for(name, self._tint, THUMB)
-        lbl = tk.Label(
+        lbl = stk.Label(
             cell, bg=GRID_BG,
             image=thumb if thumb else None,
             text="" if thumb else "?", fg=DIM_FG,

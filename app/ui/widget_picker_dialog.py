@@ -18,6 +18,8 @@ from tkinter import ttk
 
 import customtkinter as ctk
 
+import app.ui.stk as stk
+
 from app.ui.managed_window import ManagedToplevel
 
 _BG = "#1a1a1a"
@@ -135,7 +137,7 @@ class WidgetPickerDialog(ManagedToplevel):
             ],
         )
 
-        tree_frame = tk.Frame(body, bg=_CARD_BG, bd=0, highlightthickness=0)
+        tree_frame = stk.Frame(body, bg=_CARD_BG, bd=0, highlightthickness=0)
         tree_frame.pack(fill="both", expand=True)
 
         self.tree = ttk.Treeview(

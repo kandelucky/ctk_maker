@@ -29,6 +29,8 @@ from typing import Callable, Optional
 
 import customtkinter as ctk
 
+import app.ui.stk as stk
+
 from app.ui import style
 from app.ui.icons import load_icon
 from app.ui.managed_window import ManagedToplevel
@@ -177,7 +179,7 @@ class ConsolePanel(ctk.CTkFrame):
         # Local toolbar frame — 5px shorter than the global toolbar so
         # the log surface reclaims vertical space. ``make_toolbar``
         # hardcodes the global height, so build the bar directly.
-        self._toolbar = tk.Frame(
+        self._toolbar = stk.Frame(
             self, bg=style.TOOLBAR_BG,
             height=CONSOLE_TOOLBAR_HEIGHT, highlightthickness=0,
         )
@@ -365,7 +367,7 @@ class ConsolePanel(ctk.CTkFrame):
         # in between the toolbar and the textbox on Ctrl+F.
         self._build_search_bar(self)
 
-        wrap = tk.Frame(self, bg=style.BG, highlightthickness=0)
+        wrap = stk.Frame(self, bg=style.BG, highlightthickness=0)
         wrap.pack(fill="both", expand=True)
 
         self._text = tk.Text(
@@ -793,7 +795,7 @@ class ConsolePanel(ctk.CTkFrame):
     # Search bar
 
     def _build_search_bar(self, parent) -> None:
-        bar = tk.Frame(
+        bar = stk.Frame(
             parent, bg=style.PANEL_BG, height=34, highlightthickness=0,
         )
         bar.pack_propagate(False)
