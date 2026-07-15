@@ -1,23 +1,28 @@
-"""External editor launch — open behavior files in VS Code / Notepad++ /
-PyCharm / IDLE / user-configured editor.
+"""External editor launch — open behavior files in VS Code / Cursor /
+Sublime / PyCharm / Notepad++ / IDLE, or a user-supplied editor.
 
-Resolution order:
-1. ``editor_command`` template from settings (``{file}`` / ``{line}`` /
-   ``{folder}`` / ``{python}`` placeholders).
-2. Auto-detected VS Code.
-3. Auto-detected Notepad++ (Windows).
-4. IDLE (always available via ``sys.executable``).
-5. ``os.startfile`` (Windows default file association).
+The editor is chosen *by id* (``_EDITOR_REGISTRY``); each entry owns its
+own "jump to line" grammar so the Settings UI never exposes a raw
+command template. Resolution order:
+
+1. ``editor_id`` + optional ``editor_path`` — registry launch.
+2. ``editor_command`` — legacy raw template (``{file}`` / ``{line}`` /
+   ``{folder}`` / ``{python}``), kept for back-compat + the Advanced
+   escape hatch.
+3. Auto fallback chain — VS Code → Notepad++ → IDLE → file association.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import shlex
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 # Well-known Windows install paths for editors that ship a launcher
@@ -35,6 +40,12 @@ _EDITOR_KNOWN_PATHS: dict[str, tuple[str, ...]] = {
     "code-insiders": (
         r"%LOCALAPPDATA%\Programs\Microsoft VS Code Insiders\bin\code-insiders.cmd",
         r"%PROGRAMFILES%\Microsoft VS Code Insiders\bin\code-insiders.cmd",
+    ),
+    # Cursor is a VS Code fork, so it honours the same ``-g file:line``
+    # grammar. The CLI shim lives under the app's ``bin`` folder.
+    "cursor": (
+        r"%LOCALAPPDATA%\Programs\cursor\resources\app\bin\cursor.cmd",
+        r"%PROGRAMFILES%\cursor\resources\app\bin\cursor.cmd",
     ),
     "subl": (
         r"%PROGRAMFILES%\Sublime Text\subl.exe",
@@ -97,32 +108,256 @@ def _resolve_editor_binary(name: str) -> str | None:
     return shutil.which(name) or shutil.which(f"{name}.cmd")
 
 
+# ---------------------------------------------------------------------------
+# Editor registry — id → display + launch grammar.
+#
+# The UI picks an editor *by id*; each argv builder owns that editor's
+# "jump to line" syntax so the raw command template never has to be
+# exposed to the user. ``line`` may be ``None`` (open the file with no
+# jump). ``exe`` is the resolved binary path; ``folder`` the project
+# root (empty string when unknown).
+
+
+def _argv_vscode(exe: str, file: str, line: int | None, folder: str) -> list[str]:
+    # VS Code / Cursor: open the folder as a workspace first (activates
+    # the Python extension), then ``-g`` jumps to the line.
+    argv = [exe]
+    if folder:
+        argv.append(folder)
+    argv.extend(["-g", f"{file}:{line}" if line is not None else file])
+    return argv
+
+
+def _argv_sublime(exe: str, file: str, line: int | None, folder: str) -> list[str]:
+    return [exe, f"{file}:{line}" if line is not None else file]
+
+
+def _argv_pycharm(exe: str, file: str, line: int | None, folder: str) -> list[str]:
+    if line is not None:
+        return [exe, "--line", str(line), file]
+    return [exe, file]
+
+
+def _argv_notepadpp(exe: str, file: str, line: int | None, folder: str) -> list[str]:
+    argv = [exe]
+    if line is not None:
+        argv.append(f"-n{line}")
+    argv.append(file)
+    return argv
+
+
+def _argv_idle(exe: str, file: str, line: int | None, folder: str) -> list[str]:
+    # ``exe`` is the Python interpreter; IDLE can't jump to a line.
+    return [exe, "-m", "idlelib", file]
+
+
+def _argv_generic(exe: str, file: str, line: int | None, folder: str) -> list[str]:
+    # Unknown editor picked via "Other…" — open the file, no line jump.
+    return [exe, file]
+
+
+# id → (display label, resolver bin name, argv builder). ``bin`` is the
+# bare name fed to ``_resolve_editor_binary`` (known-path + PATH lookup);
+# ``None`` means "not resolved by name" (IDLE uses the interpreter,
+# "other" relies solely on the user-supplied path).
+_EDITOR_REGISTRY: dict[str, tuple[str, str | None, object]] = {
+    "vscode": ("VS Code", "code", _argv_vscode),
+    "sublime": ("Sublime Text", "subl", _argv_sublime),
+    "pycharm": ("PyCharm", "pycharm64", _argv_pycharm),
+    "notepadpp": ("Notepad++", "notepad++", _argv_notepadpp),
+    "cursor": ("Cursor", "cursor", _argv_vscode),
+    "idle": ("IDLE", None, _argv_idle),
+    "other": ("Other…", None, _argv_generic),
+}
+
+# Dropdown order for the Settings picker. ``auto`` and ``custom`` are
+# not registry entries (they map to the fallback chain / raw template).
+EDITOR_ORDER: tuple[str, ...] = (
+    "auto", "vscode", "sublime", "pycharm", "notepadpp", "cursor",
+    "idle", "other",
+)
+_EXTRA_LABELS = {"auto": "Auto", "custom": "Custom command"}
+
+
+def editor_label(editor_id: str) -> str:
+    """Friendly display name for an editor id."""
+    if editor_id in _EDITOR_REGISTRY:
+        return _EDITOR_REGISTRY[editor_id][0]
+    return _EXTRA_LABELS.get(editor_id, editor_id)
+
+
+def editor_id_for_label(label: str) -> str:
+    """Reverse of :func:`editor_label` — dropdown label → id."""
+    for eid in EDITOR_ORDER:
+        if editor_label(eid) == label:
+            return eid
+    return "auto"
+
+
+def _resolve_editor_exe(editor_id: str, editor_path: str | None) -> str | None:
+    """Resolve a registry editor's executable. An explicit
+    ``editor_path`` wins; otherwise probe the editor's known install
+    paths / PATH by its bare bin name.
+    """
+    if editor_path:
+        expanded = os.path.expandvars(editor_path)
+        return expanded if Path(expanded).exists() else None
+    info = _EDITOR_REGISTRY.get(editor_id)
+    if not info or info[1] is None:
+        return None
+    return _resolve_editor_binary(info[1])
+
+
+def editor_is_available(editor_id: str | None, editor_path: str | None = None) -> bool:
+    """Whether the chosen editor can actually be launched — drives the
+    "found ✓ / not found" tag in Settings. ``auto`` and ``idle`` always
+    resolve (the fallback chain / bundled interpreter); ``other`` needs
+    a valid path.
+    """
+    if editor_id in (None, "", "auto", "idle"):
+        return True
+    if editor_id == "other":
+        return bool(
+            editor_path and Path(os.path.expandvars(editor_path)).exists()
+        )
+    return _resolve_editor_exe(editor_id, editor_path) is not None
+
+
+def resolve_editor_path(
+    editor_id: str | None, editor_path: str | None = None,
+) -> str | None:
+    """The actual executable CTkMaker would launch for this selection —
+    drives the read-only "Launches: …" line in Settings so the user can
+    see exactly where the editor is taken from. ``None`` when it can't
+    be resolved (missing editor / "custom" template).
+    """
+    if editor_id in (None, "", "auto"):
+        # Mirror the Auto fallback chain: VS Code → Notepad++ → IDLE.
+        return (
+            _resolve_editor_binary("code")
+            or _resolve_editor_binary("notepad++")
+            or sys.executable
+        )
+    if editor_id == "idle":
+        return sys.executable
+    if editor_id == "custom":
+        return None
+    if editor_id == "other":
+        if editor_path:
+            expanded = os.path.expandvars(editor_path)
+            return expanded if Path(expanded).exists() else None
+        return None
+    return _resolve_editor_exe(editor_id, editor_path)
+
+
+def editor_id_from_command(command: str | None) -> str | None:
+    """Best-effort migration: map a legacy ``editor_command`` template
+    to a registry id so old configs surface the right dropdown entry.
+    Returns ``None`` for unrecognised commands (kept as "custom").
+    """
+    cmd = (command or "").strip().lower()
+    if not cmd:
+        return "auto"
+    if "idlelib" in cmd:
+        return "idle"
+    if "notepad++" in cmd:
+        return "notepadpp"
+    if "cursor" in cmd:
+        return "cursor"
+    if "pycharm" in cmd:
+        return "pycharm"
+    if cmd.startswith("subl") or "\\subl" in cmd or "/subl" in cmd:
+        return "sublime"
+    if cmd.startswith("code") or "\\code" in cmd or "/code" in cmd:
+        return "vscode"
+    return None
+
+
+def _launch_registry(
+    file_path: str,
+    line: int | None,
+    editor_id: str,
+    editor_path: str | None,
+    folder: str,
+) -> bool:
+    """Launch a registry editor by id. Returns ``False`` (so the caller
+    can fall back to Auto) when the editor can't be resolved or spawned.
+    """
+    info = _EDITOR_REGISTRY.get(editor_id)
+    if info is None:
+        return False
+    exe = sys.executable if editor_id == "idle" else _resolve_editor_exe(
+        editor_id, editor_path,
+    )
+    if not exe:
+        return False
+    try:
+        argv = info[2](exe, file_path, line, folder)  # type: ignore[operator]
+        logger.info("launch %s: %s", editor_id, argv)
+        subprocess.Popen(argv)
+        return True
+    except OSError as exc:
+        logger.warning("launch %s failed: %s", editor_id, exc)
+        return False
+
+
+def launch_editor_from_settings(
+    file_path: str | Path,
+    line: int | None,
+    project_root: str | Path | None,
+    settings: dict,
+) -> bool:
+    """Convenience wrapper — pull the editor keys out of a settings dict
+    and dispatch. Keeps the key names in one place for the call sites.
+    """
+    return launch_editor(
+        file_path,
+        line,
+        editor_command=settings.get("editor_command"),
+        project_root=project_root,
+        editor_id=settings.get("editor_id"),
+        editor_path=settings.get("editor_path"),
+    )
+
+
 def launch_editor(
     file_path: str | Path,
     line: int | None = None,
     editor_command: str | None = None,
     project_root: str | Path | None = None,
+    *,
+    editor_id: str | None = None,
+    editor_path: str | None = None,
 ) -> bool:
     """Open ``file_path`` in the user's editor, jumping to ``line``
     when the editor supports it. Returns ``True`` on success.
 
-    Resolution order (Decision #1 = C — settings + OS-default
-    fallback):
+    Resolution order:
 
-    1. ``editor_command`` — user-configured template from
-       ``settings.json:editor_command``. Substitutes ``{file}`` and
-       ``{line}`` placeholders. Empty / missing → fall through.
-    2. ``code -g <file>:<line>`` — VS Code, when ``code`` (or
-       ``code.cmd`` on Windows) is on PATH. Best UX because of the
-       line jump.
-    3. ``os.startfile(file)`` — Windows default file association
-       (notepad, IDLE, whatever the user picked for ``.py``).
-    4. Last resort: return ``False`` so the caller can surface a
-       "couldn't open editor" toast.
+    1. ``editor_id`` (new model) — a registry editor resolved by id +
+       optional ``editor_path``. ``auto`` skips straight to the
+       fallback chain; ``custom`` (or a legacy config with no id but an
+       ``editor_command``) uses the raw template below.
+    2. ``editor_command`` — legacy user-configured template with
+       ``{file}`` / ``{line}`` / ``{folder}`` / ``{python}``.
+    3. Auto fallback chain — VS Code → Notepad++ → IDLE → file
+       association. Always ends in something runnable.
     """
     file_path = str(file_path)
     folder = str(project_root) if project_root else ""
-    if editor_command:
+
+    # Absent id but a legacy template present → treat as "custom" so
+    # existing configs keep working untouched.
+    effective_id = editor_id or ("custom" if editor_command else "auto")
+
+    if effective_id in _EDITOR_REGISTRY:
+        if _launch_registry(file_path, line, effective_id, editor_path, folder):
+            return True
+        # Chosen editor missing/failed — drop to the Auto chain rather
+        # than a possibly-stale legacy template.
+        editor_command = None
+
+    if effective_id == "custom" and editor_command:
         # Strip the ``:{line}`` / ``--line {line}`` / ``-n{line}``
         # tail when no line number is available — every editor has
         # its own grammar for "no line", and the safe answer across
@@ -166,14 +401,14 @@ def launch_editor(
                     argv = [resolved] + [
                         t.strip('"') for t in tokens[1:]
                     ]
-                    print(f"[editor] launching argv: {argv}")
+                    logger.info("launching argv: %s", argv)
                     subprocess.Popen(argv)
                     return True
-            print(f"[editor] launching shell form: {cmd}")
+            logger.info("launching shell form: %s", cmd)
             subprocess.Popen(cmd, shell=True)
             return True
         except (OSError, KeyError, IndexError) as exc:
-            print(f"[editor] command failed: {exc}")
+            logger.warning("command failed: %s", exc)
     # Auto fallback chain: VS Code → Notepad++ (Windows) → IDLE.
     # Every Python install ships IDLE, so this list always ends in
     # something runnable — the user never gets a "couldn't open
@@ -192,11 +427,11 @@ def launch_editor(
                 # inside that workspace.
                 argv.append(folder)
             argv.extend(["-g", target])
-            print(f"[editor] auto VS Code: {argv}")
+            logger.info("auto VS Code: %s", argv)
             subprocess.Popen(argv)
             return True
         except OSError as exc:
-            print(f"[editor] auto VS Code failed: {exc}")
+            logger.warning("auto VS Code failed: %s", exc)
     npp_exe = _resolve_editor_binary("notepad++")
     if npp_exe:
         try:
@@ -204,22 +439,22 @@ def launch_editor(
             if line is not None:
                 argv.append(f"-n{line}")
             argv.append(file_path)
-            print(f"[editor] auto Notepad++: {argv}")
+            logger.info("auto Notepad++: %s", argv)
             subprocess.Popen(argv)
             return True
         except OSError as exc:
-            print(f"[editor] auto Notepad++ failed: {exc}")
+            logger.warning("auto Notepad++ failed: %s", exc)
     # IDLE is the universal fallback — it ships with every Python
     # install (Windows / macOS / Ubuntu) and only needs ``sys.executable``
     # to run, so it works even when the user's PATH carries no
     # editor at all.
     try:
         argv = [sys.executable, "-m", "idlelib", file_path]
-        print(f"[editor] auto IDLE: {argv}")
+        logger.info("auto IDLE: %s", argv)
         subprocess.Popen(argv)
         return True
     except OSError as exc:
-        print(f"[editor] auto IDLE failed: {exc}")
+        logger.warning("auto IDLE failed: %s", exc)
     if hasattr(os, "startfile"):
         try:
             os.startfile(file_path)  # type: ignore[attr-defined]

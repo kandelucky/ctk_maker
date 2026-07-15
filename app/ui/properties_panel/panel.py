@@ -1711,12 +1711,13 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         without the user opening the folder by hand."""
         from app.core.settings import load_settings
         from app.io.scripts import (
-            launch_editor, resolve_project_root_for_editor,
+            launch_editor_from_settings, resolve_project_root_for_editor,
         )
-        launch_editor(
+        launch_editor_from_settings(
             file_path,
-            editor_command=load_settings().get("editor_command"),
-            project_root=resolve_project_root_for_editor(self.project),
+            None,
+            resolve_project_root_for_editor(self.project),
+            load_settings(),
         )
 
     def _attach_script_component(self, node, script: str, cls: str) -> None:

@@ -305,14 +305,14 @@ class ProjectPanelMenu:
         if file_path.suffix.lower() == ".py":
             from app.core.settings import load_settings
             from app.io.scripts import (
-                launch_editor,
+                launch_editor_from_settings,
                 resolve_project_root_for_editor,
             )
-            editor_command = load_settings().get("editor_command")
-            if launch_editor(
+            if launch_editor_from_settings(
                 file_path,
-                editor_command=editor_command,
-                project_root=resolve_project_root_for_editor(panel.project),
+                None,
+                resolve_project_root_for_editor(panel.project),
+                load_settings(),
             ):
                 return
         try:

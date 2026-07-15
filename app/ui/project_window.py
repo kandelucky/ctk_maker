@@ -674,12 +674,13 @@ class ProjectPanel(ctk.CTkFrame):
         Properties panel's Scripts-group open action."""
         from app.core.settings import load_settings
         from app.io.scripts import (
-            launch_editor, resolve_project_root_for_editor,
+            launch_editor_from_settings, resolve_project_root_for_editor,
         )
-        launch_editor(
+        launch_editor_from_settings(
             file_path,
-            editor_command=load_settings().get("editor_command"),
-            project_root=resolve_project_root_for_editor(self.project),
+            None,
+            resolve_project_root_for_editor(self.project),
+            load_settings(),
         )
 
 

@@ -25,8 +25,17 @@ from tkinter import filedialog, ttk
 import customtkinter as ctk
 
 from app.core.settings import load_settings, save_setting
+from app.io.scripts import (
+    EDITOR_ORDER,
+    editor_id_for_label,
+    editor_id_from_command,
+    editor_is_available,
+    editor_label,
+    resolve_editor_path,
+)
 from app.ui import style
 import app.ui.stk as stk
+from app.ui.help_popup import make_help_icon
 from app.ui.dialogs.message import show_info, show_warning
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
@@ -69,6 +78,8 @@ KEY_GRID_STYLE = "grid_style"
 KEY_GRID_COLOR = "grid_color"
 KEY_GRID_SPACING = "grid_spacing"
 KEY_EDITOR_COMMAND = "editor_command"
+KEY_EDITOR_ID = "editor_id"
+KEY_EDITOR_PATH = "editor_path"
 KEY_PREVIEW_FLOATER = "preview_show_floater"
 KEY_PREVIEW_CONSOLE = "preview_show_console"
 KEY_PREVIEW_CONSOLE_MODE = "preview_console_mode"
@@ -77,26 +88,33 @@ CONSOLE_MODE_OFF = "off"
 CONSOLE_MODE_WINDOWS = "windows"
 CONSOLE_MODE_INAPP = "inapp"
 
-# Editor presets — labelled command templates for common Windows
-# editors. ``{file}`` and ``{line}`` are substituted by
-# ``app.io.scripts.launch_editor`` at click time. The empty string
-# means "auto-detect" (try VS Code on PATH, fall back to OS default).
-EDITOR_PRESETS: tuple[tuple[str, str], ...] = (
-    # Auto = try VS Code, then Notepad++ (Windows), then IDLE.
-    # The runtime walks this fallback chain in
-    # ``app.io.scripts.launch_editor`` — the empty template signals
-    # "no preset, use auto-detect".
-    ("Auto (VS Code → Notepad++ → IDLE)", ""),
-    # ``{folder}`` opens the project root as a workspace so the
-    # Python extension activates and IntelliSense resolves
-    # CTkMaker / customtkinter imports. ``-g`` then jumps to the
-    # method line inside that workspace.
-    ("VS Code", 'code "{folder}" -g "{file}:{line}"'),
-    ("Notepad++", 'notepad++ -n{line} "{file}"'),
-    # IDLE always works — ``{python}`` resolves to the same
-    # interpreter running CTkMaker (``sys.executable``), so the
-    # preset doesn't depend on a PATH-visible ``python`` shim.
-    ("IDLE (Python's built-in editor)", '{python} -m idlelib "{file}"'),
+# Single help popup for the whole External-editor tab, opened by the
+# one ``?`` icon next to the heading. Kept in English to match the rest
+# of the product UI. Covers every member of the tab so the default view
+# can stay text-light.
+_EDITOR_HELP_TITLE = "External editor"
+_EDITOR_HELP_BODY = (
+    "Opens your script's .py file in a code editor and jumps to the "
+    "method when you double-click an event or use the canvas "
+    "right-click menu.\n\n"
+    "CHOOSING AN EDITOR\n"
+    "Auto — tries VS Code → Notepad++ → IDLE; first one found wins.\n"
+    "Or pick one: VS Code, Sublime Text, PyCharm, Notepad++, Cursor, "
+    "IDLE. The \"found ✓ / not found\" tag shows if CTkMaker located it.\n\n"
+    "PATH TO EDITOR\n"
+    "Only needed when it isn't found automatically (portable install, "
+    "unusual drive). Click Browse… and point at the editor's .exe.\n\n"
+    "OTHER EDITORS\n"
+    "Pick \"Other…\" and give the path. The file opens, though "
+    "jump-to-line may not work if the editor's syntax is unknown.\n\n"
+    "FIX VS CODE IMPORT ERRORS\n"
+    "Writes .vscode/settings.json with the right Python path so Pylance "
+    "stops flagging your imports red.\n\n"
+    "ADVANCED (CUSTOM COMMAND)\n"
+    "Write a raw launch command with placeholders: {file} = path, "
+    "{line} = line number, {folder} = project root, {python} = "
+    "interpreter.\n\n"
+    "Don't have VS Code?  https://code.visualstudio.com/download"
 )
 
 # Dark-themed CTkOptionMenu palette so the dropdowns inside the
@@ -478,138 +496,262 @@ class SettingsDialog(ManagedToplevel):
     # ----- Editor tab -----
 
     def _build_editor(self, parent: tk.Misc) -> tk.Frame:
-        """Behavior-file editor preference. The picker drops a
-        labelled preset into the command template; the textbox
-        underneath stays editable so power users can tweak the
-        flags or point at an editor that isn't on the preset list.
+        """External-editor preference. One dropdown picks the editor by
+        id — ``app.io.scripts`` owns each editor's jump-to-line grammar,
+        so no raw command template is exposed by default. A path row
+        surfaces only when the editor isn't auto-found or ``Other…`` is
+        picked; the raw command lives in a collapsed Advanced section.
+        All explanation sits behind the single ``?`` popup.
         """
         tab = self._tab_frame(parent)
-        self._section_label(tab, "External editor").pack(anchor="w")
 
-        current_cmd = str(
-            self._initial.get(KEY_EDITOR_COMMAND) or "",
-        ).strip()
-        # Match the current command against the preset list — if it
-        # matches, the dropdown surfaces the friendly label; if not,
-        # we surface the special ``Custom`` entry so the user knows
-        # the textbox holds something they hand-edited.
-        preset_label = self._editor_preset_label_for(current_cmd)
-        self._editor_preset_var = tk.StringVar(value=preset_label)
+        # Heading + the one help icon (right-aligned).
+        head = stk.Frame(tab, bg=BG)
+        head.pack(fill="x")
+        self._section_label(head, "External editor").pack(side="left")
+        make_help_icon(
+            head, _EDITOR_HELP_TITLE, _EDITOR_HELP_BODY,
+        ).pack(side="right")
 
-        preset_row = stk.Frame(tab, bg=BG)
-        preset_row.pack(fill="x", pady=(6, 4))
+        # Resolve the starting editor id: explicit key wins, else
+        # migrate a legacy command template to its closest id.
+        legacy_cmd = str(self._initial.get(KEY_EDITOR_COMMAND) or "").strip()
+        initial_id = str(self._initial.get(KEY_EDITOR_ID) or "").strip()
+        if not initial_id:
+            initial_id = editor_id_from_command(legacy_cmd) or "custom"
+        self._editor_id = initial_id
+        # "Fresh" = nothing ever configured → show the VS Code nudge.
+        self._editor_is_fresh = not (
+            self._initial.get(KEY_EDITOR_ID) or legacy_cmd
+        )
+        self._editor_path_var = tk.StringVar(
+            value=str(self._initial.get(KEY_EDITOR_PATH) or "").strip(),
+        )
+        self._editor_path_var.trace_add(
+            "write", lambda *_: self._refresh_editor_found_tag(),
+        )
+        # Advanced raw-command field — seeded from the legacy template.
+        # A non-empty command flips the effective id to "custom", so
+        # refresh the status line as the user types.
+        self._editor_cmd_var = tk.StringVar(
+            value=legacy_cmd if self._editor_id == "custom" else "",
+        )
+        self._editor_cmd_var.trace_add(
+            "write", lambda *_: self._refresh_editor_found_tag(),
+        )
+
+        # --- Editor picker row ---
+        pick_row = stk.Frame(tab, bg=BG)
+        pick_row.pack(fill="x", pady=(12, 4))
         stk.Label(
-            preset_row, text="Editor:", bg=BG, fg=HEADER_FG,
-            font=ui_font(11), width=14, anchor="w",
+            pick_row, text="Open script files in:", bg=BG, fg=HEADER_FG,
+            font=ui_font(11), anchor="w",
         ).pack(side="left")
+        menu_id = self._editor_id if self._editor_id in EDITOR_ORDER else "auto"
+        self._editor_label_var = tk.StringVar(value=editor_label(menu_id))
         ctk.CTkOptionMenu(
-            preset_row,
-            values=[label for label, _ in EDITOR_PRESETS] + ["Custom"],
-            variable=self._editor_preset_var,
-            command=self._on_editor_preset_change,
-            width=320, height=24, dynamic_resizing=False,
+            pick_row,
+            values=[editor_label(eid) for eid in EDITOR_ORDER],
+            variable=self._editor_label_var,
+            command=self._on_editor_pick,
+            width=180, height=24, dynamic_resizing=False,
             **_DROPDOWN_STYLE,
         ).pack(side="left", padx=(8, 0))
-
-        cmd_row = stk.Frame(tab, bg=BG)
-        cmd_row.pack(fill="x", pady=(0, 6))
-        stk.Label(
-            cmd_row, text="Command:", bg=BG, fg=HEADER_FG,
-            font=ui_font(11), width=14, anchor="w",
-        ).pack(side="left")
-        self._editor_cmd_var = tk.StringVar(value=current_cmd)
-        # Manual edits should flip the preset label to "Custom" so
-        # the dropdown stays honest about what the textbox holds.
-        self._editor_cmd_var.trace_add(
-            "write", lambda *_: self._sync_editor_preset_from_cmd(),
+        self._editor_found_lbl = stk.Label(
+            pick_row, text="", bg=BG, font=ui_font(9), anchor="w",
         )
-        cmd_entry = style.styled_entry(
-            cmd_row, textvariable=self._editor_cmd_var,
-            width=420, height=24,
-        )
-        cmd_entry.pack(side="left", padx=(8, 0))
+        self._editor_found_lbl.pack(side="left", padx=(10, 0))
 
         self._hint(
-            tab,
-            "Used by Properties › Events ▸ double-click and the canvas "
-            "right-click cascade. \"Auto\" tries VS Code → Notepad++ → "
-            "IDLE in order. ``{file}`` is replaced with the path; "
-            "``{line}`` with the method's line number; ``{folder}`` "
-            "with the project root.",
-        ).pack(anchor="w", pady=(10, 0))
+            tab, "Opens when you double-click an event to edit its code.",
+        ).pack(anchor="w", pady=(2, 0))
 
-        # Recommendation block — VS Code is what we test against
-        # most heavily and what the planned CTkMaker extension will
-        # plug into. The download link is a clickable text label so
-        # the user can grab it without leaving the dialog.
-        rec_frame = stk.Frame(tab, bg=BG)
-        rec_frame.pack(anchor="w", pady=(12, 0), fill="x")
-        stk.Label(
-            rec_frame,
-            text="★ Recommended:  VS Code",
-            bg=BG, fg="#7dd3fc",
-            font=ui_font(11, "bold"),
-            anchor="w",
-        ).pack(anchor="w")
-        stk.Label(
-            rec_frame,
-            text=(
-                "Best fit for CTkMaker — Python tooling, integrated "
-                "terminal, and a dedicated CTkMaker extension is on "
-                "the roadmap."
-            ),
-            bg=BG, fg=DIM_FG, font=ui_font(10),
-            anchor="w", justify="left",
-            wraplength=DIALOG_W - 80,
-        ).pack(anchor="w", pady=(2, 4))
-        link_lbl = stk.Label(
-            rec_frame,
-            text="https://code.visualstudio.com/download",
-            bg=BG, fg="#5eb3ff",
-            font=ui_font(9, "underline"),
-            anchor="w", cursor="hand2",
-        )
-        link_lbl.pack(anchor="w")
-        link_lbl.bind(
-            "<Button-1>",
-            lambda _e: self._open_vs_code_download(),
-        )
+        # Read-only line showing the exact executable that will launch —
+        # transparency about where the editor is taken from.
+        self._editor_resolved_lbl = self._hint(tab, "")
+        self._editor_resolved_lbl.configure(fg=SECTION_FG)
+        self._editor_resolved_lbl.pack(anchor="w", pady=(4, 0))
 
+        # --- Path row (shown only when needed) ---
+        self._editor_path_row = stk.Frame(tab, bg=BG)
+        stk.Label(
+            self._editor_path_row, text="Path to editor:", bg=BG,
+            fg=HEADER_FG, font=ui_font(11), anchor="w",
+        ).pack(side="left")
+        style.styled_entry(
+            self._editor_path_row, textvariable=self._editor_path_var,
+            width=280, height=24,
+        ).pack(side="left", padx=(8, 0))
+        style.secondary_button(
+            self._editor_path_row, "Browse…",
+            command=self._browse_for_editor, width=74,
+        ).pack(side="left", padx=(6, 0))
+
+        # --- VS Code recommendation (self-dismissing) ---
+        self._editor_rec_frame = stk.Frame(tab, bg=BG)
+        rec_line = stk.Frame(self._editor_rec_frame, bg=BG)
+        rec_line.pack(anchor="w")
+        stk.Label(
+            rec_line,
+            text="★ Recommended: VS Code — best fit for CTkMaker.",
+            bg=BG, fg="#7dd3fc", font=ui_font(10, "bold"), anchor="w",
+        ).pack(side="left")
+        dl = stk.Label(
+            rec_line, text="Download", bg=BG, fg="#5eb3ff",
+            font=ui_font(10, "underline"), cursor="hand2",
+        )
+        dl.pack(side="left", padx=(8, 0))
+        dl.bind("<Button-1>", lambda _e: self._open_vs_code_download())
+
+        # --- Fix VS Code import errors (action, no prose) ---
         fix_frame = stk.Frame(tab, bg=BG)
-        fix_frame.pack(anchor="w", pady=(14, 0), fill="x")
-        stk.Label(
-            fix_frame,
-            text="VS Code showing red import errors?",
-            bg=BG, fg=HEADER_FG,
-            font=ui_font(10, "bold"),
-            anchor="w",
-        ).pack(anchor="w")
-        stk.Label(
-            fix_frame,
-            text=(
-                "Writes .vscode/settings.json with the correct Python path "
-                "so Pylance finds your packages."
-            ),
-            bg=BG, fg=DIM_FG, font=ui_font(9),
-            anchor="w", justify="left",
-            wraplength=DIALOG_W - 80,
-        ).pack(anchor="w", pady=(2, 6))
+        self._editor_fix_frame = fix_frame
+        fix_frame.pack(anchor="w", pady=(18, 0), fill="x")
         self._vscode_fix_status = tk.StringVar(value="")
-        vscode_btn = style.primary_button(
-            fix_frame, "Configure VS Code Python Path",
-            command=self._configure_vscode_python, width=230,
+        fix_btn = style.primary_button(
+            fix_frame, "Fix VS Code import errors",
+            command=self._configure_vscode_python, width=200,
         )
-        vscode_btn.configure(height=26)
-        vscode_btn.pack(anchor="w")
+        fix_btn.configure(height=26)
+        fix_btn.pack(anchor="w")
         stk.Label(
-            fix_frame,
-            textvariable=self._vscode_fix_status,
-            bg=BG, fg="#4ade80",
-            font=ui_font(9),
-            anchor="w",
+            fix_frame, textvariable=self._vscode_fix_status,
+            bg=BG, fg="#4ade80", font=ui_font(9), anchor="w",
         ).pack(anchor="w", pady=(4, 0))
 
+        # --- Advanced (custom command) disclosure ---
+        self._editor_adv_open = False
+        self._editor_adv_toggle = stk.Label(
+            tab, text="▸ Advanced (custom command)", bg=BG, fg=DIM_FG,
+            font=ui_font(10), cursor="hand2", anchor="w",
+        )
+        self._editor_adv_toggle.pack(anchor="w", pady=(16, 0))
+        self._editor_adv_toggle.bind(
+            "<Button-1>", lambda _e: self._toggle_editor_advanced(),
+        )
+        self._editor_adv_frame = stk.Frame(tab, bg=BG)
+        self._hint(
+            self._editor_adv_frame,
+            "The exact command CTkMaker runs to open the file. "
+            "{file}, {line}, {folder} and {python} are filled in for you.",
+        ).pack(anchor="w", pady=(6, 4))
+        adv_row = stk.Frame(self._editor_adv_frame, bg=BG)
+        adv_row.pack(fill="x")
+        stk.Label(
+            adv_row, text="Command:", bg=BG, fg=HEADER_FG,
+            font=ui_font(11), anchor="w",
+        ).pack(side="left")
+        style.styled_entry(
+            adv_row, textvariable=self._editor_cmd_var,
+            width=340, height=24,
+            placeholder_text='e.g.  subl "{file}:{line}"',
+        ).pack(side="left", padx=(8, 0))
+        # A couple of ready examples under the field so the placeholder
+        # isn't the only hint — one VS Code-style, one JetBrains-style.
+        self._hint(
+            self._editor_adv_frame,
+            'Examples:   code "{folder}" -g "{file}:{line}"      '
+            'pycharm64 --line {line} "{file}"',
+        ).pack(anchor="w", pady=(4, 0))
+
+        # Initial visibility: expand Advanced for legacy custom configs,
+        # then set the found tag + path row for the current selection.
+        if self._editor_id == "custom":
+            self._toggle_editor_advanced()
+        self._refresh_editor_ui()
         return tab
+
+    # ----- Editor tab helpers -----
+
+    def _on_editor_pick(self, label: str) -> None:
+        """Dropdown selection → adopt the editor id, clear any custom
+        command so the picker wins, and dismiss the VS Code nudge."""
+        # Keep the bound var in step even when this is invoked directly
+        # (CTkOptionMenu already sets it before calling us).
+        self._editor_label_var.set(label)
+        self._editor_id = editor_id_for_label(label)
+        self._editor_cmd_var.set("")
+        if self._editor_adv_open:
+            self._toggle_editor_advanced()
+        # Picking counts as "bound" → retire the VS Code nudge for good
+        # (must clear the flag before refresh, or refresh re-adds it).
+        self._editor_is_fresh = False
+        if self._editor_rec_frame.winfo_manager():
+            self._editor_rec_frame.pack_forget()
+        self._refresh_editor_ui()
+
+    def _current_editor_id(self) -> str:
+        """Effective id: a non-empty Advanced command forces custom."""
+        if self._editor_cmd_var.get().strip():
+            return "custom"
+        return editor_id_for_label(self._editor_label_var.get())
+
+    def _refresh_editor_ui(self) -> None:
+        """Show/hide the path row + the VS Code nudge for the current
+        selection, then update the found tag."""
+        eid = self._current_editor_id()
+        # Path row: "Other…" always; a known editor only when missing.
+        needs_path = eid == "other" or (
+            eid in ("vscode", "sublime", "pycharm", "notepadpp", "cursor")
+            and not editor_is_available(eid, self._editor_path_var.get().strip())
+        )
+        if needs_path and not self._editor_path_row.winfo_manager():
+            self._editor_path_row.pack(
+                fill="x", pady=(8, 0), before=self._editor_fix_frame,
+            )
+        elif not needs_path and self._editor_path_row.winfo_manager():
+            self._editor_path_row.pack_forget()
+        # VS Code nudge: only while fresh and still on the default.
+        if self._editor_is_fresh and not self._editor_rec_frame.winfo_manager():
+            self._editor_rec_frame.pack(
+                anchor="w", pady=(12, 0), fill="x",
+                before=self._editor_fix_frame,
+            )
+        self._refresh_editor_found_tag()
+
+    def _refresh_editor_found_tag(self) -> None:
+        """Update the 'found ✓ / not found' tag and the read-only
+        'Launches: …' line for the current selection."""
+        # Guard on the last-created widget so an early path-var write
+        # can't hit a half-built tab.
+        if not hasattr(self, "_editor_resolved_lbl"):
+            return
+        eid = self._current_editor_id()
+        path = self._editor_path_var.get().strip()
+        if eid in ("auto", "custom"):
+            text, color = "", DIM_FG
+        elif eid == "other":
+            ok = editor_is_available("other", path)
+            text = "found ✓" if ok else "needs a path"
+            color = "#4ade80" if ok else "#f0a860"
+        else:
+            ok = editor_is_available(eid, path)
+            text = "found ✓" if ok else "not found"
+            color = "#4ade80" if ok else "#f0a860"
+        self._editor_found_lbl.configure(text=text, fg=color)
+
+        # Resolved executable line — shows exactly what will launch.
+        if eid == "custom":
+            resolved_text = "Launches: your custom command"
+        else:
+            resolved = resolve_editor_path(eid, path)
+            resolved_text = (
+                f"Launches:  {resolved}" if resolved else ""
+            )
+        self._editor_resolved_lbl.configure(text=resolved_text)
+
+    def _toggle_editor_advanced(self) -> None:
+        self._editor_adv_open = not self._editor_adv_open
+        if self._editor_adv_open:
+            self._editor_adv_toggle.configure(
+                text="▾ Advanced (custom command)",
+            )
+            self._editor_adv_frame.pack(anchor="w", fill="x")
+        else:
+            self._editor_adv_toggle.configure(
+                text="▸ Advanced (custom command)",
+            )
+            self._editor_adv_frame.pack_forget()
 
     def _open_vs_code_download(self) -> None:
         import webbrowser
@@ -670,29 +812,20 @@ class SettingsDialog(ManagedToplevel):
         except Exception as e:
             self._vscode_fix_status.set(f"✗ Error: {e}")
 
-    def _editor_preset_label_for(self, cmd: str) -> str:
-        cmd = (cmd or "").strip()
-        if not cmd:
-            return EDITOR_PRESETS[0][0]
-        for label, template in EDITOR_PRESETS:
-            if template and template.strip() == cmd:
-                return label
-        return "Custom"
-
-    def _on_editor_preset_change(self, label: str) -> None:
-        for preset_label, template in EDITOR_PRESETS:
-            if preset_label == label:
-                self._editor_cmd_var.set(template)
-                return
-        # ``Custom`` selected — leave the existing textbox value
-        # alone so the user can keep editing whatever they had.
-
-    def _sync_editor_preset_from_cmd(self) -> None:
-        target = self._editor_preset_label_for(
-            self._editor_cmd_var.get().strip(),
+    def _browse_for_editor(self) -> None:
+        """Pick an editor executable off disk → store it as the editor
+        path. CTkMaker supplies the launch flags itself, so we keep just
+        the plain path (no command template)."""
+        path = filedialog.askopenfilename(
+            parent=self,
+            title="Select editor executable",
+            filetypes=[
+                ("Executables", "*.exe *.cmd *.bat"),
+                ("All files", "*.*"),
+            ],
         )
-        if self._editor_preset_var.get() != target:
-            self._editor_preset_var.set(target)
+        if path:
+            self._editor_path_var.set(path)
 
     # ----- Preview tab -----
 
@@ -893,10 +1026,18 @@ class SettingsDialog(ManagedToplevel):
         save_setting(KEY_GRID_STYLE, self._grid_style_var.get())
         save_setting(KEY_GRID_COLOR, grid_color)
         save_setting(KEY_GRID_SPACING, grid_spacing)
-        save_setting(
-            KEY_EDITOR_COMMAND,
-            self._editor_cmd_var.get().strip(),
-        )
+        # Editor: a non-empty Advanced command wins (id="custom"),
+        # otherwise persist the picked id + optional path.
+        adv_cmd = self._editor_cmd_var.get().strip()
+        if adv_cmd:
+            save_setting(KEY_EDITOR_ID, "custom")
+            save_setting(KEY_EDITOR_COMMAND, adv_cmd)
+            save_setting(KEY_EDITOR_PATH, "")
+        else:
+            eid = editor_id_for_label(self._editor_label_var.get())
+            save_setting(KEY_EDITOR_ID, eid)
+            save_setting(KEY_EDITOR_COMMAND, "")
+            save_setting(KEY_EDITOR_PATH, self._editor_path_var.get().strip())
         save_setting(KEY_PREVIEW_FLOATER, bool(self._preview_floater_var.get()))
         mode = self._preview_console_mode_var.get()
         if mode not in (CONSOLE_MODE_OFF, CONSOLE_MODE_WINDOWS, CONSOLE_MODE_INAPP):

@@ -18,7 +18,14 @@ from app.io.scripts.components import (
     resolve_script_component,
 )
 from app.io.scripts.editor import (
+    EDITOR_ORDER,
+    editor_id_for_label,
+    editor_id_from_command,
+    editor_is_available,
+    editor_label,
     launch_editor,
+    launch_editor_from_settings,
+    resolve_editor_path,
     resolve_project_root_for_editor,
 )
 from app.io.scripts.paths import (
@@ -40,7 +47,14 @@ __all__ = [
     # variable_fields (Script Variables panel rows)
     "build_variable_rows",
     # editor
+    "EDITOR_ORDER",
+    "editor_id_for_label",
+    "editor_id_from_command",
+    "editor_is_available",
+    "editor_label",
     "launch_editor",
+    "launch_editor_from_settings",
+    "resolve_editor_path",
     "resolve_project_root_for_editor",
     # paths
     "class_name_to_filename",
