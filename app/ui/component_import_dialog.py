@@ -14,7 +14,6 @@ from __future__ import annotations
 import shutil
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox
 
 import customtkinter as ctk
 
@@ -22,6 +21,7 @@ from app.core.component_paths import COMPONENT_EXT, component_display_stem
 from app.core.logger import log_error
 from app.io.component_io import load_metadata, load_payload
 from app.ui.dialog_utils import safe_grab_set
+from app.ui.dialogs.message import show_error, show_warning
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
@@ -170,7 +170,7 @@ class ComponentImportDialog(ManagedToplevel):
 
     def _on_preview(self) -> None:
         if self._payload is None:
-            messagebox.showwarning(
+            show_warning(
                 "Preview unavailable",
                 "This file isn't a valid component.",
                 parent=self,
@@ -181,7 +181,7 @@ class ComponentImportDialog(ManagedToplevel):
 
     def _on_import(self) -> None:
         if self._payload is None:
-            messagebox.showerror(
+            show_error(
                 "Invalid component",
                 "This file isn't a readable .ctkcomp.",
                 parent=self,
@@ -213,7 +213,7 @@ class ComponentImportDialog(ManagedToplevel):
         try:
             shutil.copy2(self._source_path, target_path)
         except OSError as exc:
-            messagebox.showerror(
+            show_error(
                 "Import failed",
                 f"Couldn't copy:\n{self._source_path}\n→\n{target_path}\n\n{exc}",
                 parent=self,

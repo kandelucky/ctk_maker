@@ -15,13 +15,14 @@ from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 
 import customtkinter as ctk
 
 from app.core.paths import (
     get_default_projects_dir, project_folder,
 )
+from app.ui.dialogs.message import show_error, show_warning
 from app.ui.system_fonts import ui_font
 from app.core.project_folder import bootstrap_project_folder
 from app.ui.icons import load_icon
@@ -353,7 +354,7 @@ class NewProjectForm(ctk.CTkFrame):
             return None
         if any(c in FORBIDDEN_NAME_CHARS for c in name):
             self._flag_name_error()
-            messagebox.showwarning(
+            show_warning(
                 "Invalid name",
                 "Project name may not contain any of these characters:\n\n"
                 '    \\  /  :  *  ?  "  <  >  |\n\n'
@@ -371,7 +372,7 @@ class NewProjectForm(ctk.CTkFrame):
         target_folder = project_folder(save_dir, name)
         if target_folder.exists():
             self._flag_name_error()
-            messagebox.showwarning(
+            show_warning(
                 "Folder exists",
                 f"A folder named '{name}' already exists at:\n\n"
                 f"{save_dir}\n\n"
@@ -389,7 +390,7 @@ class NewProjectForm(ctk.CTkFrame):
             )
         except OSError:
             self._flag_name_error()
-            messagebox.showerror(
+            show_error(
                 "Save location unwritable",
                 f"Could not create:\n\n{target_folder}\n\n"
                 "Pick a different save location.",

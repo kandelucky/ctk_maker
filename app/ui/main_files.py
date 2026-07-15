@@ -28,7 +28,7 @@ from __future__ import annotations
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 
 from app.core.autosave import autosave_path_for, clear_autosave
 from app.core.fonts import (
@@ -41,6 +41,7 @@ from app.io.project_saver import save_project
 from app.ui._main_window_host import _MainWindowHost
 from app.ui.crash_dialog import show_crash_dialog
 from app.ui.dialogs import NewProjectSizeDialog, prompt_open_project_folder
+from app.ui.dialogs.message import ask_yes_no, show_error, show_info
 from app.ui.startup_dialog import StartupDialog
 from app.ui.system_fonts import ui_font
 
@@ -98,7 +99,7 @@ class FilesMixin(_MainWindowHost):
                     save_project(self.project, path)
                 except OSError:
                     log_error("save_project (new project)")
-                    messagebox.showerror(
+                    show_error(
                         "Save failed",
                         f"Could not create project file at:\n{path}",
                         parent=self,
@@ -155,7 +156,7 @@ class FilesMixin(_MainWindowHost):
 
     def _open_path(self, path: str) -> None:
         if not Path(path).exists():
-            messagebox.showerror("Open failed", f"File not found:\n{path}", parent=self)
+            show_error("Open failed", f"File not found:\n{path}", parent=self)
             return
         # If an autosave sits next to this project AND is newer than
         # the saved file, the previous session crashed (or the user
@@ -173,7 +174,7 @@ class FilesMixin(_MainWindowHost):
         try:
             load_project(self.project, load_target, root=self)
         except ProjectLoadError as exc:
-            messagebox.showerror("Open failed", str(exc), parent=self)
+            show_error("Open failed", str(exc), parent=self)
             return
         except Exception:
             tb = log_error("load_project")
@@ -239,7 +240,7 @@ class FilesMixin(_MainWindowHost):
         ts = datetime.fromtimestamp(auto_mtime).strftime(
             "%Y-%m-%d %H:%M",
         )
-        choice = messagebox.askyesno(
+        choice = ask_yes_no(
             "Restore from autosave?",
             (
                 f"An autosave from {ts} is newer than the saved "
@@ -259,7 +260,7 @@ class FilesMixin(_MainWindowHost):
     # File menu commands
     # ------------------------------------------------------------------
     def _stub(self, name: str) -> None:
-        messagebox.showinfo("Toolbar stub", f"{name} — not implemented yet", parent=self)
+        show_info("Toolbar stub", f"{name} — not implemented yet", parent=self)
 
     def _on_new(self) -> None:
         if not self._confirm_discard_if_dirty():
@@ -302,7 +303,7 @@ class FilesMixin(_MainWindowHost):
             save_project(self.project, path)
         except OSError:
             log_error("save_project (file new)")
-            messagebox.showerror(
+            show_error(
                 "Save failed",
                 f"Could not create project file at:\n{path}",
                 parent=self,
@@ -349,7 +350,7 @@ class FilesMixin(_MainWindowHost):
         if not path:
             return
         if not Path(path).exists():
-            messagebox.showerror(
+            show_error(
                 "Recover failed",
                 f"File not found:\n{path}",
                 parent=self,
@@ -361,7 +362,7 @@ class FilesMixin(_MainWindowHost):
         try:
             load_project(self.project, path, root=self)
         except ProjectLoadError as exc:
-            messagebox.showerror("Recover failed", str(exc), parent=self)
+            show_error("Recover failed", str(exc), parent=self)
             return
         except Exception:
             tb = log_error("recover_from_backup")
@@ -381,7 +382,7 @@ class FilesMixin(_MainWindowHost):
         self.project.event_bus.publish(
             "project_renamed", self.project.name,
         )
-        messagebox.showinfo(
+        show_info(
             "Recovered from backup",
             (
                 "Loaded the backup as an untitled project.\n\n"
@@ -401,7 +402,7 @@ class FilesMixin(_MainWindowHost):
         repeated nags. Reopening the file in a fresh session
         re-offers the conversion.
         """
-        choice = messagebox.askyesno(
+        choice = ask_yes_no(
             "Convert to multi-page project?",
             (
                 "This project uses the older single-file format.\n\n"
@@ -430,7 +431,7 @@ class FilesMixin(_MainWindowHost):
             save_project(self.project, self._current_path)
         except OSError:
             log_error("convert pre-save")
-            messagebox.showerror(
+            show_error(
                 "Convert failed",
                 "Could not save current state before conversion.",
                 parent=self,
@@ -442,7 +443,7 @@ class FilesMixin(_MainWindowHost):
         try:
             new_page_path = convert_legacy_to_multi_page(self._current_path)
         except (ProjectMetaError, OSError) as exc:
-            messagebox.showerror(
+            show_error(
                 "Convert failed", str(exc), parent=self,
             )
             return
@@ -547,7 +548,7 @@ class FilesMixin(_MainWindowHost):
         ):
             return True
         if not target.exists():
-            messagebox.showerror(
+            show_error(
                 "Switch failed",
                 f"Page file not found:\n{target}",
                 parent=self,
@@ -598,7 +599,7 @@ class FilesMixin(_MainWindowHost):
                 save_project(self.project, self._current_path)
             except OSError:
                 log_error("save_project")
-                messagebox.showerror("Save failed", "Could not write the project file.", parent=self)
+                show_error("Save failed", "Could not write the project file.", parent=self)
                 return
             clear_autosave(self._current_path)
             self._set_current_path(self._current_path)
@@ -647,7 +648,7 @@ class FilesMixin(_MainWindowHost):
             save_project(self.project, path)
         except OSError:
             log_error("save_project")
-            messagebox.showerror("Save failed", "Could not write the project file.", parent=self)
+            show_error("Save failed", "Could not write the project file.", parent=self)
             return
         # Save As may target a brand-new path, but also clear any stale
         # autosave at the previous path so the next launch doesn't
@@ -691,7 +692,7 @@ class FilesMixin(_MainWindowHost):
         )
         folder_path = self.project.folder_path
         if folder_path is None:
-            messagebox.showerror(
+            show_error(
                 "Save failed",
                 "Project folder is not set.",
                 parent=self,
@@ -700,7 +701,7 @@ class FilesMixin(_MainWindowHost):
         try:
             entry = add_page(folder_path, name)
         except ProjectMetaError as exc:
-            messagebox.showerror("Save failed", str(exc), parent=self)
+            show_error("Save failed", str(exc), parent=self)
             return
         new_page_path = page_file_path(folder_path, entry["file"])
         # Save current in-memory state into the new page file so
@@ -718,7 +719,7 @@ class FilesMixin(_MainWindowHost):
             log_error("save_as new page")
             self._current_path = old_path
             self.project.path = old_path
-            messagebox.showerror(
+            show_error(
                 "Save failed",
                 "Could not write the new page file.",
                 parent=self,
@@ -737,7 +738,7 @@ class FilesMixin(_MainWindowHost):
         # Save current state first so the duplicate captures any
         # in-memory edits.
         if self._current_path is None:
-            messagebox.showerror(
+            show_error(
                 "Save failed",
                 "No project is currently open.",
                 parent=self,
@@ -747,7 +748,7 @@ class FilesMixin(_MainWindowHost):
             save_project(self.project, self._current_path)
         except OSError:
             log_error("save_as clone pre-save")
-            messagebox.showerror(
+            show_error(
                 "Save failed",
                 "Could not save current state before cloning.",
                 parent=self,
@@ -756,7 +757,7 @@ class FilesMixin(_MainWindowHost):
         from app.core.project_folder import clone_project_folder
         folder_path = self.project.folder_path
         if folder_path is None:
-            messagebox.showerror(
+            show_error(
                 "Save failed",
                 "Project folder is not set.",
                 parent=self,
@@ -767,7 +768,7 @@ class FilesMixin(_MainWindowHost):
                 folder_path, save_to, name,
             )
         except OSError as exc:
-            messagebox.showerror(
+            show_error(
                 "Save failed", str(exc), parent=self,
             )
             return
@@ -783,7 +784,7 @@ class FilesMixin(_MainWindowHost):
         as a brand-new project at ``<save_to>/<name>``.
         """
         if self._current_path is None:
-            messagebox.showerror(
+            show_error(
                 "Save failed",
                 "No project is currently open.",
                 parent=self,
@@ -793,7 +794,7 @@ class FilesMixin(_MainWindowHost):
             save_project(self.project, self._current_path)
         except OSError:
             log_error("save_as extract pre-save")
-            messagebox.showerror(
+            show_error(
                 "Save failed",
                 "Could not save current state before extracting.",
                 parent=self,
@@ -805,7 +806,7 @@ class FilesMixin(_MainWindowHost):
                 self.project, save_to, name,
             )
         except OSError as exc:
-            messagebox.showerror(
+            show_error(
                 "Save failed", str(exc), parent=self,
             )
             return

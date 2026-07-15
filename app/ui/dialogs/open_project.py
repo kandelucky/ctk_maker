@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 
 from app.core.project_folder import (
     find_active_page_entry,
@@ -14,7 +14,16 @@ from app.core.project_folder import (
 )
 from app.ui.dialog_utils import safe_grab_set
 from app.ui.dialogs._base import DarkDialog
-from app.ui.dialogs._colors import _ABT_BG, _ABT_FG
+from app.ui.dialogs._colors import (
+    ACCENT,
+    FG_DIM,
+    ON_ACCENT,
+    PANEL,
+    dialog_scaling,
+    flat_button,
+    hero_header,
+)
+from app.ui.dialogs.message import show_error
 from app.ui.system_fonts import ui_font
 
 
@@ -25,49 +34,51 @@ class _AmbiguousProjectPicker(DarkDialog):
     """
 
     def __init__(self, parent, folder: Path, candidates: list[Path]) -> None:
-        super().__init__(parent)
+        super().__init__(parent, fg_color=PANEL)
         self.title("Pick project file")
         self.result: Path | None = None
         self._candidates = candidates
+        s = dialog_scaling(self)
 
+        hero_header(self, "Pick project file", "info", s)
         tk.Label(
             self,
             text=(
                 f"Several '.ctkproj' files were found in:\n{folder}\n\n"
                 "Pick the one to open."
             ),
-            bg=_ABT_BG, fg=_ABT_FG, font=ui_font(10),
-            justify="left", wraplength=420,
-        ).pack(padx=24, pady=(20, 10))
+            bg=PANEL, fg=FG_DIM, font=ui_font(round(10 * s)),
+            justify="left", wraplength=round(420 * s), anchor="w",
+        ).pack(
+            fill="x", padx=(round(31 * s), round(18 * s)),
+            pady=(round(6 * s), round(10 * s)),
+        )
 
         self._listbox = tk.Listbox(
             self,
             height=min(8, max(3, len(candidates))),
             width=50,
-            bg="#2a2a2a", fg=_ABT_FG, selectbackground="#6366f1",
+            bg="#2a2a2a", fg="#ededed",
+            selectbackground=ACCENT, selectforeground=ON_ACCENT,
             relief="flat", bd=0, highlightthickness=0,
-            font=ui_font(10),
+            font=ui_font(round(10 * s)),
         )
         for c in candidates:
             self._listbox.insert(tk.END, c.name)
         self._listbox.selection_set(0)
-        self._listbox.pack(padx=24, pady=(0, 16))
+        self._listbox.pack(
+            padx=round(31 * s), pady=(0, round(16 * s)), fill="x",
+        )
         self._listbox.bind("<Double-Button-1>", lambda _e: self._on_ok())
 
-        btn_row = tk.Frame(self, bg=_ABT_BG)
-        btn_row.pack(pady=(0, 20))
-        tk.Button(
-            btn_row, text="Cancel", command=self._on_cancel,
-            bg="#3a3a3a", fg=_ABT_FG, activebackground="#4a4a4a",
-            activeforeground=_ABT_FG, relief="flat", bd=0,
-            font=ui_font(10), padx=16, pady=4, cursor="hand2",
-        ).pack(side="left", padx=(0, 8))
-        tk.Button(
-            btn_row, text="Open", command=self._on_ok,
-            bg="#6366f1", fg="#ffffff", activebackground="#4f46e5",
-            activeforeground="#ffffff", relief="flat", bd=0,
-            font=ui_font(10), padx=16, pady=4, cursor="hand2",
-        ).pack(side="left")
+        btn_row = tk.Frame(self, bg=PANEL)
+        btn_row.pack(fill="x", padx=round(18 * s), pady=(0, round(16 * s)))
+        flat_button(
+            btn_row, "Open", "accent", self._on_ok, s,
+        ).pack(side="right")
+        flat_button(
+            btn_row, "Cancel", "ghost", self._on_cancel, s,
+        ).pack(side="right", padx=(0, round(8 * s)))
         self.bind("<Escape>", lambda _e: self._on_cancel())
         self.bind("<Return>", lambda _e: self._on_ok())
 
@@ -122,7 +133,7 @@ def prompt_open_project_folder(
         try:
             meta = read_project_meta(result.folder)
         except Exception as exc:
-            messagebox.showerror(
+            show_error(
                 "Open failed",
                 f"project.json could not be read.\n\n{exc}",
                 parent=parent,
@@ -130,7 +141,7 @@ def prompt_open_project_folder(
             return None
         entry = find_active_page_entry(meta)
         if entry is None or not entry.get("file"):
-            messagebox.showerror(
+            show_error(
                 "Open failed",
                 "project.json has no active page.",
                 parent=parent,
@@ -147,7 +158,7 @@ def prompt_open_project_folder(
         )
         parent.wait_window(picker)
         return picker.result
-    messagebox.showerror(
+    show_error(
         "Open failed",
         result.message or "This folder isn't a CTkMaker project.",
         parent=parent,

@@ -17,12 +17,12 @@ from __future__ import annotations
 import json
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox
 
 import customtkinter as ctk
 from PIL import Image, ImageTk
 
 from app.ui import style
+from app.ui.dialogs.message import show_error
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
@@ -580,7 +580,7 @@ class LucideIconPickerDialog(ManagedToplevel):
             return
         src = PNG_DIR / f"{self._selected}.png"
         if not src.exists():
-            messagebox.showerror(
+            show_error(
                 "Icon missing",
                 f"Bundled icon file is missing: {src.name}",
                 parent=self,
@@ -589,7 +589,7 @@ class LucideIconPickerDialog(ManagedToplevel):
         try:
             self.target_dir.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
-            messagebox.showerror(
+            show_error(
                 "Save failed",
                 f"Could not create target folder:\n{exc}",
                 parent=self,
@@ -600,7 +600,7 @@ class LucideIconPickerDialog(ManagedToplevel):
             tinted = self._tint_image(src, self._tint, self._output_size)
             tinted.save(dst, "PNG")
         except Exception as exc:
-            messagebox.showerror(
+            show_error(
                 "Save failed",
                 f"Could not save tinted icon:\n{exc}",
                 parent=self,

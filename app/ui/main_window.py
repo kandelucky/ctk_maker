@@ -9,7 +9,7 @@ import webbrowser
 from collections import deque
 from datetime import datetime
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 from typing import Any
 
 import customtkinter as ctk
@@ -17,6 +17,7 @@ import customtkinter as ctk
 from app.core.autosave import (
     AutosaveController, autosave_path_for, clear_autosave,
 )
+from app.ui.dialogs.message import ask_yes_no, ask_yes_no_cancel
 from app.ui.system_fonts import ui_font
 from app.core.fonts import (
     register_project_fonts, set_active_project_defaults,
@@ -377,7 +378,7 @@ def _confirm_var_name_fallbacks(parent) -> bool:
     )
     lines.append("")
     lines.append("Continue with the preview anyway?")
-    return messagebox.askyesno(
+    return ask_yes_no(
         "Widget name fallbacks",
         "\n".join(lines),
         parent=parent,
@@ -968,10 +969,9 @@ class MainWindow(
         if not self._dirty:
             return True
         self.bell()
-        reply = messagebox.askyesnocancel(
+        reply = ask_yes_no_cancel(
             "Unsaved changes",
             "Save changes before continuing?",
-            icon="warning",
             parent=self,
         )
         if reply is None:

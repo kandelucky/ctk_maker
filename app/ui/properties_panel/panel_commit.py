@@ -21,7 +21,7 @@ The mixin relies on attributes set up by ``PropertiesPanel.__init__``
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 
 from app.ui.tint_color_picker import ColorPickerDialog
 
@@ -33,6 +33,7 @@ from app.core.commands import (
 from app.ui.system_fonts import ui_font
 from app.core.variables import is_var_token, parse_var_token
 from app.ui.dialog_utils import safe_grab_set
+from app.ui.dialogs.message import ask_ok_cancel, show_error
 from app.ui.icons import load_tk_icon
 from app.widgets.layout_schema import (
     LAYOUT_DISPLAY_NAMES,
@@ -515,12 +516,10 @@ class CommitMixin:
                     f"{len(type_overrides)} per-type default(s) "
                     f"will be removed ({', '.join(type_overrides)}).",
                 )
-            from tkinter import messagebox
-            if not messagebox.askokcancel(
+            if not ask_ok_cancel(
                 "Apply font",
                 "\n".join(lines),
                 parent=self.winfo_toplevel(),
-                icon="info",
             ):
                 return
         defaults = dict(self.project.font_defaults)
@@ -675,13 +674,11 @@ class CommitMixin:
                 f"Tip: rename tabs one at a time to keep widgets "
                 f"attached to the renamed tab."
             )
-        from app.ui.dialogs import ConfirmDialog
-        dialog = ConfirmDialog(
-            self.winfo_toplevel(), "Tab change", msg,
+        return ask_ok_cancel(
+            "Tab change", msg,
+            parent=self.winfo_toplevel(),
             ok_text="Continue", cancel_text="Back",
         )
-        dialog.wait_window()
-        return dialog.result
 
     # ------------------------------------------------------------------
     # Commit path
@@ -699,7 +696,7 @@ class CommitMixin:
         if pname in ("grid_rows", "grid_cols"):
             ok, msg = self._validate_grid_shrink(node, pname, value)
             if not ok:
-                messagebox.showerror(
+                show_error(
                     "Cannot shrink grid", msg,
                     parent=self.winfo_toplevel(),
                 )

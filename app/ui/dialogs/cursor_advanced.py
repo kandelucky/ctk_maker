@@ -13,7 +13,17 @@ import tkinter as tk
 
 from app.ui.dialog_utils import safe_grab_set
 from app.ui.dialogs._base import DarkDialog
-from app.ui.dialogs._colors import _ABT_BG, _ABT_DIM, _ABT_FG, _ABT_SEP
+from app.ui.dialogs._colors import (
+    _ABT_SEP,
+    ACCENT,
+    FG,
+    FG_DIM,
+    ON_ACCENT,
+    PANEL,
+    dialog_scaling,
+    flat_button,
+    hero_header,
+)
 from app.ui.properties_panel.constants import OS_SPECIFIC_CURSORS
 from app.ui.style import styled_scrollbar
 from app.ui.system_fonts import ui_font
@@ -22,13 +32,12 @@ from app.ui.system_fonts import ui_font
 _OS_LABELS = {"Windows": "Windows", "Darwin": "macOS", "Linux": "Linux"}
 _ROW_BG = "#252526"
 _ROW_HOVER = "#2d2d30"
-_TAB_ACTIVE_BG = "#094771"
 _TAB_INACTIVE_BG = "#2d2d30"
 
 
 class CursorAdvancedDialog(DarkDialog):
     def __init__(self, parent) -> None:
-        super().__init__(parent)
+        super().__init__(parent, fg_color=PANEL)
         self.title("Advanced Cursor")
         self.result: str | None = None
         self._current_os = platform.system()
@@ -37,9 +46,12 @@ class CursorAdvancedDialog(DarkDialog):
         self._active_tab = self._current_os
         self._list_frame: tk.Frame | None = None
         self._tab_buttons: dict[str, tk.Label] = {}
+        self._s = dialog_scaling(self)
         self._build()
         self.update_idletasks()
-        self.place_centered(420, 520, parent)
+        self.place_centered(
+            round(420 * self._s), round(520 * self._s), parent,
+        )
         self.lift()
         self.focus_set()
         safe_grab_set(self)
@@ -48,28 +60,33 @@ class CursorAdvancedDialog(DarkDialog):
         self.reveal()
 
     def _build(self) -> None:
-        tk.Frame(self, bg=_ABT_BG, height=14).pack()
+        s = self._s
+        hero_header(self, "Advanced Cursor", "info", s)
         tk.Label(
             self,
             text="OS-specific cursors render only on the matching system. "
                  "On other systems Tk falls back to the default arrow.",
-            bg=_ABT_BG, fg=_ABT_DIM, font=ui_font(9),
-            justify="left", wraplength=380,
-        ).pack(padx=20, pady=(0, 10))
+            bg=PANEL, fg=FG_DIM, font=ui_font(round(9 * s)),
+            justify="left", wraplength=round(380 * s), anchor="w",
+        ).pack(
+            fill="x", padx=(round(31 * s), round(18 * s)),
+            pady=(round(6 * s), round(10 * s)),
+        )
 
-        tab_row = tk.Frame(self, bg=_ABT_BG)
-        tab_row.pack(padx=20, fill="x")
+        tab_row = tk.Frame(self, bg=PANEL)
+        tab_row.pack(padx=round(18 * s), fill="x")
         for os_key in ("Windows", "Darwin", "Linux"):
             label_text = _OS_LABELS[os_key]
             if os_key == self._current_os:
                 label_text += "  •"
             tab = tk.Label(
                 tab_row, text=label_text,
-                bg=_TAB_INACTIVE_BG, fg=_ABT_FG,
-                font=ui_font(10), padx=14, pady=6,
+                bg=_TAB_INACTIVE_BG, fg=FG,
+                font=ui_font(round(10 * s)),
+                padx=round(14 * s), pady=round(6 * s),
                 cursor="hand2",
             )
-            tab.pack(side="left", padx=(0, 4))
+            tab.pack(side="left", padx=(0, round(4 * s)))
             tab.bind(
                 "<Button-1>",
                 lambda _e, k=os_key: self._switch_tab(k),
@@ -77,21 +94,24 @@ class CursorAdvancedDialog(DarkDialog):
             self._tab_buttons[os_key] = tab
 
         tk.Frame(self, bg=_ABT_SEP, height=1).pack(
-            fill="x", padx=20, pady=(8, 0),
+            fill="x", padx=round(18 * s), pady=(round(8 * s), 0),
         )
 
-        list_outer = tk.Frame(self, bg=_ABT_BG)
-        list_outer.pack(padx=20, pady=(8, 8), fill="both", expand=True)
+        list_outer = tk.Frame(self, bg=PANEL)
+        list_outer.pack(
+            padx=round(18 * s), pady=(round(8 * s), round(8 * s)),
+            fill="both", expand=True,
+        )
 
         self._canvas = tk.Canvas(
-            list_outer, bg=_ABT_BG, highlightthickness=0, bd=0,
+            list_outer, bg=PANEL, highlightthickness=0, bd=0,
         )
         scrollbar = styled_scrollbar(list_outer, command=self._canvas.yview)
         self._canvas.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
         self._canvas.pack(side="left", fill="both", expand=True)
 
-        self._list_frame = tk.Frame(self._canvas, bg=_ABT_BG)
+        self._list_frame = tk.Frame(self._canvas, bg=PANEL)
         self._canvas.create_window(
             (0, 0), window=self._list_frame, anchor="nw",
         )
@@ -108,14 +128,13 @@ class CursorAdvancedDialog(DarkDialog):
             ),
         )
 
-        btn_row = tk.Frame(self, bg=_ABT_BG)
-        btn_row.pack(pady=(0, 16))
-        tk.Button(
-            btn_row, text="Cancel", command=self._on_cancel,
-            bg="#3a3a3a", fg=_ABT_FG, activebackground="#4a4a4a",
-            activeforeground=_ABT_FG, relief="flat", bd=0,
-            font=ui_font(10), padx=18, pady=4, cursor="hand2",
-        ).pack()
+        btn_row = tk.Frame(self, bg=PANEL)
+        btn_row.pack(
+            fill="x", padx=round(18 * s), pady=(0, round(16 * s)),
+        )
+        flat_button(
+            btn_row, "Cancel", "ghost", self._on_cancel, s,
+        ).pack(side="right")
 
         self._render_list()
 
@@ -127,7 +146,8 @@ class CursorAdvancedDialog(DarkDialog):
         for os_key, tab in self._tab_buttons.items():
             active = os_key == self._active_tab
             tab.configure(
-                bg=_TAB_ACTIVE_BG if active else _TAB_INACTIVE_BG,
+                bg=ACCENT if active else _TAB_INACTIVE_BG,
+                fg=ON_ACCENT if active else FG,
             )
         if self._list_frame is None:
             return
@@ -142,8 +162,9 @@ class CursorAdvancedDialog(DarkDialog):
         row = tk.Frame(self._list_frame, bg=_ROW_BG)
         row.pack(fill="x", pady=1)
         label = tk.Label(
-            row, text=name, bg=_ROW_BG, fg=_ABT_FG,
-            font=ui_font(11), padx=14, pady=7,
+            row, text=name, bg=_ROW_BG, fg=FG,
+            font=ui_font(round(11 * self._s)),
+            padx=round(14 * self._s), pady=round(7 * self._s),
             anchor="w",
         )
         label.pack(fill="x")
@@ -154,7 +175,7 @@ class CursorAdvancedDialog(DarkDialog):
             row.configure(cursor=name)
             label.configure(cursor=name)
         except tk.TclError:
-            label.configure(fg=_ABT_DIM)
+            label.configure(fg=FG_DIM)
 
         def on_enter(_e, r=row, lb=label) -> None:
             r.configure(bg=_ROW_HOVER)

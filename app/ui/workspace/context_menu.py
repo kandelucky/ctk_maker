@@ -23,7 +23,6 @@ Cross-sidecar references:
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox
 
 from app.core.commands import (
     BulkAddCommand,
@@ -34,6 +33,7 @@ from app.core.commands import (
 )
 from app.core.platform_compat import MOD_LABEL_PLUS
 from app.ui.dialogs import RenameDialog
+from app.ui.dialogs.message import show_error, show_info
 from app.widgets.registry import get_descriptor
 
 
@@ -535,7 +535,7 @@ class ContextMenu:
         from app.ui.event_bind_menu import show_event_bind_menu_at_cursor
         ws = self.workspace
         if not getattr(ws.project, "path", None):
-            messagebox.showinfo(
+            show_info(
                 "Save first",
                 "Save the project before adding event handlers — the "
                 "scripts/ folder lives in the project folder.",
@@ -577,7 +577,7 @@ class ContextMenu:
         current_path = getattr(toplevel, "_current_path", None)
         components_dir = ensure_components_root(current_path)
         if components_dir is None:
-            messagebox.showinfo(
+            show_info(
                 "Save project first",
                 "Components are stored next to assets in the project "
                 "folder. Save the project before creating components.",
@@ -610,7 +610,7 @@ class ContextMenu:
                 source_window_id=source_window_id,
             )
         except OSError as exc:
-            messagebox.showerror(
+            show_error(
                 "Save component failed",
                 f"Couldn't write component:\n{exc}",
                 parent=toplevel,
@@ -810,7 +810,7 @@ class ContextMenu:
         from app.ui.component_save_dialog import ComponentSaveDialog
 
         if not document.root_widgets:
-            messagebox.showinfo(
+            show_info(
                 "Empty window",
                 "This window has no widgets yet — add some before "
                 "saving as a component.",
@@ -821,7 +821,7 @@ class ContextMenu:
         current_path = getattr(toplevel, "_current_path", None)
         components_dir = ensure_components_root(current_path)
         if components_dir is None:
-            messagebox.showinfo(
+            show_info(
                 "Save project first",
                 "Components are stored next to assets in the project "
                 "folder. Save the project before creating components.",
@@ -849,7 +849,7 @@ class ContextMenu:
                 target_path, name, document, ws.project,
             )
         except OSError as exc:
-            messagebox.showerror(
+            show_error(
                 "Save component failed",
                 f"Couldn't write component:\n{exc}",
                 parent=toplevel,

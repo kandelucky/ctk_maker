@@ -14,13 +14,13 @@ from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox
 
 import customtkinter as ctk
 from PIL import Image
 
 from app import __version__
 from app.core.screen import center_geometry
+from app.ui.dialogs.message import ask_yes_no
 from app.ui.managed_window import ManagedToplevel
 from app.ui.new_project_form import NewProjectForm
 from app.ui.recent_list import RecentList
@@ -239,7 +239,7 @@ class StartupDialog(ManagedToplevel):
         # untitled fallback in the main window, dismissing here will
         # close the app — confirm first so a stray click on X doesn't
         # silently quit.
-        confirm = messagebox.askyesno(
+        confirm = ask_yes_no(
             "Quit CTkMaker?",
             "No project is open. Closing this dialog will quit "
             "CTkMaker.\n\nQuit now?",

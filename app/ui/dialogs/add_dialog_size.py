@@ -9,6 +9,7 @@ import tkinter as tk
 import customtkinter as ctk
 
 from app.ui import style
+from app.ui.dialogs.message import show_warning
 from app.ui.managed_window import ManagedToplevel
 
 
@@ -184,7 +185,6 @@ class AddDialogSizeDialog(ManagedToplevel):
     _SIZE_MAX = 4000
 
     def _on_ok(self) -> None:
-        from tkinter import messagebox
         name = self._name_var.get().strip()
         if not name:
             self.bell()
@@ -194,7 +194,7 @@ class AddDialogSizeDialog(ManagedToplevel):
             h = int(self._h_var.get())
         except ValueError:
             self.bell()
-            messagebox.showwarning(
+            show_warning(
                 "Invalid size",
                 f"Width and height must be whole numbers "
                 f"between {self._SIZE_MIN} and {self._SIZE_MAX}.",
@@ -206,7 +206,7 @@ class AddDialogSizeDialog(ManagedToplevel):
             and self._SIZE_MIN <= h <= self._SIZE_MAX
         ):
             self.bell()
-            messagebox.showwarning(
+            show_warning(
                 "Size out of range",
                 f"Dialog width and height must be between "
                 f"{self._SIZE_MIN} and {self._SIZE_MAX} pixels.",

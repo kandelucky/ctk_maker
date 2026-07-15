@@ -19,13 +19,14 @@ behaviour when the canvas didn't own the action).
 """
 from __future__ import annotations
 
-from tkinter import messagebox, ttk
+from tkinter import ttk
 
 from app.core.commands import (
     BulkMoveCommand,
     DeleteMultipleCommand,
     DeleteWidgetCommand,
 )
+from app.ui.dialogs.message import ask_yes_no, show_info
 from app.widgets.layout_schema import normalise_layout_type
 from app.widgets.registry import get_descriptor
 
@@ -109,7 +110,7 @@ class KeyboardActions:
             return self._delete_multi(selected)
         sid = next(iter(selected))
         if ws._effective_locked(sid):
-            messagebox.showinfo(
+            show_info(
                 title="Widget locked",
                 message=(
                     "This widget is locked. Unlock it from the Object "
@@ -123,11 +124,11 @@ class KeyboardActions:
             return None
         descriptor = get_descriptor(node.widget_type)
         type_label = descriptor.display_name if descriptor else node.widget_type
-        confirmed = messagebox.askyesno(
+        confirmed = ask_yes_no(
             title="Delete widget",
             message=f"Delete this {type_label}?",
-            icon="warning",
             parent=ws.winfo_toplevel(),
+            danger=True, yes_text="Delete", no_text="Cancel",
         )
         if not confirmed:
             return "break"
@@ -157,7 +158,7 @@ class KeyboardActions:
             nid for nid in selected if ws._effective_locked(nid)
         ]
         if locked_ids:
-            messagebox.showinfo(
+            show_info(
                 title="Widgets locked",
                 message=(
                     f"{len(locked_ids)} of the selected widgets are locked. "
@@ -167,11 +168,11 @@ class KeyboardActions:
             )
             return "break"
         count = len(selected)
-        confirmed = messagebox.askyesno(
+        confirmed = ask_yes_no(
             title="Delete widgets",
             message=f"Delete {count} selected widgets?",
-            icon="warning",
             parent=ws.winfo_toplevel(),
+            danger=True, yes_text="Delete", no_text="Cancel",
         )
         if not confirmed:
             return "break"

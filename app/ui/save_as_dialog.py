@@ -26,11 +26,12 @@ from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 
 import customtkinter as ctk
 
 from app.core.paths import get_default_projects_dir
+from app.ui.dialogs.message import show_warning
 from app.ui.icons import load_icon
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
@@ -344,7 +345,7 @@ class SaveAsDialog(ManagedToplevel):
             return
         if any(c in FORBIDDEN_NAME_CHARS for c in name):
             self._flag_name_error()
-            messagebox.showwarning(
+            show_warning(
                 "Invalid name",
                 "Name may not contain any of these characters:\n\n"
                 '    \\  /  :  *  ?  "  <  >  |',
@@ -360,7 +361,7 @@ class SaveAsDialog(ManagedToplevel):
                 return
             save_to_path = Path(save_to).expanduser()
             if not save_to_path.exists():
-                messagebox.showwarning(
+                show_warning(
                     "Save location missing",
                     f"The save location does not exist:\n{save_to}",
                     parent=self,
@@ -368,7 +369,7 @@ class SaveAsDialog(ManagedToplevel):
                 return
             target_folder = save_to_path / name
             if target_folder.exists():
-                messagebox.showwarning(
+                show_warning(
                     "Folder exists",
                     f"A folder named '{name}' already exists at:\n\n"
                     f"{save_to_path}\n\nPick a different name "
@@ -388,7 +389,7 @@ class SaveAsDialog(ManagedToplevel):
                 == name.lower()
                 for p in (self.project.pages or [])
             ):
-                messagebox.showwarning(
+                show_warning(
                     "Page name in use",
                     f"A page named '{name}' already exists "
                     "in this project.",

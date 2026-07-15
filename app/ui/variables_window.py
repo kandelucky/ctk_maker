@@ -18,7 +18,7 @@ Command objects through ``project.history`` so undo / redo Just Works.
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import ttk
 from typing import TYPE_CHECKING, Callable
 
 import customtkinter as ctk
@@ -31,6 +31,7 @@ from app.core.commands import (
     RenameVariableCommand,
 )
 from app.ui import style
+from app.ui.dialogs.message import ask_yes_no
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 from app.ui.toolbar import _attach_tooltip
@@ -568,8 +569,9 @@ class VariablesPanel(ctk.CTkFrame):
                 "(Undo restores everything.)"
             )
         )
-        if not messagebox.askokcancel(
+        if not ask_yes_no(
             "Delete variable", msg, parent=self.winfo_toplevel(),
+            danger=True, yes_text="Delete", no_text="Cancel",
         ):
             return
         # Snapshot bindings BEFORE the cascade-unbind so undo can

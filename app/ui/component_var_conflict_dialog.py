@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import customtkinter as ctk
 
+from app.ui.dialogs.message import show_warning
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
@@ -152,14 +153,13 @@ class ComponentVarConflictDialog(ManagedToplevel):
         })
 
     def _on_ok(self) -> None:
-        from tkinter import messagebox
         for state in self._row_state:
             choice = state["choice_var"].get()
             new_name = state["name_var"].get().strip()
             if choice == "rename":
                 if not _is_valid_name(new_name):
                     self.bell()
-                    messagebox.showwarning(
+                    show_warning(
                         "Invalid name",
                         f"'{new_name}' isn't a valid variable name.",
                         parent=self,

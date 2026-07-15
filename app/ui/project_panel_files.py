@@ -26,9 +26,10 @@ from __future__ import annotations
 import shutil
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 
 from app.core.logger import log_error
+from app.ui.dialogs.message import ask_string, ask_yes_no, show_error, show_warning
 
 
 _FORBIDDEN_NAME_CHARS = set('\\/:*?"<>|')
@@ -45,8 +46,7 @@ class ProjectPanelFiles:
         target = panel._resolve_target_dir()
         if target is None:
             return
-        from tkinter import simpledialog
-        name = simpledialog.askstring(
+        name = ask_string(
             "New folder",
             "Folder name:",
             parent=panel.winfo_toplevel(),
@@ -55,7 +55,7 @@ class ProjectPanelFiles:
             return
         name = name.strip()
         if not name or set(name) & _FORBIDDEN_NAME_CHARS:
-            messagebox.showwarning(
+            show_warning(
                 "Invalid name",
                 "Folder name contains forbidden characters or is empty.",
                 parent=panel.winfo_toplevel(),
@@ -63,7 +63,7 @@ class ProjectPanelFiles:
             return
         new_dir = target / name
         if new_dir.exists():
-            messagebox.showwarning(
+            show_warning(
                 "Folder exists",
                 f"'{name}' already exists in this location.",
                 parent=panel.winfo_toplevel(),
@@ -73,7 +73,7 @@ class ProjectPanelFiles:
             new_dir.mkdir(parents=True)
         except OSError:
             log_error("new folder mkdir")
-            messagebox.showerror(
+            show_error(
                 "New folder failed",
                 f"Couldn't create:\n{new_dir}",
                 parent=panel.winfo_toplevel(),
@@ -130,8 +130,7 @@ class ProjectPanelFiles:
         target = panel._resolve_target_dir()
         if target is None:
             return
-        from tkinter import simpledialog
-        name = simpledialog.askstring(
+        name = ask_string(
             dialog_title,
             "Filename (without extension):",
             initialvalue=default_name,
@@ -141,7 +140,7 @@ class ProjectPanelFiles:
             return
         name = name.strip()
         if not name or set(name) & _FORBIDDEN_NAME_CHARS:
-            messagebox.showwarning(
+            show_warning(
                 "Invalid name",
                 "Filename contains forbidden characters or is empty.",
                 parent=panel.winfo_toplevel(),
@@ -151,7 +150,7 @@ class ProjectPanelFiles:
             name = f"{name}{default_ext}"
         new_file = target / name
         if new_file.exists():
-            messagebox.showwarning(
+            show_warning(
                 "File exists",
                 f"'{name}' already exists in this location.",
                 parent=panel.winfo_toplevel(),
@@ -165,7 +164,7 @@ class ProjectPanelFiles:
             )
         except OSError:
             log_error(f"new {error_label} write")
-            messagebox.showerror(
+            show_error(
                 f"New {error_label} failed",
                 f"Couldn't create:\n{new_file}",
                 parent=panel.winfo_toplevel(),
@@ -185,8 +184,7 @@ class ProjectPanelFiles:
         if meta is None:
             return
         old_path, kind = meta
-        from tkinter import simpledialog
-        new_name = simpledialog.askstring(
+        new_name = ask_string(
             "Rename",
             "New name:",
             initialvalue=old_path.name,
@@ -198,7 +196,7 @@ class ProjectPanelFiles:
         if not new_name or new_name == old_path.name:
             return
         if set(new_name) & _FORBIDDEN_NAME_CHARS:
-            messagebox.showwarning(
+            show_warning(
                 "Invalid name",
                 "Name contains forbidden characters.",
                 parent=panel.winfo_toplevel(),
@@ -206,7 +204,7 @@ class ProjectPanelFiles:
             return
         new_path = old_path.parent / new_name
         if new_path.exists():
-            messagebox.showwarning(
+            show_warning(
                 "Already exists",
                 f"'{new_name}' already exists.",
                 parent=panel.winfo_toplevel(),
@@ -216,7 +214,7 @@ class ProjectPanelFiles:
             old_path.rename(new_path)
         except OSError:
             log_error("rename asset")
-            messagebox.showerror(
+            show_error(
                 "Rename failed",
                 f"Couldn't rename:\n{old_path}\n→\n{new_path}",
                 parent=panel.winfo_toplevel(),
@@ -243,7 +241,7 @@ class ProjectPanelFiles:
             count = sum(1 for _ in folder.rglob("*"))
         except OSError:
             count = 0
-        if not messagebox.askyesno(
+        if not ask_yes_no(
             "Delete folder",
             f"Delete '{folder.name}' and {count} item(s) inside it?\n\n"
             f"Path: {folder}\n\n"
@@ -251,7 +249,7 @@ class ProjectPanelFiles:
             "Widgets that referenced any of these files fall back to "
             "a default at the next render.",
             parent=panel.winfo_toplevel(),
-            icon="warning",
+            danger=True, yes_text="Delete", no_text="Cancel",
         ):
             return
         try:
@@ -263,7 +261,7 @@ class ProjectPanelFiles:
             shutil.rmtree(folder, onerror=_force_remove_readonly)
         except Exception:
             log_error("delete folder rmtree")
-            messagebox.showerror(
+            show_error(
                 "Delete failed",
                 f"Couldn't delete:\n{folder}\n\nThe folder may be open "
                 "in another program (Explorer window, terminal). "
@@ -275,7 +273,7 @@ class ProjectPanelFiles:
         # complete partially without raising on Windows.
         if folder.exists():
             log_error(f"delete folder still exists: {folder}")
-            messagebox.showerror(
+            show_error(
                 "Delete failed",
                 f"The folder couldn't be removed:\n{folder}\n\n"
                 "It may be open in Explorer or a terminal. "
@@ -299,7 +297,7 @@ class ProjectPanelFiles:
         """
         from app.ui.project_window import _read_font_family
         panel = self.panel
-        if not messagebox.askyesno(
+        if not ask_yes_no(
             "Remove asset",
             f"Remove '{file_path.name}' from the project?\n\n"
             f"File: {file_path}\n\n"
@@ -307,7 +305,7 @@ class ProjectPanelFiles:
             "Widgets that referenced this asset fall back to a "
             "default at the next render.",
             parent=panel.winfo_toplevel(),
-            icon="warning",
+            danger=True, yes_text="Remove", no_text="Cancel",
         ):
             return
         # Resolve the font family BEFORE unlinking — once the file is
@@ -321,7 +319,7 @@ class ProjectPanelFiles:
             file_path.unlink()
         except OSError:
             log_error("remove asset unlink")
-            messagebox.showerror(
+            show_error(
                 "Remove failed",
                 f"Couldn't delete:\n{file_path}",
                 parent=panel.winfo_toplevel(),
@@ -358,7 +356,7 @@ class ProjectPanelFiles:
             return
         src_path = Path(src)
         if src_path.suffix.lower() not in exts:
-            messagebox.showwarning(
+            show_warning(
                 "Wrong file type",
                 f"Picked file's extension doesn't match the asset's "
                 f"kind ({kind}). Reimport keeps the existing filename, "
@@ -370,7 +368,7 @@ class ProjectPanelFiles:
             shutil.copy2(src_path, file_path)
         except OSError:
             log_error("reimport asset copy")
-            messagebox.showerror(
+            show_error(
                 "Reimport failed",
                 f"Couldn't copy:\n{src_path}\n→\n{file_path}",
                 parent=panel.winfo_toplevel(),

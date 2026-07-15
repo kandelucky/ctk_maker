@@ -1656,15 +1656,15 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         CTkScript skeleton, attach it to ``node``, and open it in the
         editor — so the user never hand-creates the file."""
         from pathlib import Path
-        from tkinter import messagebox
 
         from app.core.script_paths import user_scripts_dir
         from app.io.scripts import create_user_script
+        from app.ui.dialogs.message import show_error, show_info
         from app.ui.dialogs.rename import RenameDialog
         parent = self.winfo_toplevel()
         scripts_dir = user_scripts_dir(getattr(self.project, "path", None))
         if scripts_dir is None:
-            messagebox.showinfo(
+            show_info(
                 "Save first",
                 "Save the project before creating scripts.",
                 parent=parent,
@@ -1684,7 +1684,7 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             return
         result = create_user_script(scripts_dir, name)
         if result is None:
-            messagebox.showerror(
+            show_error(
                 "Couldn't create script",
                 "Failed to write the new script file.",
                 parent=parent,
@@ -1947,9 +1947,9 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         then rebuilds the panel so the cell re-renders as a chip and
         the editor overlay tears down cleanly.
         """
-        from tkinter import messagebox
         from app.core.commands import ChangePropertyCommand
         from app.core.variables import make_var_token
+        from app.ui.dialogs.message import ask_ok_cancel
         if self.current_id is None:
             return
         node = self.project.get_widget(self.current_id)
@@ -1970,7 +1970,7 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             and str(entry.default).strip().lower()
             not in ("0", "1", "true", "false")
         ):
-            ok = messagebox.askokcancel(
+            ok = ask_ok_cancel(
                 "Bind to non-boolean int?",
                 (
                     f"Variable '{entry.name}' holds {entry.default!r}, "
@@ -1981,8 +1981,8 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
                     f"the current value ({entry.default}) will be lost."
                     "\n\nBind anyway?"
                 ),
-                icon="warning",
                 parent=self.winfo_toplevel(),
+                ok_text="Bind anyway",
             )
             if not ok:
                 return

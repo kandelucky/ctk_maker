@@ -9,7 +9,14 @@ from app.core.project_folder import slugify_page_name
 from app.ui.dialog_utils import safe_grab_set
 from app.ui.dialogs._base import DarkDialog
 from app.ui.dialogs._colors import (
-    _ABT_BG, _ABT_DIM, _ABT_FG, _ABT_LINK, _ABT_SEP,
+    _ABT_LINK,
+    _ABT_SEP,
+    FG,
+    FG_DIM,
+    PANEL,
+    dialog_scaling,
+    flat_button,
+    hero_header,
 )
 
 
@@ -25,11 +32,12 @@ class RenamePageDialog(DarkDialog):
     """
 
     def __init__(self, parent, current_name: str) -> None:
-        super().__init__(parent)
+        super().__init__(parent, fg_color=PANEL)
         self.title("Rename page")
         self.result: str | None = None
         self._current = current_name
         self._current_slug = slugify_page_name(current_name)
+        self._s = dialog_scaling(self)
         self._build()
         # Fixed dimensions — the dialog content is static at compile
         # time (label text + entry + bullet preview + tip + button
@@ -37,8 +45,8 @@ class RenamePageDialog(DarkDialog):
         # event loop with self.update() to coax a tighter measurement
         # also dispatches stale key events from the right-click menu
         # which destroyed the dialog mid-construction.
-        W, H = 460, 380
-        self.place_centered(W, H, parent)
+        s = self._s
+        self.place_centered(round(460 * s), round(390 * s), parent)
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
         self.bind("<Escape>", lambda _e: self._on_cancel())
         self.bind("<Return>", lambda _e: self._on_ok())
@@ -65,54 +73,57 @@ class RenamePageDialog(DarkDialog):
 
     def _build(self) -> None:
         from app.ui.system_fonts import derive_mono_font, derive_ui_font
-        f_title = derive_ui_font(size=13, weight="bold")
-        f_dim = derive_ui_font(size=9)
-        f_body = derive_ui_font(size=10)
-        f_body_b = derive_ui_font(size=10, weight="bold")
-        f_mono = derive_mono_font(size=9)
-        pad: dict[str, Any] = {"padx": 24}
+        s = self._s
+        f_dim = derive_ui_font(size=round(9 * s))
+        f_body = derive_ui_font(size=round(10 * s))
+        f_body_b = derive_ui_font(size=round(10 * s), weight="bold")
+        f_mono = derive_mono_font(size=round(9 * s))
+        # Body aligns with the hero title text (18 bar-pad + 3 bar
+        # + 10 gap), same as MessageDialog.
+        pad: dict[str, Any] = {"padx": round(31 * s)}
 
-        tk.Frame(self, bg=_ABT_BG, height=16).pack()
-        tk.Label(
-            self, text="Rename page",
-            bg=_ABT_BG, fg=_ABT_FG, font=f_title,
-        ).pack(**pad, anchor="w")
+        hero_header(self, "Rename page", "info", s)
 
         tk.Label(
             self, text=f"Current name: {self._current}",
-            bg=_ABT_BG, fg=_ABT_DIM, font=f_dim,
-        ).pack(**pad, anchor="w", pady=(2, 8))
+            bg=PANEL, fg=FG_DIM, font=f_dim,
+        ).pack(**pad, anchor="w", pady=(round(4 * s), round(8 * s)))
 
         tk.Label(
             self, text="New name:",
-            bg=_ABT_BG, fg=_ABT_FG, font=f_body,
+            bg=PANEL, fg=FG, font=f_body,
         ).pack(**pad, anchor="w")
 
         self._entry = tk.Entry(
             self, width=42,
-            bg="#2a2a2a", fg=_ABT_FG, insertbackground=_ABT_FG,
+            bg="#2a2a2a", fg=FG, insertbackground=FG,
             relief="flat", font=f_body,
         )
         self._entry.insert(0, self._current)
-        self._entry.pack(padx=24, pady=(4, 12), fill="x")
+        self._entry.pack(
+            padx=round(31 * s), pady=(round(4 * s), round(12 * s)),
+            fill="x",
+        )
         self._entry.bind("<KeyRelease>", lambda _e: self._refresh_preview())
 
         tk.Frame(self, bg=_ABT_SEP, height=1).pack(
-            fill="x", padx=24, pady=(0, 12),
+            fill="x", padx=round(31 * s), pady=(0, round(12 * s)),
         )
 
         tk.Label(
             self, text="⚠ This rename will affect:",
-            bg=_ABT_BG, fg=_ABT_FG, font=f_body_b,
+            bg=PANEL, fg=FG, font=f_body_b,
         ).pack(**pad, anchor="w")
 
         # Bulleted list — `_refresh_preview` updates the file/folder
         # names live as the user types in the entry.
         self._preview_label = tk.Label(
-            self, text="", bg=_ABT_BG, fg=_ABT_FG,
+            self, text="", bg=PANEL, fg=FG,
             font=f_mono, justify="left", anchor="w",
         )
-        self._preview_label.pack(**pad, anchor="w", pady=(4, 8))
+        self._preview_label.pack(
+            **pad, anchor="w", pady=(round(4 * s), round(8 * s)),
+        )
 
         tk.Label(
             self,
@@ -120,12 +131,12 @@ class RenamePageDialog(DarkDialog):
                 "Previously exported .py files keep the old name —\n"
                 "re-export after renaming if you want it updated."
             ),
-            bg=_ABT_BG, fg=_ABT_DIM, font=f_dim,
+            bg=PANEL, fg=FG_DIM, font=f_dim,
             justify="left",
-        ).pack(**pad, anchor="w", pady=(0, 12))
+        ).pack(**pad, anchor="w", pady=(0, round(12 * s)))
 
         tk.Frame(self, bg=_ABT_SEP, height=1).pack(
-            fill="x", padx=24, pady=(0, 12),
+            fill="x", padx=round(31 * s), pady=(0, round(12 * s)),
         )
 
         tk.Label(
@@ -134,26 +145,20 @@ class RenamePageDialog(DarkDialog):
                 "💡 Tip: copy the project folder to a safe location\n"
                 "before renaming, in case you need to revert."
             ),
-            bg=_ABT_BG, fg=_ABT_LINK, font=f_dim,
+            bg=PANEL, fg=_ABT_LINK, font=f_dim,
             justify="left",
-        ).pack(**pad, anchor="w", pady=(0, 16))
+        ).pack(**pad, anchor="w", pady=(0, round(14 * s)))
 
-        btn_row = tk.Frame(self, bg=_ABT_BG)
-        btn_row.pack(pady=(0, 16))
-        tk.Button(
-            btn_row, text="Cancel", command=self._on_cancel,
-            bg="#3a3a3a", fg=_ABT_FG, activebackground="#4a4a4a",
-            activeforeground=_ABT_FG, relief="flat", bd=0,
-            font=f_body, padx=20, pady=4, cursor="hand2",
-        ).pack(side="left", padx=(0, 8))
-        self._ok_btn = tk.Button(
-            btn_row, text="Rename", command=self._on_ok,
-            bg="#6366f1", fg="#ffffff", activebackground="#4f46e5",
-            activeforeground="#ffffff", relief="flat", bd=0,
-            disabledforeground="#888888",
-            font=f_body, padx=20, pady=4, cursor="hand2",
+        btn_row = tk.Frame(self, bg=PANEL)
+        btn_row.pack(fill="x", padx=round(18 * s), pady=(0, round(16 * s)))
+        self._ok_btn = flat_button(
+            btn_row, "Rename", "accent", self._on_ok, s,
         )
-        self._ok_btn.pack(side="left")
+        self._ok_btn.configure(disabledforeground="#888888")
+        self._ok_btn.pack(side="right")
+        flat_button(
+            btn_row, "Cancel", "ghost", self._on_cancel, s,
+        ).pack(side="right", padx=(0, round(8 * s)))
 
         self._refresh_preview()
 
@@ -165,13 +170,13 @@ class RenamePageDialog(DarkDialog):
             # the Rename button so the user can't fire a no-op.
             self._preview_label.configure(
                 text="  (enter a different name to see the changes)",
-                fg=_ABT_DIM,
+                fg=FG_DIM,
             )
             self._ok_btn.configure(state="disabled")
             return
         old = self._current_slug
         bullets = f"  • {old}.ctkproj → {new_slug}.ctkproj"
-        self._preview_label.configure(text=bullets, fg=_ABT_FG)
+        self._preview_label.configure(text=bullets, fg=FG)
         self._ok_btn.configure(state="normal")
 
     def _on_ok(self) -> None:

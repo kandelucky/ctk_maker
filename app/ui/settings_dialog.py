@@ -20,13 +20,14 @@ from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, ttk
 from typing import Any
 
 import customtkinter as ctk
 
 from app.core.settings import load_settings, save_setting
 from app.ui import style
+from app.ui.dialogs.message import show_info, show_warning
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
@@ -844,7 +845,7 @@ class SettingsDialog(ManagedToplevel):
             if w < 100 or h < 100 or w > 10000 or h > 10000:
                 raise ValueError
         except ValueError:
-            messagebox.showwarning(
+            show_warning(
                 "Invalid size",
                 "Project width and height must be integers "
                 "between 100 and 10000.",
@@ -856,7 +857,7 @@ class SettingsDialog(ManagedToplevel):
             if autosave < 0 or autosave > 120:
                 raise ValueError
         except ValueError:
-            messagebox.showwarning(
+            show_warning(
                 "Invalid interval",
                 "Autosave interval must be an integer between 0 and 120.",
                 parent=self,
@@ -868,7 +869,7 @@ class SettingsDialog(ManagedToplevel):
         # Validate grid values before any write.
         grid_color = self._grid_color_var.get().strip()
         if grid_color and not _looks_like_hex(grid_color):
-            messagebox.showwarning(
+            show_warning(
                 "Invalid color",
                 "Grid color must be a hex value like #555555.",
                 parent=self,
@@ -879,7 +880,7 @@ class SettingsDialog(ManagedToplevel):
             if grid_spacing < 4 or grid_spacing > 200:
                 raise ValueError
         except ValueError:
-            messagebox.showwarning(
+            show_warning(
                 "Invalid spacing",
                 "Grid spacing must be an integer between 4 and 200.",
                 parent=self,
@@ -920,7 +921,7 @@ class SettingsDialog(ManagedToplevel):
         data = load_settings()
         advisory_keys = [k for k in data if k.startswith("advisory_")]
         if not advisory_keys:
-            messagebox.showinfo(
+            show_info(
                 "Warnings reset",
                 "No dismissed warnings to reset.",
                 parent=self,
@@ -928,7 +929,7 @@ class SettingsDialog(ManagedToplevel):
             return
         for key in advisory_keys:
             save_setting(key, False)
-        messagebox.showinfo(
+        show_info(
             "Warnings reset",
             f"Cleared {len(advisory_keys)} dismissed warning(s). "
             "They'll surface again on their next trigger.",

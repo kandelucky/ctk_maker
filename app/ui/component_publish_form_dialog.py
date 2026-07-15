@@ -10,13 +10,14 @@ import datetime
 import shutil
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 
 import customtkinter as ctk
 
 from app.core.component_paths import (
     COMPONENT_EXT, PUBLISH_COMPONENT_EXT, component_display_stem,
 )
+from app.ui.dialogs.message import ask_yes_no, show_error, show_warning
 from app.ui.system_fonts import ui_font
 from app.core.logger import log_error
 from app.core.settings import load_settings, save_setting
@@ -297,7 +298,7 @@ class ComponentPublishFormDialog(ManagedToplevel):
             source_size = 0
         if source_size > PUBLISH_MAX_BYTES:
             self.bell()
-            messagebox.showwarning(
+            show_warning(
                 "Too large to publish",
                 f"This component is {_format_size(source_size)}. The "
                 "community site currently accepts files up to 25 MB. "
@@ -308,7 +309,7 @@ class ComponentPublishFormDialog(ManagedToplevel):
         author = self._author_var.get().strip()
         if not author:
             self.bell()
-            messagebox.showwarning(
+            show_warning(
                 "Author required",
                 "Author can't be empty — it's used as the MIT "
                 "copyright holder.",
@@ -318,7 +319,7 @@ class ComponentPublishFormDialog(ManagedToplevel):
         category = self._category_var.get().strip()
         if category not in CATEGORY_HINTS:
             self.bell()
-            messagebox.showwarning(
+            show_warning(
                 "Pick a category",
                 "Pick a category from the dropdown.",
                 parent=self,
@@ -327,7 +328,7 @@ class ComponentPublishFormDialog(ManagedToplevel):
         description = self._desc_box.get("1.0", "end-1c").strip()
         if not description:
             self.bell()
-            messagebox.showwarning(
+            show_warning(
                 "Description required",
                 "Add a brief description so other users know what "
                 "this component does.",
@@ -337,7 +338,7 @@ class ComponentPublishFormDialog(ManagedToplevel):
         dest = self._dest_var.get().strip()
         if not dest:
             self.bell()
-            messagebox.showwarning(
+            show_warning(
                 "Pick a destination",
                 "Click Browse… to choose a destination folder.",
                 parent=self,
@@ -352,7 +353,7 @@ class ComponentPublishFormDialog(ManagedToplevel):
                 break
         if not _is_valid_name(name):
             self.bell()
-            messagebox.showwarning(
+            show_warning(
                 "Invalid name",
                 "Names can't be empty or contain \\ / : * ? \" < > |.",
                 parent=self,
@@ -361,7 +362,7 @@ class ComponentPublishFormDialog(ManagedToplevel):
         dest_dir = Path(dest)
         if not dest_dir.is_dir():
             self.bell()
-            messagebox.showwarning(
+            show_warning(
                 "Folder not found",
                 f"'{dest_dir}' is not a folder. Pick another destination.",
                 parent=self,
@@ -369,7 +370,7 @@ class ComponentPublishFormDialog(ManagedToplevel):
             return
         dest_path = dest_dir / f"{name}{PUBLISH_COMPONENT_EXT}"
         if dest_path.exists():
-            overwrite = messagebox.askyesno(
+            overwrite = ask_yes_no(
                 "Already exists",
                 f"'{dest_path.name}' already exists in this folder. "
                 "Overwrite?",
@@ -383,7 +384,7 @@ class ComponentPublishFormDialog(ManagedToplevel):
         except OSError as exc:
             log_error(f"publish copy {self._source_path} -> {dest_path}")
             self.bell()
-            messagebox.showerror(
+            show_error(
                 "Copy failed",
                 f"Couldn't write the file:\n{exc}",
                 parent=self,
@@ -402,7 +403,7 @@ class ComponentPublishFormDialog(ManagedToplevel):
         except Exception as exc:
             log_error(f"publish rewrite {dest_path}")
             self.bell()
-            messagebox.showerror(
+            show_error(
                 "License embed failed",
                 f"The component was copied but the license block "
                 f"couldn't be written:\n{exc}",

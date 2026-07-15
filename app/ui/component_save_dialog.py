@@ -17,6 +17,7 @@ from pathlib import Path
 import customtkinter as ctk
 
 from app.core.component_paths import COMPONENT_EXT
+from app.ui.dialogs.message import ask_yes_no, show_warning
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
@@ -177,11 +178,10 @@ class ComponentSaveDialog(ManagedToplevel):
         return container
 
     def _on_ok(self) -> None:
-        from tkinter import messagebox
         name = self._name_var.get().strip()
         if not _is_valid_name(name):
             self.bell()
-            messagebox.showwarning(
+            show_warning(
                 "Invalid name",
                 "Names can't be empty or contain \\ / : * ? \" < > |.",
                 parent=self,
@@ -195,7 +195,7 @@ class ComponentSaveDialog(ManagedToplevel):
         target_path = target_dir / f"{name}{COMPONENT_EXT}"
         if target_path.exists():
             self.bell()
-            overwrite = messagebox.askyesno(
+            overwrite = ask_yes_no(
                 "Already exists",
                 f"'{name}{COMPONENT_EXT}' already exists in this folder. "
                 "Overwrite?",

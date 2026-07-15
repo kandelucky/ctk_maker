@@ -22,9 +22,9 @@ reach for to decide which entry to act on.
 from __future__ import annotations
 
 from pathlib import Path
-from tkinter import messagebox
 
 from app.core.logger import log_error
+from app.ui.dialogs.message import ask_string, show_error, show_info
 
 
 class ProjectPanelPages:
@@ -71,8 +71,7 @@ class ProjectPanelPages:
         panel = self.panel
         if not panel.project.folder_path:
             return
-        from tkinter import simpledialog
-        name = simpledialog.askstring(
+        name = ask_string(
             "New page", "Page name:",
             initialvalue="New page",
             parent=panel.winfo_toplevel(),
@@ -86,7 +85,7 @@ class ProjectPanelPages:
         try:
             entry = add_page(panel.project.folder_path, name)
         except ProjectMetaError as exc:
-            messagebox.showerror(
+            show_error(
                 "New page failed", str(exc),
                 parent=panel.winfo_toplevel(),
             )
@@ -129,7 +128,7 @@ class ProjectPanelPages:
         try:
             duplicate_page(panel.project.folder_path, page_id)
         except ProjectMetaError as exc:
-            messagebox.showerror(
+            show_error(
                 "Duplicate failed", str(exc),
                 parent=panel.winfo_toplevel(),
             )
@@ -171,7 +170,7 @@ class ProjectPanelPages:
         try:
             rename_page(panel.project.folder_path, page_id, new_name)
         except ProjectMetaError as exc:
-            messagebox.showerror(
+            show_error(
                 "Rename failed", str(exc),
                 parent=panel.winfo_toplevel(),
             )
@@ -220,7 +219,7 @@ class ProjectPanelPages:
         # one. Surface the rule explicitly so the user understands
         # why the operation no-ops, instead of silently failing.
         if len(panel.project.pages or []) <= 1:
-            messagebox.showinfo(
+            show_info(
                 "Cannot delete page",
                 "A project must have at least one page. Add another "
                 "page first if you want to remove this one.",
@@ -260,7 +259,7 @@ class ProjectPanelPages:
                 panel.project.folder_path, page_id,
             )
         except ProjectMetaError as exc:
-            messagebox.showerror(
+            show_error(
                 "Delete failed", str(exc),
                 parent=panel.winfo_toplevel(),
             )

@@ -37,7 +37,7 @@ import subprocess
 import sys
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, ttk
 from typing import TYPE_CHECKING, Callable
 
 import customtkinter as ctk
@@ -46,6 +46,7 @@ from app.core.logger import log_error
 from app.core.paths import (
     ASSET_SUBDIRS, assets_dir, ensure_project_folder,
 )
+from app.ui.dialogs.message import show_error, show_warning
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
@@ -588,7 +589,7 @@ class ProjectPanel(ctk.CTkFrame):
             return False
         src_path = Path(src)
         if src_path.suffix.lower() not in exts:
-            messagebox.showwarning(
+            show_warning(
                 f"Not a {error_label}",
                 f"{src_path.name} doesn't look like a "
                 f"{error_label} file.",
@@ -606,7 +607,7 @@ class ProjectPanel(ctk.CTkFrame):
             sha = _sha256(src_path)
         except OSError:
             log_error(f"add asset sha ({kind})")
-            messagebox.showerror(
+            show_error(
                 f"Add {error_label} failed",
                 f"Couldn't read the {error_label} file.",
                 parent=self.winfo_toplevel(),
@@ -619,7 +620,7 @@ class ProjectPanel(ctk.CTkFrame):
                 shutil.copy2(src_path, dst)
             except OSError:
                 log_error(f"add asset copy ({kind})")
-                messagebox.showerror(
+                show_error(
                     f"Add {error_label} failed",
                     f"Couldn't copy:\n{src_path}\n→\n{dst}",
                     parent=self.winfo_toplevel(),

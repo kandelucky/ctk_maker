@@ -12,7 +12,7 @@ reparent/rename operations.
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import ttk
 from typing import TYPE_CHECKING, Callable
 
 import customtkinter as ctk
@@ -32,6 +32,7 @@ from app.core.commands import (
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 from app.ui.dialogs import RenameDialog
+from app.ui.dialogs.message import ask_yes_no, show_info
 from app.ui.icons import load_icon, load_tk_icon
 from app.widgets.layout_schema import normalise_layout_type
 from app.widgets.registry import all_descriptors, get_descriptor
@@ -2105,7 +2106,7 @@ class ObjectTreePanel(ctk.CTkFrame):
         # match so lock is meaningful from every surface.
         node_check = self.project.get_widget(widget_id)
         if node_check is not None and self._effective_locked(node_check):
-            messagebox.showinfo(
+            show_info(
                 title="Widget locked",
                 message=(
                     "This widget is locked. Unlock it "
@@ -2119,11 +2120,11 @@ class ObjectTreePanel(ctk.CTkFrame):
         selected = set(self.project.selected_ids)
         if widget_id in selected and len(selected) > 1:
             count = len(selected)
-            confirmed = messagebox.askyesno(
+            confirmed = ask_yes_no(
                 title="Delete widgets",
                 message=f"Delete {count} selected widgets?",
-                icon="warning",
                 parent=self,
+                danger=True, yes_text="Delete", no_text="Cancel",
             )
             if not confirmed:
                 return
@@ -2175,11 +2176,11 @@ class ObjectTreePanel(ctk.CTkFrame):
         type_label = (
             descriptor.display_name if descriptor else node.widget_type
         )
-        confirmed = messagebox.askyesno(
+        confirmed = ask_yes_no(
             title="Delete widget",
             message=f"Delete this {type_label}?",
-            icon="warning",
             parent=self,
+            danger=True, yes_text="Delete", no_text="Cancel",
         )
         if not confirmed:
             return

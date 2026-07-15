@@ -24,7 +24,7 @@ import subprocess
 import sys
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 
 from typing import Any
 
@@ -33,6 +33,7 @@ import customtkinter as ctk
 from app.core.logger import log_error
 from app.core.settings import load_settings, save_setting
 from app.io.code_exporter import export_project
+from app.ui.dialogs.message import ask_yes_no, show_error, show_info, show_warning
 from app.ui.icons import load_icon
 from app.ui.managed_window import ManagedToplevel
 from app.ui.properties_panel.tooltip import PropertyTooltip
@@ -673,7 +674,7 @@ class ExportDialog(ManagedToplevel):
     def _on_export(self) -> None:
         target = self._resolved_path()
         if target is None:
-            messagebox.showwarning(
+            show_warning(
                 "Missing fields",
                 "Pick a name and save folder for the export.",
                 parent=self,
@@ -685,7 +686,7 @@ class ExportDialog(ManagedToplevel):
             target.parent.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             log_error("export dialog mkdir")
-            messagebox.showerror(
+            show_error(
                 "Export failed",
                 f"Could not create folder:\n{target.parent}\n\n{exc}",
                 parent=self,
@@ -702,7 +703,7 @@ class ExportDialog(ManagedToplevel):
             self._dispatch_export(scope_id, target)
         except OSError as exc:
             log_error("export dialog export_project")
-            messagebox.showerror(
+            show_error(
                 "Export failed",
                 f"Could not write the file:\n{target}\n\n{exc}",
                 parent=self,
@@ -719,7 +720,7 @@ class ExportDialog(ManagedToplevel):
         if do_folder:
             self._open_export_folder(target)
         if not (do_editor or do_preview or do_folder):
-            messagebox.showinfo(
+            show_info(
                 "Export", f"Saved to:\n{target}", parent=self,
             )
         self.destroy()
@@ -749,8 +750,8 @@ class ExportDialog(ManagedToplevel):
                 f"{bundle.parent}\n\nExport into it anyway? Files "
                 "with the same names will be overwritten."
             )
-        return messagebox.askyesno(
-            "Export", question, icon="warning", parent=self,
+        return ask_yes_no(
+            "Export", question, parent=self,
         )
 
     def _dispatch_export(self, scope_id: str, target: Path) -> None:
@@ -813,7 +814,7 @@ class ExportDialog(ManagedToplevel):
             return
         clone = self._build_temp_project_for_page(page_id)
         if clone is None:
-            messagebox.showerror(
+            show_error(
                 "Export failed",
                 "Could not load the selected page off disk.",
                 parent=self,
@@ -909,7 +910,7 @@ class ExportDialog(ManagedToplevel):
             )
         except OSError:
             log_error("export dialog run preview")
-            messagebox.showerror(
+            show_error(
                 "Preview failed",
                 "Could not launch the exported file with Python.",
                 parent=self,

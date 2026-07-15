@@ -12,7 +12,7 @@ import datetime
 import shutil
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 
 import customtkinter as ctk
 
@@ -20,6 +20,7 @@ from app.core.component_paths import COMPONENT_EXT, component_display_stem
 from app.core.logger import log_error
 from app.core.settings import load_settings, save_setting
 from app.io.component_io import load_metadata, rewrite_payload_author
+from app.ui.dialogs.message import ask_yes_no, show_error, show_warning
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
@@ -178,7 +179,7 @@ class ComponentExportDialog(ManagedToplevel):
         dest = self._dest_var.get().strip()
         if not dest:
             self.bell()
-            messagebox.showwarning(
+            show_warning(
                 "Pick a destination",
                 "Click Browse… to choose a destination folder.",
                 parent=self,
@@ -192,7 +193,7 @@ class ComponentExportDialog(ManagedToplevel):
             name = name[: -len(COMPONENT_EXT)]
         if not _is_valid_name(name):
             self.bell()
-            messagebox.showwarning(
+            show_warning(
                 "Invalid name",
                 "Names can't be empty or contain \\ / : * ? \" < > |.",
                 parent=self,
@@ -201,7 +202,7 @@ class ComponentExportDialog(ManagedToplevel):
         dest_dir = Path(dest)
         if not dest_dir.is_dir():
             self.bell()
-            messagebox.showwarning(
+            show_warning(
                 "Folder not found",
                 f"'{dest_dir}' is not a folder. Pick another destination.",
                 parent=self,
@@ -209,7 +210,7 @@ class ComponentExportDialog(ManagedToplevel):
             return
         dest_path = dest_dir / f"{name}{COMPONENT_EXT}"
         if dest_path.exists():
-            overwrite = messagebox.askyesno(
+            overwrite = ask_yes_no(
                 "Already exists",
                 f"'{dest_path.name}' already exists in this folder. "
                 "Overwrite?",
@@ -220,7 +221,7 @@ class ComponentExportDialog(ManagedToplevel):
         try:
             shutil.copy2(self._source_path, dest_path)
         except OSError as exc:
-            messagebox.showerror(
+            show_error(
                 "Export failed",
                 f"Couldn't write to:\n{dest_path}\n\n{exc}",
                 parent=self,

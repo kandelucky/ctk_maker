@@ -23,12 +23,12 @@ sites that need them directly.
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox
 from typing import Any
 
 from app.core.platform_compat import MOD_LABEL_PLUS
 from app.core.widget_node import WidgetNode
 from app.ui._main_window_host import _MainWindowHost
+from app.ui.dialogs.message import ask_yes_no, show_info
 from app.ui.icons import load_tk_icon
 from app.ui.palette import CATALOG
 from app.ui.system_fonts import ui_font
@@ -675,11 +675,11 @@ class MenuMixin(_MainWindowHost):
         type_label = (
             descriptor.display_name if descriptor else node.widget_type
         )
-        confirmed = messagebox.askyesno(
+        confirmed = ask_yes_no(
             title="Delete widget",
             message=f"Delete this {type_label}?",
-            icon="warning",
             parent=self,
+            danger=True, yes_text="Delete", no_text="Cancel",
         )
         if not confirmed:
             return
@@ -842,14 +842,13 @@ class MenuMixin(_MainWindowHost):
         nothing's selected, surface a hint instead of silently doing
         nothing.
         """
-        from tkinter import messagebox
         from app.ui.component_export_choice_dialog import run_export_flow
         panel = getattr(
             getattr(self, "palette", None), "_components_panel", None,
         )
         path = panel.get_selected_path() if panel is not None else None
         if path is None:
-            messagebox.showinfo(
+            show_info(
                 "Pick a component",
                 "Select a component in the Components panel first.",
                 parent=self,
@@ -903,7 +902,7 @@ class MenuMixin(_MainWindowHost):
             k for k in settings if k.startswith("advisory_")
         ]
         if not advisory_keys:
-            messagebox.showinfo(
+            show_info(
                 "Warnings reset",
                 "No dismissed warnings to reset.",
                 parent=self,
@@ -911,7 +910,7 @@ class MenuMixin(_MainWindowHost):
             return
         for key in advisory_keys:
             save_setting(key, False)
-        messagebox.showinfo(
+        show_info(
             "Warnings reset",
             f"Cleared {len(advisory_keys)} dismissed warning(s). "
             "They'll surface again on their next trigger.",

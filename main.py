@@ -5,6 +5,7 @@ import customtkinter as ctk
 
 from app.core.logger import log_error
 from app.ui.crash_dialog import show_crash_dialog
+from app.ui.dialogs.message import set_default_parent
 from app.ui.main_window import MainWindow
 
 
@@ -48,6 +49,7 @@ def main() -> None:
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("blue")
     app = MainWindow()
+    set_default_parent(app)
     _install_crash_handlers(app)
     app.mainloop()
 

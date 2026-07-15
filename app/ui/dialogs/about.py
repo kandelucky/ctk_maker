@@ -7,7 +7,13 @@ from typing import Any
 
 from app.ui.dialogs._base import DarkDialog
 from app.ui.dialogs._colors import (
-    _ABT_BG, _ABT_DIM, _ABT_FG, _ABT_LINK, _ABT_SEP,
+    _ABT_DIM,
+    _ABT_FG,
+    _ABT_LINK,
+    _ABT_SEP,
+    PANEL,
+    dialog_scaling,
+    flat_button,
 )
 from app.ui.system_fonts import ui_font
 
@@ -33,78 +39,84 @@ _BMC_OUTLINE = "#000000"
 
 class AboutDialog(DarkDialog):
     def __init__(self, parent, app_version: str = ""):
-        super().__init__(parent)
+        super().__init__(parent, fg_color=PANEL)
         self.title("About CTkMaker")
+        self._s = dialog_scaling(self)
         self._build(app_version)
         # Fixed size — height bumped to accommodate the new Links
         # section + Buy me a coffee button.
-        W, H = 480, 540
-        self.place_centered(W, H, parent)
+        s = self._s
+        self.place_centered(round(480 * s), round(540 * s), parent)
         self.lift()
         self.focus_set()
         self.reveal()
 
     def _build(self, version: str) -> None:
         import webbrowser
-        pad: dict[str, Any] = {"padx": 24}
+        s = self._s
+        pad: dict[str, Any] = {"padx": round(24 * s)}
 
-        tk.Frame(self, bg=_ABT_BG, height=16).pack()
+        tk.Frame(self, bg=PANEL, height=round(16 * s)).pack()
         tk.Label(
             self, text="CTkMaker",
-            bg=_ABT_BG, fg=_ABT_FG, font=ui_font(16, "bold"),
+            bg=PANEL, fg=_ABT_FG, font=ui_font(round(16 * s), "bold"),
         ).pack(**pad)
         tk.Label(
             self, text=version or "",
-            bg=_ABT_BG, fg=_ABT_DIM, font=ui_font(10),
-        ).pack(**pad, pady=(2, 0))
+            bg=PANEL, fg=_ABT_DIM, font=ui_font(round(10 * s)),
+        ).pack(**pad, pady=(round(2 * s), 0))
         tk.Label(
             self,
             text="Design CustomTkinter, visually — for free.",
-            bg=_ABT_BG, fg=_ABT_DIM, font=ui_font(10),
+            bg=PANEL, fg=_ABT_DIM, font=ui_font(round(10 * s)),
             justify="center",
-        ).pack(padx=24, pady=(10, 0))
+        ).pack(padx=round(24 * s), pady=(round(10 * s), 0))
 
-        tk.Frame(self, bg=_ABT_SEP, height=1).pack(fill="x", padx=24, pady=12)
+        tk.Frame(self, bg=_ABT_SEP, height=1).pack(
+            fill="x", padx=round(24 * s), pady=round(12 * s),
+        )
 
         tk.Label(
             self, text="Built with",
-            bg=_ABT_BG, fg=_ABT_FG, font=ui_font(10, "bold"),
-        ).pack(**pad, pady=(0, 6))
+            bg=PANEL, fg=_ABT_FG, font=ui_font(round(10 * s), "bold"),
+        ).pack(**pad, pady=(0, round(6 * s)))
 
         for name, url, lic in _BUILT_WITH:
-            row = tk.Frame(self, bg=_ABT_BG)
-            row.pack(fill="x", padx=24, pady=1)
+            row = tk.Frame(self, bg=PANEL)
+            row.pack(fill="x", padx=round(24 * s), pady=1)
             tk.Label(
-                row, text=f"{name}  ", bg=_ABT_BG, fg=_ABT_FG,
-                font=ui_font(10), anchor="w",
+                row, text=f"{name}  ", bg=PANEL, fg=_ABT_FG,
+                font=ui_font(round(10 * s)), anchor="w",
             ).pack(side="left")
             link = tk.Label(
-                row, text=url, bg=_ABT_BG, fg=_ABT_LINK,
-                font=ui_font(10, "underline"), cursor="hand2",
+                row, text=url, bg=PANEL, fg=_ABT_LINK,
+                font=ui_font(round(10 * s), "underline"), cursor="hand2",
             )
             link.pack(side="left")
             link.bind("<Button-1>", lambda _e, u=url: webbrowser.open(u))
             tk.Label(
-                row, text=f"  ({lic})", bg=_ABT_BG, fg=_ABT_DIM,
-                font=ui_font(9),
+                row, text=f"  ({lic})", bg=PANEL, fg=_ABT_DIM,
+                font=ui_font(round(9 * s)),
             ).pack(side="left")
 
-        tk.Frame(self, bg=_ABT_SEP, height=1).pack(fill="x", padx=24, pady=12)
+        tk.Frame(self, bg=_ABT_SEP, height=1).pack(
+            fill="x", padx=round(24 * s), pady=round(12 * s),
+        )
 
         tk.Label(
             self, text="Links",
-            bg=_ABT_BG, fg=_ABT_FG, font=ui_font(10, "bold"),
-        ).pack(**pad, pady=(0, 6))
+            bg=PANEL, fg=_ABT_FG, font=ui_font(round(10 * s), "bold"),
+        ).pack(**pad, pady=(0, round(6 * s)))
         for name, url in _PROJECT_LINKS:
-            row = tk.Frame(self, bg=_ABT_BG)
-            row.pack(fill="x", padx=24, pady=1)
+            row = tk.Frame(self, bg=PANEL)
+            row.pack(fill="x", padx=round(24 * s), pady=1)
             tk.Label(
-                row, text=f"{name}  ", bg=_ABT_BG, fg=_ABT_FG,
-                font=ui_font(10), anchor="w",
+                row, text=f"{name}  ", bg=PANEL, fg=_ABT_FG,
+                font=ui_font(round(10 * s)), anchor="w",
             ).pack(side="left")
             link = tk.Label(
-                row, text=url, bg=_ABT_BG, fg=_ABT_LINK,
-                font=ui_font(10, "underline"), cursor="hand2",
+                row, text=url, bg=PANEL, fg=_ABT_LINK,
+                font=ui_font(round(10 * s), "underline"), cursor="hand2",
             )
             link.pack(side="left")
             link.bind("<Button-1>", lambda _e, u=url: webbrowser.open(u))
@@ -117,11 +129,13 @@ class AboutDialog(DarkDialog):
         # Tk doesn't have a Cookie-script font on Windows by
         # default, so we emulate the chunky BMC text with bold
         # Segoe UI.
-        tk.Frame(self, bg=_ABT_BG, height=34).pack()
-        bmc_row = tk.Frame(self, bg=_ABT_BG)
-        bmc_row.pack(pady=(0, 4))
+        tk.Frame(self, bg=PANEL, height=round(34 * s)).pack()
+        bmc_row = tk.Frame(self, bg=PANEL)
+        bmc_row.pack(pady=(0, round(4 * s)))
         from app.ui.icons import load_tk_icon
-        coffee_img = load_tk_icon("coffee", size=18, color=_BMC_FG)
+        coffee_img = load_tk_icon(
+            "coffee", size=round(18 * s), color=_BMC_FG,
+        )
         bmc_btn = tk.Button(
             bmc_row,
             text="Buy me a coffee",
@@ -131,8 +145,8 @@ class AboutDialog(DarkDialog):
             activebackground="#FFE54B", activeforeground=_BMC_FG,
             relief="solid", bd=1,
             highlightbackground=_BMC_OUTLINE,
-            font=ui_font(11, "bold"),
-            padx=18, pady=6, cursor="hand2",
+            font=ui_font(round(11 * s), "bold"),
+            padx=round(18 * s), pady=round(6 * s), cursor="hand2",
             command=lambda: webbrowser.open(_BMC_URL),
         )
         # Retain the PhotoImage on the button so Tk doesn't GC the
@@ -140,11 +154,7 @@ class AboutDialog(DarkDialog):
         bmc_btn.image = coffee_img  # type: ignore[attr-defined]
         bmc_btn.pack()
 
-        tk.Frame(self, bg=_ABT_BG, height=10).pack()
-        btn = tk.Button(
-            self, text="Close", command=self.destroy,
-            bg="#3a3a3a", fg=_ABT_FG, activebackground="#4a4a4a",
-            activeforeground=_ABT_FG, relief="flat", bd=0,
-            font=ui_font(10), padx=20, pady=4, cursor="hand2",
+        tk.Frame(self, bg=PANEL, height=round(10 * s)).pack()
+        flat_button(self, "Close", "ghost", self.destroy, s).pack(
+            pady=(round(10 * s), round(16 * s)),
         )
-        btn.pack(pady=(10, 16))

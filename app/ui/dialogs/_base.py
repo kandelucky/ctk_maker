@@ -1,6 +1,6 @@
 """Shared ``CTkToplevel`` base for CTkMaker's raw-tk dialogs.
 
-These dialogs (About / Confirm / Choice / RenamePage /
+These dialogs (Message / About / RenamePage / CursorAdvanced /
 AmbiguousProjectPicker) build their content out of plain ``tk.Frame``
 / ``tk.Label`` / ``tk.Button`` widgets, but the *window* is a
 ``CTkToplevel`` so the fork's dark-titlebar persistence applies — no

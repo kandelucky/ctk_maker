@@ -12,12 +12,11 @@ orphan files at next launch.
 """
 from __future__ import annotations
 
-from tkinter import messagebox
-
 from app.core.autosave import clear_autosave
 from app.core.logger import log_error
 from app.io.project_saver import save_project
 from app.ui._main_window_host import _MainWindowHost
+from app.ui.dialogs.message import show_info
 
 
 class DocumentsMixin(_MainWindowHost):
@@ -159,7 +158,7 @@ class DocumentsMixin(_MainWindowHost):
     def _on_remove_current_document(self) -> None:
         doc = self.project.active_document
         if not doc.is_toplevel:
-            messagebox.showinfo(
+            show_info(
                 "Remove document",
                 "The main window can't be removed — only dialogs can.",
                 parent=self,

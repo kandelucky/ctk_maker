@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 import customtkinter as ctk
 
 from app.core.assets import copy_to_assets, resolve_asset_token
@@ -34,6 +34,7 @@ from app.core.fonts import (
 )
 from app.core.logger import log_error
 from app.ui import style
+from app.ui.dialogs.message import ask_yes_no, show_error, show_info, show_warning
 from app.ui.icons import load_tk_icon
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
@@ -437,7 +438,7 @@ class FontPickerDialog(ManagedToplevel):
         fall back to Tk default at next render.
         """
         file_path = self._family_paths.get(family)
-        if not messagebox.askyesno(
+        if not ask_yes_no(
             "Remove from project",
             f"Remove '{family}' from this project?\n\n"
             + (
@@ -449,7 +450,7 @@ class FontPickerDialog(ManagedToplevel):
             + "\nThis cannot be undone. Widgets that referenced "
             "this family fall back to a default at next render.",
             parent=self,
-            icon="warning",
+            danger=True, yes_text="Remove", no_text="Cancel",
         ):
             return
         # Delete the file (if any) before scrubbing references so a
@@ -459,7 +460,7 @@ class FontPickerDialog(ManagedToplevel):
                 file_path.unlink()
             except OSError:
                 log_error("font picker remove unlink")
-                messagebox.showerror(
+                show_error(
                     "Remove failed",
                     f"Couldn't delete:\n{file_path}",
                     parent=self,
@@ -485,7 +486,7 @@ class FontPickerDialog(ManagedToplevel):
 
     def _on_import(self) -> None:
         if not self.project_file:
-            messagebox.showinfo(
+            show_info(
                 "Save first",
                 "Save the project before importing fonts — they're "
                 "stored inside the project's assets/fonts/ folder.",
@@ -502,7 +503,7 @@ class FontPickerDialog(ManagedToplevel):
         if not src:
             return
         if Path(src).suffix.lower() not in FONT_EXTS:
-            messagebox.showwarning(
+            show_warning(
                 "Not a font",
                 f"{Path(src).name} doesn't look like a font file.",
                 parent=self,
@@ -512,7 +513,7 @@ class FontPickerDialog(ManagedToplevel):
             token = copy_to_assets(src, self.project_file, "fonts")
         except OSError:
             log_error("font picker import")
-            messagebox.showerror(
+            show_error(
                 "Import failed",
                 "Could not copy the font into the project's "
                 "assets folder.",
@@ -524,7 +525,7 @@ class FontPickerDialog(ManagedToplevel):
             register_font_file(resolved, root=self) if resolved else None
         )
         if family is None:
-            messagebox.showwarning(
+            show_warning(
                 "Font registered with no family",
                 "The file copied into the project, but Tk couldn't "
                 "extract a family name. The font may be unsupported.",

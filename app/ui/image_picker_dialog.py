@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 from typing import TYPE_CHECKING, Sequence
 
 if TYPE_CHECKING:
@@ -28,6 +28,7 @@ from app.core.assets import copy_to_assets, resolve_asset_token
 from app.core.logger import log_error
 from app.core.paths import ASSETS_DIR_NAME
 from app.ui import style
+from app.ui.dialogs.message import ask_yes_no, show_error, show_warning
 from app.ui.icons import load_tk_icon
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
@@ -261,7 +262,7 @@ class ImagePickerDialog(ManagedToplevel):
         image afterwards. Save layer turns dangling tokens into broken
         paths the same way fonts handle a removed family.
         """
-        if not messagebox.askyesno(
+        if not ask_yes_no(
             "Remove from project",
             f"Remove '{path.name}' from this project?\n\n"
             f"File: {path}\n\n"
@@ -269,7 +270,7 @@ class ImagePickerDialog(ManagedToplevel):
             "undone. Widgets that referenced this image will render a "
             "broken-image placeholder at next paint.",
             parent=self,
-            icon="warning",
+            danger=True, yes_text="Remove", no_text="Cancel",
         ):
             return
         try:
@@ -277,7 +278,7 @@ class ImagePickerDialog(ManagedToplevel):
                 path.unlink()
         except OSError:
             log_error("image picker remove unlink")
-            messagebox.showerror(
+            show_error(
                 "Remove failed",
                 f"Couldn't delete:\n{path}",
                 parent=self,
@@ -345,7 +346,7 @@ class ImagePickerDialog(ManagedToplevel):
         if not src:
             return
         if Path(src).suffix.lower() not in IMAGE_EXTS:
-            messagebox.showwarning(
+            show_warning(
                 "Not an image",
                 f"{Path(src).name} doesn't look like an image file.",
                 parent=self,
@@ -355,7 +356,7 @@ class ImagePickerDialog(ManagedToplevel):
             token = copy_to_assets(src, self.project_file, "images")
         except OSError:
             log_error("image picker import")
-            messagebox.showerror(
+            show_error(
                 "Import failed",
                 "Could not copy the image into the project's "
                 "assets folder.",

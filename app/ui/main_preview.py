@@ -26,12 +26,13 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 
 from app.core.logger import log_error
 from app.core.settings import load_settings, save_setting
 from app.io.code_exporter import export_project
 from app.ui._main_window_host import _MainWindowHost
+from app.ui.dialogs.message import show_error, show_info, show_warning
 
 
 class PreviewMixin(_MainWindowHost):
@@ -51,7 +52,7 @@ class PreviewMixin(_MainWindowHost):
             _spawn_preview,
         )
         if not self.project.root_widgets:
-            messagebox.showinfo(
+            show_info(
                 "Preview",
                 "Nothing to preview — workspace is empty.",
                 parent=self,
@@ -72,7 +73,7 @@ class PreviewMixin(_MainWindowHost):
             )
         except OSError:
             log_error("preview export")
-            messagebox.showerror("Preview failed", "Could not generate preview file.", parent=self)
+            show_error("Preview failed", "Could not generate preview file.", parent=self)
             return
         if not _confirm_var_name_fallbacks(self):
             return
@@ -83,7 +84,7 @@ class PreviewMixin(_MainWindowHost):
             )
         except OSError:
             log_error("preview subprocess")
-            messagebox.showerror("Preview failed", "Could not launch Python.", parent=self)
+            show_error("Preview failed", "Could not launch Python.", parent=self)
             return
         self._main_preview_proc = proc
         self._attach_console_capture(proc)
@@ -123,7 +124,7 @@ class PreviewMixin(_MainWindowHost):
             )
         except OSError:
             log_error("preview dialog export")
-            messagebox.showerror(
+            show_error(
                 "Preview failed",
                 "Could not generate preview file.",
                 parent=self,
@@ -138,7 +139,7 @@ class PreviewMixin(_MainWindowHost):
             )
         except OSError:
             log_error("preview dialog subprocess")
-            messagebox.showerror(
+            show_error(
                 "Preview failed", "Could not launch Python.",
                 parent=self,
             )
@@ -169,7 +170,7 @@ class PreviewMixin(_MainWindowHost):
             return
         save_setting("run_script_last_dir", str(Path(path).parent))
         if Path(path).suffix.lower() not in {".py", ".pyw"}:
-            messagebox.showerror(
+            show_error(
                 "Not a Python script",
                 f"Run Python Script only accepts .py / .pyw files.\n\n"
                 f"You picked:\n{path}",
@@ -183,7 +184,7 @@ class PreviewMixin(_MainWindowHost):
             )
         except OSError:
             log_error("run_script subprocess")
-            messagebox.showerror(
+            show_error(
                 "Run failed",
                 f"Could not launch:\n{path}",
                 parent=self,
@@ -204,7 +205,7 @@ class PreviewMixin(_MainWindowHost):
         manually. Returns True when the caller may proceed."""
         if not self._dirty:
             return True
-        messagebox.showwarning(
+        show_warning(
             "Unsaved changes",
             "Please save your progress before exporting.",
             parent=self,
@@ -242,7 +243,7 @@ class PreviewMixin(_MainWindowHost):
         elif self._current_path:
             out_dir = Path(self._current_path).parent / "exports"
         else:
-            messagebox.showinfo(
+            show_info(
                 "Quick export",
                 "Save the project before exporting.",
                 parent=self,
@@ -274,7 +275,7 @@ class PreviewMixin(_MainWindowHost):
             out_dir.mkdir(parents=True, exist_ok=True)
         except OSError:
             log_error("quick export mkdir")
-            messagebox.showerror(
+            show_error(
                 "Export failed",
                 f"Could not create exports folder:\n{out_dir}",
                 parent=self,
@@ -298,7 +299,7 @@ class PreviewMixin(_MainWindowHost):
             )
         except OSError as exc:
             log_error("quick export")
-            messagebox.showerror(
+            show_error(
                 "Export failed",
                 f"Could not write the export:\n{target}\n\n{exc}",
                 parent=self,

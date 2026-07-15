@@ -19,11 +19,12 @@ import subprocess
 import sys
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import ttk
 from typing import Callable, cast
 
 import customtkinter as ctk
 
+from app.ui.dialogs.message import ask_string, ask_yes_no, show_error, show_info, show_warning
 from app.ui.system_fonts import derive_ui_font
 from app.core.component_paths import (
     COMPONENT_EXT, PUBLISH_COMPONENT_EXT,
@@ -657,7 +658,7 @@ class ComponentsPanel(ctk.CTkFrame):
     # Actions
     # ------------------------------------------------------------------
     def _on_new_folder(self, parent_dir: Path) -> None:
-        name = simpledialog.askstring(
+        name = ask_string(
             "New folder", "Folder name:",
             initialvalue="New Folder",
             parent=self.winfo_toplevel(),
@@ -666,7 +667,7 @@ class ComponentsPanel(ctk.CTkFrame):
             return
         name = name.strip()
         if not _is_valid_name(name):
-            messagebox.showwarning(
+            show_warning(
                 "Invalid name",
                 "Folder names can't contain \\ / : * ? \" < > |.",
                 parent=self.winfo_toplevel(),
@@ -674,7 +675,7 @@ class ComponentsPanel(ctk.CTkFrame):
             return
         target = parent_dir / name
         if target.exists():
-            messagebox.showwarning(
+            show_warning(
                 "Already exists",
                 f"'{name}' already exists in '{parent_dir.name}'.",
                 parent=self.winfo_toplevel(),
@@ -684,7 +685,7 @@ class ComponentsPanel(ctk.CTkFrame):
             target.mkdir(parents=True)
         except OSError:
             log_error(f"components new folder {target}")
-            messagebox.showerror(
+            show_error(
                 "New folder failed",
                 f"Couldn't create folder:\n{target}",
                 parent=self.winfo_toplevel(),
@@ -695,7 +696,7 @@ class ComponentsPanel(ctk.CTkFrame):
     def _on_rename(self, path: Path) -> None:
         is_component = is_component_file(path)
         old = component_display_stem(path) if is_component else path.name
-        name = simpledialog.askstring(
+        name = ask_string(
             "Rename", "New name:",
             initialvalue=old,
             parent=self.winfo_toplevel(),
@@ -704,7 +705,7 @@ class ComponentsPanel(ctk.CTkFrame):
             return
         name = name.strip()
         if not _is_valid_name(name):
-            messagebox.showwarning(
+            show_warning(
                 "Invalid name",
                 "Names can't contain \\ / : * ? \" < > |.",
                 parent=self.winfo_toplevel(),
@@ -717,7 +718,7 @@ class ComponentsPanel(ctk.CTkFrame):
         else:
             target = path.with_name(name)
         if target.exists():
-            messagebox.showwarning(
+            show_warning(
                 "Already exists",
                 f"'{target.name}' already exists.",
                 parent=self.winfo_toplevel(),
@@ -727,7 +728,7 @@ class ComponentsPanel(ctk.CTkFrame):
             path.rename(target)
         except OSError:
             log_error(f"components rename {path} → {target}")
-            messagebox.showerror(
+            show_error(
                 "Rename failed",
                 f"Couldn't rename:\n{path}\n→\n{target}",
                 parent=self.winfo_toplevel(),
@@ -736,10 +737,11 @@ class ComponentsPanel(ctk.CTkFrame):
         self.refresh()
 
     def _on_delete_folder(self, path: Path) -> None:
-        confirm = messagebox.askyesno(
+        confirm = ask_yes_no(
             "Delete folder",
             f"Delete folder '{path.name}' and everything inside it?",
             parent=self.winfo_toplevel(),
+            danger=True, yes_text="Delete", no_text="Cancel",
         )
         if not confirm:
             return
@@ -747,7 +749,7 @@ class ComponentsPanel(ctk.CTkFrame):
             shutil.rmtree(path)
         except OSError:
             log_error(f"components delete folder {path}")
-            messagebox.showerror(
+            show_error(
                 "Delete failed",
                 f"Couldn't delete folder:\n{path}",
                 parent=self.winfo_toplevel(),
@@ -756,10 +758,11 @@ class ComponentsPanel(ctk.CTkFrame):
         self.refresh()
 
     def _on_delete_file(self, path: Path) -> None:
-        confirm = messagebox.askyesno(
+        confirm = ask_yes_no(
             "Delete component",
             f"Delete component '{component_display_stem(path)}'?",
             parent=self.winfo_toplevel(),
+            danger=True, yes_text="Delete", no_text="Cancel",
         )
         if not confirm:
             return
@@ -767,7 +770,7 @@ class ComponentsPanel(ctk.CTkFrame):
             path.unlink()
         except OSError:
             log_error(f"components delete file {path}")
-            messagebox.showerror(
+            show_error(
                 "Delete failed",
                 f"Couldn't delete component:\n{path}",
                 parent=self.winfo_toplevel(),
@@ -784,7 +787,7 @@ class ComponentsPanel(ctk.CTkFrame):
         from app.ui.component_preview_window import ComponentPreviewWindow
         payload = load_payload(path)
         if payload is None:
-            messagebox.showerror(
+            show_error(
                 "Preview unavailable",
                 f"'{path.name}' isn't a readable component.",
                 parent=self.winfo_toplevel(),
@@ -802,7 +805,7 @@ class ComponentsPanel(ctk.CTkFrame):
         path = self._path_provider()
         target_root = ensure_components_root(path) if path else None
         if target_root is None:
-            messagebox.showinfo(
+            show_info(
                 "Save project first",
                 "Components are stored next to assets in the project "
                 "folder. Save the project before importing components.",
@@ -828,7 +831,7 @@ class ComponentsPanel(ctk.CTkFrame):
         # when the user picks the wrong thing.
         from app.io.component_io import load_metadata
         if load_metadata(source_path) is None:
-            messagebox.showerror(
+            show_error(
                 "Invalid component",
                 f"'{source_path.name}' isn't a readable .ctkcomp file.",
                 parent=self.winfo_toplevel(),
@@ -998,7 +1001,7 @@ class ComponentsPanel(ctk.CTkFrame):
     def _move_into(self, source: Path, target_dir: Path) -> None:
         dst = target_dir / source.name
         if dst.exists():
-            messagebox.showwarning(
+            show_warning(
                 "Already exists",
                 f"'{source.name}' already exists in "
                 f"'{target_dir.name}'.",
@@ -1009,7 +1012,7 @@ class ComponentsPanel(ctk.CTkFrame):
             shutil.move(str(source), str(dst))
         except OSError:
             log_error(f"components move {source} → {dst}")
-            messagebox.showerror(
+            show_error(
                 "Move failed",
                 f"Couldn't move:\n{source}\n→\n{dst}",
                 parent=self.winfo_toplevel(),

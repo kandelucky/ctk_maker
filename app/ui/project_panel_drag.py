@@ -26,10 +26,10 @@ from __future__ import annotations
 import shutil
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox
 
 from app.core.logger import log_error
 from app.core.paths import assets_dir
+from app.ui.dialogs.message import show_error, show_warning
 from app.ui.system_fonts import ui_font
 
 
@@ -303,7 +303,7 @@ class ProjectPanelDragDrop:
         for src in sources:
             dst = target_dir / src.name
             if dst.exists():
-                messagebox.showwarning(
+                show_warning(
                     "Already exists",
                     f"'{src.name}' already exists in '{target_dir.name}'."
                     " Skipping.",
@@ -315,7 +315,7 @@ class ProjectPanelDragDrop:
                 moved += 1
             except OSError:
                 log_error(f"move {src} → {dst}")
-                messagebox.showerror(
+                show_error(
                     "Move failed",
                     f"Couldn't move:\n{src}\n→\n{dst}",
                     parent=panel.winfo_toplevel(),
