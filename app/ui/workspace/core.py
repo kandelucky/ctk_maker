@@ -16,39 +16,15 @@ Coordinate systems:
 """
 
 import tkinter as tk
-from tkinter import messagebox, ttk
 
 import customtkinter as ctk
 
-from app.core.commands import (
-    AddWidgetCommand,
-    BindHandlerCommand,
-    BulkAddCommand,
-    BulkMoveCommand,
-    ChangePropertyCommand,
-    DeleteMultipleCommand,
-    DeleteWidgetCommand,
-    RenameCommand,
-    build_bulk_add_entries,
-    paste_target_parent_id,
-    push_zorder_history,
-)
-from app.core.logger import log_error
 from app.core.project import Project
-from app.core.widget_node import WidgetNode
-from app.ui.dialogs import RenameDialog
 from app.ui.selection_controller import SelectionController
 from app.ui.zoom_controller import ZoomController
-from app.ui.workspace.chrome import (
-    CHROME_TAG,
-    ChromeManager,
-)
+from app.ui.workspace.chrome import ChromeManager
 from app.ui.workspace.collapsed_tabs_bar import CollapsedTabsBar
-from app.ui.workspace.controls import (
-    TOOL_CURSORS,
-    TOOL_HAND,
-    WorkspaceControls,
-)
+from app.ui.workspace.controls import WorkspaceControls
 from app.ui.workspace.context_menu import ContextMenu
 from app.ui.workspace.drag import WidgetDragController
 from app.ui.workspace.drops import DropDispatcher
@@ -61,21 +37,11 @@ from app.ui.workspace.render import (
     DOCUMENT_PADDING,
     Renderer,
 )
-from app.ui.workspace.layout_overlay import (
-    LayoutOverlayManager,
-    _child_manager_kwargs,  # noqa: F401 — re-exported for tests
-    _forget_current_manager,  # noqa: F401 — re-exported for tests
-    _strip_layout_keys,
-)
+from app.ui.workspace.layout_overlay import LayoutOverlayManager
 from app.ui.workspace.ghost_manager import GhostManager
 from app.ui.workspace.widget_lifecycle import WidgetLifecycle
-from app.widgets.layout_schema import (
-    is_layout_container,
-    normalise_layout_type,
-    resolve_grid_drop_cell,
-)
 from app.widgets.registry import get_descriptor
-from app.core.platform_compat import MOD_KEY, MOD_LABEL_PLUS
+from app.core.platform_compat import MOD_KEY
 
 # ---- Drag + canvas ----------------------------------------------------------
 DRAG_THRESHOLD = 5
@@ -83,11 +49,8 @@ DRAG_THRESHOLD = 5
 # below through the ``Renderer`` module so ``_build_canvas`` can
 # pass ``DOCUMENT_PADDING`` on to ``ZoomController``.
 
-# Chrome constants live in ``chrome.py``; ``CHROME_TAG`` is
-# re-imported above because ``_on_canvas_click`` still peeks at it.
-# Tool / pan / status-bar constants live in ``controls.py``;
-# ``TOOL_HAND`` + ``TOOL_CURSORS`` are re-imported above because
-# ``default_tool_cursor`` + canvas event handlers still read them.
+# Chrome constants live in ``chrome.py``; tool / pan / status-bar
+# constants live in ``controls.py``.
 
 
 class Workspace(ctk.CTkFrame):

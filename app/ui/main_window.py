@@ -2,35 +2,20 @@ import os
 import queue
 import subprocess
 import sys
-import tempfile
-import threading
 import tkinter as tk
-import webbrowser
 from collections import deque
-from datetime import datetime
 from pathlib import Path
-from tkinter import filedialog
 from typing import Any
 
 import customtkinter as ctk
 
-from app.core.autosave import (
-    AutosaveController, autosave_path_for, clear_autosave,
-)
+from app.core.autosave import AutosaveController, clear_autosave
 from app.ui.dialogs.message import ask_yes_no, ask_yes_no_cancel
 from app.ui.system_fonts import ui_font
-from app.core.fonts import (
-    register_project_fonts, set_active_project_defaults,
-)
-from app.core.logger import install_console_sink, log_error
+from app.core.logger import install_console_sink
 from app.core.project import Project
-from app.core.recent_files import add_recent
 from app.core.settings import load_settings, save_setting
-from app.io.code_exporter import export_project
-from app.io.project_loader import ProjectLoadError, load_project
-from app.io.project_saver import save_project
 from app.ui.console_window import ConsolePanel, ConsoleWindow
-from app.ui.dialogs import NewProjectSizeDialog, prompt_open_project_folder
 from app.ui.history_window import HistoryPanel, HistoryWindow
 from app.ui.variables_window import VariablesWindow
 from app.ui.main_actions import ActionsMixin
@@ -44,11 +29,9 @@ from app.ui.object_tree_window import ObjectTreePanel, ObjectTreeWindow
 from app.ui.palette import Palette
 from app.ui.project_window import ProjectPanel, ProjectWindow
 from app.ui.properties_panel import PropertiesPanel
-from app.ui.crash_dialog import show_crash_dialog
-from app.ui.startup_dialog import StartupDialog
 from app.ui.toolbar import Toolbar
 from app.ui.workspace import Workspace
-from app.core.platform_compat import IS_WINDOWS, MOD_KEY
+from app.core.platform_compat import IS_WINDOWS
 
 PROJECT_FILE_TYPES = [("CTkMaker project", "*.ctkproj"), ("All files", "*.*")]
 

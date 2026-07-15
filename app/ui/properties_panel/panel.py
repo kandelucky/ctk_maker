@@ -1778,7 +1778,6 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
     def _show_binding_menu(self, event, pname, prop, node) -> None:
         from app.core.variables import (
             compatible_var_types,
-            is_var_token,
             parse_var_token,
         )
         current = node.properties.get(pname)
@@ -1790,7 +1789,6 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
         ptype = prop.get("type", "")
         compat_types = compatible_var_types(ptype)
 
-        from .constants import BG as _BG
         # disabledforeground MUST be set explicitly on Windows —
         # the system default uses a 3D etched effect that renders as
         # ghost-doubled text on dark backgrounds. Flat grey kills the

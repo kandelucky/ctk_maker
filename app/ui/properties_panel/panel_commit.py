@@ -21,7 +21,6 @@ The mixin relies on attributes set up by ``PropertiesPanel.__init__``
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import filedialog
 
 from app.ui.tint_color_picker import ColorPickerDialog
 

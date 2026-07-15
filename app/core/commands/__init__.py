@@ -19,8 +19,7 @@ from ``app.core.commands``.
 from app.core.commands.base import (
     COALESCE_WINDOW_SEC,
     Command,
-    _add_subtree_recursive,
-    _restore_widget,
+    _add_subtree_recursive,  # noqa: F401 — re-exported (drops, context_menu)
     build_bulk_add_entries,
     paste_target_parent_id,
 )
@@ -29,9 +28,6 @@ from app.core.commands.documents import (
     ArrangeDocumentsCommand,
     DeleteDocumentCommand,
     MoveDocumentCommand,
-    _remove_document_by_id,
-    _replay_children,
-    _restore_document,
 )
 from app.core.commands.flags import (
     BulkToggleFlagCommand,
@@ -72,7 +68,6 @@ from app.core.commands.variables import (
     ChangeVariableTypeCommand,
     DeleteVariableCommand,
     RenameVariableCommand,
-    _variable_target_list,
 )
 
 __all__ = [

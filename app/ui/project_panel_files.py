@@ -24,7 +24,6 @@ Every action ends with a ``dirty_changed`` event-bus publish + a
 from __future__ import annotations
 
 import shutil
-import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog
 

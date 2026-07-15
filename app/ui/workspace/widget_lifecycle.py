@@ -24,7 +24,6 @@ from app.ui.workspace.layout_overlay import (
     _child_manager_kwargs,
     _composite_configure,
     _composite_place_size,
-    _grid_child_place_kwargs,
     _strip_layout_keys,
 )
 from app.widgets.layout_schema import (

@@ -80,7 +80,7 @@ class _AmbiguousProjectPicker(DarkDialog):
             btn_row, "Cancel", "ghost", self._on_cancel, s,
         ).pack(side="right", padx=(0, round(8 * s)))
         self.bind("<Escape>", lambda _e: self._on_cancel())
-        self.bind("<Return>", lambda _e: self._on_ok())
+        self.bind("<Return>", lambda _e: self.invoke_focused_or(self._on_ok))
 
         self.update_idletasks()
         W = self.winfo_reqwidth()

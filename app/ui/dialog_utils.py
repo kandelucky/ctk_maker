@@ -2,7 +2,61 @@
 
 from __future__ import annotations
 
+import sys
 import tkinter as tk
+
+
+def screen_work_area(toplevel: tk.Misc) -> tuple[int, int, int, int] | None:
+    """``(x, y, w, h)`` of the usable desktop area, in REAL pixels, of
+    the monitor hosting ``toplevel``'s window. ``None`` when it can't
+    be determined (caller should skip clamping).
+
+    Under CTk's per-monitor DPI awareness Tk's ``winfo_screenwidth`` /
+    ``winfo_screenheight`` return DPI-virtualized (logical) values —
+    physically wrong on any non-100% display — and know nothing about
+    the taskbar. On Windows ask the OS for the hosting monitor's work
+    area instead; elsewhere fall back to the Tk numbers.
+    """
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            class _RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", ctypes.c_long), ("top", ctypes.c_long),
+                    ("right", ctypes.c_long), ("bottom", ctypes.c_long),
+                ]
+
+            class _MONITORINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", ctypes.c_ulong),
+                    ("rcMonitor", _RECT),
+                    ("rcWork", _RECT),
+                    ("dwFlags", ctypes.c_ulong),
+                ]
+
+            user32 = ctypes.windll.user32
+            MONITOR_DEFAULTTONEAREST = 2
+            monitor = user32.MonitorFromWindow(
+                toplevel.winfo_id(), MONITOR_DEFAULTTONEAREST,
+            )
+            info = _MONITORINFO()
+            info.cbSize = ctypes.sizeof(_MONITORINFO)
+            if user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+                work = info.rcWork
+                return (
+                    work.left, work.top,
+                    work.right - work.left, work.bottom - work.top,
+                )
+        except (OSError, tk.TclError, AttributeError):
+            pass
+    try:
+        return (
+            0, 0,
+            toplevel.winfo_screenwidth(), toplevel.winfo_screenheight(),
+        )
+    except tk.TclError:
+        return None
 
 
 def safe_grab_set(toplevel: tk.Misc) -> None:

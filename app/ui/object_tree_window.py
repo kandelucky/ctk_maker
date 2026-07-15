@@ -546,7 +546,6 @@ class ObjectTreePanel(ctk.CTkFrame):
         self.project.select_widget(WINDOW_ID)
 
     def _insert_document_row(self, doc, index: int) -> None:
-        from app.core.project import WINDOW_ID
         is_active = doc.id == self.project.active_document_id
         icon = (
             self._window_icon_active if is_active
@@ -2112,7 +2111,7 @@ class ObjectTreePanel(ctk.CTkFrame):
                     "This widget is locked. Unlock it "
                     "(padlock icon) before deleting."
                 ),
-                parent=self,
+                parent=self.winfo_toplevel(),
             )
             return
         # If the clicked row is part of a multi-selection, delete all
@@ -2123,7 +2122,7 @@ class ObjectTreePanel(ctk.CTkFrame):
             confirmed = ask_yes_no(
                 title="Delete widgets",
                 message=f"Delete {count} selected widgets?",
-                parent=self,
+                parent=self.winfo_toplevel(),
                 danger=True, yes_text="Delete", no_text="Cancel",
             )
             if not confirmed:
@@ -2179,7 +2178,7 @@ class ObjectTreePanel(ctk.CTkFrame):
         confirmed = ask_yes_no(
             title="Delete widget",
             message=f"Delete this {type_label}?",
-            parent=self,
+            parent=self.winfo_toplevel(),
             danger=True, yes_text="Delete", no_text="Cancel",
         )
         if not confirmed:

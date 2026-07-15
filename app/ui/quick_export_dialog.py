@@ -20,7 +20,6 @@ Result is exposed via ``.result`` as one of:
 from __future__ import annotations
 
 import tkinter as tk
-from pathlib import Path
 
 import customtkinter as ctk
 

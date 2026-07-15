@@ -281,7 +281,6 @@ class DropDispatcher:
         # the drop lands visibly where the user aimed. Sets the cell
         # BEFORE add_widget so the initial render uses it.
         if container_node is not None:
-            from app.widgets.layout_schema import resolve_grid_drop_cell  # noqa: F401
             if normalise_layout_type(
                 container_node.properties.get("layout_type", "place"),
             ) == "grid":

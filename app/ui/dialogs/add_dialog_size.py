@@ -10,7 +10,7 @@ import customtkinter as ctk
 
 from app.ui import style
 from app.ui.dialogs.message import show_warning
-from app.ui.managed_window import ManagedToplevel
+from app.ui.managed_window import ManagedToplevel, window_scale
 
 
 DIALOG_PRESETS: list[tuple[str, tuple[int, int] | None]] = [
@@ -71,10 +71,12 @@ class AddDialogSizeDialog(ManagedToplevel):
             py = parent.winfo_rooty()
             pw = parent.winfo_width()
             ph = parent.winfo_height()
+            # default_size is logical; parent coords are real pixels.
+            s = window_scale(self)
             w, h = self.default_size
             return (
-                max(0, px + (pw - w) // 2),
-                max(0, py + (ph - h) // 2),
+                max(0, px + (pw - round(w * s)) // 2),
+                max(0, py + (ph - round(h * s)) // 2),
             )
         except tk.TclError:
             return (100, 100)

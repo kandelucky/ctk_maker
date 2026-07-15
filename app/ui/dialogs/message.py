@@ -99,11 +99,14 @@ class MessageDialog(DarkDialog):
                 row, text, role, lambda v=value: self._finish(v), s,
             ).pack(side="right", padx=(round(8 * s), 0))
         self.bind("<Escape>", lambda _e: self._finish(self._cancel_value))
-        self.bind("<Return>", lambda _e: self._finish(self._default_value))
+        self.bind("<Return>", lambda _e: self._on_return())
         self.protocol(
             "WM_DELETE_WINDOW",
             lambda: self._finish(self._cancel_value),
         )
+
+    def _on_return(self) -> None:
+        self.invoke_focused_or(lambda: self._finish(self._default_value))
 
     def _finish(self, value: object) -> None:
         self.result = value

@@ -22,7 +22,6 @@ descriptor we add later shows up automatically.
 from __future__ import annotations
 
 import inspect
-import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import ttk
 

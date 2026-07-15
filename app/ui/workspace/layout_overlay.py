@@ -406,7 +406,6 @@ class LayoutOverlayManager:
         """pack() branch — equal-split sizing for grow children, then
         ``before=`` anchoring so the visual queue tracks model order
         even when only one sibling is being re-applied."""
-        stretch = str(child_node.properties.get("stretch", "fixed"))
         parent_layout = normalise_layout_type(
             parent_node.properties.get("layout_type", "place"),
         ) if parent_node is not None else "place"

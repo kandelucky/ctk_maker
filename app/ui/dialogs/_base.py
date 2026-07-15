@@ -24,8 +24,12 @@ import tkinter
 
 import customtkinter as ctk
 
-from app.ui.dialog_utils import prepare_dialog, reveal_dialog
-from app.ui.dialogs._colors import _ABT_BG
+from app.ui.dialog_utils import (
+    prepare_dialog,
+    reveal_dialog,
+    screen_work_area,
+)
+from app.ui.dialogs._colors import _ABT_BG, dialog_scaling
 
 
 class DarkDialog(ctk.CTkToplevel):
@@ -44,16 +48,41 @@ class DarkDialog(ctk.CTkToplevel):
         self.transient(parent)
 
     def place_centered(self, width: int, height: int, parent) -> None:
-        """Center the dialog over ``parent`` using REAL pixels.
+        """Center the dialog over ``parent``'s toplevel using REAL pixels.
 
         Bypasses ``CTkToplevel.geometry`` (and its window-scaling pass)
         because the dialog content is raw tk and is not CTk-scaled.
+        ``parent`` may be any widget (call sites pass docked panels) —
+        centering targets the owning window, and the result is clamped
+        to the monitor's work area so no edge ends up off-screen.
         """
-        px = parent.winfo_rootx() + parent.winfo_width() // 2
-        py = parent.winfo_rooty() + parent.winfo_height() // 2
-        x = px - width // 2
-        y = py - height // 2
+        owner = parent.winfo_toplevel()
+        x = owner.winfo_rootx() + (owner.winfo_width() - width) // 2
+        y = owner.winfo_rooty() + (owner.winfo_height() - height) // 2
+        area = screen_work_area(owner)
+        if area is not None:
+            ax, ay, aw, ah = area
+            edge = round(8 * dialog_scaling(self))
+            x = min(max(x, ax + edge), max(ax + edge, ax + aw - width - edge))
+            y = min(max(y, ay + edge), max(ay + edge, ay + ah - height - edge))
         tkinter.Toplevel.geometry(self, f"{width}x{height}+{x}+{y}")
+
+    def invoke_focused_or(self, default) -> None:
+        """Return-key semantics shared by the dialog family: activate
+        the Tab-focused button when there is one, otherwise run
+        ``default()``. Without this, Tab to Cancel + Enter would fire
+        the affirmative (possibly destructive) default instead of the
+        focused button.
+        """
+        try:
+            focused = self.focus_get()
+        except (KeyError, tkinter.TclError):
+            # focus_get raises for foreign/unresolvable widget paths
+            focused = None
+        if isinstance(focused, tkinter.Button):
+            focused.invoke()
+            return
+        default()
 
     def reveal(self) -> None:
         """Flip alpha back to 1 once the window is fully built."""

@@ -33,8 +33,6 @@ from app.widgets.layout_schema import (
 )
 from app.ui.system_fonts import ui_font
 
-from app.ui.system_fonts import derive_ui_font
-
 from .constants import (
     DISABLED_FG, STYLE_BOOL_NAMES, TREE_BG, TREE_FG, VALUE_BG,
 )
@@ -275,7 +273,6 @@ class SchemaMixin:
                 tags=("disabled",),
             )
             return
-        from app.core.variables import VAR_TYPE_SHORT
         for entry in locals_list:
             default_str = str(entry.default or "")
             if len(default_str) > 30:

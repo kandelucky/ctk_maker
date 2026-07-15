@@ -49,7 +49,7 @@ class RenamePageDialog(DarkDialog):
         self.place_centered(round(460 * s), round(390 * s), parent)
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
         self.bind("<Escape>", lambda _e: self._on_cancel())
-        self.bind("<Return>", lambda _e: self._on_ok())
+        self.bind("<Return>", lambda _e: self.invoke_focused_or(self._on_ok))
         self.lift()
         self.focus_set()
         safe_grab_set(self)

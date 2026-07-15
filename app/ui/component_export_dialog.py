@@ -8,7 +8,6 @@ Returns ``True`` from ``run()`` when the file was written.
 
 from __future__ import annotations
 
-import datetime
 import shutil
 import tkinter as tk
 from pathlib import Path

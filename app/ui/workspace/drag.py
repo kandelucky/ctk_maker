@@ -33,7 +33,6 @@ from app.ui.workspace.drag_motion import DragMotion
 from app.ui.workspace.drag_release import DragRelease
 from app.ui.workspace.drag_reparent import DragReparent
 from app.ui.workspace.drag_select import (
-    HIDE_OUTLINE_COLOR,  # noqa: F401 — re-exported for tests
     HIDE_THRESHOLD,
     DragClickResolver,
 )

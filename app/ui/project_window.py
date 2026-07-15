@@ -31,10 +31,7 @@ instead of a per-widget reference scan.
 from __future__ import annotations
 
 import hashlib
-import os
 import shutil
-import subprocess
-import sys
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, ttk
@@ -43,9 +40,7 @@ from typing import TYPE_CHECKING, Callable
 import customtkinter as ctk
 
 from app.core.logger import log_error
-from app.core.paths import (
-    ASSET_SUBDIRS, assets_dir, ensure_project_folder,
-)
+from app.core.paths import assets_dir, ensure_project_folder
 from app.ui.dialogs.message import show_error, show_warning
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font

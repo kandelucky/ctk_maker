@@ -37,16 +37,14 @@ from app.ui.transitions_demo.code_generators import (
     generate_text_code,
     generate_toast_code,
 )
-from app.ui.transitions_demo.colors import (
-    hex_to_rgb, lerp, lerp_color_hsl, rgb_to_hex,
-)
+from app.ui.transitions_demo.colors import lerp, lerp_color_hsl
 from app.ui.transitions_demo.constants import (
     CARD_COLOR, CARD_DEFAULT_H, CARD_DEFAULT_W,
     POPUP_TARGET, SAMPLE_BTN_H, SAMPLE_BTN_W,
 )
 from app.ui.transitions_demo.easings import (
     EASINGS, back_out, bounce_out, ease_in, ease_in_out,
-    ease_out, ease_out_quint, elastic_out, linear, spring,
+    ease_out, ease_out_quint, linear,
 )
 from app.ui.transitions_demo.tween import Tween
 

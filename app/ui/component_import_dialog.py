@@ -4,7 +4,7 @@ author, date), offers a Preview button + a target-folder picker, and
 copies the file into the chosen location on Import.
 
 On filename collision the user picks Overwrite / Rename / Cancel via
-``confirm_collision_action``.
+``_confirm_collision``.
 
 Returns ``True`` from ``run()`` when the file was imported.
 """
@@ -20,8 +20,7 @@ import customtkinter as ctk
 from app.core.component_paths import COMPONENT_EXT, component_display_stem
 from app.core.logger import log_error
 from app.io.component_io import load_metadata, load_payload
-from app.ui.dialog_utils import safe_grab_set
-from app.ui.dialogs.message import show_error, show_warning
+from app.ui.dialogs.message import MessageDialog, show_error, show_warning
 from app.ui.managed_window import ManagedToplevel
 from app.ui.system_fonts import ui_font
 
@@ -224,75 +223,26 @@ class ComponentImportDialog(ManagedToplevel):
         self.destroy()
 
     def _confirm_collision(self) -> str:
-        """Three-button dialog. Returns ``"overwrite"`` / ``"rename"``
-        / ``"cancel"``. Tk's stock messagebox doesn't support three
-        custom labels portably, so we roll our own tiny modal.
+        """Three-button collision dialog on ``MessageDialog``. Returns
+        ``"overwrite"`` / ``"rename"`` / ``"cancel"`` (Escape / X →
+        ``"cancel"``).
         """
-        choice = {"value": "cancel"}
-        modal = ctk.CTkToplevel(self)
-        modal.title("Already exists")
-        modal.transient(self)
-        safe_grab_set(modal)
-        modal.resizable(False, False)
-        ctk.CTkLabel(
-            modal,
-            text=(
+        dialog = MessageDialog(
+            self, "Already exists",
+            (
                 f"'{self._source_path.name}' already exists in this "
                 "folder. Pick how to resolve:"
             ),
-            font=ui_font(10),
-            wraplength=320, justify="left",
-        ).pack(padx=18, pady=(16, 12))
-        row = ctk.CTkFrame(modal, fg_color="transparent")
-        row.pack(padx=18, pady=(0, 16))
-
-        def _pick(value: str) -> None:
-            choice["value"] = value
-            modal.destroy()
-
-        ctk.CTkButton(
-            row, text="Overwrite", width=92, height=30,
-            corner_radius=4, command=lambda: _pick("overwrite"),
-        ).pack(side="left", padx=(0, 6))
-        ctk.CTkButton(
-            row, text="Rename", width=80, height=30,
-            corner_radius=4,
-            fg_color="#3c3c3c", hover_color="#4a4a4a",
-            command=lambda: _pick("rename"),
-        ).pack(side="left", padx=(0, 6))
-        ctk.CTkButton(
-            row, text="Cancel", width=80, height=30,
-            corner_radius=4,
-            fg_color="#3c3c3c", hover_color="#4a4a4a",
-            command=lambda: _pick("cancel"),
-        ).pack(side="left")
-        modal.protocol("WM_DELETE_WINDOW", lambda: _pick("cancel"))
-        modal.bind("<Escape>", lambda _e: _pick("cancel"))
-        modal.update_idletasks()
-        # Defensive: update_idletasks + safe_grab_set's wait_visibility
-        # together pump the event loop twice. A stale Escape from the
-        # parent dialog can dispatch to the modal's binding mid-build
-        # and call destroy() before we get here. Skip centering +
-        # wait_window when that happens — just return the default
-        # ``cancel`` choice.
-        if not modal.winfo_exists():
-            return choice["value"]
-        # Center over self
-        try:
-            sx = self.winfo_rootx()
-            sy = self.winfo_rooty()
-            sw = self.winfo_width()
-            sh = self.winfo_height()
-            mw = modal.winfo_width()
-            mh = modal.winfo_height()
-            modal.geometry(
-                f"+{sx + (sw - mw) // 2}+{sy + (sh - mh) // 2}",
-            )
-        except tk.TclError:
-            pass
-        if modal.winfo_exists():
-            self.wait_window(modal)
-        return choice["value"]
+            buttons=(
+                ("Cancel", "cancel", "ghost"),
+                ("Rename", "rename", "ghost"),
+                ("Overwrite", "overwrite", "danger"),
+            ),
+            cancel_value="cancel",
+            severity="warning",
+        )
+        dialog.wait_window()
+        return str(dialog.result)
 
     def _on_cancel(self) -> None:
         self.result = False

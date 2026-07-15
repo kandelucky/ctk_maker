@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 from app.core.commands.base import (
     COALESCE_WINDOW_SEC,
     Command,
-    _add_subtree_recursive,
     _restore_widget,
 )
 from app.core.logger import log_error

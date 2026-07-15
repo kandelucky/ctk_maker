@@ -26,7 +26,6 @@ import customtkinter as ctk
 from app.core.project import Project
 from app.core.widget_node import WidgetNode
 from app.ui.icons import load_icon
-from app.ui.toolbar import _attach_tooltip
 from app.widgets.registry import get_descriptor
 from app.ui.system_fonts import ui_font
 

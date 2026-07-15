@@ -23,7 +23,6 @@ Per-widget convention (matches ``WidgetDescriptor.transform_properties``):
 
 from __future__ import annotations
 
-import re
 import shutil
 from pathlib import Path
 
@@ -57,10 +56,7 @@ from app.io.code_exporter._utils import (
 _CURRENT_PROJECT_PATH: str | None = None
 
 
-from app.io.code_exporter.preview_screenshot import (
-    _PREVIEW_SCREENSHOT_TEMPLATE,
-    _preview_screenshot_lines,
-)
+from app.io.code_exporter.preview_screenshot import _preview_screenshot_lines
 
 
 _INCLUDE_DESCRIPTIONS_DEFAULT = True
@@ -155,8 +151,8 @@ def _ctk_inherited_names() -> frozenset[str]:
 
 
 from app.io.code_exporter.ctk_defaults import (
-    _CTK_CONSTRUCTOR_DEFAULTS_CACHE,
-    _CTK_DEFAULT_MISSING,
+    _CTK_CONSTRUCTOR_DEFAULTS_CACHE,  # noqa: F401 — re-exported for tests
+    _CTK_DEFAULT_MISSING,  # noqa: F401 — re-exported for tests
     _ctk_constructor_defaults,
     _kwarg_matches_defaults,
 )
@@ -204,32 +200,6 @@ def _is_non_textvariable_var_binding(
     return (widget_type, prop_key) not in BINDING_WIRINGS
 
 
-def _project_needs_auto_trace_helper(scoped_widgets) -> bool:
-    """True when at least one widget in the export scope has a var
-    binding that the auto-trace path will actually emit.
-
-    Mirrors the gate ``_emit_auto_trace_bindings`` applies: bindings
-    whose key isn't in the widget's CTk ``configure(...)`` signature
-    are skipped (they'd crash at runtime), so projects whose only
-    cosmetic bindings target Maker-only keys don't drag the helper
-    function in.
-    """
-    for w in scoped_widgets:
-        allowed = _ctk_configure_keys_for(w.widget_type)
-        for key, val in (w.properties or {}).items():
-            if not _is_non_textvariable_var_binding(w.widget_type, key, val):
-                continue
-            # Textbox content goes through ``_bind_var_to_textbox`` and
-            # has its own helper gate; here we only care about whether
-            # the configure-style helper is needed.
-            if w.widget_type == "CTkTextbox" and key == "initial_text":
-                continue
-            if allowed is not None and key not in allowed:
-                continue
-            return True
-    return False
-
-
 def _project_needs_pack_balance(docs_to_emit, scoped_widgets) -> bool:
     """True when any vbox/hbox container with ≥1 child exists in
     the export scope. Both window-level layouts (Document) and
@@ -249,141 +219,6 @@ def _project_needs_pack_balance(docs_to_emit, scoped_widgets) -> bool:
         )
         if layout in ("vbox", "hbox") and w.children:
             return True
-    return False
-
-
-def _project_needs_auto_trace_font_helper(scoped_widgets) -> bool:
-    """True when any widget in the export scope has a var binding on
-    a font composite key (``font_bold`` / ``font_italic`` /
-    ``font_size`` / ``font_family``). Mirrors the gate
-    ``_emit_auto_trace_bindings`` applies for those keys, so projects
-    without font-composite bindings don't drag in the helper.
-    """
-    for w in scoped_widgets:
-        for key, val in (w.properties or {}).items():
-            if key not in _FONT_COMPOSITE_TO_ATTR:
-                continue
-            if _is_non_textvariable_var_binding(
-                w.widget_type, key, val,
-            ):
-                return True
-    return False
-
-
-def _project_needs_auto_trace_state_helper(scoped_widgets) -> bool:
-    """True when any widget in the export scope has a var binding on
-    ``button_enabled`` (or any other Maker-only bool→state composite).
-    Mirrors ``_STATE_COMPOSITE_KEYS`` membership.
-    """
-    for w in scoped_widgets:
-        for key, val in (w.properties or {}).items():
-            if key not in _STATE_COMPOSITE_KEYS:
-                continue
-            if _is_non_textvariable_var_binding(
-                w.widget_type, key, val,
-            ):
-                return True
-    return False
-
-
-def _project_needs_auto_trace_label_enabled_helper(scoped_widgets) -> bool:
-    """True when any CTkLabel in the export scope has ``label_enabled``
-    bound to a variable. Distinct from the generic state helper because
-    Label doesn't use ``state="disabled"`` (Tk's native paints a stipple
-    wash over images) — it swaps ``text_color`` manually.
-    """
-    for w in scoped_widgets:
-        if w.widget_type != "CTkLabel":
-            continue
-        val = (w.properties or {}).get("label_enabled")
-        if _is_non_textvariable_var_binding(
-            w.widget_type, "label_enabled", val,
-        ):
-            return True
-    return False
-
-
-def _project_needs_auto_trace_font_wrap_helper(scoped_widgets) -> bool:
-    """True when any CTkLabel in the export scope has ``font_wrap``
-    bound to a variable. CTkButton has no wrap analogue, so this is
-    CTkLabel-only.
-    """
-    for w in scoped_widgets:
-        if w.widget_type != "CTkLabel":
-            continue
-        val = (w.properties or {}).get("font_wrap")
-        if _is_non_textvariable_var_binding(
-            w.widget_type, "font_wrap", val,
-        ):
-            return True
-    return False
-
-
-def _project_needs_auto_trace_font_autofit_helper(scoped_widgets) -> bool:
-    """True when any CTkLabel in the export scope has ``font_autofit``
-    bound to a variable. Brings the full autofit algorithm into the
-    runtime helper block.
-    """
-    for w in scoped_widgets:
-        if w.widget_type != "CTkLabel":
-            continue
-        val = (w.properties or {}).get("font_autofit")
-        if _is_non_textvariable_var_binding(
-            w.widget_type, "font_autofit", val,
-        ):
-            return True
-    return False
-
-
-def _project_needs_auto_trace_place_coord_helper(scoped_widgets) -> bool:
-    """True when any widget in the export scope has ``x`` or ``y``
-    bound to a variable.
-    """
-    for w in scoped_widgets:
-        props = w.properties or {}
-        for key in _PLACE_COORD_KEYS:
-            if _is_non_textvariable_var_binding(
-                w.widget_type, key, props.get(key),
-            ):
-                return True
-    return False
-
-
-def _project_needs_auto_trace_image_rebuild_helper(scoped_widgets) -> bool:
-    """True when any widget has an image param (``image`` /
-    ``image_width`` / ``image_height`` / ``preserve_aspect`` /
-    ``image_color`` / ``image_color_disabled``) bound to a variable AND
-    has an image set. Gates the shared block of image bind helpers.
-    """
-    for w in scoped_widgets:
-        props = w.properties or {}
-        if not props.get("image"):
-            continue
-        for key in _IMAGE_REBUILD_KEYS:
-            if _is_non_textvariable_var_binding(
-                w.widget_type, key, props.get(key),
-            ):
-                return True
-    return False
-
-
-def _project_needs_auto_trace_textbox_helper(scoped_widgets) -> bool:
-    """True when at least one CTkTextbox has a var binding on a
-    property whose update path is delete-then-insert rather than
-    ``configure(prop=…)``. Currently scoped to ``initial_text`` —
-    Textbox content. Other Textbox properties (state, etc.) go
-    through the normal configure helper.
-    """
-    for w in scoped_widgets:
-        if w.widget_type != "CTkTextbox":
-            continue
-        for key, val in (w.properties or {}).items():
-            if key != "initial_text":
-                continue
-            if _is_non_textvariable_var_binding(
-                w.widget_type, key, val,
-            ):
-                return True
     return False
 
 
@@ -1259,37 +1094,6 @@ def _generate_code_inner(
         )
     )
     needs_font_register = _project_uses_custom_fonts(project, scoped_widgets)
-    needs_auto_trace_helper = _project_needs_auto_trace_helper(scoped_widgets)
-    needs_auto_trace_textbox = _project_needs_auto_trace_textbox_helper(
-        scoped_widgets,
-    )
-    needs_auto_trace_font = _project_needs_auto_trace_font_helper(
-        scoped_widgets,
-    )
-    needs_auto_trace_state = _project_needs_auto_trace_state_helper(
-        scoped_widgets,
-    )
-    needs_auto_trace_label_enabled = (
-        _project_needs_auto_trace_label_enabled_helper(scoped_widgets)
-    )
-    needs_auto_trace_font_wrap = (
-        _project_needs_auto_trace_font_wrap_helper(scoped_widgets)
-    )
-    needs_auto_trace_font_autofit = (
-        _project_needs_auto_trace_font_autofit_helper(scoped_widgets)
-    )
-    needs_auto_trace_place_coord = (
-        _project_needs_auto_trace_place_coord_helper(scoped_widgets)
-    )
-    needs_auto_trace_image_rebuild = (
-        _project_needs_auto_trace_image_rebuild_helper(scoped_widgets)
-    )
-    # v1.10.2: emit the flex-shrink runtime helper when any container
-    # uses vbox/hbox with at least one child. Window-level layout
-    # counts too — the document body may be the parent of the row.
-    needs_pack_balance = _project_needs_pack_balance(
-        docs_to_emit, scoped_widgets,
-    )
 
     lines: list[str] = [
         "# Generated by CTkMaker",

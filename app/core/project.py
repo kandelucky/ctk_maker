@@ -33,8 +33,6 @@ if TYPE_CHECKING:
     import tkinter as tk
 
 from app.core.document import (
-    DEFAULT_DOCUMENT_HEIGHT,
-    DEFAULT_DOCUMENT_WIDTH,
     DEFAULT_MAIN_WINDOW_NAME,
     DEFAULT_WINDOW_PROPERTIES,
     Document,
@@ -45,7 +43,6 @@ from app.core.variables import (
     VAR_TYPES,
     VariableEntry,
     coerce_default_for_type,
-    is_var_token,
     make_tk_var,
     make_var_token,
     parse_var_token,

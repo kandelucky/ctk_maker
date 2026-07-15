@@ -49,8 +49,8 @@ from typing import Callable, Optional
 import customtkinter as ctk
 
 from app.core.settings import load_settings, save_setting
+from app.ui.dialog_utils import screen_work_area
 
-SCREEN_BOTTOM_MARGIN = 40
 SCREEN_EDGE_MARGIN = 4
 SAVE_DEBOUNCE_MS = 400
 DARK_REMAP_DELAY_MS = 50
@@ -69,38 +69,45 @@ def _parse_geometry(geom: str) -> Optional[tuple[int, int, int, int]]:
     return (int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4)))
 
 
+def window_scale(toplevel: tk.Misc) -> float:
+    """CTk window-scaling factor (1.0 when unavailable)."""
+    try:
+        scale = float(ctk.ScalingTracker.get_window_scaling(toplevel))
+    except Exception:
+        return 1.0
+    return scale if scale > 0 else 1.0
+
+
 def clamp_to_screen(
     toplevel: tk.Misc, x: int, y: int, w: int, h: int,
 ) -> tuple[int, int, int, int]:
-    """Adjust ``(x, y, w, h)`` so the window fits on its screen."""
-    try:
-        sw = toplevel.winfo_screenwidth()
-        sh = toplevel.winfo_screenheight()
-    except tk.TclError:
+    """Adjust ``(x, y, w, h)`` so the window fits its monitor's work
+    area.
+
+    Units are mixed by contract: ``CTkToplevel.geometry`` scales only
+    the size part, so ``w``/``h`` are logical while ``x``/``y`` and the
+    work area are real pixels. The math runs on the real size and
+    converts back.
+    """
+    area = screen_work_area(toplevel)
+    if area is None:
         return (x, y, w, h)
+    ax, ay, aw, ah = area
+    scale = window_scale(toplevel)
+    edge = round(SCREEN_EDGE_MARGIN * scale)
 
-    max_w = max(100, sw - 2 * SCREEN_EDGE_MARGIN)
-    max_h = max(100, sh - SCREEN_BOTTOM_MARGIN - SCREEN_EDGE_MARGIN)
-    if w > max_w:
-        w = max_w
-    if h > max_h:
-        h = max_h
+    pw = min(round(w * scale), max(100, aw - 2 * edge))
+    ph = min(round(h * scale), max(100, ah - 2 * edge))
 
-    min_x = SCREEN_EDGE_MARGIN
-    min_y = SCREEN_EDGE_MARGIN
-    max_x = max(min_x, sw - w - SCREEN_EDGE_MARGIN)
-    max_y = max(min_y, sh - h - SCREEN_BOTTOM_MARGIN)
+    min_x = ax + edge
+    min_y = ay + edge
+    max_x = max(min_x, ax + aw - pw - edge)
+    max_y = max(min_y, ay + ah - ph - edge)
 
-    if x < min_x:
-        x = min_x
-    elif x > max_x:
-        x = max_x
-    if y < min_y:
-        y = min_y
-    elif y > max_y:
-        y = max_y
+    x = min(max(x, min_x), max_x)
+    y = min(max(y, min_y), max_y)
 
-    return (x, y, w, h)
+    return (x, y, round(pw / scale), round(ph / scale))
 
 
 def _load_geometries() -> dict:
@@ -228,15 +235,18 @@ class ManagedToplevel(ctk.CTkToplevel):
 
     def default_offset(self, parent) -> tuple[int, int]:
         """Return ``(x, y)`` for the first-ever open. Default centers
-        the window on its current screen.
+        the window on the parent's monitor (work area, real pixels).
         """
-        try:
-            sw = self.winfo_screenwidth()
-            sh = self.winfo_screenheight()
-        except tk.TclError:
+        area = screen_work_area(parent if parent is not None else self)
+        if area is None:
             return (100, 100)
+        ax, ay, aw, ah = area
+        scale = window_scale(self)
         w, h = self.default_size
-        return (max(0, (sw - w) // 2), max(0, (sh - h) // 2))
+        return (
+            max(ax, ax + (aw - round(w * scale)) // 2),
+            max(ay, ay + (ah - round(h * scale)) // 2),
+        )
 
     def on_close(self) -> None:
         """Called from ``_handle_close`` before destroy. Subclasses

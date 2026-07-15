@@ -38,12 +38,10 @@ from app.ui.toolbar import _attach_tooltip
 from app.core.variables import (
     COLOR_DEFAULT,
     VAR_TYPES,
-    VariableEntry,
     coerce_default_for_type,
     is_valid_hex,
     sanitize_var_name,
 )
-from app.core.logger import log_error
 
 if TYPE_CHECKING:
     from app.core.project import Project

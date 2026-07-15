@@ -751,7 +751,7 @@ class ExportDialog(ManagedToplevel):
                 "with the same names will be overwritten."
             )
         return ask_yes_no(
-            "Export", question, parent=self,
+            "Export", question, parent=self, danger=True,
         )
 
     def _dispatch_export(self, scope_id: str, target: Path) -> None:

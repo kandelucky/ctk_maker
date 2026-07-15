@@ -19,7 +19,6 @@ the Workspace stubs that remain are thin backwards-compat shims.
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox
 
 from app.ui.icons import load_tk_icon
 from app.ui.system_fonts import ui_font
