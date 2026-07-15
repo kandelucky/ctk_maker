@@ -9,10 +9,11 @@ The full builder lives in the source tree at [github.com/kandelucky/ctk_maker](h
 
 - **Preview = Reality** — real CTk widgets rendered on the canvas, not a simulation
 - **Multi-document canvas** — one project holds a Main Window plus any number of Dialogs
+- **Scripting (CTkScript, Unity-style)** — attach a `CTkScript` subclass to any widget or window and bind events to its methods; typed base class with editor autocomplete out of the box
 - **Layout managers** — `place` / `vbox` / `hbox` / `grid` with WYSIWYG rendering
 - **Asset system** — bundled fonts, images, and 1700+ Lucide icons addressable from any widget
 - **Full undo / redo** — every mutation tracked
-- **20 widgets in the palette** — Button, Segmented Button, Label, Image, Card, Progress Bar, Check Box, Radio Button, Switch, Entry, Textbox, Combo Box, Option Menu, Slider, Frame, Scrollable Frame, Tab View, Vertical Layout, Horizontal Layout, Grid Layout
+- **22 widgets in the palette** — Button, Segmented Button, Label, Rich Label, Image, Card, Progress Bar, Circular Progress, Check Box, Radio Button, Switch, Entry, Textbox, Combo Box, Option Menu, Slider, Frame, Scrollable Frame, Tab View, Vertical Layout, Horizontal Layout, Grid Layout
 
 ## Run from source
 

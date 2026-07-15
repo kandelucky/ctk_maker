@@ -6,14 +6,20 @@ This package reserves the PyPI name. The full builder lives in
 See: https://github.com/kandelucky/ctk_maker
 """
 
-__version__ = "1.27.2"
+__version__ = "1.66.0"
 
 
 def main() -> None:
     print(
-        "CTkMaker v1.27.2\n"
-        "Run the builder from the source tree: python main.py\n"
-        "Source + releases: https://github.com/kandelucky/ctk_maker"
+        f"CTkMaker v{__version__}\n"
+        "This PyPI package reserves the name — the builder itself runs "
+        "from the source tree:\n"
+        "  git clone https://github.com/kandelucky/ctk_maker.git\n"
+        "  cd ctk_maker\n"
+        "  pip install -r requirements.txt\n"
+        "  python main.py\n"
+        "Docs: https://github.com/kandelucky/ctk_maker/wiki\n"
+        "Releases: https://github.com/kandelucky/ctk_maker/releases"
     )
 
 
