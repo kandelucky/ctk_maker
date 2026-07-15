@@ -59,6 +59,7 @@ python main.py
 
 Full docs live in the [Wiki](https://github.com/kandelucky/ctk_maker/wiki):
 
+- **Tutorial — [Name Badge](https://github.com/kandelucky/ctk_maker/wiki/Tutorial-1-Name-Badge)** — hands-on first build: a live app with no code, using Variables + Bindings
 - [User Guide](https://github.com/kandelucky/ctk_maker/wiki/User-Guide) — workflow walkthrough
 - [Widgets](https://github.com/kandelucky/ctk_maker/wiki/Widgets) — every supported widget + properties
 - [Keyboard Shortcuts](https://github.com/kandelucky/ctk_maker/wiki/Keyboard-Shortcuts) — full reference
