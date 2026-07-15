@@ -21,7 +21,11 @@ from app.io.scripts.editor import (
     launch_editor,
     resolve_project_root_for_editor,
 )
-from app.io.scripts.paths import create_user_script
+from app.io.scripts.paths import (
+    class_name_to_filename,
+    create_user_script,
+    normalize_class_name,
+)
 from app.io.scripts.variable_fields import build_variable_rows
 
 __all__ = [
@@ -39,5 +43,7 @@ __all__ = [
     "launch_editor",
     "resolve_project_root_for_editor",
     # paths
+    "class_name_to_filename",
     "create_user_script",
+    "normalize_class_name",
 ]

@@ -13,6 +13,7 @@ from app.core.script_paths import user_scripts_dir
 from app.io.scripts import (
     create_user_script,
     find_attachable_scripts,
+    normalize_class_name,
     parse_ctkscript_classes,
     parse_exposed_variables,
 )
@@ -44,6 +45,35 @@ def test_create_user_script_rejects_invalid_name(tmp_path):
 
 def test_create_user_script_unsaved_returns_none():
     assert create_user_script(None, "Foo") is None
+
+
+# -- normalize_class_name ---------------------------------------------
+
+def test_normalize_class_name_styles():
+    # Every input style lands on the same PascalCase name.
+    assert normalize_class_name("foo_bar") == "FooBar"
+    assert normalize_class_name("foo bar") == "FooBar"
+    assert normalize_class_name("foo-bar") == "FooBar"
+    assert normalize_class_name("fooBar") == "FooBar"
+    assert normalize_class_name("FooBar") == "FooBar"
+    assert normalize_class_name("  baz  qux ") == "BazQux"
+
+
+def test_normalize_class_name_acronyms_and_digits():
+    # Acronym runs survive; digits stay inside words.
+    assert normalize_class_name("HTTP server") == "HTTPServer"
+    assert normalize_class_name("HTTPServer") == "HTTPServer"
+    assert normalize_class_name("page2 nav") == "Page2Nav"
+    # Leading digits can't start an identifier — dropped.
+    assert normalize_class_name("2fast") == "Fast"
+
+
+def test_normalize_class_name_rejects_unusable():
+    # Nothing identifier-like left → "" (dialog blocks OK).
+    assert normalize_class_name("") == ""
+    assert normalize_class_name("   ") == ""
+    assert normalize_class_name("123") == ""
+    assert normalize_class_name("!!!") == ""
 
 
 # -- parse_ctkscript_classes ------------------------------------------

@@ -1652,15 +1652,16 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
             menu.grab_release()
 
     def _create_and_attach_script(self, node) -> None:
-        """Prompt for a class name, create ``scripts/<snake>.py`` with a
-        CTkScript skeleton, attach it to ``node``, and open it in the
-        editor — so the user never hand-creates the file."""
+        """Prompt for a script name (any style — normalized to a
+        PascalCase class), create ``scripts/<snake>.py`` with a CTkScript
+        skeleton, attach it to ``node``, and open it in the editor — so
+        the user never hand-creates the file."""
         from pathlib import Path
 
         from app.core.script_paths import user_scripts_dir
-        from app.io.scripts import create_user_script
+        from app.io.scripts import create_user_script, find_attachable_scripts
         from app.ui.dialogs.message import show_error, show_info
-        from app.ui.dialogs.rename import RenameDialog
+        from app.ui.dialogs.new_script import NewScriptDialog
         parent = self.winfo_toplevel()
         scripts_dir = user_scripts_dir(getattr(self.project, "path", None))
         if scripts_dir is None:
@@ -1670,15 +1671,14 @@ class PropertiesPanel(CommitMixin, SchemaMixin, ctk.CTkFrame):
                 parent=parent,
             )
             return
-        # Themed prompt (not the native white simpledialog). The
-        # validator keeps it open + bells on a non-identifier name, so
-        # the user fixes a typo in place rather than getting bounced.
-        dlg = RenameDialog(
-            parent, "",
-            title="New script",
-            label="Class name (e.g. LoginForm):",
-            validate=str.isidentifier,
-        )
+        # Themed prompt that takes the name in any style, normalizes it
+        # to a PascalCase class + snake_case file and previews both live;
+        # it refuses names whose class already exists in ``scripts/``.
+        existing = {
+            cls: path
+            for path, cls in find_attachable_scripts(scripts_dir)
+        }
+        dlg = NewScriptDialog(parent, existing)
         name = dlg.result
         if not name:
             return

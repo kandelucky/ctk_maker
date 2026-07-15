@@ -93,6 +93,7 @@ class RenameDialog(ManagedToplevel):
             body, textvariable=self._name_var,
         )
         self._entry.pack(fill="x")
+        self._build_extra(body)
 
         footer = ctk.CTkFrame(container, fg_color="transparent")
         footer.pack(fill="x", padx=20, pady=(4, 16))
@@ -105,6 +106,10 @@ class RenameDialog(ManagedToplevel):
             footer, "OK", command=self._on_ok,
         ).grid(row=0, column=1, sticky="ew", padx=(4, 0))
         return container
+
+    def _build_extra(self, body) -> None:
+        """Hook for subclasses: add extra rows under the entry (e.g. the
+        live class/file preview in ``NewScriptDialog``). Default: none."""
 
     def _on_ok(self) -> None:
         value = self._name_var.get().strip()

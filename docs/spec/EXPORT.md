@@ -299,6 +299,8 @@ The pattern is intentional — the export call tree is deep, threading every con
 | `find_attachable_scripts(scripts_dir) → list[(rel_path, class)]` | Walk `scripts/` for attachable classes. |
 | `parse_handler_methods(file_path, class_name) → list[str]` | Method names on a class. Feeds the Function picker. |
 | `create_user_script(scripts_dir, class_name) → (rel, class)` | Write a new `<snake>.py` CTkScript skeleton (auto-suffixed on collision). |
+| `normalize_class_name(raw) → str` | Any input style → PascalCase class name (`foo bar` → `FooBar`); `""` when unusable. Feeds the New-script dialog. |
+| `class_name_to_filename(class_name) → str` | `ClickCounter` → `click_counter`; shared by `create_user_script` and the dialog's live preview. |
 | `iter_script_call_targets` / `resolve_script_component` | Which attached component a `script_call` binds to (shared by panel + pickers). |
 | `launch_editor` / `resolve_project_root_for_editor` | Open a script file in the user's editor. |
 

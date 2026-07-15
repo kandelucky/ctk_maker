@@ -31,12 +31,29 @@ class {class_name}(CTkScript):
 '''
 
 
-def _class_name_to_filename(class_name: str) -> str:
+def class_name_to_filename(class_name: str) -> str:
     """``ClickCounter`` → ``click_counter``; non-identifier chars
     collapse to underscores. Falls back to ``script``."""
     s = re.sub(r"(?<!^)(?=[A-Z])", "_", class_name).lower()
     s = re.sub(r"[^a-z0-9_]+", "_", s).strip("_")
     return s or "script"
+
+
+def normalize_class_name(raw: str) -> str:
+    """Normalize any input style to a PascalCase class name:
+    ``foo_bar`` / ``foo bar`` / ``fooBar`` / ``FooBar`` → ``FooBar``;
+    acronym runs survive (``HTTP server`` → ``HTTPServer``). Returns
+    ``""`` when nothing identifier-like remains (e.g. digits/symbols
+    only)."""
+    words: list[str] = []
+    for part in re.split(r"[^0-9a-zA-Z]+", raw.strip()):
+        words.extend(re.findall(
+            r"[A-Z]+(?=[A-Z][a-z])|[A-Z][a-z0-9]*|[a-z0-9]+", part,
+        ))
+    name = "".join(w[:1].upper() + w[1:] for w in words)
+    name = re.sub(r"^[0-9]+", "", name)
+    name = name[:1].upper() + name[1:]
+    return name if name.isidentifier() else ""
 
 
 def create_user_script(
@@ -55,7 +72,7 @@ def create_user_script(
         root.mkdir(parents=True, exist_ok=True)
     except OSError:
         return None
-    stem = _class_name_to_filename(class_name)
+    stem = class_name_to_filename(class_name)
     fname = f"{stem}.py"
     n = 2
     while (root / fname).exists():
