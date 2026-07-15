@@ -267,6 +267,36 @@ class ProjectPanelTree:
                     new_sel_iid = iid
 
         walk("", a_dir)
+
+        # CTkScript model — ``scripts/`` lives at the project root,
+        # OUTSIDE ``assets/``, so the assets walk above never reaches
+        # it. Surface it as a sibling top-level node (Unity's Project
+        # window shows Scripts next to the other folders) so the user
+        # can see every script the project holds at a glance, not only
+        # discover them through the Properties → Scripts group.
+        scripts_dir = self.resolve_scripts_folder(project_file)
+        if scripts_dir is not None:
+            try:
+                count = sum(1 for _ in scripts_dir.iterdir())
+            except OSError:
+                count = 0
+            label = f"  {scripts_dir.name}  ({count})"
+            is_open = (
+                str(scripts_dir.resolve()) in prev_open
+                or not _has_saved_state
+            )
+            sid = panel._tree.insert(
+                "", "end", text=label, open=is_open,
+                image=panel._kind_icons.get("folder", ""),
+            )
+            panel._iid_meta[sid] = (scripts_dir, "folder")
+            if (
+                prev_sel_path is not None
+                and scripts_dir.resolve() == prev_sel_path.resolve()
+            ):
+                new_sel_iid = sid
+            walk(sid, scripts_dir)
+
         if new_sel_iid is not None:
             try:
                 panel._tree.selection_set(new_sel_iid)
@@ -286,6 +316,18 @@ class ProjectPanelTree:
             return None
         pdir = pages_dir(root)
         return pdir if pdir.is_dir() else None
+
+    def resolve_scripts_folder(self, project_file: Path) -> Path | None:
+        """Return ``<root>/scripts/`` (the CTkScript model's top-level
+        user-scripts folder, outside ``assets/``) when it exists on
+        disk, else ``None``. Used to surface scripts as a sibling
+        top-level node in the tree. Covers both multi-page (walk up to
+        project.json) and legacy single-file layouts via
+        ``user_scripts_dir``.
+        """
+        from app.core.script_paths import user_scripts_dir
+        sdir = user_scripts_dir(project_file)
+        return sdir if sdir is not None and sdir.is_dir() else None
 
     def resolve_active_page_file(self) -> Path | None:
         """Absolute path to the current page's .ctkproj, used by the

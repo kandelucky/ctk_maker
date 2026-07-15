@@ -652,10 +652,33 @@ class ProjectPanel(ctk.CTkFrame):
             if self.on_switch_page is not None:
                 self.on_switch_page(str(file_path))
             return "break"
+        if file_path.suffix.lower() == ".py":
+            # Python files (CTkScript classes under scripts/, or any
+            # .py the user added) open in the configured editor with
+            # the project root as workspace — pyrightconfig.json + the
+            # root ctkmaker.py sidecar give import resolution +
+            # autocomplete. Matches Properties → Scripts → open.
+            self._open_in_script_editor(file_path)
+            return "break"
         self.menu.open_with_os(file_path)
         # Returning ``"break"`` would prevent Tk's own handler from
         # firing too — but on file rows there's nothing to break, so
         # we leave it alone.
+
+    def _open_in_script_editor(self, file_path: Path) -> None:
+        """Open a .py file in the user's editor with the project root
+        as workspace (import resolution + autocomplete via
+        pyrightconfig.json + the ctkmaker.py sidecar). Shared with the
+        Properties panel's Scripts-group open action."""
+        from app.core.settings import load_settings
+        from app.io.scripts import (
+            launch_editor, resolve_project_root_for_editor,
+        )
+        launch_editor(
+            file_path,
+            editor_command=load_settings().get("editor_command"),
+            project_root=resolve_project_root_for_editor(self.project),
+        )
 
 
 
